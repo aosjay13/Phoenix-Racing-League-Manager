@@ -2,51 +2,23 @@
 
 **GitHub:** [aosjay13/Phoenix-Racing-League-Manager](https://github.com/aosjay13/Phoenix-Racing-League-Manager)
 
-Full-stack racing league manager — FastAPI + Firebase Firestore backend, Next.js dark-themed frontend with live standings, roster, schedule, and race entry.
+Full-stack racing league manager with live standings, roster management, schedule, and race entry. Runs entirely on Next.js — deploy for free on Vercel with no separate backend needed.
 
-- **Backend:** FastAPI + Firebase Firestore (Python)
-- **Frontend:** Next.js 14 App Router, dark racing UI
+- **Frontend + API:** Next.js 14 App Router (API routes replace the Python backend)
+- **Database:** Firebase Firestore
 
-## Project Layout
-
-- `backend/` — Python API and league logic
-- `frontend/` — Next.js web interface and dashboards
-- `render.yaml` — Render Blueprint for one-click backend deployment
-
-## Hosting
-
-### Backend → Render
-
-1. Go to [render.com](https://render.com) and sign in with GitHub
-2. Click **New → Blueprint** and select this repo — Render reads `render.yaml` automatically
-3. In the environment variables panel, add these three values from your Firebase service account JSON:
-   - `FIREBASE_PROJECT_ID` — the `project_id` field
-   - `FIREBASE_CLIENT_EMAIL` — the `client_email` field
-   - `FIREBASE_PRIVATE_KEY` — the full `private_key` field (including `-----BEGIN PRIVATE KEY-----`)
-4. Click **Apply** — Render builds and starts the API. Copy the service URL (e.g. `https://phoenix-racing-api.onrender.com`)
-
-### Frontend → Vercel
+## Deploy to Vercel (free)
 
 1. Go to [vercel.com](https://vercel.com) and sign in with GitHub
-2. Click **Add New → Project** and import this repo
+2. Click **Add New → Project** and import `Phoenix-Racing-League-Manager`
 3. Set **Root Directory** to `frontend`
-4. Under **Environment Variables**, add:
-   - `NEXT_PUBLIC_API_BASE_URL` = the Render service URL from the step above
-5. Click **Deploy**
+4. Under **Environment Variables**, add these three values from your `service-account.json`:
+   - `FIREBASE_PROJECT_ID` → the `project_id` field
+   - `FIREBASE_CLIENT_EMAIL` → the `client_email` field
+   - `FIREBASE_PRIVATE_KEY` → the full `private_key` field (include the `-----BEGIN...END-----` lines)
+5. Click **Deploy** — your app is live in about a minute
 
 ## Local Development
-
-### Backend
-
-```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
-```
-
-### Frontend
 
 ```bash
 cd frontend
@@ -54,21 +26,41 @@ npm install
 npm run dev
 ```
 
-Copy `.env.example` to `.env` and fill in your Firebase credentials and API URL.
+Create a `frontend/.env.local` file (copy `.env.example` and fill in your Firebase credentials).
+
+## Project Layout
+
+```
+frontend/
+  app/
+    api/          ← Next.js API routes (drivers, races, results, standings)
+    page.js       ← Dashboard
+    roster/       ← Roster management
+    schedule/     ← Season schedule
+    race-entry/   ← Submit race results
+    standings/    ← Live points table
+  lib/
+    firebase.js   ← Firebase Admin initialization
+    standings.js  ← Points + drop-week calculation
+  components/
+    AppShell.jsx  ← Sidebar navigation
+    StandingsTable.jsx
+```
 
 ## API Endpoints
 
+All served by Next.js under `/api/`:
+
 - `GET  /api/health`
-- `POST /api/drivers`
-- `GET  /api/drivers?season=2026`
-- `POST /api/races`
-- `GET  /api/races?season=2026`
+- `GET  /api/drivers?season=2026` · `POST /api/drivers`
+- `PUT  /api/drivers/[uid]` · `DELETE /api/drivers/[uid]`
+- `GET  /api/races?season=2026` · `POST /api/races`
 - `POST /api/results`
 - `GET  /api/standings?season=2026&drop_weeks=1`
 
 ## Next Steps
 
 1. Add auth and role permissions for commissioners and admins
-2. Add result editing/deletion workflows
+2. Add result editing/deletion
 3. Add CSV import UI for bulk result entry
 4. Add CI pipelines for linting and tests

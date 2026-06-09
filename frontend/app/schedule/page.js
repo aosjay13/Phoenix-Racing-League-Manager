@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 
-const API = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+const API = "";
 const CURRENT_SEASON = 2026;
 
 const BLANK = { track: "", date: "", round_number: "" };

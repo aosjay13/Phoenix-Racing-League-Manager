@@ -1,57 +1,55 @@
 import Link from "next/link";
+import { db } from "@/lib/firebase";
+import { calculateStandings, DEFAULT_POINTS_SCALE } from "@/lib/standings";
 
-const API = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
 const CURRENT_SEASON = 2026;
 
-async function fetchJsonWithTimeout(url, fallback, ms = 3500) {
-  try {
-    const res = await Promise.race([
-      fetch(url, { cache: "no-store" }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), ms)),
-    ]);
-    if (!res.ok) return fallback;
-    return await res.json();
-  } catch {
-    return fallback;
-  }
-}
-
 async function getDashboardStats() {
-  const [drivers, races, standings] = await Promise.all([
-    fetchJsonWithTimeout(`${API}/api/drivers?season=${CURRENT_SEASON}`, []),
-    fetchJsonWithTimeout(`${API}/api/races?season=${CURRENT_SEASON}`, []),
-    fetchJsonWithTimeout(`${API}/api/standings?season=${CURRENT_SEASON}&drop_weeks=0`, { rows: [] }),
+  const [driversSnap, racesSnap] = await Promise.all([
+    db().collection("drivers").where("season", "==", CURRENT_SEASON).get(),
+    db().collection("races").where("season", "==", CURRENT_SEASON).get(),
   ]);
 
+  const drivers = driversSnap.docs.map(d => d.data());
+  const races = racesSnap.docs.map(d => d.data());
+  const raceIds = races.map(r => r.race_id);
+
+  let results = [];
+  for (const raceId of raceIds) {
+    const snap = await db().collection("results").where("race_id", "==", raceId).get();
+    results.push(...snap.docs.map(d => d.data()));
+  }
+
   const today = new Date();
-  const completed = Array.isArray(races) ? races.filter(r => new Date(r.date) < today).length : 0;
-  const leader = standings?.rows?.[0] || null;
+  const completed = races.filter(r => new Date(r.date) < today).length;
+  const standings = calculateStandings(results, drivers, CURRENT_SEASON, 0, DEFAULT_POINTS_SCALE);
+  const leader = standings.rows[0] ?? null;
 
   return {
-    driverCount: Array.isArray(drivers) ? drivers.length : 0,
-    totalRaces: Array.isArray(races) ? races.length : 0,
+    driverCount: drivers.length,
+    totalRaces: races.length,
     completedRaces: completed,
-    remaining: Math.max(0, (Array.isArray(races) ? races.length : 0) - completed),
+    remaining: Math.max(0, races.length - completed),
     leader,
   };
 }
 
-const metrics = (stats) => [
-  { icon: "🏎️", num: stats.driverCount,    label: "Active Drivers"   },
-  { icon: "🗓️", num: stats.totalRaces,     label: "Scheduled Races"  },
-  { icon: "✅", num: stats.completedRaces, label: "Completed Events" },
-  { icon: "⏩", num: stats.remaining,      label: "Races Remaining"  },
-];
-
 const quickLinks = [
-  { href: "/roster",     icon: "⊞", label: "Manage Roster",      sub: "Add or edit drivers"     },
-  { href: "/schedule",   icon: "⊟", label: "View Schedule",      sub: "Full season calendar"    },
-  { href: "/race-entry", icon: "⊕", label: "Enter Results",      sub: "Submit finish positions" },
-  { href: "/standings",  icon: "⊛", label: "Standings",          sub: "Live points + drop week" },
+  { href: "/roster",     icon: "⊞", label: "Manage Roster",  sub: "Add or edit drivers"     },
+  { href: "/schedule",   icon: "⊟", label: "View Schedule",  sub: "Full season calendar"    },
+  { href: "/race-entry", icon: "⊕", label: "Enter Results",  sub: "Submit finish positions" },
+  { href: "/standings",  icon: "⊛", label: "Standings",      sub: "Live points + drop week" },
 ];
 
 export default async function DashboardPage() {
   const stats = await getDashboardStats();
+
+  const metrics = [
+    { icon: "🏎️", num: stats.driverCount,    label: "Active Drivers"   },
+    { icon: "🗓️", num: stats.totalRaces,     label: "Scheduled Races"  },
+    { icon: "✅", num: stats.completedRaces, label: "Completed Events" },
+    { icon: "⏩", num: stats.remaining,      label: "Races Remaining"  },
+  ];
 
   return (
     <section>
@@ -67,9 +65,8 @@ export default async function DashboardPage() {
         <p style={{ marginTop: 10, color: "var(--ink-1)", fontSize: "0.92rem", maxWidth: 620 }}>
           Live overview of your racing league. Use the sidebar to manage the roster, enter race results, and view standings.
         </p>
-
         <div className="metrics">
-          {metrics(stats).map((m, i) => (
+          {metrics.map((m, i) => (
             <article className="metric-card" key={m.label} style={{ animationDelay: `${i * 60}ms` }}>
               <span className="metric-icon">{m.icon}</span>
               <div className="metric-num">{m.num}</div>

@@ -1,22 +1,30 @@
-import { StandingsTable } from "../../components/StandingsTable";
+import { db } from "@/lib/firebase";
+import { calculateStandings, DEFAULT_POINTS_SCALE } from "@/lib/standings";
+import { StandingsTable } from "@/components/StandingsTable";
+
+const CURRENT_SEASON = 2026;
+const DROP_WEEKS = 1;
 
 async function getStandings() {
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
-  try {
-    const res = await Promise.race([
-      fetch(`${base}/api/standings?season=2026&drop_weeks=1`, { cache: "no-store" }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 3500)),
-    ]);
-    if (!res.ok) return [];
-    const json = await res.json();
-    return json.rows || [];
-  } catch {
-    return [];
+  const [driversSnap, racesSnap] = await Promise.all([
+    db().collection("drivers").where("season", "==", CURRENT_SEASON).get(),
+    db().collection("races").where("season", "==", CURRENT_SEASON).get(),
+  ]);
+
+  const drivers = driversSnap.docs.map(d => d.data());
+  const raceIds = racesSnap.docs.map(d => d.data().race_id);
+
+  let results = [];
+  for (const raceId of raceIds) {
+    const snap = await db().collection("results").where("race_id", "==", raceId).get();
+    results.push(...snap.docs.map(d => d.data()));
   }
+
+  return calculateStandings(results, drivers, CURRENT_SEASON, DROP_WEEKS, DEFAULT_POINTS_SCALE);
 }
 
 export default async function StandingsPage() {
-  const rows = await getStandings();
+  const { rows } = await getStandings();
 
   return (
     <section>
