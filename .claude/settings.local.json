@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\({k: '***' if 'key' in k.lower\\(\\) or 'private' in k.lower\\(\\) else v for k,v in d.items\\(\\)}\\)\")",
+      "Bash(GOOGLE_APPLICATION_CREDENTIALS=./service-account.json /workspaces/codespaces-blank/backend/.venv/bin/uvicorn app.main:app --reload --port 8000 --app-dir backend)",
+      "Bash(curl -s http://localhost:8000/api/health)",
+      "Bash(curl -sv http://127.0.0.1:8000/api/health)",
+      "Bash(curl -s \"http://localhost:8000/api/drivers?season=2026\")",
+      "Bash(curl -s \"http://localhost:8000/api/races?season=2026\")",
+      "Bash(curl -s \"http://localhost:8000/api/standings?season=2026&drop_weeks=1\")",
+      "Bash(curl -s -X POST http://localhost:8000/api/drivers -H 'Content-Type: application/json' -d '{\"name\":\"Alex Turner\",\"number\":18,\"team\":\"Summit Racing\",\"season\":2026}')",
+      "Bash(curl -s -X POST http://localhost:8000/api/drivers -H 'Content-Type: application/json' -d '{\"name\":\"Jamie Carter\",\"number\":7,\"team\":\"Apex Motorsport\",\"season\":2026}')",
+      "Bash(curl -sv -X POST http://localhost:8000/api/races -H 'Content-Type: application/json' -d '{\"track\":\"Talladega Superspeedway\",\"date\":\"2026-05-01\",\"season\":2026,\"round_number\":1}')",
+      "Bash(curl -s -X POST http://localhost:8000/api/races -H 'Content-Type: application/json' -d '{\"track\":\"Talladega Superspeedway\",\"date\":\"2026-05-01\",\"season\":2026,\"round_number\":1}' -o /tmp/race_resp.txt -w '\\\\nHTTP status: %{http_code}\\\\n')",
+      "Read(//tmp/**)",
+      "Bash(pkill -f \"uvicorn app.main\")",
+      "Bash(GOOGLE_APPLICATION_CREDENTIALS=/workspaces/codespaces-blank/service-account.json /workspaces/codespaces-blank/backend/.venv/bin/uvicorn app.main:app --port 8000 --app-dir /workspaces/codespaces-blank/backend)",
+      "Bash(pkill -f uvicorn)",
+      "Bash(awk '{print $2}')",
+      "Bash(GOOGLE_APPLICATION_CREDENTIALS=/workspaces/codespaces-blank/service-account.json .venv/bin/python -c ' *)",
+      "Bash(curl -s http://localhost:3000/)",
+      "Bash(curl -s http://localhost:3000/roster)",
+      "Bash(curl -s http://localhost:3000/schedule)",
+      "Bash(curl -s http://localhost:3000/race-entry)",
+      "Bash(curl -s http://localhost:3000/standings)",
+      "Bash(curl -s -X POST http://localhost:8000/api/races -H 'Content-Type: application/json' -d '{\"track\":\"Daytona 500\",\"date\":\"2026-07-15\",\"season\":2026,\"round_number\":2}')",
+      "Bash(python3 -c \"import sys,json; rows=json.load\\(sys.stdin\\); print\\(f'{len\\(rows\\)} races: ' + ', '.join\\(r[\\\\\"track\\\\\"] for r in rows\\)\\)\")",
+      "Bash(gh auth *)",
+      "Bash(git -C /workspaces/codespaces-blank status)",
+      "Bash(git init *)",
+      "Bash(git config *)",
+      "Bash(git add *)"
+    ]
+  }
+}
