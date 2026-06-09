@@ -1,47 +1,42 @@
-# Racing League Manager
+# Phoenix Racing League Manager
 
-Full-stack starter for a racing league manager built in GitHub Codespaces.
+**GitHub:** [aosjay13/Phoenix-Racing-League-Manager](https://github.com/aosjay13/Phoenix-Racing-League-Manager)
 
-- Backend: FastAPI + Pandas + Firebase Firestore
-- Frontend: Next.js (App Router) with a custom visual theme
+Full-stack racing league manager — FastAPI + Firebase Firestore backend, Next.js dark-themed frontend with live standings, roster, schedule, and race entry.
+
+- **Backend:** FastAPI + Firebase Firestore (Python)
+- **Frontend:** Next.js 14 App Router, dark racing UI
 
 ## Project Layout
 
-- `backend/` Python API and league logic
-- `frontend/` web interface and dashboards
+- `backend/` — Python API and league logic
+- `frontend/` — Next.js web interface and dashboards
+- `render.yaml` — Render Blueprint for one-click backend deployment
 
-## Backend Features Implemented
+## Hosting
 
-- Driver, race, and result API endpoints
-- Firestore connection setup
-- Standings calculation with:
-  - points scale
-  - tie-breakers (wins, Top 5, average finish)
-  - drop-week support
-- Utility scripts:
-  - `database_setup.py`
-  - `calculations.py`
-  - `importer.py`
+### Backend → Render
 
-## Frontend Features Implemented
+1. Go to [render.com](https://render.com) and sign in with GitHub
+2. Click **New → Blueprint** and select this repo — Render reads `render.yaml` automatically
+3. In the environment variables panel, add these three values from your Firebase service account JSON:
+   - `FIREBASE_PROJECT_ID` — the `project_id` field
+   - `FIREBASE_CLIENT_EMAIL` — the `client_email` field
+   - `FIREBASE_PRIVATE_KEY` — the full `private_key` field (including `-----BEGIN PRIVATE KEY-----`)
+4. Click **Apply** — Render builds and starts the API. Copy the service URL (e.g. `https://phoenix-racing-api.onrender.com`)
 
-- Branded application shell and sidebar navigation
-- Pages for:
-  - Dashboard
-  - Roster Management
-  - Schedule and Calendar
-  - Race Entry
-  - Standings Table
-- Standings page fetches backend standings endpoint
-- Responsive styling and light-motion reveal effects
+### Frontend → Vercel
 
-## Environment Setup
+1. Go to [vercel.com](https://vercel.com) and sign in with GitHub
+2. Click **Add New → Project** and import this repo
+3. Set **Root Directory** to `frontend`
+4. Under **Environment Variables**, add:
+   - `NEXT_PUBLIC_API_BASE_URL` = the Render service URL from the step above
+5. Click **Deploy**
 
-1. Copy `.env.example` to `.env`.
-2. Fill in Firebase values.
-3. Set `NEXT_PUBLIC_API_BASE_URL` to your backend URL.
+## Local Development
 
-## Run Backend
+### Backend
 
 ```bash
 cd backend
@@ -51,7 +46,7 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-## Run Frontend
+### Frontend
 
 ```bash
 cd frontend
@@ -59,27 +54,21 @@ npm install
 npm run dev
 ```
 
+Copy `.env.example` to `.env` and fill in your Firebase credentials and API URL.
+
 ## API Endpoints
 
-- `GET /api/health`
+- `GET  /api/health`
 - `POST /api/drivers`
-- `GET /api/drivers?season=2026`
+- `GET  /api/drivers?season=2026`
 - `POST /api/races`
-- `GET /api/races?season=2026`
+- `GET  /api/races?season=2026`
 - `POST /api/results`
-- `GET /api/standings?season=2026&drop_weeks=1`
+- `GET  /api/standings?season=2026&drop_weeks=1`
 
-## Utility Script Examples
+## Next Steps
 
-```bash
-cd backend
-python importer.py --service-account ./service-account.json --csv ./results.csv --season 2026
-```
-
-## Next Implementation Steps
-
-1. Add auth and role permissions for commissioners and admins.
-2. Add backend tests for tie-breaker and drop-week edge cases.
-3. Add result editing/deletion workflows and API endpoints.
-4. Add CSV import UI and upload status reporting in the frontend.
-5. Add CI pipelines for linting, tests, and production builds.
+1. Add auth and role permissions for commissioners and admins
+2. Add result editing/deletion workflows
+3. Add CSV import UI for bulk result entry
+4. Add CI pipelines for linting and tests
