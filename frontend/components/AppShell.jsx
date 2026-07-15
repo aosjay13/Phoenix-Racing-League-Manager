@@ -41,21 +41,21 @@ function ContextSelectors() {
       <div className="context-select">
         <label>Game</label>
         <select value={gameId} onChange={e => setGameId(e.target.value)}>
-          {games.length === 0 && <option value="">No games yet</option>}
+          <option value="">{games.length ? "All Games" : "No games yet"}</option>
           {games.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
         </select>
       </div>
       <div className="context-select">
         <label>Series</label>
-        <select value={seriesId} onChange={e => setSeriesId(e.target.value)}>
-          {seriesList.length === 0 && <option value="">—</option>}
+        <select value={seriesId} onChange={e => setSeriesId(e.target.value)} disabled={!gameId}>
+          <option value="">{gameId ? "All Series" : "—"}</option>
           {seriesList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
       </div>
       <div className="context-select">
         <label>Season</label>
-        <select value={seasonId} onChange={e => setSeasonId(e.target.value)}>
-          {seasons.length === 0 && <option value="">—</option>}
+        <select value={seasonId} onChange={e => setSeasonId(e.target.value)} disabled={!seriesId}>
+          <option value="">{seriesId ? "All Seasons" : "—"}</option>
           {seasons.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
       </div>

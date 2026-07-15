@@ -6,69 +6,82 @@ import { api } from "@/lib/api";
 const LeagueContext = createContext(null);
 const STORAGE_KEY = "prlm-selection";
 
+// Selection values: null = not initialized yet, "" = "All …" chosen by the
+// user, otherwise a document id. Pages that need one concrete season treat
+// "" the same as nothing selected.
+function loadSaved() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"); } catch { return {}; }
+}
+
 export function LeagueProvider({ children }) {
   const [games, setGames] = useState([]);
   const [seriesList, setSeriesList] = useState([]);
   const [seasons, setSeasons] = useState([]);
-  const [gameId, setGameId] = useState("");
-  const [seriesId, setSeriesId] = useState("");
-  const [seasonId, setSeasonId] = useState("");
+  const [gameId, setGameId] = useState(null);
+  const [seriesId, setSeriesId] = useState(null);
+  const [seasonId, setSeasonId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [version, setVersion] = useState(0);
 
   const refresh = useCallback(() => setVersion(v => v + 1), []);
 
-  // Load games once (and on refresh), restoring the last selection.
   useEffect(() => {
-    let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"); } catch {}
+    const saved = loadSaved();
     api("/api/games")
       .then(g => {
         setGames(g);
-        const restored = g.find(x => x.id === saved.gameId)?.id || g[0]?.id || "";
-        setGameId(prev => (g.find(x => x.id === prev) ? prev : restored));
+        setGameId(prev => {
+          const current = prev === null ? saved.gameId : prev;
+          if (current === "") return "";
+          return g.find(x => x.id === current)?.id ?? g[0]?.id ?? "";
+        });
       })
       .catch(() => setGames([]))
       .finally(() => setLoading(false));
   }, [version]);
 
   useEffect(() => {
+    if (gameId === null) return;
     if (!gameId) { setSeriesList([]); setSeriesId(""); return; }
-    let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"); } catch {}
+    const saved = loadSaved();
     api(`/api/series?game_id=${gameId}`)
       .then(s => {
         setSeriesList(s);
         setSeriesId(prev => {
-          if (s.find(x => x.id === prev)) return prev;
-          return s.find(x => x.id === saved.seriesId)?.id || s[0]?.id || "";
+          const current = prev === null ? saved.seriesId : prev;
+          if (current === "" && prev !== null) return "";
+          if (s.find(x => x.id === current)) return current;
+          return prev === null && saved.seriesId === "" ? "" : (s[0]?.id ?? "");
         });
       })
       .catch(() => setSeriesList([]));
   }, [gameId, version]);
 
   useEffect(() => {
+    if (seriesId === null) return;
     if (!seriesId) { setSeasons([]); setSeasonId(""); return; }
-    let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"); } catch {}
+    const saved = loadSaved();
     api(`/api/seasons?series_id=${seriesId}`)
       .then(s => {
         setSeasons(s);
         setSeasonId(prev => {
-          if (s.find(x => x.id === prev)) return prev;
-          return s.find(x => x.id === saved.seasonId)?.id || s[s.length - 1]?.id || "";
+          const current = prev === null ? saved.seasonId : prev;
+          if (current === "" && prev !== null) return "";
+          if (s.find(x => x.id === current)) return current;
+          return prev === null && saved.seasonId === "" ? "" : (s[s.length - 1]?.id ?? "");
         });
       })
       .catch(() => setSeasons([]));
   }, [seriesId, version]);
 
   useEffect(() => {
+    if (gameId === null) return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ gameId, seriesId, seasonId }));
   }, [gameId, seriesId, seasonId]);
 
   const value = {
     games, seriesList, seasons,
-    gameId, seriesId, seasonId,
+    gameId: gameId ?? "", seriesId: seriesId ?? "", seasonId: seasonId ?? "",
     setGameId, setSeriesId, setSeasonId,
     game: games.find(g => g.id === gameId) || null,
     series: seriesList.find(s => s.id === seriesId) || null,

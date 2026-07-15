@@ -15,10 +15,11 @@ export async function GET(request) {
   return NextResponse.json(snap.docs.map(d => ({ id: d.id, ...d.data() })));
 }
 
-// Bulk save: replaces all results for the race so admins can re-submit
-// corrections without hitting duplicate errors.
+// Bulk save: replaces all results for the race session so admins can
+// re-submit corrections without hitting duplicate errors. Events with
+// multiple races store one `session` name per race.
 export const POST = withAdmin(async (request, ctx, user) => {
-  const { race_id, season_id, rows } = await request.json();
+  const { race_id, season_id, session = "", rows } = await request.json();
   if (!race_id || !season_id || !Array.isArray(rows)) {
     return NextResponse.json({ error: "race_id, season_id, rows[] required" }, { status: 400 });
   }
@@ -31,7 +32,9 @@ export const POST = withAdmin(async (request, ctx, user) => {
   const col = db().collection("results");
   const existing = await col.where("race_id", "==", race_id).get();
   const batch = db().batch();
-  existing.docs.forEach(d => batch.delete(d.ref));
+  existing.docs
+    .filter(d => (d.data().session || "") === session)
+    .forEach(d => batch.delete(d.ref));
 
   const numOrNull = v => (v != null && v !== "" ? Number(v) : null);
   const saved = [];
@@ -41,6 +44,7 @@ export const POST = withAdmin(async (request, ctx, user) => {
     const doc = {
       race_id,
       season_id,
+      session,
       entry_id: row.entry_id,
       finish_pos: Number(row.finish_pos),
       start_pos: numOrNull(row.start_pos),

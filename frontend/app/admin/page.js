@@ -5,7 +5,8 @@ import { useLeague } from "@/components/LeagueProvider";
 import { AdminGate } from "@/components/AdminGate";
 import { ImageUpload } from "@/components/ImageUpload";
 import { api } from "@/lib/api";
-import { BONUS_TYPES, DEFAULT_RACE_POINTS, DEFAULT_QUAL_POINTS } from "@/lib/standings";
+import { BONUS_TYPES } from "@/lib/standings";
+import { BUILTIN_TEMPLATES, listToTable, tableToList } from "@/lib/pointsTemplates";
 
 function Panel({ title, sub, children }) {
   return (
@@ -31,9 +32,9 @@ function ItemRow({ logo, name, onEdit, onDelete, editing, children }) {
   );
 }
 
-function toJsonString(v) {
-  if (!v) return "";
-  return typeof v === "string" ? v : JSON.stringify(v);
+function sessionsToArray(str) {
+  const list = String(str || "").split(",").map(s => s.trim()).filter(Boolean);
+  return list.length ? list : ["Race"];
 }
 
 function AdminInner() {
@@ -64,16 +65,18 @@ function AdminInner() {
 
   function applyTemplate(id) {
     setTemplateId(id);
-    const t = templates.find(x => x.id === id);
-    if (!t) return;
+    const builtin = BUILTIN_TEMPLATES.find(x => x.id === id);
+    const saved = templates.find(x => x.id === id);
+    if (!builtin && !saved) return;
+    const race = builtin ? builtin.race : tableToList(saved.race_points);
+    const qual = builtin ? builtin.qual : tableToList(saved.qual_points);
+    let bonusSrc = builtin ? builtin.bonuses : (saved.bonus_points || {});
+    if (typeof bonusSrc === "string") { try { bonusSrc = JSON.parse(bonusSrc); } catch { bonusSrc = {}; } }
     setSeasonForm(f => ({
       ...f,
-      race_points: t.race_points || "",
-      qual_points: t.qual_points || "",
-      bonuses: Object.fromEntries(BONUS_TYPES.map(([k]) => {
-        const b = typeof t.bonus_points === "string" ? JSON.parse(t.bonus_points || "{}") : (t.bonus_points || {});
-        return [k, String(b[k] ?? 0)];
-      })),
+      race_points: race || "",
+      qual_points: qual || "",
+      bonuses: Object.fromEntries(BONUS_TYPES.map(([k]) => [k, String(bonusSrc[k] ?? 0)])),
     }));
   }
 
@@ -84,8 +87,8 @@ function AdminInner() {
         method: "POST",
         body: {
           name: templateName.trim(),
-          race_points: seasonForm.race_points,
-          qual_points: seasonForm.qual_points,
+          race_points: listToTable(seasonForm.race_points),
+          qual_points: listToTable(seasonForm.qual_points),
           bonus_points: Object.fromEntries(Object.entries(seasonForm.bonuses).map(([k, v]) => [k, Number(v || 0)])),
         },
       });
@@ -104,7 +107,8 @@ function AdminInner() {
       loadTemplates();
     } catch (err) { showToast("error", err.message); }
   }
-  const [raceForm, setRaceForm] = useState({ name: "", track: "", date: "", round_number: "", track_logo_url: "" });
+  const blankRace = { name: "", track: "", date: "", round_number: "", track_logo_url: "", sessions: "Race" };
+  const [raceForm, setRaceForm] = useState(blankRace);
 
   const loadRaces = useCallback(() => {
     if (!seasonId) { setRaces([]); return; }
@@ -196,14 +200,16 @@ function AdminInner() {
             const { bonuses, ...rest } = seasonForm;
             const body = {
               ...rest,
+              race_points: listToTable(seasonForm.race_points),
+              qual_points: listToTable(seasonForm.qual_points),
               bonus_points: Object.fromEntries(Object.entries(bonuses).map(([k, v]) => [k, Number(v || 0)])),
             };
             if (!editIds.season) {
               body.series_id = seriesId;
               body.game_id = gameId;
-              if (!body.race_points) delete body.race_points;
-              if (!body.qual_points) delete body.qual_points;
             }
+            if (!body.race_points) delete body.race_points;
+            if (!body.qual_points) delete body.qual_points;
             save("/api/seasons", body, editIds.season, () => { setSeasonForm(blankSeason); setEditId("season", null); });
           }}>
             <div className="field"><label>Season Name</label>
@@ -222,23 +228,30 @@ function AdminInner() {
                   <div style={{ display: "flex", gap: 8 }}>
                     <select value={templateId} onChange={e => applyTemplate(e.target.value)} style={{ flex: 1 }}>
                       <option value="">Custom / start blank…</option>
-                      {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                      <optgroup label="Standard">
+                        {BUILTIN_TEMPLATES.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                      </optgroup>
+                      {templates.length > 0 && (
+                        <optgroup label="My Templates">
+                          {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                        </optgroup>
+                      )}
                     </select>
-                    {templateId && (
+                    {templateId && templates.some(t => t.id === templateId) && (
                       <button type="button" className="btn btn-danger" style={{ marginTop: 0, padding: "6px 12px" }} onClick={deleteTemplate}>✕</button>
                     )}
                   </div>
                 </div>
-                <div className="field"><label>Race Points Table (JSON — blank = default 350/320/300…)</label>
+                <div className="field"><label>Race Points — comma-separated, 1st place first (blank = IMSA-style default)</label>
                   <textarea rows={3} value={seasonForm.race_points}
-                    placeholder={JSON.stringify(Object.fromEntries(Object.entries(DEFAULT_RACE_POINTS).slice(0, 6)))}
+                    placeholder="350, 320, 300, 280, 260, 250, 240, …"
                     onChange={e => setSeasonForm(f => ({ ...f, race_points: e.target.value }))}
-                    style={{ padding: 10, border: "1px solid var(--border)", borderRadius: 9, background: "var(--bg-elevated)", color: "var(--ink-0)", fontFamily: "monospace", fontSize: "0.8rem", resize: "vertical" }} /></div>
-                <div className="field"><label>Qualifying Points Table (JSON — blank = default 35/32/30…)</label>
-                  <textarea rows={3} value={seasonForm.qual_points}
-                    placeholder={JSON.stringify(Object.fromEntries(Object.entries(DEFAULT_QUAL_POINTS).slice(0, 6)))}
+                    style={{ padding: 10, border: "1px solid var(--border)", borderRadius: 9, background: "var(--bg-elevated)", color: "var(--ink-0)", fontFamily: "monospace", fontSize: "0.85rem", resize: "vertical" }} /></div>
+                <div className="field"><label>Qualifying Points — comma-separated, pole first (blank = 35/32/30… default)</label>
+                  <textarea rows={2} value={seasonForm.qual_points}
+                    placeholder="35, 32, 30, 28, 26, 25, …"
                     onChange={e => setSeasonForm(f => ({ ...f, qual_points: e.target.value }))}
-                    style={{ padding: 10, border: "1px solid var(--border)", borderRadius: 9, background: "var(--bg-elevated)", color: "var(--ink-0)", fontFamily: "monospace", fontSize: "0.8rem", resize: "vertical" }} /></div>
+                    style={{ padding: 10, border: "1px solid var(--border)", borderRadius: 9, background: "var(--bg-elevated)", color: "var(--ink-0)", fontFamily: "monospace", fontSize: "0.85rem", resize: "vertical" }} /></div>
                 {BONUS_TYPES.map(([key, label]) => (
                   <div className="field" key={key}><label>{label}</label>
                     <input type="number" min="0" value={seasonForm.bonuses[key]}
@@ -272,8 +285,8 @@ function AdminInner() {
                     name: s.name,
                     drop_weeks: String(s.drop_weeks ?? 0),
                     logo_url: s.logo_url || "",
-                    race_points: toJsonString(s.race_points ?? s.points_scale),
-                    qual_points: toJsonString(s.qual_points),
+                    race_points: tableToList(s.race_points ?? s.points_scale),
+                    qual_points: tableToList(s.qual_points),
                     bonuses: Object.fromEntries(BONUS_TYPES.map(([k]) => {
                       let b = s.bonus_points || {};
                       if (typeof b === "string") { try { b = JSON.parse(b); } catch { b = {}; } }
@@ -300,8 +313,10 @@ function AdminInner() {
         <Panel title="Races" sub={seasonId ? `Inside ${league.season?.name}` : "Select a season first"}>
           <form onSubmit={e => {
             e.preventDefault();
-            save("/api/races", editIds.race ? raceForm : { ...raceForm, season_id: seasonId }, editIds.race,
-              () => { setRaceForm({ name: "", track: "", date: "", round_number: "", track_logo_url: "" }); setEditId("race", null); });
+            const body = { ...raceForm, sessions: sessionsToArray(raceForm.sessions) };
+            if (!editIds.race) body.season_id = seasonId;
+            save("/api/races", body, editIds.race,
+              () => { setRaceForm(blankRace); setEditId("race", null); });
             setTimeout(loadRaces, 400);
           }}>
             <div className="field"><label>Race Name</label>
@@ -312,6 +327,9 @@ function AdminInner() {
               <input type="number" min="1" required disabled={!seasonId} value={raceForm.round_number} onChange={e => setRaceForm(f => ({ ...f, round_number: e.target.value }))} /></div>
             <div className="field"><label>Date</label>
               <input type="date" disabled={!seasonId} value={raceForm.date} onChange={e => setRaceForm(f => ({ ...f, date: e.target.value }))} /></div>
+            <div className="field"><label>Races in this event — comma-separated (e.g. Race 1, Race 2, Sprint)</label>
+              <input disabled={!seasonId} value={raceForm.sessions} placeholder="Race"
+                onChange={e => setRaceForm(f => ({ ...f, sessions: e.target.value }))} /></div>
             <ImageUpload label="Track Logo" kind="track-logo" value={raceForm.track_logo_url} onUploaded={url => setRaceForm(f => ({ ...f, track_logo_url: url }))} />
             <button className="btn btn-primary" type="submit" disabled={!seasonId}>{editIds.race ? "Save Changes" : "Add Race"}</button>
             {editIds.race && (
@@ -329,6 +347,7 @@ function AdminInner() {
                   date: r.date || "",
                   round_number: String(r.round_number ?? ""),
                   track_logo_url: r.track_logo_url || "",
+                  sessions: Array.isArray(r.sessions) && r.sessions.length ? r.sessions.join(", ") : "Race",
                 });
               }}
               onDelete={() => remove(`/api/races/${r.id}`, `Delete race "${r.name}"?`)} />)}

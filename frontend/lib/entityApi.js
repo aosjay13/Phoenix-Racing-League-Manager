@@ -93,5 +93,5 @@ export const SPECS = {
              fields: { name: { required: true }, race_points: {}, qual_points: {}, bonus_points: {} } },
   races:   { collection: "races", parentField: "season_id", sortField: "round_number",
              fields: { name: { required: true }, track: {}, track_logo_url: {}, date: {},
-                       round_number: { number: true, required: true } } },
+                       round_number: { number: true, required: true }, sessions: {} } },
 };

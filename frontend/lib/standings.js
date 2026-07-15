@@ -47,10 +47,11 @@ export function resolveSeasonConfig(season = {}) {
   };
 }
 
-// Mark per-race derived flags (most laps led) before scoring.
+// Mark per-race derived flags (most laps led) before scoring. Events can
+// hold multiple races ("sessions"), each scored independently.
 export function decorateRaceBonuses(results) {
   const byRace = {};
-  for (const r of results) (byRace[r.race_id] ??= []).push(r);
+  for (const r of results) (byRace[`${r.race_id}|${r.session || ""}`] ??= []).push(r);
   const out = [];
   for (const raceResults of Object.values(byRace)) {
     const maxLed = Math.max(0, ...raceResults.map(r => Number(r.laps_led || 0)));

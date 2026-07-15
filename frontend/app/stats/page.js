@@ -23,37 +23,33 @@ const COLUMNS = [
   ["dnfs", "DNFs"],
   ["provisionals", "Prov", false, "Provisionals"],
   ["titles", "Titles"],
-  ["points", "Points"],
 ];
 
 export default function StatsPage() {
   const league = useLeague();
-  const { gameId, seriesId, seasonId, game, series, season } = league ?? {};
-  const [scope, setScope] = useState("league");
+  const { gameId, seriesId, seasonId, game, series, season, loading } = league ?? {};
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const lowIsBetter = useMemo(() => COLUMNS.filter(c => c[2]).map(c => c[0]), []);
-  const { sorted: rows, clickSort, arrow } = useSortable(data?.rows, "points", lowIsBetter);
+  const { sorted: rows, clickSort, arrow } = useSortable(data?.rows, "wins", lowIsBetter);
 
-  const scopes = [
-    { id: "league", label: "All Games", ready: true, title: "League Overall Stats" },
-    { id: "game", label: game?.name ?? "Game", ready: !!gameId, title: `${game?.name ?? "Game"} Overall Stats` },
-    { id: "series", label: series?.name ?? "Series", ready: !!seriesId, title: `${series?.name ?? "Series"} Stats` },
-    { id: "season", label: season?.name ?? "Season", ready: !!seasonId, title: `${series?.name ?? ""} ${season?.name ?? "Season"} Stats`.trim() },
-  ];
-  const active = scopes.find(s => s.id === scope) ?? scopes[0];
+  // Scope comes straight from the top dropdowns: the deepest concrete
+  // selection wins; "All …" choices widen the aggregation.
+  const active = seasonId
+    ? { params: `scope=season&season_id=${seasonId}`, title: `${series?.name ?? ""} ${season?.name ?? "Season"} Stats`.trim() }
+    : seriesId
+      ? { params: `scope=series&series_id=${seriesId}`, title: `${series?.name ?? "Series"} Overall Stats` }
+      : gameId
+        ? { params: `scope=game&game_id=${gameId}`, title: `${game?.name ?? "Game"} Overall Stats` }
+        : { params: "scope=league", title: "League Overall Stats" };
 
   useEffect(() => {
+    if (loading) return;
     setData(null);
     setError(null);
-    const params =
-      scope === "game" ? `scope=game&game_id=${gameId}` :
-      scope === "series" ? `scope=series&series_id=${seriesId}` :
-      scope === "season" ? `scope=season&season_id=${seasonId}` :
-      "scope=league";
-    if (scope !== "league" && !params.split("=").pop()) return;
-    api(`/api/stats?${params}`).then(setData).catch(err => setError(err.message));
-  }, [scope, gameId, seriesId, seasonId]);
+    api(`/api/stats?${active.params}`).then(setData).catch(err => setError(err.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active.params, loading]);
 
   // Best value per column, for leader highlighting.
   const best = useMemo(() => {
@@ -75,22 +71,9 @@ export default function StatsPage() {
         {data && <span className="page-badge">{data.rows.length} Drivers · {data.seasons_counted} Season{data.seasons_counted === 1 ? "" : "s"}</span>}
       </div>
       <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.88rem" }}>
-        Career totals at every level of the league — click any column to sort. Gold cells mark the category leader.
+        Use the Game / Series / Season menus above to change scope (pick &quot;All&quot; to widen it).
+        Click any column to sort; gold cells mark the category leader.
       </p>
-
-      <div className="tab-row">
-        {scopes.map(s => (
-          <button
-            key={s.id}
-            className={`tab${scope === s.id ? " active" : ""}`}
-            disabled={!s.ready}
-            style={!s.ready ? { opacity: 0.4, cursor: "not-allowed" } : undefined}
-            onClick={() => s.ready && setScope(s.id)}
-          >
-            {s.label}
-          </button>
-        ))}
-      </div>
 
       {error ? (
         <div className="empty-state"><span className="empty-state-icon">📊</span><p>{error}</p></div>

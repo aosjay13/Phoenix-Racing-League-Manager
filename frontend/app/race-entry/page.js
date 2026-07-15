@@ -31,6 +31,7 @@ function RaceEntryInner() {
   const [races, setRaces] = useState([]);
   const [entries, setEntries] = useState([]);
   const [raceId, setRaceId] = useState("");
+  const [session, setSession] = useState("");
   const [rows, setRows] = useState([]);
   const [toast, setToast] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -54,12 +55,21 @@ function RaceEntryInner() {
     setTimeout(() => setToast(null), 4000);
   }
 
+  function sessionsFor(id) {
+    const race = races.find(r => r.id === id);
+    return Array.isArray(race?.sessions) && race.sessions.length ? race.sessions : ["Race"];
+  }
+
   // Pre-fill with any existing results so admins can edit past races.
-  async function selectRace(id) {
+  async function selectRace(id, sessionName) {
     setRaceId(id);
-    if (!id) return;
+    if (!id) { setSession(""); return; }
+    const sess = sessionName ?? sessionsFor(id)[0];
+    setSession(sess);
     try {
-      const existing = await api(`/api/results?race_id=${id}`);
+      const all = await api(`/api/results?race_id=${id}`);
+      const first = sessionsFor(id)[0];
+      const existing = all.filter(r => (r.session || first) === sess);
       if (existing.length) {
         const byEntry = Object.fromEntries(existing.map(r => [r.entry_id, r]));
         setRows(blankRows(entries).map(row => {
@@ -93,7 +103,7 @@ function RaceEntryInner() {
     }
     setBusy(true);
     try {
-      await api("/api/results", { method: "POST", body: { race_id: raceId, season_id: seasonId, rows: filled } });
+      await api("/api/results", { method: "POST", body: { race_id: raceId, season_id: seasonId, session, rows: filled } });
       showToast("success", "Race results saved. Standings and profiles update instantly.");
     } catch (err) {
       showToast("error", err.message);
@@ -119,12 +129,21 @@ function RaceEntryInner() {
 
       <div className="form-card" style={{ maxWidth: "100%" }}>
         <div className="field">
-          <label>Race</label>
+          <label>Event</label>
           <select value={raceId} onChange={e => selectRace(e.target.value)}>
-            <option value="">Select a race…</option>
+            <option value="">Select an event…</option>
             {races.map(r => <option key={r.id} value={r.id}>R{r.round_number} · {r.name}{r.track ? ` — ${r.track}` : ""}</option>)}
           </select>
         </div>
+
+        {raceId && sessionsFor(raceId).length > 1 && (
+          <div className="field">
+            <label>Race (this event has {sessionsFor(raceId).length})</label>
+            <select value={session} onChange={e => selectRace(raceId, e.target.value)}>
+              {sessionsFor(raceId).map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+        )}
 
         {entries.length === 0 ? (
           <p style={{ color: "var(--ink-1)", fontSize: "0.9rem" }}>No drivers on the roster yet — add them in Roster &amp; Teams.</p>
