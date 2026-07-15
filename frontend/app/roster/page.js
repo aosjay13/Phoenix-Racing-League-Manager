@@ -14,6 +14,7 @@ function RosterInner() {
   const [driverForm, setDriverForm] = useState({ name: "", number: "", team_id: "", user_id: "" });
   const [editId, setEditId] = useState(null);
   const [teamForm, setTeamForm] = useState({ name: "", color: "", logo_url: "" });
+  const [editTeamId, setEditTeamId] = useState(null);
   const [toast, setToast] = useState(null);
 
   const load = useCallback(async () => {
@@ -56,9 +57,11 @@ function RosterInner() {
   async function saveTeam(e) {
     e.preventDefault();
     try {
-      await api("/api/teams", { method: "POST", body: { ...teamForm, season_id: seasonId } });
-      showToast("success", "Team created.");
+      if (editTeamId) await api(`/api/teams/${editTeamId}`, { method: "PATCH", body: teamForm });
+      else await api("/api/teams", { method: "POST", body: { ...teamForm, season_id: seasonId } });
+      showToast("success", editTeamId ? "Team updated." : "Team created.");
       setTeamForm({ name: "", color: "", logo_url: "" });
+      setEditTeamId(null);
       load();
     } catch (err) { showToast("error", err.message); }
   }
@@ -120,7 +123,7 @@ function RosterInner() {
         </div>
 
         <div className="form-card">
-          <h3>Add Team</h3>
+          <h3>{editTeamId ? "Edit Team" : "Add Team"}</h3>
           <form onSubmit={saveTeam}>
             <div className="field">
               <label>Team Name</label>
@@ -128,7 +131,11 @@ function RosterInner() {
             </div>
             <ImageUpload label="Team Logo" kind="team-logo" value={teamForm.logo_url}
               onUploaded={url => setTeamForm(f => ({ ...f, logo_url: url }))} />
-            <button className="btn btn-primary" type="submit">Create Team</button>
+            <button className="btn btn-primary" type="submit">{editTeamId ? "Save Changes" : "Create Team"}</button>
+            {editTeamId && (
+              <button className="btn btn-ghost" type="button" style={{ marginLeft: 8 }}
+                onClick={() => { setEditTeamId(null); setTeamForm({ name: "", color: "", logo_url: "" }); }}>Cancel</button>
+            )}
           </form>
 
           {teams.length > 0 && (
@@ -137,6 +144,8 @@ function RosterInner() {
                 <div className="driver-row" key={t.id}>
                   {t.logo_url ? <img src={t.logo_url} alt="" className="avatar avatar-sm" style={{ borderRadius: 6 }} /> : <span>🛡</span>}
                   <span style={{ flex: 1 }}>{t.name}</span>
+                  <button className="btn btn-ghost" title="Edit" style={{ marginTop: 0, padding: "4px 10px" }}
+                    onClick={() => { setEditTeamId(t.id); setTeamForm({ name: t.name, color: t.color || "", logo_url: t.logo_url || "" }); }}>✎</button>
                   <button className="btn btn-danger" style={{ marginTop: 0, padding: "4px 10px" }} onClick={() => deleteTeam(t.id)}>✕</button>
                 </div>
               ))}

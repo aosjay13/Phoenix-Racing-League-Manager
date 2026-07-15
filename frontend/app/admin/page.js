@@ -17,14 +17,23 @@ function Panel({ title, sub, children }) {
   );
 }
 
-function ItemRow({ logo, name, onDelete }) {
+function ItemRow({ logo, name, onEdit, onDelete, editing, children }) {
   return (
-    <div className="driver-row">
+    <div className="driver-row" style={editing ? { background: "var(--accent-cyan-dim)" } : undefined}>
       {logo ? <img src={logo} alt="" className="avatar avatar-sm" style={{ borderRadius: 6 }} /> : <span>🏁</span>}
       <span style={{ flex: 1 }}>{name}</span>
+      {children}
+      {onEdit && (
+        <button className="btn btn-ghost" title="Edit" style={{ marginTop: 0, padding: "4px 10px" }} onClick={onEdit}>✎</button>
+      )}
       <button className="btn btn-danger" style={{ marginTop: 0, padding: "4px 10px" }} onClick={onDelete}>✕</button>
     </div>
   );
+}
+
+function toJsonString(v) {
+  if (!v) return "";
+  return typeof v === "string" ? v : JSON.stringify(v);
 }
 
 function AdminInner() {
@@ -35,6 +44,8 @@ function AdminInner() {
 
   const [gameForm, setGameForm] = useState({ name: "", logo_url: "" });
   const [seriesForm, setSeriesForm] = useState({ name: "", logo_url: "" });
+  const [editIds, setEditIds] = useState({ game: null, series: null, season: null, race: null });
+  const setEditId = (type, id) => setEditIds(ids => ({ ...ids, [type]: id }));
   const blankSeason = {
     name: "", drop_weeks: "0", logo_url: "",
     race_points: "", qual_points: "",
@@ -107,14 +118,18 @@ function AdminInner() {
     setTimeout(() => setToast(null), 3500);
   }
 
-  async function create(path, body, after) {
+  // Create when editId is null, otherwise PATCH the existing doc.
+  async function save(basePath, body, editId, after) {
     try {
-      await api(path, { method: "POST", body });
-      showToast("success", "Saved.");
+      if (editId) await api(`${basePath}/${editId}`, { method: "PATCH", body });
+      else await api(basePath, { method: "POST", body });
+      showToast("success", editId ? "Updated." : "Saved.");
       after?.();
       refresh();
     } catch (err) { showToast("error", err.message); }
   }
+
+  const create = (path, body, after) => save(path, body, null, after);
 
   async function remove(path, warning) {
     if (!confirm(warning)) return;
@@ -133,27 +148,44 @@ function AdminInner() {
 
       <div className="two-col" style={{ marginTop: 18 }}>
         <Panel title="Games" sub="e.g. iRacing, F1 25, Gran Turismo 7">
-          <form onSubmit={e => { e.preventDefault(); create("/api/games", gameForm, () => setGameForm({ name: "", logo_url: "" })); }}>
+          <form onSubmit={e => {
+            e.preventDefault();
+            save("/api/games", gameForm, editIds.game, () => { setGameForm({ name: "", logo_url: "" }); setEditId("game", null); });
+          }}>
             <div className="field"><label>Game Name</label>
               <input required value={gameForm.name} onChange={e => setGameForm(f => ({ ...f, name: e.target.value }))} placeholder="iRacing" /></div>
             <ImageUpload label="Game Logo" kind="game-logo" value={gameForm.logo_url} onUploaded={url => setGameForm(f => ({ ...f, logo_url: url }))} />
-            <button className="btn btn-primary" type="submit">Add Game</button>
+            <button className="btn btn-primary" type="submit">{editIds.game ? "Save Changes" : "Add Game"}</button>
+            {editIds.game && (
+              <button className="btn btn-ghost" type="button" style={{ marginLeft: 8 }}
+                onClick={() => { setEditId("game", null); setGameForm({ name: "", logo_url: "" }); }}>Cancel</button>
+            )}
           </form>
           <div style={{ marginTop: 16 }}>
-            {games.map(g => <ItemRow key={g.id} logo={g.logo_url} name={g.name}
+            {games.map(g => <ItemRow key={g.id} logo={g.logo_url} name={g.name} editing={editIds.game === g.id}
+              onEdit={() => { setEditId("game", g.id); setGameForm({ name: g.name, logo_url: g.logo_url || "" }); }}
               onDelete={() => remove(`/api/games/${g.id}`, `Delete game "${g.name}"? Its series/seasons remain in the database but will be hidden.`)} />)}
           </div>
         </Panel>
 
         <Panel title="Series" sub={gameId ? `Inside ${league.game?.name}` : "Select a game first"}>
-          <form onSubmit={e => { e.preventDefault(); create("/api/series", { ...seriesForm, game_id: gameId }, () => setSeriesForm({ name: "", logo_url: "" })); }}>
+          <form onSubmit={e => {
+            e.preventDefault();
+            save("/api/series", editIds.series ? seriesForm : { ...seriesForm, game_id: gameId }, editIds.series,
+              () => { setSeriesForm({ name: "", logo_url: "" }); setEditId("series", null); });
+          }}>
             <div className="field"><label>Series Name</label>
               <input required disabled={!gameId} value={seriesForm.name} onChange={e => setSeriesForm(f => ({ ...f, name: e.target.value }))} placeholder="Asphalt Assault Series" /></div>
             <ImageUpload label="Series Logo" kind="series-logo" value={seriesForm.logo_url} onUploaded={url => setSeriesForm(f => ({ ...f, logo_url: url }))} />
-            <button className="btn btn-primary" type="submit" disabled={!gameId}>Add Series</button>
+            <button className="btn btn-primary" type="submit" disabled={!gameId}>{editIds.series ? "Save Changes" : "Add Series"}</button>
+            {editIds.series && (
+              <button className="btn btn-ghost" type="button" style={{ marginLeft: 8 }}
+                onClick={() => { setEditId("series", null); setSeriesForm({ name: "", logo_url: "" }); }}>Cancel</button>
+            )}
           </form>
           <div style={{ marginTop: 16 }}>
-            {seriesList.map(s => <ItemRow key={s.id} logo={s.logo_url} name={s.name}
+            {seriesList.map(s => <ItemRow key={s.id} logo={s.logo_url} name={s.name} editing={editIds.series === s.id}
+              onEdit={() => { setEditId("series", s.id); setSeriesForm({ name: s.name, logo_url: s.logo_url || "" }); }}
               onDelete={() => remove(`/api/series/${s.id}`, `Delete series "${s.name}"?`)} />)}
           </div>
         </Panel>
@@ -164,13 +196,15 @@ function AdminInner() {
             const { bonuses, ...rest } = seasonForm;
             const body = {
               ...rest,
-              series_id: seriesId,
-              game_id: gameId,
               bonus_points: Object.fromEntries(Object.entries(bonuses).map(([k, v]) => [k, Number(v || 0)])),
             };
-            if (!body.race_points) delete body.race_points;
-            if (!body.qual_points) delete body.qual_points;
-            create("/api/seasons", body, () => setSeasonForm(blankSeason));
+            if (!editIds.season) {
+              body.series_id = seriesId;
+              body.game_id = gameId;
+              if (!body.race_points) delete body.race_points;
+              if (!body.qual_points) delete body.qual_points;
+            }
+            save("/api/seasons", body, editIds.season, () => { setSeasonForm(blankSeason); setEditId("season", null); });
           }}>
             <div className="field"><label>Season Name</label>
               <input required disabled={!seriesId} value={seasonForm.name} onChange={e => setSeasonForm(f => ({ ...f, name: e.target.value }))} placeholder="Season 3" /></div>
@@ -220,13 +254,34 @@ function AdminInner() {
               </>
             )}
 
-            <button className="btn btn-primary" type="submit" disabled={!seriesId} style={{ display: "block" }}>Add Season</button>
+            <span style={{ display: "block" }}>
+              <button className="btn btn-primary" type="submit" disabled={!seriesId}>{editIds.season ? "Save Changes" : "Add Season"}</button>
+              {editIds.season && (
+                <button className="btn btn-ghost" type="button" style={{ marginLeft: 8 }}
+                  onClick={() => { setEditId("season", null); setSeasonForm(blankSeason); }}>Cancel</button>
+              )}
+            </span>
           </form>
           <div style={{ marginTop: 16 }}>
             {seasons.map(s => (
-              <div className="driver-row" key={s.id}>
-                {s.logo_url ? <img src={s.logo_url} alt="" className="avatar avatar-sm" style={{ borderRadius: 6 }} /> : <span>🏁</span>}
-                <span style={{ flex: 1 }}>{s.name}</span>
+              <ItemRow key={s.id} logo={s.logo_url} name={s.name} editing={editIds.season === s.id}
+                onEdit={() => {
+                  setEditId("season", s.id);
+                  setShowPoints(true);
+                  setSeasonForm({
+                    name: s.name,
+                    drop_weeks: String(s.drop_weeks ?? 0),
+                    logo_url: s.logo_url || "",
+                    race_points: toJsonString(s.race_points ?? s.points_scale),
+                    qual_points: toJsonString(s.qual_points),
+                    bonuses: Object.fromEntries(BONUS_TYPES.map(([k]) => {
+                      let b = s.bonus_points || {};
+                      if (typeof b === "string") { try { b = JSON.parse(b); } catch { b = {}; } }
+                      return [k, String(b[k] ?? 0)];
+                    })),
+                  });
+                }}
+                onDelete={() => remove(`/api/seasons/${s.id}`, `Delete season "${s.name}"?`)}>
                 <button className="btn btn-ghost" style={{ marginTop: 0, padding: "4px 10px" }}
                   title="Completed seasons count toward drivers' Titles"
                   onClick={async () => {
@@ -237,9 +292,7 @@ function AdminInner() {
                   }}>
                   {s.status === "completed" ? "✓ Completed" : "Mark Completed"}
                 </button>
-                <button className="btn btn-danger" style={{ marginTop: 0, padding: "4px 10px" }}
-                  onClick={() => remove(`/api/seasons/${s.id}`, `Delete season "${s.name}"?`)}>✕</button>
-              </div>
+              </ItemRow>
             ))}
           </div>
         </Panel>
@@ -247,7 +300,8 @@ function AdminInner() {
         <Panel title="Races" sub={seasonId ? `Inside ${league.season?.name}` : "Select a season first"}>
           <form onSubmit={e => {
             e.preventDefault();
-            create("/api/races", { ...raceForm, season_id: seasonId }, () => setRaceForm({ name: "", track: "", date: "", round_number: "", track_logo_url: "" }));
+            save("/api/races", editIds.race ? raceForm : { ...raceForm, season_id: seasonId }, editIds.race,
+              () => { setRaceForm({ name: "", track: "", date: "", round_number: "", track_logo_url: "" }); setEditId("race", null); });
             setTimeout(loadRaces, 400);
           }}>
             <div className="field"><label>Race Name</label>
@@ -259,10 +313,24 @@ function AdminInner() {
             <div className="field"><label>Date</label>
               <input type="date" disabled={!seasonId} value={raceForm.date} onChange={e => setRaceForm(f => ({ ...f, date: e.target.value }))} /></div>
             <ImageUpload label="Track Logo" kind="track-logo" value={raceForm.track_logo_url} onUploaded={url => setRaceForm(f => ({ ...f, track_logo_url: url }))} />
-            <button className="btn btn-primary" type="submit" disabled={!seasonId}>Add Race</button>
+            <button className="btn btn-primary" type="submit" disabled={!seasonId}>{editIds.race ? "Save Changes" : "Add Race"}</button>
+            {editIds.race && (
+              <button className="btn btn-ghost" type="button" style={{ marginLeft: 8 }}
+                onClick={() => { setEditId("race", null); setRaceForm({ name: "", track: "", date: "", round_number: "", track_logo_url: "" }); }}>Cancel</button>
+            )}
           </form>
           <div style={{ marginTop: 16 }}>
-            {races.map(r => <ItemRow key={r.id} logo={r.track_logo_url} name={`R${r.round_number} · ${r.name}`}
+            {races.map(r => <ItemRow key={r.id} logo={r.track_logo_url} name={`R${r.round_number} · ${r.name}`} editing={editIds.race === r.id}
+              onEdit={() => {
+                setEditId("race", r.id);
+                setRaceForm({
+                  name: r.name || "",
+                  track: r.track || "",
+                  date: r.date || "",
+                  round_number: String(r.round_number ?? ""),
+                  track_logo_url: r.track_logo_url || "",
+                });
+              }}
               onDelete={() => remove(`/api/races/${r.id}`, `Delete race "${r.name}"?`)} />)}
           </div>
         </Panel>

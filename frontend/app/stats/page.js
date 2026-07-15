@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useLeague } from "@/components/LeagueProvider";
+import { useSortable } from "@/components/useSortable";
 import { api } from "@/lib/api";
 
 // Column key, header label, and whether lower is better (for sort + leader highlight).
@@ -31,7 +32,8 @@ export default function StatsPage() {
   const [scope, setScope] = useState("league");
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
-  const [sort, setSort] = useState({ key: "points", dir: "desc" });
+  const lowIsBetter = useMemo(() => COLUMNS.filter(c => c[2]).map(c => c[0]), []);
+  const { sorted: rows, clickSort, arrow } = useSortable(data?.rows, "points", lowIsBetter);
 
   const scopes = [
     { id: "league", label: "All Games", ready: true, title: "League Overall Stats" },
@@ -53,24 +55,6 @@ export default function StatsPage() {
     api(`/api/stats?${params}`).then(setData).catch(err => setError(err.message));
   }, [scope, gameId, seriesId, seasonId]);
 
-  const rows = useMemo(() => {
-    if (!data?.rows) return [];
-    const lowerIsBetter = COLUMNS.find(c => c[0] === sort.key)?.[2];
-    const sorted = [...data.rows].sort((a, b) => {
-      if (sort.key === "driver_name") {
-        return a.driver_name.localeCompare(b.driver_name);
-      }
-      const av = a[sort.key], bv = b[sort.key];
-      if (av == null && bv == null) return 0;
-      if (av == null) return 1;
-      if (bv == null) return -1;
-      return av - bv;
-    });
-    const asc = sort.key === "driver_name" ? sort.dir === "asc" : (lowerIsBetter ? sort.dir === "desc" : sort.dir === "asc");
-    if (!asc) sorted.reverse();
-    return sorted;
-  }, [data, sort]);
-
   // Best value per column, for leader highlighting.
   const best = useMemo(() => {
     const out = {};
@@ -83,12 +67,6 @@ export default function StatsPage() {
     }
     return out;
   }, [rows]);
-
-  function clickSort(key) {
-    setSort(s => (s.key === key ? { key, dir: s.dir === "desc" ? "asc" : "desc" } : { key, dir: "desc" }));
-  }
-
-  const arrow = key => (sort.key === key ? (sort.dir === "desc" ? " ▾" : " ▴") : "");
 
   return (
     <section>
@@ -131,7 +109,7 @@ export default function StatsPage() {
           <table className="stats-table">
             <thead>
               <tr>
-                <th className="sortable sticky-col" onClick={() => clickSort("driver_name")}>Driver{arrow("driver_name")}</th>
+                <th className="sortable sticky-col" onClick={() => clickSort("driver_name", true)}>Driver{arrow("driver_name")}</th>
                 {COLUMNS.map(([key, label]) => (
                   <th key={key} className="sortable" onClick={() => clickSort(key)}>{label}{arrow(key)}</th>
                 ))}

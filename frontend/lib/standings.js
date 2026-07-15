@@ -124,6 +124,9 @@ export function calculateStandings(results, entries, teams = [], config) {
       droppedPoints = sorted.slice(0, config.dropWeeks).reduce((a, b) => a + b, 0);
     }
 
+    // Manual admin override for corrections (penalties, import mistakes, …).
+    const adjustment = Number(entry.points_adjustment || 0);
+
     rows.push({
       entry_id: entryId,
       driver_name: entry.name ?? "Unknown",
@@ -134,7 +137,9 @@ export function calculateStandings(results, entries, teams = [], config) {
       team_logo_url: team.logo_url ?? null,
       points: totalPoints,
       dropped_points: droppedPoints,
-      adjusted_points: totalPoints - droppedPoints,
+      points_adjustment: adjustment,
+      adjustment_note: entry.adjustment_note ?? null,
+      adjusted_points: totalPoints - droppedPoints + adjustment,
       ...statLine(entryResults),
     });
   }
