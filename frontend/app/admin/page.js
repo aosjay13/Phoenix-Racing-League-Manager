@@ -42,6 +42,57 @@ function AdminInner() {
   };
   const [seasonForm, setSeasonForm] = useState(blankSeason);
   const [showPoints, setShowPoints] = useState(false);
+  const [templates, setTemplates] = useState([]);
+  const [templateId, setTemplateId] = useState("");
+  const [templateName, setTemplateName] = useState("");
+
+  const loadTemplates = useCallback(() => {
+    api("/api/points-templates").then(setTemplates).catch(() => setTemplates([]));
+  }, []);
+  useEffect(loadTemplates, [loadTemplates]);
+
+  function applyTemplate(id) {
+    setTemplateId(id);
+    const t = templates.find(x => x.id === id);
+    if (!t) return;
+    setSeasonForm(f => ({
+      ...f,
+      race_points: t.race_points || "",
+      qual_points: t.qual_points || "",
+      bonuses: Object.fromEntries(BONUS_TYPES.map(([k]) => {
+        const b = typeof t.bonus_points === "string" ? JSON.parse(t.bonus_points || "{}") : (t.bonus_points || {});
+        return [k, String(b[k] ?? 0)];
+      })),
+    }));
+  }
+
+  async function saveTemplate() {
+    if (!templateName.trim()) return showToast("error", "Give the template a name first.");
+    try {
+      await api("/api/points-templates", {
+        method: "POST",
+        body: {
+          name: templateName.trim(),
+          race_points: seasonForm.race_points,
+          qual_points: seasonForm.qual_points,
+          bonus_points: Object.fromEntries(Object.entries(seasonForm.bonuses).map(([k, v]) => [k, Number(v || 0)])),
+        },
+      });
+      setTemplateName("");
+      loadTemplates();
+      showToast("success", "Points template saved.");
+    } catch (err) { showToast("error", err.message); }
+  }
+
+  async function deleteTemplate() {
+    const t = templates.find(x => x.id === templateId);
+    if (!t || !confirm(`Delete template "${t.name}"?`)) return;
+    try {
+      await api(`/api/points-templates/${t.id}`, { method: "DELETE" });
+      setTemplateId("");
+      loadTemplates();
+    } catch (err) { showToast("error", err.message); }
+  }
   const [raceForm, setRaceForm] = useState({ name: "", track: "", date: "", round_number: "", track_logo_url: "" });
 
   const loadRaces = useCallback(() => {
@@ -132,6 +183,18 @@ function AdminInner() {
             </button>
             {showPoints && (
               <>
+                <div className="field">
+                  <label>Load Template</label>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <select value={templateId} onChange={e => applyTemplate(e.target.value)} style={{ flex: 1 }}>
+                      <option value="">Custom / start blank…</option>
+                      {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
+                    {templateId && (
+                      <button type="button" className="btn btn-danger" style={{ marginTop: 0, padding: "6px 12px" }} onClick={deleteTemplate}>✕</button>
+                    )}
+                  </div>
+                </div>
                 <div className="field"><label>Race Points Table (JSON — blank = default 350/320/300…)</label>
                   <textarea rows={3} value={seasonForm.race_points}
                     placeholder={JSON.stringify(Object.fromEntries(Object.entries(DEFAULT_RACE_POINTS).slice(0, 6)))}
@@ -147,6 +210,13 @@ function AdminInner() {
                     <input type="number" min="0" value={seasonForm.bonuses[key]}
                       onChange={e => setSeasonForm(f => ({ ...f, bonuses: { ...f.bonuses, [key]: e.target.value } }))} /></div>
                 ))}
+                <div className="field">
+                  <label>Save Current Setup as Template</label>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input value={templateName} onChange={e => setTemplateName(e.target.value)} placeholder="e.g. PRA Standard, Sprint Cup" style={{ flex: 1 }} />
+                    <button type="button" className="btn btn-ghost" style={{ marginTop: 0 }} onClick={saveTemplate}>Save</button>
+                  </div>
+                </div>
               </>
             )}
 
