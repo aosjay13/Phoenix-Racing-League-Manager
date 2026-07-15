@@ -164,7 +164,8 @@ a {
 /* ── Main content ───────────────────────────── */
 .main {
   padding: 32px;
-  max-width: 1100px;
+  max-width: 1800px;
+  width: 100%;
 }
 
 /* ── Page title ─────────────────────────────── */
@@ -961,4 +962,27 @@ tbody tr:hover {
   width: 100%;
   max-width: 440px;
   box-shadow: var(--shadow);
+}
+
+/* ── Compact wide tables: fit all columns without horizontal scroll ── */
+.stats-table th,
+.stats-table td {
+  padding: 9px 9px;
+  font-size: 0.84rem;
+}
+
+.stats-table th {
+  font-size: 0.66rem;
+  letter-spacing: 0.04em;
+}
+
+.stats-table .points-cell {
+  font-size: 0.9rem;
+}
+
+/* keep the scroll fallback for narrow windows only */
+@media (min-width: 1500px) {
+  .stats-table {
+    width: 100%;
+  }
 }

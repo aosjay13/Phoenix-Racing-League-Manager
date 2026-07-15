@@ -6,22 +6,22 @@ import { useLeague } from "@/components/LeagueProvider";
 import { useSortable } from "@/components/useSortable";
 import { api } from "@/lib/api";
 
-// Column key, header label, and whether lower is better (for sort + leader highlight).
+// [key, header, lowerIsBetter, fullName] — fullName becomes a hover tooltip.
 const COLUMNS = [
   ["starts", "Starts"],
   ["wins", "Wins"],
   ["podiums", "Podiums"],
   ["top5", "Top 5s"],
   ["top10", "Top 10s"],
-  ["avg_finish", "Avg Finish", true],
-  ["laps_run", "Laps Run"],
-  ["laps_led", "Laps Led"],
-  ["most_laps_led", "Most Laps Led"],
-  ["best_laps", "Best Laps"],
+  ["avg_finish", "Avg Fin", true, "Average Finish"],
+  ["laps_run", "Laps"],
+  ["laps_led", "Led"],
+  ["most_laps_led", "MLL", false, "Most Laps Led (races)"],
+  ["best_laps", "Best", false, "Best Laps (fastest laps)"],
   ["poles", "Poles"],
-  ["avg_start", "Avg Start", true],
+  ["avg_start", "Avg St", true, "Average Start"],
   ["dnfs", "DNFs"],
-  ["provisionals", "Provisionals"],
+  ["provisionals", "Prov", false, "Provisionals"],
   ["titles", "Titles"],
   ["points", "Points"],
 ];
@@ -110,8 +110,8 @@ export default function StatsPage() {
             <thead>
               <tr>
                 <th className="sortable sticky-col" onClick={() => clickSort("driver_name", true)}>Driver{arrow("driver_name")}</th>
-                {COLUMNS.map(([key, label]) => (
-                  <th key={key} className="sortable" onClick={() => clickSort(key)}>{label}{arrow(key)}</th>
+                {COLUMNS.map(([key, label, , fullName]) => (
+                  <th key={key} className="sortable" title={fullName || label} onClick={() => clickSort(key)}>{label}{arrow(key)}</th>
                 ))}
               </tr>
             </thead>
