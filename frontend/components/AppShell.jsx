@@ -97,15 +97,13 @@ export function AppShell({ children }) {
   return (
     <div className="shell">
       <aside className="sidebar">
-        <div className="sidebar-logo">
-          {league?.game?.logo_url
-            ? <img src={league.game.logo_url} alt="" className="sidebar-logo-img" />
-            : <div className="sidebar-logo-icon">🏁</div>}
+        <Link href="/" className="sidebar-logo">
+          <img src="/logo-mark.png" alt="Phoenix's Racing League Manager" className="sidebar-logo-img" />
           <div>
-            <h1>{league?.series?.name || "Phoenix Racing"}</h1>
+            <h1>{league?.series?.name || "Phoenix's Racing"}</h1>
             <p className="sidebar-tagline">{league?.season?.name || "League Manager"}</p>
           </div>
-        </div>
+        </Link>
 
         <span className="nav-section-label">Navigation</span>
         <nav><NavLinks items={publicNav} pathname={pathname} /></nav>
