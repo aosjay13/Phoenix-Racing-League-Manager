@@ -5,9 +5,11 @@ import { useParams } from "next/navigation";
 import { api } from "@/lib/api";
 
 const STAT_LABELS = [
-  ["starts", "Starts"], ["wins", "Wins"], ["podiums", "Podiums"], ["top5", "Top 5"],
-  ["top10", "Top 10"], ["points", "Points"], ["laps_led", "Laps Led"],
-  ["avg_finish", "Avg Finish"], ["best_finish", "Best Finish"],
+  ["starts", "Starts"], ["wins", "Wins"], ["podiums", "Podiums"], ["top5", "Top 5s"],
+  ["top10", "Top 10s"], ["avg_finish", "Avg Finish"], ["laps_run", "Laps Run"],
+  ["laps_led", "Laps Led"], ["most_laps_led", "Most Laps Led"], ["best_laps", "Best Laps"],
+  ["poles", "Poles"], ["avg_start", "Avg Start"], ["dnfs", "DNFs"],
+  ["provisionals", "Provisionals"], ["titles", "Titles"], ["points", "Points"],
 ];
 
 export default function DriverProfilePage() {
@@ -74,7 +76,7 @@ export default function DriverProfilePage() {
           <div className="section-header"><h3>By Game</h3></div>
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Game</th><th>Starts</th><th>Wins</th><th>Podiums</th><th>Top 5</th><th>Points</th><th>Avg Finish</th></tr></thead>
+              <thead><tr><th>Game</th><th>Starts</th><th>Wins</th><th>Podiums</th><th>Top 5s</th><th>Poles</th><th>Titles</th><th>Points</th><th>Avg Finish</th></tr></thead>
               <tbody>
                 {by_game.map(g => (
                   <tr key={g.game_id}>
@@ -86,6 +88,8 @@ export default function DriverProfilePage() {
                     <td>{g.stats.wins}</td>
                     <td>{g.stats.podiums}</td>
                     <td>{g.stats.top5}</td>
+                    <td>{g.stats.poles}</td>
+                    <td>{g.stats.titles}</td>
                     <td className="points-cell">{g.stats.points}</td>
                     <td>{g.stats.avg_finish}</td>
                   </tr>

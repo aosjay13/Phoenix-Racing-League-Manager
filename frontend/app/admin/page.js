@@ -5,6 +5,7 @@ import { useLeague } from "@/components/LeagueProvider";
 import { AdminGate } from "@/components/AdminGate";
 import { ImageUpload } from "@/components/ImageUpload";
 import { api } from "@/lib/api";
+import { BONUS_TYPES, DEFAULT_RACE_POINTS, DEFAULT_QUAL_POINTS } from "@/lib/standings";
 
 function Panel({ title, sub, children }) {
   return (
@@ -34,7 +35,13 @@ function AdminInner() {
 
   const [gameForm, setGameForm] = useState({ name: "", logo_url: "" });
   const [seriesForm, setSeriesForm] = useState({ name: "", logo_url: "" });
-  const [seasonForm, setSeasonForm] = useState({ name: "", drop_weeks: "0", logo_url: "" });
+  const blankSeason = {
+    name: "", drop_weeks: "0", logo_url: "",
+    race_points: "", qual_points: "",
+    bonuses: Object.fromEntries(BONUS_TYPES.map(([k]) => [k, "0"])),
+  };
+  const [seasonForm, setSeasonForm] = useState(blankSeason);
+  const [showPoints, setShowPoints] = useState(false);
   const [raceForm, setRaceForm] = useState({ name: "", track: "", date: "", round_number: "", track_logo_url: "" });
 
   const loadRaces = useCallback(() => {
@@ -103,18 +110,67 @@ function AdminInner() {
         <Panel title="Seasons" sub={seriesId ? `Inside ${league.series?.name}` : "Select a series first"}>
           <form onSubmit={e => {
             e.preventDefault();
-            create("/api/seasons", { ...seasonForm, series_id: seriesId, game_id: gameId }, () => setSeasonForm({ name: "", drop_weeks: "0", logo_url: "" }));
+            const { bonuses, ...rest } = seasonForm;
+            const body = {
+              ...rest,
+              series_id: seriesId,
+              game_id: gameId,
+              bonus_points: Object.fromEntries(Object.entries(bonuses).map(([k, v]) => [k, Number(v || 0)])),
+            };
+            if (!body.race_points) delete body.race_points;
+            if (!body.qual_points) delete body.qual_points;
+            create("/api/seasons", body, () => setSeasonForm(blankSeason));
           }}>
             <div className="field"><label>Season Name</label>
               <input required disabled={!seriesId} value={seasonForm.name} onChange={e => setSeasonForm(f => ({ ...f, name: e.target.value }))} placeholder="Season 3" /></div>
             <div className="field"><label>Drop Weeks (worst results ignored)</label>
               <input type="number" min="0" disabled={!seriesId} value={seasonForm.drop_weeks} onChange={e => setSeasonForm(f => ({ ...f, drop_weeks: e.target.value }))} /></div>
             <ImageUpload label="Season Logo" kind="season-logo" value={seasonForm.logo_url} onUploaded={url => setSeasonForm(f => ({ ...f, logo_url: url }))} />
-            <button className="btn btn-primary" type="submit" disabled={!seriesId}>Add Season</button>
+
+            <button type="button" className="btn btn-ghost" style={{ marginTop: 14 }} onClick={() => setShowPoints(v => !v)}>
+              {showPoints ? "▾" : "▸"} Points &amp; Bonuses
+            </button>
+            {showPoints && (
+              <>
+                <div className="field"><label>Race Points Table (JSON — blank = default 350/320/300…)</label>
+                  <textarea rows={3} value={seasonForm.race_points}
+                    placeholder={JSON.stringify(Object.fromEntries(Object.entries(DEFAULT_RACE_POINTS).slice(0, 6)))}
+                    onChange={e => setSeasonForm(f => ({ ...f, race_points: e.target.value }))}
+                    style={{ padding: 10, border: "1px solid var(--border)", borderRadius: 9, background: "var(--bg-elevated)", color: "var(--ink-0)", fontFamily: "monospace", fontSize: "0.8rem", resize: "vertical" }} /></div>
+                <div className="field"><label>Qualifying Points Table (JSON — blank = default 35/32/30…)</label>
+                  <textarea rows={3} value={seasonForm.qual_points}
+                    placeholder={JSON.stringify(Object.fromEntries(Object.entries(DEFAULT_QUAL_POINTS).slice(0, 6)))}
+                    onChange={e => setSeasonForm(f => ({ ...f, qual_points: e.target.value }))}
+                    style={{ padding: 10, border: "1px solid var(--border)", borderRadius: 9, background: "var(--bg-elevated)", color: "var(--ink-0)", fontFamily: "monospace", fontSize: "0.8rem", resize: "vertical" }} /></div>
+                {BONUS_TYPES.map(([key, label]) => (
+                  <div className="field" key={key}><label>{label}</label>
+                    <input type="number" min="0" value={seasonForm.bonuses[key]}
+                      onChange={e => setSeasonForm(f => ({ ...f, bonuses: { ...f.bonuses, [key]: e.target.value } }))} /></div>
+                ))}
+              </>
+            )}
+
+            <button className="btn btn-primary" type="submit" disabled={!seriesId} style={{ display: "block" }}>Add Season</button>
           </form>
           <div style={{ marginTop: 16 }}>
-            {seasons.map(s => <ItemRow key={s.id} logo={s.logo_url} name={s.name}
-              onDelete={() => remove(`/api/seasons/${s.id}`, `Delete season "${s.name}"?`)} />)}
+            {seasons.map(s => (
+              <div className="driver-row" key={s.id}>
+                {s.logo_url ? <img src={s.logo_url} alt="" className="avatar avatar-sm" style={{ borderRadius: 6 }} /> : <span>🏁</span>}
+                <span style={{ flex: 1 }}>{s.name}</span>
+                <button className="btn btn-ghost" style={{ marginTop: 0, padding: "4px 10px" }}
+                  title="Completed seasons count toward drivers' Titles"
+                  onClick={async () => {
+                    try {
+                      await api(`/api/seasons/${s.id}`, { method: "PATCH", body: { status: s.status === "completed" ? "active" : "completed" } });
+                      refresh();
+                    } catch (err) { showToast("error", err.message); }
+                  }}>
+                  {s.status === "completed" ? "✓ Completed" : "Mark Completed"}
+                </button>
+                <button className="btn btn-danger" style={{ marginTop: 0, padding: "4px 10px" }}
+                  onClick={() => remove(`/api/seasons/${s.id}`, `Delete season "${s.name}"?`)}>✕</button>
+              </div>
+            ))}
           </div>
         </Panel>
 

@@ -50,8 +50,9 @@ export default function StandingsPage() {
           <table>
             <thead>
               <tr>
-                <th>Pos</th><th>Driver</th><th>Team</th><th>Points</th><th>Wins</th>
-                <th>Top 5</th><th>Top 10</th><th>Laps Led</th><th>Avg Finish</th>
+                <th>Pos</th><th>Driver</th><th>Team</th><th>Points</th><th>Behind</th><th>Starts</th><th>Wins</th>
+                <th>Podiums</th><th>Top 5</th><th>Top 10</th><th>Poles</th><th>Laps Led</th>
+                <th>Avg Start</th><th>Avg Finish</th><th>DNFs</th>
               </tr>
             </thead>
             <tbody>
@@ -66,11 +67,17 @@ export default function StandingsPage() {
                   </td>
                   <td className="team-cell">{r.team}</td>
                   <td className="points-cell">{r.adjusted_points}</td>
+                  <td>{r.behind_leader === 0 ? "—" : r.behind_leader}</td>
+                  <td>{r.starts}</td>
                   <td>{r.wins}</td>
+                  <td>{r.podiums}</td>
                   <td>{r.top5}</td>
                   <td>{r.top10}</td>
+                  <td>{r.poles}</td>
                   <td>{r.laps_led}</td>
+                  <td>{r.avg_start ?? "—"}</td>
                   <td>{r.avg_finish}</td>
+                  <td>{r.dnfs}</td>
                 </tr>
               ))}
             </tbody>
@@ -80,7 +87,7 @@ export default function StandingsPage() {
         <div className="table-wrap">
           <table>
             <thead>
-              <tr><th>Pos</th><th>Team</th><th>Points</th><th>Wins</th><th>Podiums</th><th>Drivers</th></tr>
+              <tr><th>Pos</th><th>Team</th><th>Points</th><th>Wins</th><th>Podiums</th><th>Poles</th><th>Drivers</th></tr>
             </thead>
             <tbody>
               {rows.map(r => (
@@ -93,6 +100,7 @@ export default function StandingsPage() {
                   <td className="points-cell">{r.points}</td>
                   <td>{r.wins}</td>
                   <td>{r.podiums}</td>
+                  <td>{r.poles}</td>
                   <td>{r.drivers}</td>
                 </tr>
               ))}

@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
-import { calculateStandings, calculateTeamStandings, DEFAULT_POINTS_SCALE } from "@/lib/standings";
+import {
+  calculateStandings,
+  calculateTeamStandings,
+  decorateRaceBonuses,
+  resolveSeasonConfig,
+} from "@/lib/standings";
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -18,17 +23,10 @@ export async function GET(request) {
   const season = seasonDoc.data();
   const entries = entriesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
   const teams = teamsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-  const results = resultsSnap.docs.map(d => d.data());
+  const results = decorateRaceBonuses(resultsSnap.docs.map(d => d.data()));
 
-  let scale = DEFAULT_POINTS_SCALE;
-  if (season.points_scale) {
-    try {
-      const parsed = typeof season.points_scale === "string" ? JSON.parse(season.points_scale) : season.points_scale;
-      if (parsed && Object.keys(parsed).length) scale = parsed;
-    } catch {}
-  }
-
-  const drivers = calculateStandings(results, entries, teams, Number(season.drop_weeks || 0), scale);
+  const config = resolveSeasonConfig(season);
+  const drivers = calculateStandings(results, entries, teams, config);
   const teamRows = calculateTeamStandings(drivers.rows, teams);
 
   return NextResponse.json({

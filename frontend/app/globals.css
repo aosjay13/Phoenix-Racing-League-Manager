@@ -892,3 +892,10 @@ tbody tr:hover {
   .topbar { padding: 12px 16px; }
   .context-select select { min-width: 110px; }
 }
+
+/* ── Wide race-entry grid ────────────────────── */
+.result-grid-wide {
+  grid-template-columns: 58px minmax(160px, 1fr) 58px 100px 62px 62px 56px 34px 34px 34px 44px 100px;
+  min-width: 900px;
+  align-items: center;
+}

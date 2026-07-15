@@ -33,6 +33,7 @@ export const POST = withAdmin(async (request, ctx, user) => {
   const batch = db().batch();
   existing.docs.forEach(d => batch.delete(d.ref));
 
+  const numOrNull = v => (v != null && v !== "" ? Number(v) : null);
   const saved = [];
   const now = new Date().toISOString();
   for (const row of rows) {
@@ -42,9 +43,15 @@ export const POST = withAdmin(async (request, ctx, user) => {
       season_id,
       entry_id: row.entry_id,
       finish_pos: Number(row.finish_pos),
-      start_pos: row.start_pos != null && row.start_pos !== "" ? Number(row.start_pos) : null,
+      start_pos: numOrNull(row.start_pos),
+      qual_time: row.qual_time || null,
+      laps: Number(row.laps || 0),
       laps_led: Number(row.laps_led || 0),
       incidents: Number(row.incidents || 0),
+      fastest_lap: !!row.fastest_lap,
+      halfway_leader: !!row.halfway_leader,
+      hard_charger: !!row.hard_charger,
+      provisional: !!row.provisional,
       bonus_points: Number(row.bonus_points || 0),
       penalty_points: Number(row.penalty_points || 0),
       status: row.status || "finished",
