@@ -8,6 +8,7 @@ import { useLeague } from "@/components/LeagueProvider";
 const publicNav = [
   { href: "/",          label: "Dashboard", icon: "◈" },
   { href: "/standings", label: "Standings", icon: "🏆" },
+  { href: "/stats",     label: "Stats",     icon: "📊" },
   { href: "/schedule",  label: "Schedule",  icon: "🗓" },
   { href: "/drivers",   label: "Drivers",   icon: "🏎" },
 ];

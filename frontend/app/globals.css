@@ -899,3 +899,47 @@ tbody tr:hover {
   min-width: 900px;
   align-items: center;
 }
+
+/* ── Stats table ─────────────────────────────── */
+.stats-table th,
+.stats-table td {
+  white-space: nowrap;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-table th:first-child,
+.stats-table td:first-child {
+  text-align: left;
+}
+
+.stats-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: color 120ms ease;
+}
+
+.stats-table th.sortable:hover {
+  color: var(--accent-cyan);
+}
+
+.stats-table .sticky-col {
+  position: sticky;
+  left: 0;
+  background: var(--bg-surface);
+  z-index: 1;
+}
+
+.stats-table thead .sticky-col {
+  background: var(--bg-elevated);
+  z-index: 2;
+}
+
+.stats-table tbody tr:hover .sticky-col {
+  background: var(--bg-elevated);
+}
+
+.stats-table td.stat-leader {
+  color: var(--accent-gold);
+  font-weight: 700;
+}
