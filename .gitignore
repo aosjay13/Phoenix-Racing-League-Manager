@@ -3,8 +3,13 @@ __pycache__/
 *.pyc
 .venv/
 .env
+.env.local
+.env*.local
+**/.env.local
+**/.env*.local
 service-account.json
 firebase-service-account.json
+*service-account*.json
 
 # Node
 node_modules/
