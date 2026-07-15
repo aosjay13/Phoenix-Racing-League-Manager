@@ -1,174 +1,178 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { useLeague } from "@/components/LeagueProvider";
+import { AdminGate } from "@/components/AdminGate";
+import { ImageUpload } from "@/components/ImageUpload";
+import { api } from "@/lib/api";
 
-const API = "";
-const CURRENT_SEASON = 2026;
-
-const BLANK_FORM = { name: "", number: "", team: "", season: CURRENT_SEASON };
-
-export default function RosterPage() {
-  const [drivers, setDrivers] = useState([]);
-  const [form, setForm] = useState(BLANK_FORM);
-  const [editUid, setEditUid] = useState(null);
+function RosterInner() {
+  const { seasonId, season } = useLeague();
+  const [entries, setEntries] = useState([]);
+  const [teams, setTeams] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [driverForm, setDriverForm] = useState({ name: "", number: "", team_id: "", user_id: "" });
+  const [editId, setEditId] = useState(null);
+  const [teamForm, setTeamForm] = useState({ name: "", color: "", logo_url: "" });
   const [toast, setToast] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(null);
 
-  const fetchDrivers = useCallback(async () => {
-    try {
-      const res = await fetch(`${API}/api/drivers?season=${CURRENT_SEASON}`);
-      if (res.ok) setDrivers(await res.json());
-    } catch {
-      showToast("error", "Could not load drivers — is the API running?");
-    }
-  }, []);
+  const load = useCallback(async () => {
+    if (!seasonId) return;
+    const [e, t, u] = await Promise.all([
+      api(`/api/entries?season_id=${seasonId}`),
+      api(`/api/teams?season_id=${seasonId}`),
+      api("/api/users"),
+    ]);
+    setEntries(e); setTeams(t); setUsers(u);
+  }, [seasonId]);
 
-  useEffect(() => { fetchDrivers(); }, [fetchDrivers]);
+  useEffect(() => { load().catch(() => {}); }, [load]);
 
   function showToast(type, msg) {
     setToast({ type, msg });
     setTimeout(() => setToast(null), 3500);
   }
 
-  async function handleSubmit(e) {
+  async function saveDriver(e) {
     e.preventDefault();
-    setLoading(true);
     try {
-      const payload = { ...form, number: Number(form.number) };
-      const endpoint = editUid ? `${API}/api/drivers/${editUid}` : `${API}/api/drivers`;
-      const method = editUid ? "PUT" : "POST";
-      const res = await fetch(endpoint, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      showToast("success", editUid ? "Driver updated." : "Driver added.");
-      setForm(BLANK_FORM);
-      setEditUid(null);
-      fetchDrivers();
-    } catch (err) {
-      showToast("error", err.message || "Save failed.");
-    } finally {
-      setLoading(false);
-    }
+      const body = { ...driverForm, season_id: seasonId };
+      if (body.number === "") delete body.number;
+      if (editId) await api(`/api/entries/${editId}`, { method: "PATCH", body });
+      else await api("/api/entries", { method: "POST", body });
+      showToast("success", editId ? "Driver updated." : "Driver added to roster.");
+      setDriverForm({ name: "", number: "", team_id: "", user_id: "" });
+      setEditId(null);
+      load();
+    } catch (err) { showToast("error", err.message); }
   }
 
-  function handleEdit(driver) {
-    setEditUid(driver.uid);
-    setForm({ name: driver.name, number: driver.number, team: driver.team, season: driver.season });
-    window.scrollTo({ top: 0, behavior: "smooth" });
+  async function deleteDriver(id) {
+    if (!confirm("Remove this driver from the season roster?")) return;
+    try { await api(`/api/entries/${id}`, { method: "DELETE" }); load(); }
+    catch (err) { showToast("error", err.message); }
   }
 
-  function handleCancel() {
-    setEditUid(null);
-    setForm(BLANK_FORM);
-  }
-
-  async function confirmAndDelete(driver) {
-    setConfirmDelete(null);
+  async function saveTeam(e) {
+    e.preventDefault();
     try {
-      const res = await fetch(`${API}/api/drivers/${driver.uid}`, { method: "DELETE" });
-      if (!res.ok) throw new Error(await res.text());
-      showToast("success", `Deleted ${driver.name}.`);
-      if (editUid === driver.uid) handleCancel();
-      fetchDrivers();
-    } catch (err) {
-      showToast("error", err.message || "Delete failed.");
-    }
+      await api("/api/teams", { method: "POST", body: { ...teamForm, season_id: seasonId } });
+      showToast("success", "Team created.");
+      setTeamForm({ name: "", color: "", logo_url: "" });
+      load();
+    } catch (err) { showToast("error", err.message); }
   }
+
+  async function deleteTeam(id) {
+    if (!confirm("Delete this team?")) return;
+    try { await api(`/api/teams/${id}`, { method: "DELETE" }); load(); }
+    catch (err) { showToast("error", err.message); }
+  }
+
+  if (!seasonId) {
+    return <div className="empty-state"><span className="empty-state-icon">⊞</span><p>Select a game, series and season above.</p></div>;
+  }
+
+  const teamName = id => teams.find(t => t.id === id)?.name ?? "—";
 
   return (
     <section>
       <div className="page-title">
-        <h2>Roster Management</h2>
-        <span className="page-badge">Season {CURRENT_SEASON}</span>
+        <h2>Roster &amp; Teams · {season?.name ?? ""}</h2>
+        <span className="page-badge">{entries.length} Drivers · {teams.length} Teams</span>
       </div>
+      {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
 
-      <form className="form-card" style={{ marginTop: 18 }} onSubmit={handleSubmit}>
-        <h3>{editUid ? "✏️ Edit Driver" : "➕ Add Driver"}</h3>
+      <div className="two-col">
+        <div className="form-card">
+          <h3>{editId ? "Edit Driver" : "Add Driver"}</h3>
+          <form onSubmit={saveDriver}>
+            <div className="field">
+              <label>Driver Name</label>
+              <input required value={driverForm.name} onChange={e => setDriverForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. J. May" />
+            </div>
+            <div className="field">
+              <label>Car Number</label>
+              <input type="number" value={driverForm.number} onChange={e => setDriverForm(f => ({ ...f, number: e.target.value }))} placeholder="13" />
+            </div>
+            <div className="field">
+              <label>Team</label>
+              <select value={driverForm.team_id} onChange={e => setDriverForm(f => ({ ...f, team_id: e.target.value }))}>
+                <option value="">No team</option>
+                {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label>Linked Player Account (for profile stats)</label>
+              <select value={driverForm.user_id} onChange={e => setDriverForm(f => ({ ...f, user_id: e.target.value }))}>
+                <option value="">Not linked</option>
+                {users.map(u => <option key={u.uid} value={u.uid}>{u.display_name}</option>)}
+              </select>
+            </div>
+            <button className="btn btn-primary" type="submit">{editId ? "Save Changes" : "Add Driver"}</button>
+            {editId && (
+              <button className="btn btn-ghost" type="button" style={{ marginLeft: 8 }}
+                onClick={() => { setEditId(null); setDriverForm({ name: "", number: "", team_id: "", user_id: "" }); }}>
+                Cancel
+              </button>
+            )}
+          </form>
+        </div>
 
-        <div className="field">
-          <label>Full Name</label>
-          <input required value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Alex Turner" />
-        </div>
-        <div className="field">
-          <label>Car Number</label>
-          <input required type="number" min={0} max={999} value={form.number} onChange={e => setForm(f => ({ ...f, number: e.target.value }))} placeholder="e.g. 18" />
-        </div>
-        <div className="field">
-          <label>Team</label>
-          <input required value={form.team} onChange={e => setForm(f => ({ ...f, team: e.target.value }))} placeholder="e.g. Summit Racing" />
-        </div>
+        <div className="form-card">
+          <h3>Add Team</h3>
+          <form onSubmit={saveTeam}>
+            <div className="field">
+              <label>Team Name</label>
+              <input required value={teamForm.name} onChange={e => setTeamForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Phoenix Motorsports" />
+            </div>
+            <ImageUpload label="Team Logo" kind="team-logo" value={teamForm.logo_url}
+              onUploaded={url => setTeamForm(f => ({ ...f, logo_url: url }))} />
+            <button className="btn btn-primary" type="submit">Create Team</button>
+          </form>
 
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <button className="btn btn-primary" disabled={loading} type="submit">
-            {loading ? "Saving…" : editUid ? "Update Driver" : "Add Driver"}
-          </button>
-          {editUid && (
-            <button className="btn btn-ghost" type="button" onClick={handleCancel}>Cancel</button>
+          {teams.length > 0 && (
+            <div style={{ marginTop: 20 }}>
+              {teams.map(t => (
+                <div className="driver-row" key={t.id}>
+                  {t.logo_url ? <img src={t.logo_url} alt="" className="avatar avatar-sm" style={{ borderRadius: 6 }} /> : <span>🛡</span>}
+                  <span style={{ flex: 1 }}>{t.name}</span>
+                  <button className="btn btn-danger" style={{ marginTop: 0, padding: "4px 10px" }} onClick={() => deleteTeam(t.id)}>✕</button>
+                </div>
+              ))}
+            </div>
           )}
         </div>
-
-        {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
-      </form>
-
-      {/* Inline delete confirmation */}
-      {confirmDelete && (
-        <div className="form-card" style={{ marginTop: 14, maxWidth: 560, borderColor: "rgba(230,57,70,0.3)" }}>
-          <p style={{ margin: "0 0 14px", color: "var(--ink-0)" }}>
-            Remove <strong>{confirmDelete.name}</strong> (#{confirmDelete.number}) from the {CURRENT_SEASON} roster?
-          </p>
-          <div style={{ display: "flex", gap: 10 }}>
-            <button className="btn btn-danger" style={{ marginTop: 0 }} onClick={() => confirmAndDelete(confirmDelete)}>
-              Yes, delete
-            </button>
-            <button className="btn btn-ghost" style={{ marginTop: 0 }} onClick={() => setConfirmDelete(null)}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className="section-header">
-        <h3>Current Roster</h3>
-        <span className="page-badge">{drivers.length} drivers</span>
       </div>
 
+      <div className="section-header"><h3>Season Roster</h3></div>
       <div className="table-wrap">
-        {drivers.length === 0 ? (
-          <div className="empty-state">
-            <span className="empty-state-icon">🏎️</span>
-            <p>No drivers yet for Season {CURRENT_SEASON}.</p>
-            <p style={{ fontSize: "0.85rem", color: "var(--ink-2)" }}>Add your first driver using the form above.</p>
-          </div>
-        ) : (
-          drivers.map(d => (
-            <div className="driver-row" key={d.uid}>
-              <span className="badge">#{d.number}</span>
-              <span style={{ flex: 1 }}>
-                <strong style={{ color: "var(--ink-0)" }}>{d.name}</strong>
-                <span style={{ color: "var(--ink-1)", marginLeft: 8, fontSize: "0.88rem" }}>{d.team}</span>
-              </span>
-              <button
-                className="btn btn-ghost"
-                style={{ marginTop: 0, padding: "5px 14px", fontSize: "0.82rem" }}
-                onClick={() => handleEdit(d)}
-              >
-                Edit
-              </button>
-              <button
-                className="btn btn-danger"
-                style={{ marginTop: 0, padding: "5px 14px", fontSize: "0.82rem" }}
-                onClick={() => setConfirmDelete(d)}
-              >
-                Delete
-              </button>
-            </div>
-          ))
-        )}
+        <table>
+          <thead><tr><th>#</th><th>Driver</th><th>Team</th><th>Linked Account</th><th></th></tr></thead>
+          <tbody>
+            {entries.map(d => (
+              <tr key={d.id}>
+                <td><span className="badge">{d.number ?? "—"}</span></td>
+                <td className="driver-name-cell">{d.name}</td>
+                <td className="team-cell">{teamName(d.team_id)}</td>
+                <td className="team-cell">{d.user_id ? (users.find(u => u.uid === d.user_id)?.display_name ?? "Linked") : "—"}</td>
+                <td style={{ textAlign: "right" }}>
+                  <button className="btn btn-ghost" style={{ marginTop: 0, padding: "4px 10px" }}
+                    onClick={() => { setEditId(d.id); setDriverForm({ name: d.name, number: d.number ?? "", team_id: d.team_id ?? "", user_id: d.user_id ?? "" }); }}>
+                    Edit
+                  </button>
+                  <button className="btn btn-danger" style={{ marginTop: 0, padding: "4px 10px", marginLeft: 6 }} onClick={() => deleteDriver(d.id)}>✕</button>
+                </td>
+              </tr>
+            ))}
+            {entries.length === 0 && <tr><td colSpan={5} style={{ color: "var(--ink-1)" }}>No drivers on the roster yet.</td></tr>}
+          </tbody>
+        </table>
       </div>
     </section>
   );
+}
+
+export default function RosterPage() {
+  return <AdminGate><RosterInner /></AdminGate>;
 }

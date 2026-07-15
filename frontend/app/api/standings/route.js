@@ -1,28 +1,40 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
-import { calculateStandings, DEFAULT_POINTS_SCALE } from "@/lib/standings";
+import { calculateStandings, calculateTeamStandings, DEFAULT_POINTS_SCALE } from "@/lib/standings";
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
-  const season = parseInt(searchParams.get("season"));
-  const dropWeeks = parseInt(searchParams.get("drop_weeks") ?? "0");
+  const seasonId = searchParams.get("season_id");
+  if (!seasonId) return NextResponse.json({ error: "season_id required" }, { status: 400 });
 
-  if (!season) return NextResponse.json({ error: "season required" }, { status: 400 });
-
-  const [driversSnap, racesSnap] = await Promise.all([
-    db().collection("drivers").where("season", "==", season).get(),
-    db().collection("races").where("season", "==", season).get(),
+  const [seasonDoc, entriesSnap, teamsSnap, resultsSnap] = await Promise.all([
+    db().collection("seasons").doc(seasonId).get(),
+    db().collection("entries").where("season_id", "==", seasonId).get(),
+    db().collection("teams").where("season_id", "==", seasonId).get(),
+    db().collection("results").where("season_id", "==", seasonId).get(),
   ]);
+  if (!seasonDoc.exists) return NextResponse.json({ error: "Season not found" }, { status: 404 });
 
-  const drivers = driversSnap.docs.map(d => d.data());
-  const raceIds = racesSnap.docs.map(d => d.data().race_id);
+  const season = seasonDoc.data();
+  const entries = entriesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const teams = teamsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const results = resultsSnap.docs.map(d => d.data());
 
-  let results = [];
-  for (const raceId of raceIds) {
-    const snap = await db().collection("results").where("race_id", "==", raceId).get();
-    results.push(...snap.docs.map(d => d.data()));
+  let scale = DEFAULT_POINTS_SCALE;
+  if (season.points_scale) {
+    try {
+      const parsed = typeof season.points_scale === "string" ? JSON.parse(season.points_scale) : season.points_scale;
+      if (parsed && Object.keys(parsed).length) scale = parsed;
+    } catch {}
   }
 
-  const standings = calculateStandings(results, drivers, season, dropWeeks, DEFAULT_POINTS_SCALE);
-  return NextResponse.json(standings);
+  const drivers = calculateStandings(results, entries, teams, Number(season.drop_weeks || 0), scale);
+  const teamRows = calculateTeamStandings(drivers.rows, teams);
+
+  return NextResponse.json({
+    season: { id: seasonId, ...season },
+    drop_weeks: drivers.drop_weeks,
+    drivers: drivers.rows,
+    teams: teamRows,
+  });
 }

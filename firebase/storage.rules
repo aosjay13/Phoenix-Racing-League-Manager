@@ -1,0 +1,12 @@
+rules_version = '2';
+
+// Uploads happen server-side via the Admin SDK (which bypasses rules) and
+// files are made public-read individually. Block direct client writes.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read: if true;
+      allow write: if false;
+    }
+  }
+}

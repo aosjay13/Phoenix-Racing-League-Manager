@@ -2,21 +2,27 @@
 
 **GitHub:** [aosjay13/Phoenix-Racing-League-Manager](https://github.com/aosjay13/Phoenix-Racing-League-Manager)
 
-Full-stack racing league manager with live standings, roster management, schedule, and race entry. Runs entirely on Next.js — deploy for free on Vercel with no separate backend needed.
+Multi-game racing league manager built to replace the league spreadsheet. Anyone can sign up
+for a driver account; league admins build out the full hierarchy with custom names and logos:
 
-- **Frontend + API:** Next.js 14 App Router (API routes replace the Python backend)
-- **Database:** Firebase Firestore
+**Game** (e.g. iRacing) → **Series** (e.g. Asphalt Assault Series) → **Season** (Season 1, 2, 3…) → **Race** (Race 1, 2, 3…)
 
-## Deploy to Vercel (free)
+## Features
 
-1. Go to [vercel.com](https://vercel.com) and sign in with GitHub
-2. Click **Add New → Project** and import `Phoenix-Racing-League-Manager`
-3. Set **Root Directory** to `frontend`
-4. Under **Environment Variables**, add these three values from your `service-account.json`:
-   - `FIREBASE_PROJECT_ID` → the `project_id` field
-   - `FIREBASE_CLIENT_EMAIL` → the `client_email` field
-   - `FIREBASE_PRIVATE_KEY` → the full `private_key` field (include the `-----BEGIN...END-----` lines)
-5. Click **Deploy** — your app is live in about a minute
+- 🔐 **Login for everyone** — email/password or Google sign-in (Firebase Auth)
+- 🧑‍✈️ **Player profiles** — public profile pages with editable picture, number, bio; career
+  stats auto-aggregated across all games with a per-game dropdown filter
+- 🏆 **Live standings** — driver *and* team championships with configurable points scale
+  and drop weeks per season
+- ⏱ **Fast race entry** — one grid per race, pre-filled with the roster; re-submitting a
+  race overwrites cleanly for corrections
+- 🖼 **Custom branding** — upload game, series, season, team, and track logos
+- 👑 **Admin roles** — set `ADMIN_EMAILS`; admins get Race Entry, Roster & Teams, and League Setup
+
+## Getting live (beta)
+
+Follow **[SETUP-BETA.md](SETUP-BETA.md)** — Firebase project + Vercel import of this GitHub
+repo. Every push to `main` auto-deploys.
 
 ## Local Development
 
@@ -26,41 +32,33 @@ npm install
 npm run dev
 ```
 
-Create a `frontend/.env.local` file (copy `.env.example` and fill in your Firebase credentials).
+Create `frontend/.env.local` from the root `.env.example` and fill in your Firebase values.
 
 ## Project Layout
 
 ```
 frontend/
   app/
-    api/          ← Next.js API routes (drivers, races, results, standings)
-    page.js       ← Dashboard
-    roster/       ← Roster management
-    schedule/     ← Season schedule
-    race-entry/   ← Submit race results
-    standings/    ← Live points table
-  lib/
-    firebase.js   ← Firebase Admin initialization
-    standings.js  ← Points + drop-week calculation
-  components/
-    AppShell.jsx  ← Sidebar navigation
-    StandingsTable.jsx
+    api/            ← Next.js API routes (all writes require a Firebase ID token)
+      games/ series/ seasons/ teams/ entries/ races/ results/ standings/ users/ upload/
+    page.js         ← Dashboard (per selected season)
+    standings/      ← Driver + team points tables
+    schedule/       ← Season calendar
+    race-entry/     ← Admin: submit/edit race results
+    roster/         ← Admin: season roster + teams
+    admin/          ← Admin: build games/series/seasons/races, upload logos
+    drivers/        ← Player directory + public profiles (/drivers/[uid])
+    profile/        ← Edit your own profile
+    login/          ← Sign in / create account
+  lib/              ← Firebase admin + client init, auth guards, standings math
+  components/       ← AppShell, Auth/League providers, ImageUpload, AdminGate
+firebase/           ← Firestore + Storage security rules
+backend/            ← Legacy Python backend (unused; superseded by Next.js API routes)
 ```
 
-## API Endpoints
+## Data model (Firestore collections)
 
-All served by Next.js under `/api/`:
-
-- `GET  /api/health`
-- `GET  /api/drivers?season=2026` · `POST /api/drivers`
-- `PUT  /api/drivers/[uid]` · `DELETE /api/drivers/[uid]`
-- `GET  /api/races?season=2026` · `POST /api/races`
-- `POST /api/results`
-- `GET  /api/standings?season=2026&drop_weeks=1`
-
-## Next Steps
-
-1. Add auth and role permissions for commissioners and admins
-2. Add result editing/deletion
-3. Add CSV import UI for bulk result entry
-4. Add CI pipelines for linting and tests
+`games` → `series (game_id)` → `seasons (series_id, game_id, drop_weeks, points_scale)` →
+`races (season_id)` and `entries (season_id, team_id, user_id)` / `teams (season_id)` →
+`results (race_id, season_id, entry_id)`. `users` holds player profiles; linking a roster
+entry to a user account is what feeds their public career stats.
