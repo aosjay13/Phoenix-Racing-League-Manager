@@ -57,6 +57,7 @@ export default function DashboardPage() {
 
   const quickLinks = [
     { href: "/standings", icon: "🏆", label: "Standings", sub: "Driver & team points" },
+    { href: "/stats", icon: "📊", label: "Stats", sub: "Career totals & records" },
     { href: "/schedule", icon: "🗓", label: "Schedule", sub: "Season calendar" },
     { href: "/drivers", icon: "🏎", label: "Drivers", sub: "Player profiles" },
     ...(isAdmin ? [{ href: "/race-entry", icon: "⏱", label: "Enter Results", sub: "Submit finish positions" }] : []),
