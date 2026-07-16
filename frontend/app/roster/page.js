@@ -57,6 +57,7 @@ function RosterInner() {
   const scope = useScope(league);
 
   const [roster, setRoster] = useState(null);
+  const [loadError, setLoadError] = useState(null);
   const [gameRoster, setGameRoster] = useState([]); // scope=game rows, feeds the series-membership panel
   const [teams, setTeams] = useState([]);
   const [users, setUsers] = useState([]);
@@ -81,6 +82,7 @@ function RosterInner() {
   const load = useCallback(async () => {
     const r = await api(`/api/roster?${scope.params}`);
     setRoster(r);
+    setLoadError(null);
     const u = await api("/api/users");
     setUsers(u);
     if (gameId) {
@@ -97,7 +99,10 @@ function RosterInner() {
     }
   }, [scope.params, gameId, seriesId]);
 
-  useEffect(() => { setRoster(null); load().catch(err => showToast("error", err.message)); }, [load]);
+  useEffect(() => {
+    setRoster(null);
+    load().catch(err => { setLoadError(err.message); showToast("error", err.message); });
+  }, [load]);
 
   useEffect(() => {
     // Changing scope invalidates any in-progress inline edit / panel.
@@ -262,7 +267,18 @@ function RosterInner() {
       </p>
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
 
-      {!canManage && (
+      {!canManage && roster && seriesId && (
+        <div className="empty-state" style={{ marginTop: 12 }}>
+          <span className="empty-state-icon">⚠</span>
+          <p>{series?.name ?? "This series"} doesn&rsquo;t have a season yet.</p>
+          <p style={{ fontSize: "0.85rem", color: "var(--ink-2)", margin: 0 }}>
+            Drivers are added to a season&rsquo;s roster, so create a season for this series first —
+            head to <strong>League Setup</strong> and add one, then come back here.
+          </p>
+        </div>
+      )}
+
+      {!canManage && !seriesId && (
         <div className="empty-state" style={{ marginTop: 12 }}>
           <span className="empty-state-icon">⊞</span>
           <p>Viewing the overall roster.</p>
@@ -349,7 +365,16 @@ function RosterInner() {
       )}
 
       <div className="section-header"><h3>{scope.title}</h3></div>
-      {!roster ? (
+      {loadError ? (
+        <div className="empty-state" style={{ marginTop: 8 }}>
+          <span className="empty-state-icon">⚠</span>
+          <p>Couldn&rsquo;t load the roster.</p>
+          <p style={{ fontSize: "0.85rem", color: "var(--ink-2)", margin: "0 0 12px" }}>{loadError}</p>
+          <button className="btn btn-primary" onClick={() => load().catch(err => { setLoadError(err.message); showToast("error", err.message); })}>
+            Retry
+          </button>
+        </div>
+      ) : !roster ? (
         <div className="skeleton" style={{ height: 220, marginTop: 8 }} />
       ) : (
         <div className="table-wrap">
