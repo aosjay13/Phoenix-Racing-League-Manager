@@ -29,11 +29,21 @@ export const POST = withAdmin(async (request, ctx, user) => {
     }
   }
 
+  // Determine the event's session list so we replace only the race being saved
+  // (an event may hold several races) and still overwrite legacy results that
+  // predate the session field.
+  const raceDoc = await db().collection("races").doc(race_id).get();
+  const raceSessions = raceDoc.exists && Array.isArray(raceDoc.data().sessions) && raceDoc.data().sessions.length
+    ? raceDoc.data().sessions
+    : ["Race"];
+  const firstSession = raceSessions[0];
+  const savingSession = session || firstSession;
+
   const col = db().collection("results");
   const existing = await col.where("race_id", "==", race_id).get();
   const batch = db().batch();
   existing.docs
-    .filter(d => (d.data().session || "") === session)
+    .filter(d => (d.data().session || firstSession) === savingSession)
     .forEach(d => batch.delete(d.ref));
 
   const numOrNull = v => (v != null && v !== "" ? Number(v) : null);
@@ -44,7 +54,7 @@ export const POST = withAdmin(async (request, ctx, user) => {
     const doc = {
       race_id,
       season_id,
-      session,
+      session: savingSession,
       entry_id: row.entry_id,
       finish_pos: Number(row.finish_pos),
       start_pos: numOrNull(row.start_pos),

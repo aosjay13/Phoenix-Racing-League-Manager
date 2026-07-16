@@ -1,19 +1,33 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useLeague } from "@/components/LeagueProvider";
+import { useAuth } from "@/components/AuthProvider";
 import { api } from "@/lib/api";
 
 function RaceCard({ r, done }) {
-  const card = (
-    <div className="race-card" style={done ? { cursor: "pointer" } : undefined}>
+  const router = useRouter();
+  const { isAdmin } = useAuth();
+  const open = () => { if (done) router.push(`/races/${r.id}`); };
+
+  return (
+    <div className="race-card" onClick={open} style={done ? { cursor: "pointer" } : undefined}>
       {r.track_logo_url
         ? <img src={r.track_logo_url} alt="" className="round-num" style={{ objectFit: "cover", padding: 0 }} />
         : <div className="round-num">{r.round_number}</div>}
       <div>
         <div className="race-card-track">
           {r.name}
+          {isAdmin && (
+            <button
+              className="race-edit-btn"
+              title="Edit race results"
+              onClick={e => { e.stopPropagation(); router.push(`/race-entry?race=${r.id}`); }}
+            >
+              ✎
+            </button>
+          )}
           {Array.isArray(r.sessions) && r.sessions.length > 1 && (
             <span className="badge" style={{ marginLeft: 8 }}>{r.sessions.length} races</span>
           )}
@@ -29,7 +43,6 @@ function RaceCard({ r, done }) {
       </span>
     </div>
   );
-  return done ? <Link href={`/races/${r.id}`}>{card}</Link> : card;
 }
 
 export default function SchedulePage() {

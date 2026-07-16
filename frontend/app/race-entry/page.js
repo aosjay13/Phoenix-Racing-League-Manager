@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useLeague } from "@/components/LeagueProvider";
 import { AdminGate } from "@/components/AdminGate";
 import { api } from "@/lib/api";
@@ -26,8 +27,34 @@ function blankRows(entries) {
   }));
 }
 
+function sessionsIn(id, list) {
+  const race = list.find(r => r.id === id);
+  return Array.isArray(race?.sessions) && race.sessions.length ? race.sessions : ["Race"];
+}
+
+function buildRows(entries, existing) {
+  const byEntry = Object.fromEntries(existing.map(r => [r.entry_id, r]));
+  return blankRows(entries).map(row => {
+    const prev = byEntry[row.entry_id];
+    if (!prev) return row;
+    const merged = { ...row };
+    for (const f of RESULT_FIELDS) {
+      if (prev[f] == null) continue;
+      merged[f] = typeof row[f] === "boolean" ? !!prev[f] : String(prev[f]);
+    }
+    return merged;
+  });
+}
+
 function RaceEntryInner() {
-  const { seasonId, season } = useLeague();
+  const searchParams = useSearchParams();
+  const linkedRaceId = searchParams.get("race");
+  const linkedSession = searchParams.get("session");
+  const league = useLeague();
+
+  const [targetSeasonId, setTargetSeasonId] = useState(null);
+  const [seasonName, setSeasonName] = useState("");
+  const [resolving, setResolving] = useState(true);
   const [races, setRaces] = useState([]);
   const [entries, setEntries] = useState([]);
   const [raceId, setRaceId] = useState("");
@@ -36,57 +63,77 @@ function RaceEntryInner() {
   const [toast, setToast] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(async () => {
-    if (!seasonId) return;
-    const [r, e] = await Promise.all([
-      api(`/api/races?season_id=${seasonId}`),
-      api(`/api/entries?season_id=${seasonId}`),
-    ]);
-    setRaces(r);
-    setEntries(e);
-    setRows(blankRows(e));
-    setRaceId("");
-  }, [seasonId]);
-
-  useEffect(() => { load().catch(() => showToast("error", "Could not load season data.")); }, [load]);
-
   function showToast(type, msg) {
     setToast({ type, msg });
     setTimeout(() => setToast(null), 4000);
   }
 
-  function sessionsFor(id) {
-    const race = races.find(r => r.id === id);
-    return Array.isArray(race?.sessions) && race.sessions.length ? race.sessions : ["Race"];
-  }
+  // Resolve which season to work in: a deep-linked race pins its own season,
+  // otherwise follow the Game/Series/Season dropdowns.
+  useEffect(() => {
+    let cancelled = false;
+    setResolving(true);
+    (async () => {
+      if (linkedRaceId) {
+        try {
+          const ev = await api(`/api/events/${linkedRaceId}`);
+          if (cancelled) return;
+          setTargetSeasonId(ev.event.season_id);
+          setSeasonName(ev.season?.name ?? "");
+        } catch {
+          if (!cancelled) showToast("error", "Could not load that race.");
+        }
+      } else {
+        setTargetSeasonId(league.seasonId || null);
+        setSeasonName(league.season?.name ?? "");
+      }
+      if (!cancelled) setResolving(false);
+    })();
+    return () => { cancelled = true; };
+  }, [linkedRaceId, league.seasonId, league.season]);
+
+  // Load the season's races + roster; auto-select the linked race if present.
+  useEffect(() => {
+    if (!targetSeasonId) { setRaces([]); setEntries([]); setRows([]); setRaceId(""); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const [r, e] = await Promise.all([
+          api(`/api/races?season_id=${targetSeasonId}`),
+          api(`/api/entries?season_id=${targetSeasonId}`),
+        ]);
+        if (cancelled) return;
+        setRaces(r);
+        setEntries(e);
+        if (linkedRaceId && r.find(x => x.id === linkedRaceId)) {
+          selectRace(linkedRaceId, linkedSession, r, e);
+        } else {
+          setRows(blankRows(e));
+          setRaceId("");
+        }
+      } catch {
+        if (!cancelled) showToast("error", "Could not load season data.");
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetSeasonId]);
 
   // Pre-fill with any existing results so admins can edit past races.
-  async function selectRace(id, sessionName) {
+  async function selectRace(id, sessionName, racesList = races, entriesList = entries) {
     setRaceId(id);
-    if (!id) { setSession(""); return; }
-    const sess = sessionName ?? sessionsFor(id)[0];
+    if (!id) { setSession(""); setRows(blankRows(entriesList)); return; }
+    const sessions = sessionsIn(id, racesList);
+    const sess = sessionName && sessions.includes(sessionName) ? sessionName : sessions[0];
     setSession(sess);
     try {
       const all = await api(`/api/results?race_id=${id}`);
-      const first = sessionsFor(id)[0];
-      const existing = all.filter(r => (r.session || first) === sess);
-      if (existing.length) {
-        const byEntry = Object.fromEntries(existing.map(r => [r.entry_id, r]));
-        setRows(blankRows(entries).map(row => {
-          const prev = byEntry[row.entry_id];
-          if (!prev) return row;
-          const merged = { ...row };
-          for (const f of RESULT_FIELDS) {
-            if (prev[f] == null) continue;
-            merged[f] = typeof row[f] === "boolean" ? !!prev[f] : String(prev[f]);
-          }
-          return merged;
-        }));
-        showToast("success", "Loaded existing results — saving will overwrite them.");
-      } else {
-        setRows(blankRows(entries));
-      }
-    } catch {}
+      const existing = all.filter(r => (r.session || sessions[0]) === sess);
+      setRows(buildRows(entriesList, existing));
+      if (existing.length) showToast("success", "Loaded existing results — saving will overwrite them.");
+    } catch {
+      setRows(blankRows(entriesList));
+    }
   }
 
   function updateRow(idx, field, value) {
@@ -103,7 +150,7 @@ function RaceEntryInner() {
     }
     setBusy(true);
     try {
-      await api("/api/results", { method: "POST", body: { race_id: raceId, season_id: seasonId, session, rows: filled } });
+      await api("/api/results", { method: "POST", body: { race_id: raceId, season_id: targetSeasonId, session, rows: filled } });
       showToast("success", "Race results saved. Standings and profiles update instantly.");
     } catch (err) {
       showToast("error", err.message);
@@ -112,16 +159,25 @@ function RaceEntryInner() {
     }
   }
 
-  if (!seasonId) {
+  if (resolving && linkedRaceId) return <div className="skeleton" style={{ height: 220 }} />;
+
+  if (!targetSeasonId) {
     return <div className="empty-state"><span className="empty-state-icon">⏱</span><p>Select a game, series and season above.</p></div>;
   }
+
+  const selectedRace = races.find(r => r.id === raceId);
 
   return (
     <section>
       <div className="page-title">
-        <h2>Race Entry · {season?.name ?? ""}</h2>
+        <h2>Race Entry · {seasonName}</h2>
         <span className="page-badge">{entries.length} Drivers</span>
       </div>
+      {linkedRaceId && selectedRace && (
+        <div className="toast toast-success" style={{ marginTop: 8 }}>
+          Editing results for <strong>{selectedRace.name}</strong>{session ? ` — ${session}` : ""}. Make your changes and save to overwrite.
+        </div>
+      )}
       <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.85rem" }}>
         Start = qualifying position (P1 counts as pole). FL = fastest lap, ½ = halfway-point leader,
         HC = hard charger, Prov = provisional start. Bonus points are applied automatically from the season settings.
@@ -136,11 +192,11 @@ function RaceEntryInner() {
           </select>
         </div>
 
-        {raceId && sessionsFor(raceId).length > 1 && (
+        {raceId && sessionsIn(raceId, races).length > 1 && (
           <div className="field">
-            <label>Race (this event has {sessionsFor(raceId).length})</label>
+            <label>Race (this event has {sessionsIn(raceId, races).length})</label>
             <select value={session} onChange={e => selectRace(raceId, e.target.value)}>
-              {sessionsFor(raceId).map(s => <option key={s} value={s}>{s}</option>)}
+              {sessionsIn(raceId, races).map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
         )}
@@ -211,5 +267,11 @@ function RowInputs({ row, idx, updateRow }) {
 }
 
 export default function RaceEntryPage() {
-  return <AdminGate><RaceEntryInner /></AdminGate>;
+  return (
+    <AdminGate>
+      <Suspense fallback={<div className="skeleton" style={{ height: 220 }} />}>
+        <RaceEntryInner />
+      </Suspense>
+    </AdminGate>
+  );
 }

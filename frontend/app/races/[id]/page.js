@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { useAuth } from "@/components/AuthProvider";
 import { api } from "@/lib/api";
 
 function DriverCell({ r }) {
@@ -22,6 +23,7 @@ function statusLabel(s) {
 
 export default function EventResultsPage() {
   const { id } = useParams();
+  const { isAdmin } = useAuth();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [tab, setTab] = useState(null); // "qual" or session name
@@ -58,8 +60,17 @@ export default function EventResultsPage() {
             {event.date ? new Date(event.date).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" }) : "Date TBA"}
             {season ? ` · ${season.name}` : ""}
           </p>
-          <p style={{ margin: "6px 0 0" }}>
+          <p style={{ margin: "6px 0 0", display: "flex", gap: 14, alignItems: "center" }}>
             <Link href="/schedule" style={{ color: "var(--accent-cyan)", fontSize: "0.85rem" }}>← Back to Schedule</Link>
+            {isAdmin && (
+              <Link
+                href={`/race-entry?race=${event.id}${tab && tab !== "__qual" ? `&session=${encodeURIComponent(tab)}` : ""}`}
+                className="btn btn-ghost"
+                style={{ marginTop: 0, padding: "6px 12px", fontSize: "0.82rem" }}
+              >
+                ✎ Edit Results
+              </Link>
+            )}
           </p>
         </div>
       </div>
