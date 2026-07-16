@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useState, useCallback } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { AdminGate } from "@/components/AdminGate";
 import { ImageUpload } from "@/components/ImageUpload";
@@ -127,6 +127,13 @@ function UnifiedEditInner() {
     return () => { cancelled = true; };
   }, [id]);
 
+  // Refreshes just the driver list, without re-fetching the race — used
+  // after a driver is added inline from within a results/qualifying editor.
+  const reloadEntries = useCallback(async () => {
+    if (!seasonId) return;
+    setEntries(await api(`/api/entries?season_id=${seasonId}`));
+  }, [seasonId]);
+
   if (error) return <div className="empty-state"><span className="empty-state-icon">🏁</span><p>{error}</p></div>;
   if (!race) return <div className="skeleton" style={{ height: 260 }} />;
 
@@ -156,12 +163,12 @@ function UnifiedEditInner() {
       )}
       {tab === "qualifying" && (
         <div className="form-card" style={{ maxWidth: "100%" }}>
-          <QualifyingEditor race={race} seasonId={seasonId} entries={entries} />
+          <QualifyingEditor race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} />
         </div>
       )}
       {tab === "results" && (
         <div className="form-card" style={{ maxWidth: "100%" }}>
-          <RaceResultsEditor race={race} seasonId={seasonId} entries={entries} initialSession={initialSession} />
+          <RaceResultsEditor race={race} seasonId={seasonId} entries={entries} initialSession={initialSession} onEntriesChanged={reloadEntries} />
         </div>
       )}
     </section>

@@ -86,6 +86,11 @@ export const SPECS = {
                        race_points: {}, qual_points: {}, bonus_points: {} } },
   teams:   { collection: "teams", parentField: "season_id", sortField: "name",
              fields: { name: { required: true }, logo_url: {}, color: {} } },
+  // Global driver pool — identities that exist independently of any season,
+  // so an admin can create a driver first and pull them into a series/season
+  // (or a race's results) later. See frontend/app/roster/page.js.
+  drivers: { collection: "drivers", parentField: null, sortField: "name",
+             fields: { name: { required: true }, user_id: {}, notes: {} } },
   entries: { collection: "entries", parentField: "season_id", sortField: "name",
              fields: { name: { required: true }, number: { number: true }, team_id: {}, user_id: {},
                        points_adjustment: { number: true }, adjustment_note: {} } },

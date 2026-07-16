@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { AddDriverToRace } from "@/components/AddDriverToRace";
 
 const RESULT_FIELDS = ["finish_pos", "start_pos", "qual_time", "laps", "laps_led", "incidents", "fastest_lap", "halfway_leader", "hard_charger", "provisional", "status"];
 
@@ -45,9 +46,30 @@ function buildRows(entries, existing, qualGrid = {}) {
   });
 }
 
+function rowFromEntry(entry, position) {
+  return {
+    entry_id: entry.id,
+    driver_name: entry.name,
+    driver_number: entry.number ?? null,
+    finish_pos: String(position),
+    start_pos: "",
+    qual_time: "",
+    laps: "",
+    laps_led: "0",
+    incidents: "0",
+    fastest_lap: false,
+    halfway_leader: false,
+    hard_charger: false,
+    provisional: false,
+    status: "finished",
+  };
+}
+
 // Self-contained results grid for one race: loads existing results, edits
 // finishing order/points/flags, and overwrites the selected session in place.
-export function RaceResultsEditor({ race, seasonId, entries, initialSession }) {
+// `onEntriesChanged` is an optional callback fired after a driver is added
+// mid-entry, so the parent's own roster list stays in sync.
+export function RaceResultsEditor({ race, seasonId, entries, initialSession, onEntriesChanged }) {
   const sessions = Array.isArray(race?.sessions) && race.sessions.length ? race.sessions : ["Race"];
   const [session, setSession] = useState(
     initialSession && sessions.includes(initialSession) ? initialSession : sessions[0]
@@ -79,14 +101,24 @@ export function RaceResultsEditor({ race, seasonId, entries, initialSession }) {
     }
   }
 
-  // (Re)load whenever the race or roster changes.
+  // (Re)load only when the race itself changes — deliberately NOT keyed on
+  // `entries`, so adding a driver mid-entry (see handleDriverAdded) doesn't
+  // wipe out finishing positions the admin has already typed for others.
   useEffect(() => {
     loadSession(initialSession && sessions.includes(initialSession) ? initialSession : sessions[0]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [race?.id, entries]);
+  }, [race?.id]);
 
   function updateRow(idx, field, value) {
     setRows(prev => prev.map((r, i) => (i === idx ? { ...r, [field]: value } : r)));
+  }
+
+  // A driver was created/pulled in from the autocomplete below the grid —
+  // append them as a new row rather than reloading, and let the parent know
+  // its own roster list is now stale.
+  function handleDriverAdded(entry) {
+    setRows(prev => [...prev, rowFromEntry(entry, prev.length + 1)]);
+    onEntriesChanged?.();
   }
 
   async function handleSave() {
@@ -107,8 +139,16 @@ export function RaceResultsEditor({ race, seasonId, entries, initialSession }) {
     }
   }
 
-  if (!entries.length) {
-    return <p style={{ color: "var(--ink-1)", fontSize: "0.9rem" }}>No drivers on the roster yet — add them in Roster &amp; Teams.</p>;
+  const existingNames = new Set(rows.map(r => r.driver_name.trim().toLowerCase()));
+
+  if (!rows.length) {
+    return (
+      <div>
+        <p style={{ color: "var(--ink-1)", fontSize: "0.9rem" }}>No drivers on the roster yet.</p>
+        <AddDriverToRace seasonId={seasonId} existingNames={existingNames} onCreated={handleDriverAdded} onError={msg => showToast("error", msg)} />
+        {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
+      </div>
+    );
   }
 
   return (
@@ -142,12 +182,15 @@ export function RaceResultsEditor({ race, seasonId, entries, initialSession }) {
         </div>
       )}
 
+      <AddDriverToRace seasonId={seasonId} existingNames={existingNames} onCreated={handleDriverAdded} onError={msg => showToast("error", msg)} />
+
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
 
-      <button className="btn btn-primary" onClick={handleSave} disabled={busy || loading}>
+      <button className="btn btn-primary" onClick={handleSave} disabled={busy || loading} style={{ marginTop: 16 }}>
         {busy ? "Saving…" : "Save Race Results"}
       </button>
-      <button className="btn btn-ghost" style={{ marginLeft: 8 }} onClick={() => setRows(blankRows(entries))}>
+      <button className="btn btn-ghost" style={{ marginLeft: 8 }}
+        onClick={() => setRows(prev => prev.map((r, i) => rowFromEntry({ id: r.entry_id, name: r.driver_name, number: r.driver_number }, i + 1)))}>
         Reset Grid
       </button>
     </div>

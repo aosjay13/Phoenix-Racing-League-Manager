@@ -24,6 +24,13 @@ function RaceEntryInner() {
     setRaceId("");
   }, [seasonId]);
 
+  // Refreshes just the driver list, without resetting the selected race —
+  // used after a driver is added inline from within the results editor.
+  const reloadEntries = useCallback(async () => {
+    if (!seasonId) return;
+    setEntries(await api(`/api/entries?season_id=${seasonId}`));
+  }, [seasonId]);
+
   useEffect(() => { load().catch(() => {}); }, [load]);
 
   if (!seasonId) {
@@ -53,7 +60,7 @@ function RaceEntryInner() {
         </div>
 
         {selectedRace && (
-          <RaceResultsEditor key={selectedRace.id} race={selectedRace} seasonId={seasonId} entries={entries} />
+          <RaceResultsEditor key={selectedRace.id} race={selectedRace} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} />
         )}
       </div>
     </section>

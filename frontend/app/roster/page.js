@@ -51,6 +51,18 @@ function SeriesMembershipRow({ s, entry, onAdd, onUpdate, onRemove }) {
   );
 }
 
+// Inline number entry for pulling a global pool driver into the current series.
+function PoolAddInline({ onAdd, onCancel }) {
+  const [num, setNum] = useState("");
+  return (
+    <span style={{ display: "flex", gap: 6 }}>
+      <input type="number" style={{ width: 70 }} value={num} onChange={e => setNum(e.target.value)} placeholder="#" autoFocus />
+      <button className="btn btn-primary" type="button" style={{ marginTop: 0, padding: "4px 10px" }} onClick={() => onAdd(num)}>Add</button>
+      <button className="btn btn-ghost" type="button" style={{ marginTop: 0, padding: "4px 10px" }} onClick={onCancel}>Cancel</button>
+    </span>
+  );
+}
+
 function RosterInner() {
   const league = useLeague();
   const { gameId, seriesId, series, seriesList } = league;
@@ -61,7 +73,11 @@ function RosterInner() {
   const [gameRoster, setGameRoster] = useState([]); // scope=game rows, feeds the series-membership panel
   const [teams, setTeams] = useState([]);
   const [users, setUsers] = useState([]);
+  const [driverPool, setDriverPool] = useState([]); // global drivers, independent of any season/series
   const [toast, setToast] = useState(null);
+  const [poolOpen, setPoolOpen] = useState(false);
+  const [poolForm, setPoolForm] = useState({ name: "", user_id: "" });
+  const [poolAdding, setPoolAdding] = useState(null); // driver pool id currently being pulled into a series
 
   const [editMode, setEditMode] = useState(false);
   const [rowKey, setRowKey] = useState(null);       // key of the row being inline-edited
@@ -85,6 +101,8 @@ function RosterInner() {
     setLoadError(null);
     const u = await api("/api/users");
     setUsers(u);
+    const pool = await api("/api/drivers");
+    setDriverPool(pool);
     if (gameId) {
       const g = await api(`/api/roster?scope=game&game_id=${gameId}`);
       setGameRoster(g.rows);
@@ -239,6 +257,47 @@ function RosterInner() {
     catch (err) { showToast("error", err.message); }
   }
 
+  // Standalone driver creation: adds an identity to the global pool without
+  // touching any season/series — it's just sitting there ready to be pulled
+  // into an event later (here, or from the race-entry autocomplete).
+  async function createPoolDriver(e) {
+    e.preventDefault();
+    try {
+      await api("/api/drivers", { method: "POST", body: poolForm });
+      showToast("success", "Driver added to the global pool.");
+      setPoolForm({ name: "", user_id: "" });
+      await load();
+    } catch (err) { showToast("error", err.message); }
+  }
+
+  async function deletePoolDriver(id, name) {
+    if (!confirm(`Remove ${name} from the global driver pool? (Any existing series/season entries are unaffected.)`)) return;
+    try { await api(`/api/drivers/${id}`, { method: "DELETE" }); await load(); }
+    catch (err) { showToast("error", err.message); }
+  }
+
+  // Pull a pool driver into the currently selected series with a number.
+  async function addPoolDriverToSeries(driver, number) {
+    if (!editSeasonId) return;
+    if (number === "" || number == null) { showToast("error", "Enter a car number first."); return; }
+    try {
+      await api("/api/entries", {
+        method: "POST",
+        body: { name: driver.name, user_id: driver.user_id || "", team_id: "", number, season_id: editSeasonId },
+      });
+      showToast("success", `${driver.name} added to ${series?.name ?? "this series"}.`);
+      setPoolAdding(null);
+      await load();
+    } catch (err) { showToast("error", err.message); }
+  }
+
+  // Pool drivers not already on the currently selected series' roster.
+  const poolNotInSeries = useMemo(() => {
+    if (!seriesId) return driverPool;
+    const inSeries = new Set((roster?.rows ?? []).map(r => r.name.trim().toLowerCase()));
+    return driverPool.filter(d => !inSeries.has(d.name.trim().toLowerCase()));
+  }, [driverPool, seriesId, roster]);
+
   const rows = roster?.rows ?? [];
   const showNumber = !!roster?.show_number;
   const showActions = canManage && editMode;
@@ -266,6 +325,68 @@ function RosterInner() {
         {canManage && !editMode && " Click “Edit Roster” to add, edit, or reassign drivers directly in the table."}
       </p>
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
+
+      <div className="form-card" style={{ maxWidth: "100%" }}>
+        <h3 style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span>Driver Pool <span style={{ fontWeight: 400, fontSize: "0.8rem", color: "var(--ink-2)" }}>({driverPool.length} global)</span></span>
+          <button className="btn btn-ghost" style={{ marginTop: 0 }} onClick={() => setPoolOpen(o => !o)}>
+            {poolOpen ? "Hide" : "Manage"}
+          </button>
+        </h3>
+        {!poolOpen ? (
+          <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--ink-1)" }}>
+            Create driver identities here without assigning them to a season or series right away —
+            they&rsquo;ll be ready to pull into any series (or race, mid-entry) later.
+          </p>
+        ) : (
+          <>
+            <form onSubmit={createPoolDriver} style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+              <div className="field" style={{ marginBottom: 0, flex: "1 1 200px" }}>
+                <label>Driver Name</label>
+                <input required value={poolForm.name} onChange={e => setPoolForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. J. May" />
+              </div>
+              <div className="field" style={{ marginBottom: 0, flex: "1 1 200px" }}>
+                <label>Linked Player Account (optional)</label>
+                <select value={poolForm.user_id} onChange={e => setPoolForm(f => ({ ...f, user_id: e.target.value }))}>
+                  <option value="">Not linked</option>
+                  {users.map(u => <option key={u.uid} value={u.uid}>{u.display_name}</option>)}
+                </select>
+              </div>
+              <button className="btn btn-primary" type="submit" style={{ marginTop: 0 }}>+ Create Driver</button>
+            </form>
+
+            {driverPool.length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                {driverPool.map(d => (
+                  <div className="driver-row" key={d.id} style={{ gap: 8 }}>
+                    <span style={{ flex: 1 }}>
+                      {d.name}
+                      {d.user_id && <span style={{ marginLeft: 8, color: "var(--ink-2)", fontSize: "0.78rem" }}>Linked</span>}
+                    </span>
+                    {canManage && (
+                      poolAdding === d.id ? (
+                        <PoolAddInline driver={d} onAdd={num => addPoolDriverToSeries(d, num)} onCancel={() => setPoolAdding(null)} />
+                      ) : (
+                        poolNotInSeries.some(p => p.id === d.id) && (
+                          <button className="btn btn-ghost" type="button" style={{ marginTop: 0, padding: "4px 10px" }}
+                            onClick={() => setPoolAdding(d.id)}>
+                            + Add to {series?.name ?? "series"}
+                          </button>
+                        )
+                      )
+                    )}
+                    <button className="btn btn-danger" style={{ marginTop: 0, padding: "4px 10px" }}
+                      onClick={() => deletePoolDriver(d.id, d.name)}>✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {driverPool.length === 0 && (
+              <p style={{ margin: "12px 0 0", fontSize: "0.85rem", color: "var(--ink-2)" }}>No global drivers yet — create one above.</p>
+            )}
+          </>
+        )}
+      </div>
 
       {!canManage && roster && seriesId && (
         <div className="empty-state" style={{ marginTop: 12 }}>

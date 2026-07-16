@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { AddDriverToRace } from "@/components/AddDriverToRace";
 
 function blankRows(entries) {
   return entries.map((e, i) => ({
@@ -13,9 +14,21 @@ function blankRows(entries) {
   }));
 }
 
+function rowFromEntry(entry, position) {
+  return {
+    entry_id: entry.id,
+    driver_name: entry.name,
+    driver_number: entry.number ?? null,
+    finish_pos: String(position),
+    qual_time: "",
+  };
+}
+
 // Enter the qualifying order for an event. Position 1 is the pole. This order
 // feeds the Start column of the race results and drives Poles / Average Start.
-export function QualifyingEditor({ race, seasonId, entries }) {
+// `onEntriesChanged` is optional: fired after a driver is added mid-entry so
+// the parent's own roster list stays in sync.
+export function QualifyingEditor({ race, seasonId, entries, onEntriesChanged }) {
   const [rows, setRows] = useState(() => blankRows(entries));
   const [toast, setToast] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -48,11 +61,17 @@ export function QualifyingEditor({ race, seasonId, entries }) {
       }
     })();
     return () => { cancelled = true; };
+    // Deliberately not keyed on `entries` — see RaceResultsEditor for why.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [race?.id, entries]);
+  }, [race?.id]);
 
   function updateRow(idx, field, value) {
     setRows(prev => prev.map((r, i) => (i === idx ? { ...r, [field]: value } : r)));
+  }
+
+  function handleDriverAdded(entry) {
+    setRows(prev => [...prev, rowFromEntry(entry, prev.length + 1)]);
+    onEntriesChanged?.();
   }
 
   async function handleSave() {
@@ -82,8 +101,16 @@ export function QualifyingEditor({ race, seasonId, entries }) {
     }
   }
 
-  if (!entries.length) {
-    return <p style={{ color: "var(--ink-1)", fontSize: "0.9rem" }}>No drivers on the roster yet — add them in Roster &amp; Teams.</p>;
+  const existingNames = new Set(rows.map(r => r.driver_name.trim().toLowerCase()));
+
+  if (!rows.length) {
+    return (
+      <div>
+        <p style={{ color: "var(--ink-1)", fontSize: "0.9rem" }}>No drivers on the roster yet.</p>
+        <AddDriverToRace seasonId={seasonId} existingNames={existingNames} onCreated={handleDriverAdded} onError={msg => showToast("error", msg)} />
+        {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
+      </div>
+    );
   }
 
   return (
@@ -108,12 +135,15 @@ export function QualifyingEditor({ race, seasonId, entries }) {
         </div>
       )}
 
+      <AddDriverToRace seasonId={seasonId} existingNames={existingNames} onCreated={handleDriverAdded} onError={msg => showToast("error", msg)} />
+
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
 
       <button className="btn btn-primary" onClick={handleSave} disabled={busy || loading}>
         {busy ? "Saving…" : "Save Qualifying"}
       </button>
-      <button className="btn btn-ghost" style={{ marginLeft: 8 }} onClick={() => setRows(blankRows(entries))}>
+      <button className="btn btn-ghost" style={{ marginLeft: 8 }}
+        onClick={() => setRows(prev => prev.map((r, i) => rowFromEntry({ id: r.entry_id, name: r.driver_name, number: r.driver_number }, i + 1)))}>
         Reset
       </button>
     </div>
