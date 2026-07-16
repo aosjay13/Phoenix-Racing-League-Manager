@@ -69,7 +69,7 @@ function rowFromEntry(entry, position) {
 // finishing order/points/flags, and overwrites the selected session in place.
 // `onEntriesChanged` is an optional callback fired after a driver is added
 // mid-entry, so the parent's own roster list stays in sync.
-export function RaceResultsEditor({ race, seasonId, entries, initialSession, onEntriesChanged }) {
+export function RaceResultsEditor({ race, seasonId, entries, initialSession, onEntriesChanged, seriesName }) {
   const sessions = Array.isArray(race?.sessions) && race.sessions.length ? race.sessions : ["Race"];
   const [session, setSession] = useState(
     initialSession && sessions.includes(initialSession) ? initialSession : sessions[0]
@@ -78,6 +78,7 @@ export function RaceResultsEditor({ race, seasonId, entries, initialSession, onE
   const [toast, setToast] = useState(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [justAddedId, setJustAddedId] = useState(null); // focuses that row's Fin input once, on mount
 
   function showToast(type, msg) {
     setToast({ type, msg });
@@ -118,6 +119,7 @@ export function RaceResultsEditor({ race, seasonId, entries, initialSession, onE
   // its own roster list is now stale.
   function handleDriverAdded(entry) {
     setRows(prev => [...prev, rowFromEntry(entry, prev.length + 1)]);
+    setJustAddedId(entry.id);
     onEntriesChanged?.();
   }
 
@@ -145,7 +147,7 @@ export function RaceResultsEditor({ race, seasonId, entries, initialSession, onE
     return (
       <div>
         <p style={{ color: "var(--ink-1)", fontSize: "0.9rem" }}>No drivers on the roster yet.</p>
-        <AddDriverToRace seasonId={seasonId} existingNames={existingNames} onCreated={handleDriverAdded} onError={msg => showToast("error", msg)} />
+        <AddDriverToRace seasonId={seasonId} seriesName={seriesName} existingNames={existingNames} onCreated={handleDriverAdded} onError={msg => showToast("error", msg)} />
         {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
       </div>
     );
@@ -176,13 +178,13 @@ export function RaceResultsEditor({ race, seasonId, entries, initialSession, onE
               <span className="grid-header" key={h}>{h}</span>
             ))}
             {rows.map((row, idx) => (
-              <RowInputs key={row.entry_id} row={row} idx={idx} updateRow={updateRow} />
+              <RowInputs key={row.entry_id} row={row} idx={idx} updateRow={updateRow} autoFocus={row.entry_id === justAddedId} />
             ))}
           </div>
         </div>
       )}
 
-      <AddDriverToRace seasonId={seasonId} existingNames={existingNames} onCreated={handleDriverAdded} onError={msg => showToast("error", msg)} />
+      <AddDriverToRace seasonId={seasonId} seriesName={seriesName} existingNames={existingNames} onCreated={handleDriverAdded} onError={msg => showToast("error", msg)} />
 
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
 
@@ -204,13 +206,13 @@ function Check({ value, onChange, title }) {
   );
 }
 
-function RowInputs({ row, idx, updateRow }) {
-  const num = (field, min = 0) => (
-    <input type="number" min={min} value={row[field]} onChange={e => updateRow(idx, field, e.target.value)} />
+function RowInputs({ row, idx, updateRow, autoFocus = false }) {
+  const num = (field, min = 0, focus = false) => (
+    <input type="number" min={min} value={row[field]} onChange={e => updateRow(idx, field, e.target.value)} autoFocus={focus} />
   );
   return (
     <>
-      {num("finish_pos", 1)}
+      {num("finish_pos", 1, autoFocus)}
       <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.92rem", whiteSpace: "nowrap" }}>
         {row.driver_number != null && <span className="badge">#{row.driver_number}</span>}
         {row.driver_name}

@@ -28,11 +28,12 @@ function rowFromEntry(entry, position) {
 // feeds the Start column of the race results and drives Poles / Average Start.
 // `onEntriesChanged` is optional: fired after a driver is added mid-entry so
 // the parent's own roster list stays in sync.
-export function QualifyingEditor({ race, seasonId, entries, onEntriesChanged }) {
+export function QualifyingEditor({ race, seasonId, entries, onEntriesChanged, seriesName }) {
   const [rows, setRows] = useState(() => blankRows(entries));
   const [toast, setToast] = useState(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [justAddedId, setJustAddedId] = useState(null);
 
   function showToast(type, msg) {
     setToast({ type, msg });
@@ -71,6 +72,7 @@ export function QualifyingEditor({ race, seasonId, entries, onEntriesChanged }) 
 
   function handleDriverAdded(entry) {
     setRows(prev => [...prev, rowFromEntry(entry, prev.length + 1)]);
+    setJustAddedId(entry.id);
     onEntriesChanged?.();
   }
 
@@ -107,7 +109,7 @@ export function QualifyingEditor({ race, seasonId, entries, onEntriesChanged }) 
     return (
       <div>
         <p style={{ color: "var(--ink-1)", fontSize: "0.9rem" }}>No drivers on the roster yet.</p>
-        <AddDriverToRace seasonId={seasonId} existingNames={existingNames} onCreated={handleDriverAdded} onError={msg => showToast("error", msg)} />
+        <AddDriverToRace seasonId={seasonId} seriesName={seriesName} existingNames={existingNames} onCreated={handleDriverAdded} onError={msg => showToast("error", msg)} />
         {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
       </div>
     );
@@ -129,13 +131,13 @@ export function QualifyingEditor({ race, seasonId, entries, onEntriesChanged }) 
             <span className="grid-header">Driver</span>
             <span className="grid-header">Qual Time</span>
             {rows.map((row, idx) => (
-              <QualRow key={row.entry_id} row={row} idx={idx} updateRow={updateRow} />
+              <QualRow key={row.entry_id} row={row} idx={idx} updateRow={updateRow} autoFocus={row.entry_id === justAddedId} />
             ))}
           </div>
         </div>
       )}
 
-      <AddDriverToRace seasonId={seasonId} existingNames={existingNames} onCreated={handleDriverAdded} onError={msg => showToast("error", msg)} />
+      <AddDriverToRace seasonId={seasonId} seriesName={seriesName} existingNames={existingNames} onCreated={handleDriverAdded} onError={msg => showToast("error", msg)} />
 
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
 
@@ -150,10 +152,10 @@ export function QualifyingEditor({ race, seasonId, entries, onEntriesChanged }) 
   );
 }
 
-function QualRow({ row, idx, updateRow }) {
+function QualRow({ row, idx, updateRow, autoFocus = false }) {
   return (
     <>
-      <input type="number" min="1" value={row.finish_pos} onChange={e => updateRow(idx, "finish_pos", e.target.value)} />
+      <input type="number" min="1" value={row.finish_pos} onChange={e => updateRow(idx, "finish_pos", e.target.value)} autoFocus={autoFocus} />
       <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.92rem", whiteSpace: "nowrap" }}>
         {row.driver_number != null && <span className="badge">#{row.driver_number}</span>}
         {row.driver_name}

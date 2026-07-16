@@ -2,17 +2,19 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { DriverCreateModal } from "@/components/DriverCreateModal";
 
 // Autocomplete for adding a driver mid race/qualifying entry: search the
-// global driver pool + registered player accounts, or create a brand-new
-// driver on the spot. Either path immediately POSTs a season `entry` (the
-// same record every result row keys off), so the new row can be assigned a
-// finishing position without leaving this screen.
-export function AddDriverToRace({ seasonId, existingNames, onCreated, onError }) {
+// global driver pool + registered player accounts, or open the full driver
+// creation modal for a brand-new one. Either path immediately POSTs a season
+// `entry` (the same record every result row keys off), so the new row can be
+// assigned a finishing position without leaving this screen.
+export function AddDriverToRace({ seasonId, seriesName, existingNames, onCreated, onError }) {
   const [pool, setPool] = useState([]);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [createModalName, setCreateModalName] = useState(null); // non-null while the modal is open
 
   useEffect(() => {
     let live = true;
@@ -50,20 +52,11 @@ export function AddDriverToRace({ seasonId, existingNames, onCreated, onError })
     finally { setBusy(false); }
   }
 
-  async function createNew() {
-    const name = query.trim();
-    if (!name) return;
-    setBusy(true);
-    try {
-      // Best-effort: register the identity in the global pool too, so it's
-      // reusable from Roster or another race even if this fails.
-      api("/api/drivers", { method: "POST", body: { name } }).catch(() => {});
-      const entry = await api("/api/entries", { method: "POST", body: { name, team_id: "", season_id: seasonId } });
-      onCreated(entry);
-      setQuery("");
-      setOpen(false);
-    } catch (err) { onError(err.message); }
-    finally { setBusy(false); }
+  function handleCreated(entry) {
+    setCreateModalName(null);
+    setQuery("");
+    setOpen(false);
+    onCreated(entry);
   }
 
   return (
@@ -92,7 +85,7 @@ export function AddDriverToRace({ seasonId, existingNames, onCreated, onError })
           {!exactExists && (
             <button type="button" className="btn btn-ghost"
               style={{ display: "block", width: "100%", textAlign: "left", marginTop: 0, borderRadius: 0, color: "var(--accent-cyan)" }}
-              onMouseDown={e => e.preventDefault()} onClick={createNew}>
+              onMouseDown={e => e.preventDefault()} onClick={() => setCreateModalName(query.trim())}>
               + Create new driver: &ldquo;{query.trim()}&rdquo;
             </button>
           )}
@@ -100,6 +93,16 @@ export function AddDriverToRace({ seasonId, existingNames, onCreated, onError })
             <div style={{ padding: 8, fontSize: "0.8rem", color: "var(--ink-2)" }}>Already in this race.</div>
           )}
         </div>
+      )}
+
+      {createModalName != null && (
+        <DriverCreateModal
+          seasonId={seasonId}
+          seriesName={seriesName}
+          initialName={createModalName}
+          onClose={() => setCreateModalName(null)}
+          onCreated={handleCreated}
+        />
       )}
     </div>
   );

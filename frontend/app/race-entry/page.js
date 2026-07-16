@@ -8,7 +8,7 @@ import { RaceResultsEditor } from "@/components/RaceResultsEditor";
 import { api } from "@/lib/api";
 
 function RaceEntryInner() {
-  const { seasonId, season } = useLeague();
+  const { seasonId, season, series } = useLeague();
   const [races, setRaces] = useState([]);
   const [entries, setEntries] = useState([]);
   const [raceId, setRaceId] = useState("");
@@ -60,7 +60,7 @@ function RaceEntryInner() {
         </div>
 
         {selectedRace && (
-          <RaceResultsEditor key={selectedRace.id} race={selectedRace} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} />
+          <RaceResultsEditor key={selectedRace.id} race={selectedRace} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={series?.name} />
         )}
       </div>
     </section>

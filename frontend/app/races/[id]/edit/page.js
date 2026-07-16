@@ -106,6 +106,7 @@ function UnifiedEditInner() {
   const [race, setRace] = useState(null);
   const [seasonId, setSeasonId] = useState(null);
   const [seasonName, setSeasonName] = useState("");
+  const [seriesName, setSeriesName] = useState("");
   const [entries, setEntries] = useState([]);
   const [error, setError] = useState(null);
 
@@ -120,6 +121,10 @@ function UnifiedEditInner() {
         setSeasonName(ev.season?.name ?? "");
         const e = await api(`/api/entries?season_id=${ev.event.season_id}`);
         if (!cancelled) setEntries(e);
+        if (ev.season?.game_id && ev.season?.series_id) {
+          const seriesList = await api(`/api/series?game_id=${ev.season.game_id}`);
+          if (!cancelled) setSeriesName(seriesList.find(s => s.id === ev.season.series_id)?.name ?? "");
+        }
       } catch (err) {
         if (!cancelled) setError(err.message);
       }
@@ -163,12 +168,12 @@ function UnifiedEditInner() {
       )}
       {tab === "qualifying" && (
         <div className="form-card" style={{ maxWidth: "100%" }}>
-          <QualifyingEditor race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} />
+          <QualifyingEditor race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName} />
         </div>
       )}
       {tab === "results" && (
         <div className="form-card" style={{ maxWidth: "100%" }}>
-          <RaceResultsEditor race={race} seasonId={seasonId} entries={entries} initialSession={initialSession} onEntriesChanged={reloadEntries} />
+          <RaceResultsEditor race={race} seasonId={seasonId} entries={entries} initialSession={initialSession} onEntriesChanged={reloadEntries} seriesName={seriesName} />
         </div>
       )}
     </section>

@@ -5,6 +5,7 @@ import { useLeague } from "@/components/LeagueProvider";
 import { useSortable } from "@/components/useSortable";
 import { AdminGate } from "@/components/AdminGate";
 import { ImageUpload } from "@/components/ImageUpload";
+import { DriverForm } from "@/components/DriverForm";
 import { api } from "@/lib/api";
 
 // Resolve the current top-dropdown selection into a roster scope, exactly the
@@ -423,28 +424,13 @@ function RosterInner() {
               </div>
             )}
             <form onSubmit={addDriver}>
-              <div className="field">
-                <label>Driver Name</label>
-                <input required value={addForm.name} onChange={e => setAddForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. J. May" />
-              </div>
-              <div className="field">
-                <label>Car Number · {series?.name ?? "this series"}</label>
-                <input type="number" value={addForm.number} onChange={e => setAddForm(f => ({ ...f, number: e.target.value }))} placeholder="13" />
-              </div>
-              <div className="field">
-                <label>Team</label>
-                <select value={addForm.team_id} onChange={e => setAddForm(f => ({ ...f, team_id: e.target.value }))}>
-                  <option value="">No team</option>
-                  {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </select>
-              </div>
-              <div className="field">
-                <label>Linked Player Account (for profile stats)</label>
-                <select value={addForm.user_id} onChange={e => setAddForm(f => ({ ...f, user_id: e.target.value }))}>
-                  <option value="">Not linked</option>
-                  {users.map(u => <option key={u.uid} value={u.uid}>{u.display_name}</option>)}
-                </select>
-              </div>
+              <DriverForm
+                value={addForm}
+                onChange={setAddForm}
+                teams={teams}
+                users={users}
+                numberLabel={`Car Number · ${series?.name ?? "this series"}`}
+              />
               <button className="btn btn-primary" type="submit">Add Driver</button>
               {(pullKey || addForm.name) && (
                 <button className="btn btn-ghost" type="button" style={{ marginLeft: 8 }} onClick={resetAddForm}>Clear</button>
