@@ -7,15 +7,21 @@ for a driver account; league admins build out the full hierarchy with custom nam
 
 **Game** (e.g. iRacing) → **Series** (e.g. Asphalt Assault Series) → **Season** (Season 1, 2, 3…) → **Race** (Race 1, 2, 3…)
 
+A **Game/Series/Season** selector sits at the top of every page — pick "All" at any level to
+widen a view (e.g. league-wide stats), or drill down to one exact season.
+
 ## Features
 
 - 🔐 **Login for everyone** — email/password or Google sign-in (Firebase Auth)
-- 🧑‍✈️ **Player profiles** — public profile pages with editable picture, number, bio; career
-  stats auto-aggregated across all games with a per-game dropdown filter
-- 🏆 **Live standings** — driver *and* team championships with configurable points scale
-  and drop weeks per season
-- ⏱ **Fast race entry** — one grid per race, pre-filled with the roster; re-submitting a
-  race overwrites cleanly for corrections
+- 🧑‍✈️ **Player profiles** — public profile pages with editable picture, bio, country; career
+  stats auto-aggregated across all games with a per-game breakdown
+- 🏆 **Live standings** — driver *and* team championships with a configurable points scale,
+  bonus points, and drop weeks per season
+- ⏱ **Fast race entry** — one grid per race, pre-filled with the roster; supports multiple
+  sessions per race (e.g. Qualifying + Race), scored independently; re-submitting a race
+  overwrites cleanly for corrections
+- 📊 **Stats & Roster filtering** — Game/Series/Season dropdowns filter Stats and Roster
+  everywhere, with sortable columns and per-series car numbers
 - 🖼 **Custom branding** — upload game, series, season, team, and track logos
 - 👑 **Admin roles** — set `ADMIN_EMAILS`; admins get Race Entry, Roster & Teams, and League Setup
 
@@ -33,6 +39,62 @@ npm run dev
 ```
 
 Create `frontend/.env.local` from the root `.env.example` and fill in your Firebase values.
+The app runs at `http://localhost:3000`.
+
+## How to Use
+
+### For players
+
+1. **Sign in** (top right) with email/password or Google. This creates your public driver
+   profile automatically.
+2. **Profile** — edit your display name, avatar, bio, country, and car number. Ask a league
+   admin to link your roster entry to your account so your race results feed your stats.
+3. **Drivers** — browse every registered player; open a profile to see career stats,
+   broken out per game and combined across all games (starts, wins, podiums, poles, average
+   finish, titles, etc.).
+4. **Schedule** — the season's race calendar. Completed races are clickable and show full
+   results.
+5. **Standings** — driver and team championship tables for the selected season, with
+   points, gaps to the leader, and per-category stats. Click any column header to sort.
+6. **Stats** — use the Game/Series/Season menus to scope driver stats to a season, a whole
+   series, a whole game, or the entire league. Pick "All" at any level to widen the scope.
+
+### For league admins
+
+Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setup below).
+
+1. **League Setup** (`/admin`) — build the hierarchy top-down:
+   - **Game** — name + logo (e.g. "iRacing").
+   - **Series** — name + logo under a game (e.g. "Asphalt Assault Series").
+   - **Season** — name (e.g. "Season 3") under a series; set drop weeks, the points scale
+     (or pick a built-in template), qualifying points, and bonus points (most laps led,
+     fastest lap, etc.).
+   - **Races** — name, track (+ track logo), round number, date, and session list (e.g.
+     `Qualifying, Race` for a weekend with a scored qualifying session and a main race).
+2. **Roster & Teams** (`/roster`) — select a **Series** in the top dropdowns to manage that
+   series' roster:
+   - **Teams** — create teams with logos.
+   - **Drivers** — add a driver, assign their team, car number, and (optionally) link them
+     to a registered player account so their results count toward that account's profile
+     stats.
+   - **Car numbers by series** — a driver can run a different number in each series they're
+     part of; when editing a driver, set/update their number per series in one place.
+   - With **no series selected**, the Roster shows the combined driver list across every
+     series in scope (Number column is hidden, since a single number doesn't apply) —
+     useful for seeing the whole league roster at a glance.
+3. **Race Entry** (`/race-entry`) — pick a season, then a race, then fill in the results
+   grid (one row per driver: finishing position, laps led, incidents, DNF/DNS status).
+   Save — standings, stats, and every linked player's profile update immediately.
+   Re-open and re-save a race any time to correct results; it overwrites cleanly.
+   You can also jump straight to a race's edit screen from **Schedule** (✎ icon) — it has
+   **Race Info** and **Race Results** tabs in one place, including per-session (qualifying)
+   results editing.
+
+### Typical first-time flow
+
+`Sign in as admin → League Setup: create Game → Series → Season → Races → Roster & Teams:
+add Teams and Drivers (link accounts where possible) → Race Entry: enter results after each
+race → Standings/Stats update automatically.`
 
 ## Project Layout
 
@@ -40,18 +102,21 @@ Create `frontend/.env.local` from the root `.env.example` and fill in your Fireb
 frontend/
   app/
     api/            ← Next.js API routes (all writes require a Firebase ID token)
-      games/ series/ seasons/ teams/ entries/ races/ results/ standings/ users/ upload/
+      games/ series/ seasons/ teams/ entries/ races/ results/ standings/
+      stats/ roster/ users/ upload/
     page.js         ← Dashboard (per selected season)
     standings/      ← Driver + team points tables
+    stats/          ← Scoped driver stats (season/series/game/league), sortable
     schedule/       ← Season calendar
     race-entry/     ← Admin: submit/edit race results
-    roster/         ← Admin: season roster + teams
+    roster/         ← Admin: roster + teams, scoped by game/series/season
     admin/          ← Admin: build games/series/seasons/races, upload logos
     drivers/        ← Player directory + public profiles (/drivers/[uid])
+    races/[id]/     ← Race results view; races/[id]/edit ← admin race info + results editor
     profile/        ← Edit your own profile
     login/          ← Sign in / create account
-  lib/              ← Firebase admin + client init, auth guards, standings math
-  components/       ← AppShell, Auth/League providers, ImageUpload, AdminGate
+  lib/              ← Firebase admin + client init, auth guards, standings math, shared CRUD
+  components/       ← AppShell, Auth/League providers, ImageUpload, AdminGate, RaceResultsEditor
 firebase/           ← Firestore + Storage security rules
 backend/            ← Legacy Python backend (unused; superseded by Next.js API routes)
 ```
@@ -59,6 +124,14 @@ backend/            ← Legacy Python backend (unused; superseded by Next.js API
 ## Data model (Firestore collections)
 
 `games` → `series (game_id)` → `seasons (series_id, game_id, drop_weeks, points_scale)` →
-`races (season_id)` and `entries (season_id, team_id, user_id)` / `teams (season_id)` →
-`results (race_id, season_id, entry_id)`. `users` holds player profiles; linking a roster
-entry to a user account is what feeds their public career stats.
+`races (season_id, sessions[])` and `entries (season_id, team_id, user_id, number)` /
+`teams (season_id)` → `results (race_id, season_id, entry_id)`. `users` holds player
+profiles; linking a roster entry to a user account is what feeds their public career stats.
+
+A driver's car `number` lives on their per-season `entry`, so it's naturally scoped to a
+series (every season belongs to exactly one series) — a driver can carry a different number
+in each series they race in. Drivers are unified across seasons/series for stats and roster
+aggregation by `user_id` when linked, otherwise by roster name.
+
+Everything runs through the server API — clients never talk to Firestore directly (see
+`firebase/firestore.rules` and `firebase/storage.rules`).
