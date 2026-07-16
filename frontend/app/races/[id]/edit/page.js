@@ -199,6 +199,28 @@ function UnifiedEditInner() {
     } catch { /* toast omitted — non-critical, editor still usable with season default */ }
   }, [race, sessionPoints]);
 
+  // Rename a session and cascade the change to saved results + points mapping.
+  const renameSession = useCallback(async (type, from, to) => {
+    const updated = await api(`/api/races/${race.id}/rename-session`, {
+      method: "POST",
+      body: { session_type: type, from, to },
+    });
+    setRace(r => ({ ...r, ...updated }));
+  }, [race]);
+
+  async function addStdSession(name) {
+    const sessions = [...(race.sessions?.length ? race.sessions : ["Race"]), name];
+    const updated = await api(`/api/races/${race.id}`, { method: "PATCH", body: { sessions } });
+    setRace(r => ({ ...r, ...updated }));
+  }
+  async function removeStdSession(name) {
+    if (!confirm(`Remove ${name}? Its saved results stay in the database but won't be shown.`)) return;
+    const remaining = (race.sessions?.length ? race.sessions : ["Race"]).filter(s => s !== name);
+    const sessions = remaining.length ? remaining : ["Race"];
+    const updated = await api(`/api/races/${race.id}`, { method: "PATCH", body: { sessions } });
+    setRace(r => ({ ...r, ...updated }));
+  }
+
   async function addHeat(name) {
     const heats = [...(race.heats || []), name];
     const updated = await api(`/api/races/${race.id}`, { method: "PATCH", body: { heats } });
@@ -271,6 +293,8 @@ function UnifiedEditInner() {
             race={race} seasonId={seasonId} entries={entries} initialSession={initialSession} onEntriesChanged={reloadEntries} seriesName={seriesName}
             sessionType="race" sessionNames={standardSessions}
             season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints}
+            canAddSession onAddSession={addStdSession} onRemoveSession={removeStdSession}
+            onRenameSession={(from, to) => renameSession("race", from, to)}
           />
         </div>
       )}
@@ -282,6 +306,7 @@ function UnifiedEditInner() {
             sessionType="heat" sessionNames={heats}
             season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints}
             canAddSession onAddSession={addHeat} onRemoveSession={removeHeat}
+            onRenameSession={(from, to) => renameSession("heat", from, to)}
           />
         </div>
       )}
@@ -294,6 +319,7 @@ function UnifiedEditInner() {
               sessionType="consolation" sessionNames={consolations}
               season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints}
               canAddSession onAddSession={addConsolation} onRemoveSession={removeConsolation}
+              onRenameSession={(from, to) => renameSession("consolation", from, to)}
             />
           ) : (
             <div>
@@ -312,6 +338,7 @@ function UnifiedEditInner() {
             race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName}
             sessionType="feature" sessionNames={[featureName]}
             season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints}
+            onRenameSession={(from, to) => renameSession("feature", from, to)}
           />
         </div>
       )}

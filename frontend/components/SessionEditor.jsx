@@ -85,7 +85,7 @@ const LABELS = { qualifying: "Qualifying", race: "Race", heat: "Heat", consolati
 export function SessionEditor({
   race, seasonId, entries, sessionType, sessionNames,
   season, templates = [], sessionPoints = {}, onSessionPointsChange,
-  canAddSession = false, onAddSession, onRemoveSession,
+  canAddSession = false, onAddSession, onRemoveSession, onRenameSession,
   initialSession, onEntriesChanged, seriesName,
 }) {
   const names = sessionNames.length ? sessionNames : [LABELS[sessionType] || "Session"];
@@ -101,6 +101,8 @@ export function SessionEditor({
   const [justAddedId, setJustAddedId] = useState(null);
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
   const [dragIndex, setDragIndex] = useState(null);
   const [overIndex, setOverIndex] = useState(null);
 
@@ -206,6 +208,22 @@ export function SessionEditor({
     setAdding(false);
   }
 
+  async function submitRename(e) {
+    e.preventDefault();
+    const to = renameValue.trim();
+    if (!to || to === session) { setRenaming(false); return; }
+    try {
+      await onRenameSession(session, to);
+      setRenaming(false);
+      // Select + reload the renamed session directly; its results were
+      // migrated server-side, so they match on the new name regardless of
+      // whether the parent's updated names prop has propagated yet.
+      loadSession(to);
+    } catch (err) {
+      showToast("error", err.message);
+    }
+  }
+
   const existingNames = new Set(rows.map(r => r.driver_name.trim().toLowerCase()));
   const pointsLabel = sessionType === "qualifying" ? "Quali Pts" : "Points";
 
@@ -234,15 +252,34 @@ export function SessionEditor({
         </div>
       )}
 
-      {onSessionPointsChange && (
-        <div className="field" style={{ maxWidth: 280, marginBottom: 12 }}>
-          <label>Points Template · {session}</label>
-          <select value={templateId} onChange={e => onSessionPointsChange(session, e.target.value)}>
-            <option value="">Season default</option>
-            {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </select>
-        </div>
-      )}
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 12 }}>
+        {onSessionPointsChange && (
+          <div className="field" style={{ maxWidth: 280, margin: 0 }}>
+            <label>Points system · {session}</label>
+            <select value={templateId} onChange={e => onSessionPointsChange(session, e.target.value)}>
+              <option value="">Season default</option>
+              {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          </div>
+        )}
+        {onRenameSession && (
+          renaming ? (
+            <form onSubmit={submitRename} style={{ display: "flex", gap: 6, alignItems: "flex-end" }}>
+              <div className="field" style={{ maxWidth: 200, margin: 0 }}>
+                <label>Rename “{session}”</label>
+                <input autoFocus value={renameValue} onChange={e => setRenameValue(e.target.value)} placeholder="New name" />
+              </div>
+              <button className="btn btn-primary" type="submit" style={{ marginTop: 0 }}>Save</button>
+              <button className="btn btn-ghost" type="button" style={{ marginTop: 0 }} onClick={() => setRenaming(false)}>Cancel</button>
+            </form>
+          ) : (
+            <button className="btn btn-ghost" type="button" style={{ marginTop: 0 }}
+              onClick={() => { setRenameValue(session); setRenaming(true); }}>
+              ✎ Rename “{session}”
+            </button>
+          )
+        )}
+      </div>
 
       <p style={{ marginTop: 0, color: "var(--ink-1)", fontSize: "0.85rem" }}>
         {sessionType === "qualifying"

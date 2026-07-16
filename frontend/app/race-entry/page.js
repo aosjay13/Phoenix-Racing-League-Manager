@@ -44,13 +44,28 @@ function RaceEntryInner() {
   const selectedRace = races.find(r => r.id === raceId);
   const sessionPoints = selectedRace?.session_points || {};
 
+  const patchRace = updated => setRaces(prev => prev.map(r => (r.id === raceId ? { ...r, ...updated } : r)));
+
   async function saveSessionPoints(name, templateId) {
     const next = { ...sessionPoints, [name]: templateId };
     if (!templateId) delete next[name];
     try {
       const updated = await api(`/api/races/${raceId}`, { method: "PATCH", body: { session_points: next } });
-      setRaces(prev => prev.map(r => (r.id === raceId ? { ...r, ...updated } : r)));
+      patchRace(updated);
     } catch { /* non-critical — editor still usable with season default */ }
+  }
+
+  const stdSessions = Array.isArray(selectedRace?.sessions) && selectedRace.sessions.length ? selectedRace.sessions : ["Race"];
+  async function addStdSession(name) {
+    patchRace(await api(`/api/races/${raceId}`, { method: "PATCH", body: { sessions: [...stdSessions, name] } }));
+  }
+  async function removeStdSession(name) {
+    if (!confirm(`Remove ${name}? Its saved results stay in the database but won't be shown.`)) return;
+    const remaining = stdSessions.filter(s => s !== name);
+    patchRace(await api(`/api/races/${raceId}`, { method: "PATCH", body: { sessions: remaining.length ? remaining : ["Race"] } }));
+  }
+  async function renameStdSession(from, to) {
+    patchRace(await api(`/api/races/${raceId}/rename-session`, { method: "POST", body: { session_type: "race", from, to } }));
   }
 
   return (
@@ -60,8 +75,9 @@ function RaceEntryInner() {
         <span className="page-badge">{entries.length} Drivers</span>
       </div>
       <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.85rem" }}>
-        Pick an event to enter or edit its results. To also rename a race, change its date, or set up
-        heat racing, use the pencil on the <Link href="/schedule" style={{ color: "var(--accent-cyan)" }}>Schedule</Link>.
+        Pick an event to enter or edit its results — rename each race, add more, and set a points system
+        per race right here. To rename the event itself, change its date, or set up heat racing, use the
+        pencil on the <Link href="/schedule" style={{ color: "var(--accent-cyan)" }}>Schedule</Link>.
       </p>
 
       <div className="form-card" style={{ maxWidth: "100%" }}>
@@ -82,8 +98,9 @@ function RaceEntryInner() {
           <SessionEditor
             key={selectedRace.id}
             race={selectedRace} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={series?.name}
-            sessionType="race" sessionNames={Array.isArray(selectedRace.sessions) && selectedRace.sessions.length ? selectedRace.sessions : ["Race"]}
+            sessionType="race" sessionNames={stdSessions}
             season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints}
+            canAddSession onAddSession={addStdSession} onRemoveSession={removeStdSession} onRenameSession={renameStdSession}
           />
         ))}
       </div>
