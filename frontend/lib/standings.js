@@ -77,13 +77,17 @@ export function decorateRaceBonuses(results) {
   return out;
 }
 
-export function pointsFor(result, config) {
+// `qualPos` is the driver's actual Qualifying finish position for this race
+// (looked up separately — see buildQualPosMap), not a copy stored on the
+// race result itself. That's the only source of starting-position info now;
+// there is no editable "Start" field on race/heat/consolation/feature rows.
+export function pointsFor(result, config, qualPos = null) {
   const { racePoints, qualPoints, bonuses } = config;
   let pts = Number(racePoints[result.finish_pos] ?? 0);
-  if (result.start_pos != null && result.start_pos !== "") {
-    pts += Number(qualPoints[result.start_pos] ?? 0);
+  if (qualPos != null) {
+    pts += Number(qualPoints[qualPos] ?? 0);
+    if (Number(qualPos) === 1) pts += Number(bonuses.pole || 0);
   }
-  if (Number(result.start_pos) === 1) pts += Number(bonuses.pole || 0);
   if (result.fastest_lap) pts += Number(bonuses.best_lap || 0);
   if (result.is_most_laps_led) pts += Number(bonuses.most_laps_led || 0);
   if (Number(result.laps_led || 0) > 0) pts += Number(bonuses.lead_a_lap || 0);
@@ -91,6 +95,16 @@ export function pointsFor(result, config) {
   if (result.hard_charger) pts += Number(bonuses.hard_charger || 0);
   pts += Number(result.bonus_points || 0) - Number(result.penalty_points || 0);
   return pts;
+}
+
+// race_id|entry_id -> that driver's Qualifying finish position, from
+// whichever qualifying-type results are present in the given result set.
+export function buildQualPosMap(results) {
+  const map = {};
+  for (const r of results) {
+    if (r.session_type === "qualifying") map[`${r.race_id}|${r.entry_id}`] = Number(r.finish_pos);
+  }
+  return map;
 }
 
 const round2 = n => Math.round(n * 100) / 100;
@@ -101,20 +115,11 @@ export function isQualifying(r) {
   return r.session_type === "qualifying";
 }
 
-// Starting-grid info for a driver. Prefer a dedicated qualifying session
-// (finish_pos = grid slot, P1 = pole); fall back to the race's start_pos
-// column for legacy events that never had a separate qualifying session.
-function startInfo(raceResults, qualResults) {
-  if (qualResults.length) {
-    const positions = qualResults.map(r => Number(r.finish_pos)).filter(n => n > 0);
-    return { positions, poles: qualResults.filter(r => Number(r.finish_pos) === 1).length };
-  }
-  const positions = raceResults
-    .map(r => r.start_pos)
-    .filter(v => v != null && v !== "")
-    .map(Number)
-    .filter(n => n > 0);
-  return { positions, poles: raceResults.filter(r => Number(r.start_pos) === 1).length };
+// Starting-grid info for a driver, from Qualifying sessions only — Poles and
+// Average Start never look at anything recorded on a race result.
+function startInfo(qualResults) {
+  const positions = qualResults.map(r => Number(r.finish_pos)).filter(n => n > 0);
+  return { positions, poles: qualResults.filter(r => Number(r.finish_pos) === 1).length };
 }
 
 // Accepts a mix of race + qualifying results for one driver and keeps them
@@ -125,7 +130,7 @@ function statLine(results) {
   const qs = results.filter(r => isQualifying(r));
   const starts = rs.length;
   const sum = fn => rs.reduce((a, r) => a + fn(r), 0);
-  const { positions, poles } = startInfo(rs, qs);
+  const { positions, poles } = startInfo(qs);
   return {
     starts,
     wins: rs.filter(r => r.finish_pos === 1).length,
@@ -157,6 +162,7 @@ export function calculateStandings(results, entries, teams = [], config, templat
   const entriesById = Object.fromEntries(entries.map(e => [e.id, e]));
   const teamsById = Object.fromEntries(teams.map(t => [t.id, t]));
   const configFor = r => configForTemplate(config, templatesById[r.points_template_id]);
+  const qualPosMap = buildQualPosMap(results);
 
   const byEntry = {};
   for (const r of results) (byEntry[r.entry_id] ??= []).push(r);
@@ -169,7 +175,7 @@ export function calculateStandings(results, entries, teams = [], config, templat
     // consolation, feature) — qualifying results never earn points on their
     // own, only a starting-position bonus folded into the next session.
     const raceResults = entryResults.filter(r => !isQualifying(r));
-    const pointsList = raceResults.map(r => pointsFor(r, configFor(r)));
+    const pointsList = raceResults.map(r => pointsFor(r, configFor(r), qualPosMap[`${r.race_id}|${r.entry_id}`] ?? null));
     const totalPoints = pointsList.reduce((a, b) => a + b, 0);
 
     let droppedPoints = 0;

@@ -269,7 +269,7 @@ function UnifiedEditInner() {
         <div className="form-card" style={{ maxWidth: "100%" }}>
           <SessionEditor
             race={race} seasonId={seasonId} entries={entries} initialSession={initialSession} onEntriesChanged={reloadEntries} seriesName={seriesName}
-            sessionType="race" sessionNames={standardSessions} priorSessionType="qualifying" priorSessionNames={["Qualifying"]}
+            sessionType="race" sessionNames={standardSessions}
             season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints}
           />
         </div>
@@ -279,7 +279,7 @@ function UnifiedEditInner() {
         <div className="form-card" style={{ maxWidth: "100%" }}>
           <SessionEditor
             race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName}
-            sessionType="heat" sessionNames={heats} priorSessionType="qualifying" priorSessionNames={["Qualifying"]}
+            sessionType="heat" sessionNames={heats}
             season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints}
             canAddSession onAddSession={addHeat} onRemoveSession={removeHeat}
           />
@@ -291,7 +291,7 @@ function UnifiedEditInner() {
           {consolations.length ? (
             <SessionEditor
               race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName}
-              sessionType="consolation" sessionNames={consolations} priorSessionType="heat" priorSessionNames={heats}
+              sessionType="consolation" sessionNames={consolations}
               season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints}
               canAddSession onAddSession={addConsolation} onRemoveSession={removeConsolation}
             />
@@ -311,8 +311,6 @@ function UnifiedEditInner() {
           <SessionEditor
             race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName}
             sessionType="feature" sessionNames={[featureName]}
-            priorSessionType={consolations.length ? "consolation" : "heat"}
-            priorSessionNames={consolations.length ? consolations : heats}
             season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints}
           />
         </div>

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import {
   aggregateCareerStats,
+  buildQualPosMap,
   calculateStandings,
   configForTemplate,
   decorateRaceBonuses,
@@ -63,6 +64,7 @@ async function buildStats(seasons) {
     const entries = entriesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
     const entriesById = Object.fromEntries(entries.map(e => [e.id, e]));
     const results = decorateRaceBonuses(resultsSnap.docs.map(d => d.data()));
+    const qualPosMap = buildQualPosMap(results);
 
     // Prefer the global driver identity (driver_id) so a driver who races
     // under a different alias/number in each series still aggregates as one
@@ -88,7 +90,10 @@ async function buildStats(seasons) {
       if (entry.number != null) bucket.driver_number = entry.number;
       if (entry.user_id) bucket.user_id = entry.user_id;
       if (entry.driver_id) bucket.driver_id = entry.driver_id;
-      bucket.results.push({ ...r, points: isQualifying(r) ? 0 : pointsFor(r, configForTemplate(config, templatesById[r.points_template_id])) });
+      bucket.results.push({
+        ...r,
+        points: isQualifying(r) ? 0 : pointsFor(r, configForTemplate(config, templatesById[r.points_template_id]), qualPosMap[`${r.race_id}|${r.entry_id}`] ?? null),
+      });
     }
 
     // Titles: champion of each completed season.

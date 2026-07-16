@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import { AddDriverToRace } from "@/components/AddDriverToRace";
 import { pointsFor, configForTemplate, resolveSeasonConfig } from "@/lib/standings";
 
-const RESULT_FIELDS = ["finish_pos", "start_pos", "qual_time", "laps", "laps_led", "incidents", "fastest_lap", "halfway_leader", "hard_charger", "provisional", "status"];
+const RESULT_FIELDS = ["finish_pos", "qual_time", "laps", "laps_led", "incidents", "fastest_lap", "halfway_leader", "hard_charger", "provisional", "status"];
 
 function blankRows(entries) {
   return entries.map((e, i) => ({
@@ -13,7 +13,6 @@ function blankRows(entries) {
     driver_name: e.name,
     driver_number: e.number,
     finish_pos: String(i + 1),
-    start_pos: "",
     qual_time: "",
     laps: "",
     laps_led: "0",
@@ -32,7 +31,6 @@ function rowFromEntry(entry, position) {
     driver_name: entry.name,
     driver_number: entry.number ?? null,
     finish_pos: String(position),
-    start_pos: "",
     qual_time: "",
     laps: "",
     laps_led: "0",
@@ -45,26 +43,7 @@ function rowFromEntry(entry, position) {
   };
 }
 
-// entryId -> starting grid position, built by concatenating the preceding
-// stage's results (each sorted by finish order) in the order its sessions
-// are listed. Admins can always type over the auto-filled Start value.
-function buildPriorGrid(allResults, priorType, priorNames) {
-  const grid = {};
-  if (!priorType || !priorNames?.length) return grid;
-  let pos = 1;
-  for (const name of priorNames) {
-    const sessionResults = allResults
-      .filter(r => r.session_type === priorType && (r.session || priorNames[0]) === name)
-      .sort((a, b) => Number(a.finish_pos) - Number(b.finish_pos));
-    for (const r of sessionResults) {
-      if (!(r.entry_id in grid)) grid[r.entry_id] = pos;
-      pos += 1;
-    }
-  }
-  return grid;
-}
-
-function buildRows(entries, existing, priorGrid) {
+function buildRows(entries, existing) {
   const byEntry = Object.fromEntries(existing.map(r => [r.entry_id, r]));
   const merged = blankRows(entries).map(row => {
     const prev = byEntry[row.entry_id];
@@ -74,9 +53,6 @@ function buildRows(entries, existing, priorGrid) {
         if (prev[f] == null) continue;
         out[f] = typeof row[f] === "boolean" ? !!prev[f] : String(prev[f]);
       }
-    }
-    if ((out.start_pos === "" || out.start_pos == null) && priorGrid[row.entry_id] != null) {
-      out.start_pos = String(priorGrid[row.entry_id]);
     }
     return out;
   });
@@ -99,11 +75,15 @@ const LABELS = { qualifying: "Qualifying", race: "Race", heat: "Heat", consolati
 // Renders horizontal sub-tabs across the sessions of this type (with an
 // optional "+" to add a new named heat/consolation), a Points column
 // computed from that session's own points template (falling back to the
-// season default), and auto-fills Start from the immediately preceding
-// stage's finishing order — always editable to override manually.
+// season default), and lets rows be dragged into the right finishing order.
+//
+// Starting position lives only on Qualifying (its Pos column) — there is no
+// "Start" field on race/heat/consolation/feature rows. A driver's qualifying
+// bonus/pole bonus is looked up from their actual Qualifying result for this
+// race, not copied onto every other session, so Average Start and Poles are
+// always computed from Qualifying results alone.
 export function SessionEditor({
   race, seasonId, entries, sessionType, sessionNames,
-  priorSessionType = null, priorSessionNames = [],
   season, templates = [], sessionPoints = {}, onSessionPointsChange,
   canAddSession = false, onAddSession, onRemoveSession,
   initialSession, onEntriesChanged, seriesName,
@@ -114,6 +94,7 @@ export function SessionEditor({
     initialSession && names.includes(initialSession) ? initialSession : names[0]
   );
   const [rows, setRows] = useState(() => blankRows(entries));
+  const [qualPos, setQualPos] = useState({}); // entry_id -> this race's Qualifying finish position
   const [toast, setToast] = useState(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -133,10 +114,14 @@ export function SessionEditor({
     setLoading(true);
     try {
       const all = await api(`/api/results?race_id=${race.id}`);
-      const priorGrid = buildPriorGrid(all, priorSessionType, priorSessionNames);
+      const qp = Object.fromEntries(
+        all.filter(r => r.session_type === "qualifying").map(r => [r.entry_id, Number(r.finish_pos)])
+      );
+      setQualPos(qp);
       const existing = all.filter(r => r.session_type === sessionType && (r.session || names[0]) === sess);
-      setRows(buildRows(entries, existing, priorGrid));
+      setRows(buildRows(entries, existing));
     } catch {
+      setQualPos({});
       setRows(blankRows(entries));
     } finally {
       setLoading(false);
@@ -187,7 +172,9 @@ export function SessionEditor({
     return configForTemplate(base, template);
   }, [season, templates, templateId]);
 
-  const rowPoints = row => (sessionType === "qualifying" ? Number(config.qualPoints[row.finish_pos] ?? 0) : pointsFor(row, config));
+  const rowPoints = row => (sessionType === "qualifying"
+    ? Number(config.qualPoints[row.finish_pos] ?? 0)
+    : pointsFor(row, config, qualPos[row.entry_id] ?? null));
 
   async function handleSave() {
     const filled = rows.filter(r => r.finish_pos !== "");
@@ -259,8 +246,8 @@ export function SessionEditor({
 
       <p style={{ marginTop: 0, color: "var(--ink-1)", fontSize: "0.85rem" }}>
         {sessionType === "qualifying"
-          ? "Position 1 is the pole. This order auto-fills the Start column of the next session."
-          : "Start auto-fills from the preceding session's finishing order — edit it any time to override. FL = fastest lap, ½ = halfway-point leader, HC = hard charger, Prov = provisional start."}
+          ? "Position 1 is the pole. This is the only place starting position is recorded — Average Start and Poles are calculated from Qualifying results only."
+          : "FL = fastest lap, ½ = halfway-point leader, HC = hard charger, Prov = provisional start. Each driver's qualifying bonus is looked up from their Qualifying result automatically."}
       </p>
 
       {!rows.length ? (
@@ -283,7 +270,7 @@ export function SessionEditor({
         <div style={{ overflowX: "auto" }}>
           <p style={{ margin: "0 0 8px", color: "var(--ink-2)", fontSize: "0.78rem" }}>Drag ⠿ to reorder — finishing positions renumber automatically.</p>
           <div className="result-grid result-grid-wide">
-            {["", "Fin", "Driver", "Start", "Qual Time", "Laps", "Led", "Inc", "FL", "½", "HC", "Prov", "Status", pointsLabel].map((h, i) => (
+            {["", "Fin", "Driver", "Qual Time", "Laps", "Led", "Inc", "FL", "½", "HC", "Prov", "Status", pointsLabel].map((h, i) => (
               <span className="grid-header" key={h || i}>{h}</span>
             ))}
             {rows.map((row, idx) => (
@@ -358,7 +345,6 @@ function RowInputs({ row, idx, updateRow, autoFocus, points, dragging, dragOver,
         {row.driver_number != null && <span className="badge">#{row.driver_number}</span>}
         {row.driver_name}
       </div>
-      {num("start_pos", 1)}
       <input placeholder="01:43.863" value={row.qual_time} onChange={e => updateRow(idx, "qual_time", e.target.value)} />
       {num("laps")}
       {num("laps_led")}

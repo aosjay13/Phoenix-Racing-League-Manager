@@ -60,7 +60,6 @@ export const POST = withAdmin(async (request, ctx, user) => {
     })
     .forEach(d => batch.delete(d.ref));
 
-  const numOrNull = v => (v != null && v !== "" ? Number(v) : null);
   const saved = [];
   const now = new Date().toISOString();
   for (const row of rows) {
@@ -72,7 +71,6 @@ export const POST = withAdmin(async (request, ctx, user) => {
       session_type: sessionType,
       entry_id: row.entry_id,
       finish_pos: Number(row.finish_pos),
-      start_pos: numOrNull(row.start_pos),
       qual_time: row.qual_time || null,
       laps: Number(row.laps || 0),
       laps_led: Number(row.laps_led || 0),

@@ -83,7 +83,6 @@ function RaceEntryInner() {
             key={selectedRace.id}
             race={selectedRace} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={series?.name}
             sessionType="race" sessionNames={Array.isArray(selectedRace.sessions) && selectedRace.sessions.length ? selectedRace.sessions : ["Race"]}
-            priorSessionType="qualifying" priorSessionNames={["Qualifying"]}
             season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints}
           />
         ))}

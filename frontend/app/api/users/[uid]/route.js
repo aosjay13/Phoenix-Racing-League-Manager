@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import {
   aggregateCareerStats,
+  buildQualPosMap,
   calculateStandings,
   configForTemplate,
   decorateRaceBonuses,
@@ -49,10 +50,14 @@ export async function GET(request, { params }) {
     ]);
     const seasonResults = decorateRaceBonuses(resultsSnap.docs.map(d => d.data()));
     const seasonEntries = entriesSnap2.docs.map(d => ({ id: d.id, ...d.data() }));
+    const qualPosMap = buildQualPosMap(seasonResults);
 
     const mine = seasonResults
       .filter(r => myEntryIds.has(r.entry_id))
-      .map(r => ({ ...r, points: isQualifying(r) ? 0 : pointsFor(r, configForTemplate(config, templatesById[r.points_template_id])) }));
+      .map(r => ({
+        ...r,
+        points: isQualifying(r) ? 0 : pointsFor(r, configForTemplate(config, templatesById[r.points_template_id]), qualPosMap[`${r.race_id}|${r.entry_id}`] ?? null),
+      }));
     (perGame[gameId] ??= []).push(...mine);
     allResults.push(...mine);
 

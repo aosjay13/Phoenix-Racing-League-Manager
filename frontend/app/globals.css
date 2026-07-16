@@ -897,8 +897,8 @@ tbody tr:hover {
 
 /* ── Wide race-entry grid ────────────────────── */
 .result-grid-wide {
-  grid-template-columns: 22px 58px minmax(160px, 1fr) 58px 100px 62px 62px 56px 34px 34px 34px 44px 100px 70px;
-  min-width: 980px;
+  grid-template-columns: 22px 58px minmax(160px, 1fr) 100px 62px 62px 56px 34px 34px 34px 44px 100px 70px;
+  min-width: 920px;
   align-items: center;
 }
 

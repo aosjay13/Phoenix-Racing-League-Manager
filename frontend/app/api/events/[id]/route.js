@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
-import { configForTemplate, decorateRaceBonuses, isQualifying, pointsFor, resolveSeasonConfig } from "@/lib/standings";
+import { buildQualPosMap, configForTemplate, decorateRaceBonuses, isQualifying, pointsFor, resolveSeasonConfig } from "@/lib/standings";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
 
 // Full detail for one event: a dedicated qualifying session plus every race
@@ -40,6 +40,7 @@ export async function GET(request, { params }) {
 
   const raceResults = all.filter(r => !isQualifying(r));
   const qualResults = all.filter(r => isQualifying(r));
+  const qualPosMap = buildQualPosMap(all);
 
   // Race sessions: whatever the event declares (standard `sessions`, or for
   // heat-format events its heats/consolations/feature), plus any found in
@@ -56,26 +57,18 @@ export async function GET(request, { params }) {
     name,
     results: raceResults
       .filter(r => (r.session || declared[0]) === name)
-      .map(r => ({ ...joinEntry(r), points: pointsFor(r, configFor(r)) }))
+      .map(r => ({ ...joinEntry(r), points: pointsFor(r, configFor(r), qualPosMap[`${r.race_id}|${r.entry_id}`] ?? null) }))
       .sort((a, b) => a.finish_pos - b.finish_pos),
   })).filter(s => s.results.length || names.length === 1);
 
-  // Qualifying: prefer the dedicated qualifying session; otherwise fall back to
-  // the starting positions recorded on the first race session (legacy events).
-  let qualifying = [];
-  if (qualResults.length) {
-    qualifying = qualResults
-      .map(r => {
-        const qc = configFor(r);
-        return { ...joinEntry(r), position: Number(r.finish_pos), qual_points: Number(qc.qualPoints[r.finish_pos] ?? 0) };
-      })
-      .sort((a, b) => a.position - b.position);
-  } else if (races[0]) {
-    qualifying = races[0].results
-      .filter(r => r.start_pos != null)
-      .map(r => ({ ...r, position: Number(r.start_pos), qual_time: r.qual_time, qual_points: Number(config.qualPoints[r.start_pos] ?? 0) }))
-      .sort((a, b) => a.position - b.position);
-  }
+  // Qualifying is the only source of starting position — there's no fallback
+  // to anything recorded on a race result.
+  const qualifying = qualResults
+    .map(r => {
+      const qc = configFor(r);
+      return { ...joinEntry(r), position: Number(r.finish_pos), qual_points: Number(qc.qualPoints[r.finish_pos] ?? 0) };
+    })
+    .sort((a, b) => a.position - b.position);
 
   return NextResponse.json({
     event,
