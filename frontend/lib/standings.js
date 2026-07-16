@@ -27,7 +27,7 @@ export const BONUS_TYPES = [
 
 export const DEFAULT_BONUSES = Object.fromEntries(BONUS_TYPES.map(([k]) => [k, 0]));
 
-function parseMaybeJson(value, fallback) {
+export function parseMaybeJson(value, fallback) {
   if (!value) return fallback;
   try {
     const parsed = typeof value === "string" ? JSON.parse(value) : value;
@@ -44,6 +44,21 @@ export function resolveSeasonConfig(season = {}) {
     racePoints: parseMaybeJson(season.race_points ?? season.points_scale, DEFAULT_RACE_POINTS),
     qualPoints: parseMaybeJson(season.qual_points, DEFAULT_QUAL_POINTS),
     bonuses: { ...DEFAULT_BONUSES, ...parseMaybeJson(season.bonus_points, {}) },
+  };
+}
+
+// Points templates (points_templates docs, or a season doc) share the same
+// race_points/qual_points/bonus_points shape, so a template can override a
+// base config wholesale — this is how each session in an event (Qualifying,
+// a Heat, a Consolation, the Feature) can carry its own points system while
+// falling back to the season default when no template is assigned.
+export function configForTemplate(baseConfig, template) {
+  if (!template) return baseConfig;
+  return {
+    dropWeeks: baseConfig.dropWeeks,
+    racePoints: parseMaybeJson(template.race_points, baseConfig.racePoints),
+    qualPoints: parseMaybeJson(template.qual_points, baseConfig.qualPoints),
+    bonuses: { ...baseConfig.bonuses, ...parseMaybeJson(template.bonus_points, {}) },
   };
 }
 
@@ -133,9 +148,15 @@ function statLine(results) {
 }
 
 // results should already be passed through decorateRaceBonuses().
-export function calculateStandings(results, entries, teams = [], config) {
+// `templatesById` (optional) resolves each result's own points_template_id
+// (see lib/pointsTemplatesServer.js), so a Heat/Consolation/Feature session
+// scored under a different points system than the season default still
+// totals correctly — falls back to the season config when a result carries
+// no template of its own.
+export function calculateStandings(results, entries, teams = [], config, templatesById = {}) {
   const entriesById = Object.fromEntries(entries.map(e => [e.id, e]));
   const teamsById = Object.fromEntries(teams.map(t => [t.id, t]));
+  const configFor = r => configForTemplate(config, templatesById[r.points_template_id]);
 
   const byEntry = {};
   for (const r of results) (byEntry[r.entry_id] ??= []).push(r);
@@ -144,10 +165,11 @@ export function calculateStandings(results, entries, teams = [], config) {
   for (const [entryId, entryResults] of Object.entries(byEntry)) {
     const entry = entriesById[entryId] || {};
     const team = teamsById[entry.team_id] || {};
-    // Championship points come only from race sessions — qualifying results
-    // never earn race points on their own.
+    // Championship points come only from race-type sessions (race, heat,
+    // consolation, feature) — qualifying results never earn points on their
+    // own, only a starting-position bonus folded into the next session.
     const raceResults = entryResults.filter(r => !isQualifying(r));
-    const pointsList = raceResults.map(r => pointsFor(r, config));
+    const pointsList = raceResults.map(r => pointsFor(r, configFor(r)));
     const totalPoints = pointsList.reduce((a, b) => a + b, 0);
 
     let droppedPoints = 0;

@@ -62,3 +62,17 @@ export const BUILTIN_TEMPLATES = [
     bonuses: { pole: 1, best_lap: 0, most_laps_led: 2, lead_a_lap: 1, halfway_point: 0, hard_charger: 0 },
   },
 ];
+
+// BUILTIN_TEMPLATES use comma-list strings (race/qual/bonuses); saved
+// points_templates docs (and season docs) use table objects
+// (race_points/qual_points/bonus_points). This normalizes builtins into that
+// same shape so a session's points-template dropdown can mix both sources.
+export function normalizedBuiltinTemplates() {
+  return BUILTIN_TEMPLATES.map(t => ({
+    id: t.id,
+    name: t.name,
+    race_points: listToTable(t.race),
+    qual_points: listToTable(t.qual),
+    bonus_points: t.bonuses,
+  }));
+}

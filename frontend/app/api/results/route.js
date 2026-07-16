@@ -15,12 +15,18 @@ export async function GET(request) {
   return NextResponse.json(snap.docs.map(d => ({ id: d.id, ...d.data() })));
 }
 
+const SESSION_TYPES = ["qualifying", "race", "heat", "consolation", "feature"];
+
 // Bulk save: replaces all results for the race session so admins can
 // re-submit corrections without hitting duplicate errors. Events with
-// multiple races store one `session` name per race.
+// multiple races (or, for heat-format events, multiple heats/consolations)
+// store one `session` name per race. `points_template_id` (optional) pins
+// the points system this session was scored under, so standings/stats stay
+// correct even if the season's default or another session's template later
+// changes — see lib/standings.js configForTemplate().
 export const POST = withAdmin(async (request, ctx, user) => {
-  const { race_id, season_id, session = "", session_type, rows } = await request.json();
-  const sessionType = session_type === "qualifying" ? "qualifying" : "race";
+  const { race_id, season_id, session = "", session_type, points_template_id, rows } = await request.json();
+  const sessionType = SESSION_TYPES.includes(session_type) ? session_type : "race";
   if (!race_id || !season_id || !Array.isArray(rows)) {
     return NextResponse.json({ error: "race_id, season_id, rows[] required" }, { status: 400 });
   }
@@ -78,6 +84,7 @@ export const POST = withAdmin(async (request, ctx, user) => {
       bonus_points: Number(row.bonus_points || 0),
       penalty_points: Number(row.penalty_points || 0),
       status: row.status || "finished",
+      points_template_id: points_template_id || null,
       created_at: now,
       created_by: user.uid,
     };

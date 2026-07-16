@@ -21,6 +21,17 @@ function statusLabel(s) {
   return s === "finished" ? "Running" : (s || "").toUpperCase();
 }
 
+// Maps a session name (the currently viewed tab) back to the edit screen's
+// top-level tab key, which for heat-format events is one of
+// heats/consolation/feature rather than a single "results" tab.
+function editTabFor(event, sessionTab) {
+  if (sessionTab === "__qual") return "qualifying";
+  if (!event.heat_format) return "results";
+  if ((event.heats || []).includes(sessionTab)) return "heats";
+  if ((event.consolations || []).includes(sessionTab)) return "consolation";
+  return "feature";
+}
+
 export default function EventResultsPage() {
   const { id } = useParams();
   const { isAdmin } = useAuth();
@@ -64,9 +75,7 @@ export default function EventResultsPage() {
             <Link href="/schedule" style={{ color: "var(--accent-cyan)", fontSize: "0.85rem" }}>← Back to Schedule</Link>
             {isAdmin && (
               <Link
-                href={tab === "__qual"
-                  ? `/races/${event.id}/edit?tab=qualifying`
-                  : `/races/${event.id}/edit?tab=results${tab ? `&session=${encodeURIComponent(tab)}` : ""}`}
+                href={`/races/${event.id}/edit?tab=${editTabFor(event, tab)}${tab && tab !== "__qual" ? `&session=${encodeURIComponent(tab)}` : ""}`}
                 className="btn btn-ghost"
                 style={{ marginTop: 0, padding: "6px 12px", fontSize: "0.82rem" }}
               >

@@ -3,11 +3,13 @@ import { db } from "@/lib/firebase";
 import {
   aggregateCareerStats,
   calculateStandings,
+  configForTemplate,
   decorateRaceBonuses,
   isQualifying,
   pointsFor,
   resolveSeasonConfig,
 } from "@/lib/standings";
+import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +52,7 @@ export async function GET(request) {
 async function buildStats(seasons) {
   // driverKey -> { name, number, user_id, results[], titles }
   const drivers = {};
+  const templatesById = await fetchTemplatesById();
 
   for (const season of seasons) {
     const config = resolveSeasonConfig(season);
@@ -85,12 +88,12 @@ async function buildStats(seasons) {
       if (entry.number != null) bucket.driver_number = entry.number;
       if (entry.user_id) bucket.user_id = entry.user_id;
       if (entry.driver_id) bucket.driver_id = entry.driver_id;
-      bucket.results.push({ ...r, points: isQualifying(r) ? 0 : pointsFor(r, config) });
+      bucket.results.push({ ...r, points: isQualifying(r) ? 0 : pointsFor(r, configForTemplate(config, templatesById[r.points_template_id])) });
     }
 
     // Titles: champion of each completed season.
     if (season.status === "completed" && results.length) {
-      const standings = calculateStandings(results, entries, [], config);
+      const standings = calculateStandings(results, entries, [], config, templatesById);
       const winner = standings.rows[0] && entriesById[standings.rows[0].entry_id];
       if (winner) {
         const key = keyFor(winner);

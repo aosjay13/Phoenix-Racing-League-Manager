@@ -98,5 +98,12 @@ export const SPECS = {
              fields: { name: { required: true }, race_points: {}, qual_points: {}, bonus_points: {} } },
   races:   { collection: "races", parentField: "season_id", sortField: "round_number",
              fields: { name: { required: true }, track: {}, track_logo_url: {}, date: {},
-                       round_number: { number: true, required: true }, sessions: {} } },
+                       round_number: { number: true, required: true }, sessions: {},
+                       // Heat-racing weekend structure: when heat_format is on, `heats` and
+                       // `consolations` are ordered lists of session names (each addable/removable
+                       // from the event screen) feeding into one Feature session. `session_points`
+                       // maps a session name -> points_templates id, so every session (including
+                       // Qualifying and standard `sessions`) can carry its own points system.
+                       heat_format: {}, heats: {}, consolations: {}, feature_name: { default: "A-Main Feature" },
+                       session_points: {} } },
 };

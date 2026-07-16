@@ -6,17 +6,19 @@ import {
   decorateRaceBonuses,
   resolveSeasonConfig,
 } from "@/lib/standings";
+import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const seasonId = searchParams.get("season_id");
   if (!seasonId) return NextResponse.json({ error: "season_id required" }, { status: 400 });
 
-  const [seasonDoc, entriesSnap, teamsSnap, resultsSnap] = await Promise.all([
+  const [seasonDoc, entriesSnap, teamsSnap, resultsSnap, templatesById] = await Promise.all([
     db().collection("seasons").doc(seasonId).get(),
     db().collection("entries").where("season_id", "==", seasonId).get(),
     db().collection("teams").where("season_id", "==", seasonId).get(),
     db().collection("results").where("season_id", "==", seasonId).get(),
+    fetchTemplatesById(),
   ]);
   if (!seasonDoc.exists) return NextResponse.json({ error: "Season not found" }, { status: 404 });
 
@@ -26,7 +28,7 @@ export async function GET(request) {
   const results = decorateRaceBonuses(resultsSnap.docs.map(d => d.data()));
 
   const config = resolveSeasonConfig(season);
-  const drivers = calculateStandings(results, entries, teams, config);
+  const drivers = calculateStandings(results, entries, teams, config, templatesById);
   const teamRows = calculateTeamStandings(drivers.rows, teams);
 
   return NextResponse.json({

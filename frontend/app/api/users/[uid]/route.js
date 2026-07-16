@@ -3,11 +3,13 @@ import { db } from "@/lib/firebase";
 import {
   aggregateCareerStats,
   calculateStandings,
+  configForTemplate,
   decorateRaceBonuses,
   isQualifying,
   pointsFor,
   resolveSeasonConfig,
 } from "@/lib/standings";
+import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
 
 // Public profile + career stats, grouped per game (and all games combined).
 // Titles = completed seasons where a linked entry finished P1 in points.
@@ -32,6 +34,7 @@ export async function GET(request, { params }) {
   const titlesPerGame = {}; // gameId -> count
   const allResults = [];
   let totalTitles = 0;
+  const templatesById = await fetchTemplatesById();
 
   for (const seasonId of seasonIds) {
     const season = seasons[seasonId];
@@ -49,12 +52,12 @@ export async function GET(request, { params }) {
 
     const mine = seasonResults
       .filter(r => myEntryIds.has(r.entry_id))
-      .map(r => ({ ...r, points: isQualifying(r) ? 0 : pointsFor(r, config) }));
+      .map(r => ({ ...r, points: isQualifying(r) ? 0 : pointsFor(r, configForTemplate(config, templatesById[r.points_template_id])) }));
     (perGame[gameId] ??= []).push(...mine);
     allResults.push(...mine);
 
     if (season.status === "completed" && mine.length) {
-      const standings = calculateStandings(seasonResults, seasonEntries, [], config);
+      const standings = calculateStandings(seasonResults, seasonEntries, [], config, templatesById);
       if (standings.rows[0] && myEntryIds.has(standings.rows[0].entry_id)) {
         totalTitles += 1;
         titlesPerGame[gameId] = (titlesPerGame[gameId] || 0) + 1;
