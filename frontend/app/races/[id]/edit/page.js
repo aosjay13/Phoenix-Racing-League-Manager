@@ -11,7 +11,7 @@ import { api } from "@/lib/api";
 
 const BLANK_INFO = {
   name: "", track: "", date: "", round_number: "", track_logo_url: "", sessions: "Race",
-  heat_format: false, heats: "", consolations: "", feature_name: "A-Main Feature",
+  total_laps: "", heat_format: false, heats: "", consolations: "", feature_name: "A-Main Feature",
 };
 
 function RaceInfoTab({ race, onSaved }) {
@@ -29,6 +29,7 @@ function RaceInfoTab({ race, onSaved }) {
       round_number: String(race.round_number ?? ""),
       track_logo_url: race.track_logo_url || "",
       sessions: Array.isArray(race.sessions) && race.sessions.length ? race.sessions.join(", ") : "Race",
+      total_laps: race.total_laps != null ? String(race.total_laps) : "",
       heat_format: !!race.heat_format,
       heats: Array.isArray(race.heats) ? race.heats.join(", ") : "",
       consolations: Array.isArray(race.consolations) ? race.consolations.join(", ") : "",
@@ -58,6 +59,7 @@ function RaceInfoTab({ race, onSaved }) {
         round_number: Number(form.round_number),
         track_logo_url: form.track_logo_url,
         sessions: sessions.length ? sessions : ["Race"],
+        total_laps: form.total_laps === "" ? 0 : Number(form.total_laps),
         heat_format: !!form.heat_format,
         heats: form.heat_format ? (heats.length ? heats : ["Heat 1"]) : [],
         consolations: form.heat_format ? consolations : [],
@@ -94,6 +96,12 @@ function RaceInfoTab({ race, onSaved }) {
           <input type="number" min="1" required value={form.round_number} onChange={set("round_number")} /></div>
         <div className="field"><label>Date</label>
           <input type="date" value={form.date} onChange={set("date")} /></div>
+        <div className="field"><label>Total Race Laps</label>
+          <input type="number" min="0" value={form.total_laps} onChange={set("total_laps")} placeholder="e.g. 100" />
+          <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
+            Used to auto-count laps completed: lead-lap finishers get the full total, laps-down (e.g. 2L) and DNFs subtract from it.
+          </span>
+        </div>
 
         <div className="field" style={{ display: "flex", alignItems: "center", gap: 8, flexDirection: "row" }}>
           <input type="checkbox" id="heat_format" checked={form.heat_format}

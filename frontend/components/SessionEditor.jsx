@@ -4,34 +4,19 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { AddDriverToRace } from "@/components/AddDriverToRace";
 import { pointsFor, configForTemplate, resolveSeasonConfig } from "@/lib/standings";
+import { parseTime, formatTime, formatGap, parseLapsDown, deriveLaps } from "@/lib/raceTime";
 
-const RESULT_FIELDS = ["finish_pos", "qual_time", "laps", "laps_led", "incidents", "fastest_lap", "halfway_leader", "hard_charger", "provisional", "status"];
+const RESULT_FIELDS = ["finish_pos", "qual_time", "race_time", "interval", "laps", "laps_led", "incidents", "fastest_lap", "halfway_leader", "hard_charger", "provisional", "status"];
 
-function blankRows(entries) {
-  return entries.map((e, i) => ({
-    entry_id: e.id,
-    driver_name: e.name,
-    driver_number: e.number,
-    finish_pos: String(i + 1),
-    qual_time: "",
-    laps: "",
-    laps_led: "0",
-    incidents: "0",
-    fastest_lap: false,
-    halfway_leader: false,
-    hard_charger: false,
-    provisional: false,
-    status: "finished",
-  }));
-}
-
-function rowFromEntry(entry, position) {
+function blankRow(entry, position) {
   return {
-    entry_id: entry.id,
-    driver_name: entry.name,
-    driver_number: entry.number ?? null,
+    entry_id: entry.id ?? entry.entry_id,
+    driver_name: entry.name ?? entry.driver_name,
+    driver_number: entry.number ?? entry.driver_number ?? null,
     finish_pos: String(position),
     qual_time: "",
+    race_time: "",
+    interval: "",
     laps: "",
     laps_led: "0",
     incidents: "0",
@@ -43,7 +28,13 @@ function rowFromEntry(entry, position) {
   };
 }
 
-function buildRows(entries, existing) {
+function blankRows(entries) {
+  return entries.map((e, i) => blankRow(e, i + 1));
+}
+
+const rowFromEntry = (entry, position) => blankRow(entry, position);
+
+function buildRows(entries, existing, totalLaps) {
   const byEntry = Object.fromEntries(existing.map(r => [r.entry_id, r]));
   const merged = blankRows(entries).map(row => {
     const prev = byEntry[row.entry_id];
@@ -53,6 +44,11 @@ function buildRows(entries, existing) {
         if (prev[f] == null) continue;
         out[f] = typeof row[f] === "boolean" ? !!prev[f] : String(prev[f]);
       }
+    } else {
+      // Fresh row with no saved result yet: pre-fill laps to the full race
+      // distance so lead-lap finishers don't need manual entry.
+      const d = deriveLaps(out, totalLaps);
+      if (d != null) out.laps = String(d);
     }
     return out;
   });
@@ -121,7 +117,7 @@ export function SessionEditor({
       );
       setQualPos(qp);
       const existing = all.filter(r => r.session_type === sessionType && (r.session || names[0]) === sess);
-      setRows(buildRows(entries, existing));
+      setRows(buildRows(entries, existing, race.total_laps));
     } catch {
       setQualPos({});
       setRows(blankRows(entries));
@@ -140,6 +136,70 @@ export function SessionEditor({
 
   function updateRow(idx, field, value) {
     setRows(prev => prev.map((r, i) => (i === idx ? { ...r, [field]: value } : r)));
+  }
+
+  const totalLaps = Number(race?.total_laps) || null;
+  const leaderTimeOf = rs => {
+    const L = rs.find(r => Number(r.finish_pos) === 1);
+    return L ? parseTime(L.race_time) : null;
+  };
+
+  // Editing Race Time: the leader's time is the reference. Typing it on a
+  // non-leader derives that row's interval; typing it on the leader re-derives
+  // every other row's Race Time from their interval.
+  function updateRaceTime(idx, value) {
+    setRows(prev => {
+      const next = prev.map((r, i) => (i === idx ? { ...r, race_time: value } : r));
+      const isLeader = Number(next[idx].finish_pos) === 1;
+      const lt = leaderTimeOf(next);
+      if (isLeader) {
+        return next.map(r => {
+          if (Number(r.finish_pos) === 1 || lt == null) return r;
+          const gap = parseTime(r.interval); // "+1.234" → seconds; laps-down → null
+          if (parseLapsDown(r.interval) == null && gap != null) return { ...r, race_time: formatTime(lt + gap) };
+          return r;
+        });
+      }
+      const rt = parseTime(value);
+      if (rt != null && lt != null) next[idx] = { ...next[idx], interval: formatGap(rt - lt) };
+      return next;
+    });
+  }
+
+  // Editing Interval: "NL" marks laps-down (and sets laps = total − N); a time
+  // gap derives Race Time from the leader's time.
+  function updateInterval(idx, value) {
+    setRows(prev => {
+      const next = prev.map((r, i) => (i === idx ? { ...r, interval: value } : r));
+      const ld = parseLapsDown(value);
+      if (ld != null) {
+        const patch = { ...next[idx], race_time: "" };
+        const d = deriveLaps(patch, totalLaps);
+        if (d != null) patch.laps = String(d);
+        next[idx] = patch;
+      } else {
+        const lt = leaderTimeOf(next);
+        const gap = parseTime(value);
+        const patch = { ...next[idx] };
+        if (gap != null && lt != null) patch.race_time = formatTime(lt + gap);
+        const d = deriveLaps(patch, totalLaps); // lead-lap finisher → total
+        if (d != null) patch.laps = String(d);
+        next[idx] = patch;
+      }
+      return next;
+    });
+  }
+
+  // Status change re-derives laps (finished lead-lap → total; DNF/DNS/DQ stays
+  // manual so the admin can enter the lap they retired on).
+  function updateStatus(idx, value) {
+    setRows(prev => prev.map((r, i) => {
+      if (i !== idx) return r;
+      const patch = { ...r, status: value };
+      const d = deriveLaps(patch, totalLaps);
+      if (d != null) patch.laps = String(d);
+      return patch;
+    }));
   }
 
   function handleDriverAdded(entry) {
@@ -161,7 +221,19 @@ export function SessionEditor({
       const next = [...prev];
       const [moved] = next.splice(dragIndex, 1);
       next.splice(idx, 0, moved);
-      return next.map((r, i) => ({ ...r, finish_pos: String(i + 1) }));
+      const renumbered = next.map((r, i) => ({ ...r, finish_pos: String(i + 1) }));
+      if (sessionType === "qualifying") return renumbered;
+      // Reordering can change who leads; re-derive intervals off the new P1.
+      const lt = leaderTimeOf(renumbered);
+      return renumbered.map(r => {
+        if (Number(r.finish_pos) === 1) return { ...r, interval: "" };
+        if (parseLapsDown(r.interval) != null || lt == null) return r;
+        const rt = parseTime(r.race_time);
+        if (rt != null) return { ...r, interval: formatGap(rt - lt) };
+        const gap = parseTime(r.interval);
+        if (gap != null) return { ...r, race_time: formatTime(lt + gap) };
+        return r;
+      });
     });
     setDragIndex(null);
     setOverIndex(null);
@@ -284,7 +356,7 @@ export function SessionEditor({
       <p style={{ marginTop: 0, color: "var(--ink-1)", fontSize: "0.85rem" }}>
         {sessionType === "qualifying"
           ? "Position 1 is the pole. This is the only place starting position is recorded — Average Start and Poles are calculated from Qualifying results only."
-          : "FL = fastest lap, ½ = halfway-point leader, HC = hard charger, Prov = provisional start. Each driver's qualifying bonus is looked up from their Qualifying result automatically."}
+          : <>Enter <strong>Race Time</strong> for the leader, then either a Race Time or an <strong>Int</strong> (gap behind leader, e.g. <code>+2.345</code>) for everyone else — each fills in the other. Use <code>1L</code>, <code>2L</code>… in Int for laps down.{totalLaps ? ` Laps auto-count off the ${totalLaps}-lap distance (laps down and DNF lap subtract from it).` : " Set Total Race Laps on the Race Info tab so laps auto-count."}</>}
       </p>
 
       {!rows.length ? (
@@ -307,11 +379,13 @@ export function SessionEditor({
         <div style={{ overflowX: "auto" }}>
           <p style={{ margin: "0 0 8px", color: "var(--ink-2)", fontSize: "0.78rem" }}>Drag ⠿ to reorder — finishing positions renumber automatically.</p>
           <div className="result-grid result-grid-wide">
-            {["", "Fin", "Driver", "Qual Time", "Laps", "Led", "Inc", "FL", "½", "HC", "Prov", "Status", pointsLabel].map((h, i) => (
+            {["", "Fin", "Driver", "Race Time", "Int", "Laps", "Led", "Inc", "FL", "½", "HC", "Prov", "Status", pointsLabel].map((h, i) => (
               <span className="grid-header" key={h || i}>{h}</span>
             ))}
             {rows.map((row, idx) => (
-              <RowInputs key={row.entry_id} row={row} idx={idx} updateRow={updateRow} autoFocus={row.entry_id === justAddedId} points={rowPoints(row)}
+              <RowInputs key={row.entry_id} row={row} idx={idx} updateRow={updateRow}
+                updateRaceTime={updateRaceTime} updateInterval={updateInterval} updateStatus={updateStatus}
+                autoFocus={row.entry_id === justAddedId} points={rowPoints(row)}
                 dragging={dragIndex === idx} dragOver={overIndex === idx && dragIndex !== idx}
                 onDragStart={() => handleDragStart(idx)} onDragOver={e => handleDragOver(idx, e)} onDrop={() => handleDrop(idx)} onDragEnd={handleDragEnd} />
             ))}
@@ -370,7 +444,8 @@ function DragHandle({ dragging, dragOver, onDragStart, onDragOver, onDrop, onDra
   );
 }
 
-function RowInputs({ row, idx, updateRow, autoFocus, points, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd }) {
+function RowInputs({ row, idx, updateRow, updateRaceTime, updateInterval, updateStatus, autoFocus, points, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd }) {
+  const isLeader = Number(row.finish_pos) === 1;
   const num = (field, min = 0, focus = false) => (
     <input type="number" min={min} value={row[field]} onChange={e => updateRow(idx, field, e.target.value)} autoFocus={focus} />
   );
@@ -382,7 +457,9 @@ function RowInputs({ row, idx, updateRow, autoFocus, points, dragging, dragOver,
         {row.driver_number != null && <span className="badge">#{row.driver_number}</span>}
         {row.driver_name}
       </div>
-      <input placeholder="01:43.863" value={row.qual_time} onChange={e => updateRow(idx, "qual_time", e.target.value)} />
+      <input placeholder={isLeader ? "1:23.456" : "1:24.567"} value={row.race_time} onChange={e => updateRaceTime(idx, e.target.value)} />
+      <input placeholder={isLeader ? "leader" : "+2.345 / 1L"} value={isLeader ? "" : row.interval} disabled={isLeader}
+        onChange={e => updateInterval(idx, e.target.value)} />
       {num("laps")}
       {num("laps_led")}
       {num("incidents")}
@@ -390,7 +467,7 @@ function RowInputs({ row, idx, updateRow, autoFocus, points, dragging, dragOver,
       <Check title="Halfway-point leader" value={row.halfway_leader} onChange={v => updateRow(idx, "halfway_leader", v)} />
       <Check title="Hard charger" value={row.hard_charger} onChange={v => updateRow(idx, "hard_charger", v)} />
       <Check title="Provisional" value={row.provisional} onChange={v => updateRow(idx, "provisional", v)} />
-      <select value={row.status} onChange={e => updateRow(idx, "status", e.target.value)}>
+      <select value={row.status} onChange={e => updateStatus(idx, e.target.value)}>
         <option value="finished">Running</option>
         <option value="dnf">DNF</option>
         <option value="dns">DNS</option>

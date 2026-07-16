@@ -72,6 +72,8 @@ export const POST = withAdmin(async (request, ctx, user) => {
       entry_id: row.entry_id,
       finish_pos: Number(row.finish_pos),
       qual_time: row.qual_time || null,
+      race_time: row.race_time || null,
+      interval: row.interval || null,
       laps: Number(row.laps || 0),
       laps_led: Number(row.laps_led || 0),
       incidents: Number(row.incidents || 0),

@@ -99,6 +99,7 @@ export const SPECS = {
   races:   { collection: "races", parentField: "season_id", sortField: "round_number",
              fields: { name: { required: true }, track: {}, track_logo_url: {}, date: {},
                        round_number: { number: true, required: true }, sessions: {},
+                       total_laps: { number: true },
                        // Heat-racing weekend structure: when heat_format is on, `heats` and
                        // `consolations` are ordered lists of session names (each addable/removable
                        // from the event screen) feeding into one Feature session. `session_points`

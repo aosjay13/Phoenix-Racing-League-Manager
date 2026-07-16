@@ -125,7 +125,7 @@ export default function EventResultsPage() {
             <thead>
               <tr>
                 <th>Pos</th><th style={{ textAlign: "left" }}>Driver</th><th style={{ textAlign: "left" }}>Team</th>
-                <th>Laps</th><th>Led</th><th>Inc</th><th>Status</th><th>Points</th>
+                <th>Race Time</th><th>Int</th><th>Laps</th><th>Led</th><th>Inc</th><th>Status</th><th>Points</th>
               </tr>
             </thead>
             <tbody>
@@ -141,6 +141,8 @@ export default function EventResultsPage() {
                     {r.fastest_lap && <span className="badge" title="Fastest lap" style={{ marginLeft: 6 }}>FL</span>}
                   </td>
                   <td style={{ textAlign: "left", color: "var(--ink-1)" }}>{r.team ?? "—"}</td>
+                  <td>{r.finish_pos === 1 ? (r.race_time || "—") : "—"}</td>
+                  <td>{r.finish_pos === 1 ? "—" : (r.interval || r.race_time || "—")}</td>
                   <td>{r.laps ?? "—"}</td>
                   <td>{r.laps_led ?? 0}</td>
                   <td>{r.incidents ?? 0}</td>
