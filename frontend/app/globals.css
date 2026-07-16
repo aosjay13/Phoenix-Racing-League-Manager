@@ -897,8 +897,8 @@ tbody tr:hover {
 
 /* ── Wide race-entry grid ────────────────────── */
 .result-grid-wide {
-  grid-template-columns: 58px minmax(160px, 1fr) 58px 100px 62px 62px 56px 34px 34px 34px 44px 100px 70px;
-  min-width: 960px;
+  grid-template-columns: 22px 58px minmax(160px, 1fr) 58px 100px 62px 62px 56px 34px 34px 34px 44px 100px 70px;
+  min-width: 980px;
   align-items: center;
 }
 
@@ -1012,10 +1012,10 @@ tbody tr:hover {
 /* ── Qualifying entry grid ───────────────────── */
 .qual-grid {
   display: grid;
-  grid-template-columns: 70px minmax(160px, 1fr) 140px 80px;
+  grid-template-columns: 22px 70px minmax(160px, 1fr) 140px 80px;
   gap: 8px;
   align-items: center;
-  min-width: 500px;
+  min-width: 520px;
   margin-bottom: 16px;
 }
 

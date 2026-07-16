@@ -66,19 +66,29 @@ function buildPriorGrid(allResults, priorType, priorNames) {
 
 function buildRows(entries, existing, priorGrid) {
   const byEntry = Object.fromEntries(existing.map(r => [r.entry_id, r]));
-  return blankRows(entries).map(row => {
+  const merged = blankRows(entries).map(row => {
     const prev = byEntry[row.entry_id];
-    const merged = { ...row };
+    const out = { ...row };
     if (prev) {
       for (const f of RESULT_FIELDS) {
         if (prev[f] == null) continue;
-        merged[f] = typeof row[f] === "boolean" ? !!prev[f] : String(prev[f]);
+        out[f] = typeof row[f] === "boolean" ? !!prev[f] : String(prev[f]);
       }
     }
-    if ((merged.start_pos === "" || merged.start_pos == null) && priorGrid[row.entry_id] != null) {
-      merged.start_pos = String(priorGrid[row.entry_id]);
+    if ((out.start_pos === "" || out.start_pos == null) && priorGrid[row.entry_id] != null) {
+      out.start_pos = String(priorGrid[row.entry_id]);
     }
-    return merged;
+    return out;
+  });
+  // Display in finishing order so dragging to reorder is meaningful.
+  return sortByFinish(merged);
+}
+
+function sortByFinish(rows) {
+  return [...rows].sort((a, b) => {
+    const av = a.finish_pos === "" || a.finish_pos == null ? Infinity : Number(a.finish_pos);
+    const bv = b.finish_pos === "" || b.finish_pos == null ? Infinity : Number(b.finish_pos);
+    return av - bv;
   });
 }
 
@@ -110,6 +120,8 @@ export function SessionEditor({
   const [justAddedId, setJustAddedId] = useState(null);
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
+  const [dragIndex, setDragIndex] = useState(null);
+  const [overIndex, setOverIndex] = useState(null);
 
   function showToast(type, msg) {
     setToast({ type, msg });
@@ -147,6 +159,25 @@ export function SessionEditor({
     setRows(prev => [...prev, rowFromEntry(entry, prev.length + 1)]);
     setJustAddedId(entry.id);
     onEntriesChanged?.();
+  }
+
+  // Drag a row's handle to drop it into a new finishing position — every
+  // row's finish_pos is renumbered to match the new order, so admins never
+  // have to hand-type positions to slot someone in; typing is still there
+  // for quick single-row corrections.
+  function handleDragStart(idx) { setDragIndex(idx); }
+  function handleDragOver(idx, e) { e.preventDefault(); if (overIndex !== idx) setOverIndex(idx); }
+  function handleDragEnd() { setDragIndex(null); setOverIndex(null); }
+  function handleDrop(idx) {
+    setRows(prev => {
+      if (dragIndex == null || dragIndex === idx) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(dragIndex, 1);
+      next.splice(idx, 0, moved);
+      return next.map((r, i) => ({ ...r, finish_pos: String(i + 1) }));
+    });
+    setDragIndex(null);
+    setOverIndex(null);
   }
 
   const templateId = sessionPoints[session] || "";
@@ -238,21 +269,27 @@ export function SessionEditor({
         <div className="skeleton" style={{ height: 200 }} />
       ) : sessionType === "qualifying" ? (
         <div style={{ overflowX: "auto" }}>
+          <p style={{ margin: "0 0 8px", color: "var(--ink-2)", fontSize: "0.78rem" }}>Drag ⠿ to reorder.</p>
           <div className="qual-grid">
-            {["Pos", "Driver", "Qual Time", pointsLabel].map(h => <span className="grid-header" key={h}>{h}</span>)}
+            {["", "Pos", "Driver", "Qual Time", pointsLabel].map((h, i) => <span className="grid-header" key={h || i}>{h}</span>)}
             {rows.map((row, idx) => (
-              <QualRow key={row.entry_id} row={row} idx={idx} updateRow={updateRow} autoFocus={row.entry_id === justAddedId} points={rowPoints(row)} />
+              <QualRow key={row.entry_id} row={row} idx={idx} updateRow={updateRow} autoFocus={row.entry_id === justAddedId} points={rowPoints(row)}
+                dragging={dragIndex === idx} dragOver={overIndex === idx && dragIndex !== idx}
+                onDragStart={() => handleDragStart(idx)} onDragOver={e => handleDragOver(idx, e)} onDrop={() => handleDrop(idx)} onDragEnd={handleDragEnd} />
             ))}
           </div>
         </div>
       ) : (
         <div style={{ overflowX: "auto" }}>
+          <p style={{ margin: "0 0 8px", color: "var(--ink-2)", fontSize: "0.78rem" }}>Drag ⠿ to reorder — finishing positions renumber automatically.</p>
           <div className="result-grid result-grid-wide">
-            {["Fin", "Driver", "Start", "Qual Time", "Laps", "Led", "Inc", "FL", "½", "HC", "Prov", "Status", pointsLabel].map(h => (
-              <span className="grid-header" key={h}>{h}</span>
+            {["", "Fin", "Driver", "Start", "Qual Time", "Laps", "Led", "Inc", "FL", "½", "HC", "Prov", "Status", pointsLabel].map((h, i) => (
+              <span className="grid-header" key={h || i}>{h}</span>
             ))}
             {rows.map((row, idx) => (
-              <RowInputs key={row.entry_id} row={row} idx={idx} updateRow={updateRow} autoFocus={row.entry_id === justAddedId} points={rowPoints(row)} />
+              <RowInputs key={row.entry_id} row={row} idx={idx} updateRow={updateRow} autoFocus={row.entry_id === justAddedId} points={rowPoints(row)}
+                dragging={dragIndex === idx} dragOver={overIndex === idx && dragIndex !== idx}
+                onDragStart={() => handleDragStart(idx)} onDragOver={e => handleDragOver(idx, e)} onDrop={() => handleDrop(idx)} onDragEnd={handleDragEnd} />
             ))}
           </div>
         </div>
@@ -282,14 +319,42 @@ function Check({ value, onChange, title }) {
   );
 }
 
-function RowInputs({ row, idx, updateRow, autoFocus, points }) {
+// Drag handle: the sole draggable element for its row. dragOver/onDrop live
+// here too (rather than spread across every cell) — a small, reliable drop
+// target that's always the first thing in the row.
+function DragHandle({ dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd }) {
+  return (
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
+      title="Drag to reorder"
+      style={{
+        cursor: "grab",
+        textAlign: "center",
+        color: "var(--ink-2)",
+        fontSize: "1rem",
+        opacity: dragging ? 0.35 : 1,
+        borderTop: dragOver ? "2px solid var(--accent-cyan)" : "2px solid transparent",
+        userSelect: "none",
+      }}
+    >
+      ⠿
+    </div>
+  );
+}
+
+function RowInputs({ row, idx, updateRow, autoFocus, points, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd }) {
   const num = (field, min = 0, focus = false) => (
     <input type="number" min={min} value={row[field]} onChange={e => updateRow(idx, field, e.target.value)} autoFocus={focus} />
   );
   return (
     <>
+      <DragHandle dragging={dragging} dragOver={dragOver} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={onDragEnd} />
       {num("finish_pos", 1, autoFocus)}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.92rem", whiteSpace: "nowrap" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.92rem", whiteSpace: "nowrap", opacity: dragging ? 0.35 : 1 }}>
         {row.driver_number != null && <span className="badge">#{row.driver_number}</span>}
         {row.driver_name}
       </div>
@@ -313,11 +378,12 @@ function RowInputs({ row, idx, updateRow, autoFocus, points }) {
   );
 }
 
-function QualRow({ row, idx, updateRow, autoFocus, points }) {
+function QualRow({ row, idx, updateRow, autoFocus, points, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd }) {
   return (
     <>
+      <DragHandle dragging={dragging} dragOver={dragOver} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={onDragEnd} />
       <input type="number" min="1" value={row.finish_pos} onChange={e => updateRow(idx, "finish_pos", e.target.value)} autoFocus={autoFocus} />
-      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.92rem", whiteSpace: "nowrap" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.92rem", whiteSpace: "nowrap", opacity: dragging ? 0.35 : 1 }}>
         {row.driver_number != null && <span className="badge">#{row.driver_number}</span>}
         {row.driver_name}
       </div>
