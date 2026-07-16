@@ -4,6 +4,7 @@ import {
   aggregateCareerStats,
   calculateStandings,
   decorateRaceBonuses,
+  isQualifying,
   pointsFor,
   resolveSeasonConfig,
 } from "@/lib/standings";
@@ -78,7 +79,7 @@ async function buildStats(seasons) {
       bucket.driver_name = entry.name;
       if (entry.number != null) bucket.driver_number = entry.number;
       if (entry.user_id) bucket.user_id = entry.user_id;
-      bucket.results.push({ ...r, points: pointsFor(r, config) });
+      bucket.results.push({ ...r, points: isQualifying(r) ? 0 : pointsFor(r, config) });
     }
 
     // Titles: champion of each completed season.

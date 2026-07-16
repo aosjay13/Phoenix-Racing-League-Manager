@@ -4,6 +4,7 @@ import {
   aggregateCareerStats,
   calculateStandings,
   decorateRaceBonuses,
+  isQualifying,
   pointsFor,
   resolveSeasonConfig,
 } from "@/lib/standings";
@@ -48,7 +49,7 @@ export async function GET(request, { params }) {
 
     const mine = seasonResults
       .filter(r => myEntryIds.has(r.entry_id))
-      .map(r => ({ ...r, points: pointsFor(r, config) }));
+      .map(r => ({ ...r, points: isQualifying(r) ? 0 : pointsFor(r, config) }));
     (perGame[gameId] ??= []).push(...mine);
     allResults.push(...mine);
 

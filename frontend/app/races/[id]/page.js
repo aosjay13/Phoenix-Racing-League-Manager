@@ -32,8 +32,8 @@ export default function EventResultsPage() {
     api(`/api/events/${id}`)
       .then(d => {
         setData(d);
-        const withResults = d.sessions.find(s => s.results.length);
-        setTab(withResults ? withResults.name : (d.sessions[0]?.name ?? null));
+        const withResults = d.races.find(s => s.results.length);
+        setTab(withResults ? withResults.name : (d.qualifying.length ? "__qual" : d.races[0]?.name ?? null));
       })
       .catch(err => setError(err.message));
   }, [id]);
@@ -41,9 +41,9 @@ export default function EventResultsPage() {
   if (error) return <div className="empty-state"><span className="empty-state-icon">🏁</span><p>{error}</p></div>;
   if (!data) return <div className="skeleton" style={{ height: 280 }} />;
 
-  const { event, season, sessions } = data;
-  const hasQualifying = sessions.some(s => s.qualifying.length);
-  const activeSession = sessions.find(s => s.name === tab);
+  const { event, season, races, qualifying } = data;
+  const hasQualifying = qualifying.length > 0;
+  const activeRace = races.find(s => s.name === tab);
 
   return (
     <section>
@@ -64,7 +64,9 @@ export default function EventResultsPage() {
             <Link href="/schedule" style={{ color: "var(--accent-cyan)", fontSize: "0.85rem" }}>← Back to Schedule</Link>
             {isAdmin && (
               <Link
-                href={`/races/${event.id}/edit?tab=results${tab && tab !== "__qual" ? `&session=${encodeURIComponent(tab)}` : ""}`}
+                href={tab === "__qual"
+                  ? `/races/${event.id}/edit?tab=qualifying`
+                  : `/races/${event.id}/edit?tab=results${tab ? `&session=${encodeURIComponent(tab)}` : ""}`}
                 className="btn btn-ghost"
                 style={{ marginTop: 0, padding: "6px 12px", fontSize: "0.82rem" }}
               >
@@ -79,7 +81,7 @@ export default function EventResultsPage() {
         {hasQualifying && (
           <button className={`tab${tab === "__qual" ? " active" : ""}`} onClick={() => setTab("__qual")}>Qualifying</button>
         )}
-        {sessions.map(s => (
+        {races.map(s => (
           <button key={s.name} className={`tab${tab === s.name ? " active" : ""}`} onClick={() => setTab(s.name)}>
             {s.name}
           </button>
@@ -87,32 +89,28 @@ export default function EventResultsPage() {
       </div>
 
       {tab === "__qual" ? (
-        sessions.filter(s => s.qualifying.length).map(s => (
-          <div key={s.name}>
-            {sessions.filter(x => x.qualifying.length).length > 1 && (
-              <div className="section-header"><h3>{s.name} — Qualifying</h3></div>
-            )}
-            <div className="table-wrap">
-              <table className="stats-table">
-                <thead>
-                  <tr><th>Pos</th><th style={{ textAlign: "left" }}>Driver</th><th style={{ textAlign: "left" }}>Team</th><th>Time</th><th>Points</th></tr>
-                </thead>
-                <tbody>
-                  {s.qualifying.map(r => (
-                    <tr key={r.entry_id}>
-                      <td>{r.start_pos}</td>
-                      <td className="driver-name-cell" style={{ textAlign: "left" }}><DriverCell r={r} /></td>
-                      <td style={{ textAlign: "left", color: "var(--ink-1)" }}>{r.team ?? "—"}</td>
-                      <td>{r.qual_time || "—"}</td>
-                      <td className="points-cell">{r.qual_points}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ))
-      ) : activeSession && activeSession.results.length ? (
+        <div className="table-wrap">
+          <table className="stats-table">
+            <thead>
+              <tr><th>Pos</th><th style={{ textAlign: "left" }}>Driver</th><th style={{ textAlign: "left" }}>Team</th><th>Qual Time</th><th>Points</th></tr>
+            </thead>
+            <tbody>
+              {qualifying.map(r => (
+                <tr key={r.entry_id}>
+                  <td>
+                    <span className={`rank-badge ${r.position === 1 ? "rank-p1" : "rank-default"}`}>{r.position}</span>
+                    {r.position === 1 && <span className="badge" title="Pole position" style={{ marginLeft: 6 }}>POLE</span>}
+                  </td>
+                  <td className="driver-name-cell" style={{ textAlign: "left" }}><DriverCell r={r} /></td>
+                  <td style={{ textAlign: "left", color: "var(--ink-1)" }}>{r.team ?? "—"}</td>
+                  <td>{r.qual_time || "—"}</td>
+                  <td className="points-cell">{r.qual_points}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : activeRace && activeRace.results.length ? (
         <div className="table-wrap">
           <table className="stats-table">
             <thead>
@@ -122,7 +120,7 @@ export default function EventResultsPage() {
               </tr>
             </thead>
             <tbody>
-              {activeSession.results.map(r => (
+              {activeRace.results.map(r => (
                 <tr key={r.entry_id}>
                   <td>
                     <span className={`rank-badge ${r.finish_pos === 1 ? "rank-p1" : r.finish_pos === 2 ? "rank-p2" : r.finish_pos === 3 ? "rank-p3" : "rank-default"}`}>

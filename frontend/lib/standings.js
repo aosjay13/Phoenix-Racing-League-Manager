@@ -78,25 +78,53 @@ export function pointsFor(result, config) {
   return pts;
 }
 
-function statLine(rs) {
+const round2 = n => Math.round(n * 100) / 100;
+
+// A result belongs to a qualifying session (its finish_pos is a grid slot,
+// not a race finish) rather than a race session.
+export function isQualifying(r) {
+  return r.session_type === "qualifying";
+}
+
+// Starting-grid info for a driver. Prefer a dedicated qualifying session
+// (finish_pos = grid slot, P1 = pole); fall back to the race's start_pos
+// column for legacy events that never had a separate qualifying session.
+function startInfo(raceResults, qualResults) {
+  if (qualResults.length) {
+    const positions = qualResults.map(r => Number(r.finish_pos)).filter(n => n > 0);
+    return { positions, poles: qualResults.filter(r => Number(r.finish_pos) === 1).length };
+  }
+  const positions = raceResults
+    .map(r => r.start_pos)
+    .filter(v => v != null && v !== "")
+    .map(Number)
+    .filter(n => n > 0);
+  return { positions, poles: raceResults.filter(r => Number(r.start_pos) === 1).length };
+}
+
+// Accepts a mix of race + qualifying results for one driver and keeps them
+// separate: race metrics come only from race sessions, while Poles and
+// Average Start come from qualifying sessions.
+function statLine(results) {
+  const rs = results.filter(r => !isQualifying(r));
+  const qs = results.filter(r => isQualifying(r));
   const starts = rs.length;
-  const started = rs.filter(r => r.start_pos != null && r.start_pos !== "");
   const sum = fn => rs.reduce((a, r) => a + fn(r), 0);
+  const { positions, poles } = startInfo(rs, qs);
   return {
     starts,
     wins: rs.filter(r => r.finish_pos === 1).length,
     podiums: rs.filter(r => r.finish_pos <= 3).length,
     top5: rs.filter(r => r.finish_pos <= 5).length,
     top10: rs.filter(r => r.finish_pos <= 10).length,
-    avg_finish: starts ? Math.round((sum(r => r.finish_pos) / starts) * 100) / 100 : null,
+    avg_finish: starts ? round2(sum(r => r.finish_pos) / starts) : null,
     laps_run: sum(r => Number(r.laps || 0)),
     laps_led: sum(r => Number(r.laps_led || 0)),
     most_laps_led: rs.filter(r => r.is_most_laps_led).length,
     best_laps: rs.filter(r => r.fastest_lap).length,
-    poles: rs.filter(r => Number(r.start_pos) === 1).length,
-    avg_start: started.length
-      ? Math.round((started.reduce((a, r) => a + Number(r.start_pos), 0) / started.length) * 100) / 100
-      : null,
+    poles,
+    qualifying_sessions: qs.length,
+    avg_start: positions.length ? round2(positions.reduce((a, b) => a + b, 0) / positions.length) : null,
     dnfs: rs.filter(r => r.status === "dnf").length,
     provisionals: rs.filter(r => r.provisional).length,
     incidents: sum(r => Number(r.incidents || 0)),
@@ -116,7 +144,10 @@ export function calculateStandings(results, entries, teams = [], config) {
   for (const [entryId, entryResults] of Object.entries(byEntry)) {
     const entry = entriesById[entryId] || {};
     const team = teamsById[entry.team_id] || {};
-    const pointsList = entryResults.map(r => pointsFor(r, config));
+    // Championship points come only from race sessions — qualifying results
+    // never earn race points on their own.
+    const raceResults = entryResults.filter(r => !isQualifying(r));
+    const pointsList = raceResults.map(r => pointsFor(r, config));
     const totalPoints = pointsList.reduce((a, b) => a + b, 0);
 
     let droppedPoints = 0;
@@ -194,7 +225,7 @@ export function aggregateCareerStats(results, titles = 0) {
   const line = statLine(results);
   return {
     ...line,
-    points: results.reduce((a, r) => a + Number(r.points || 0), 0),
+    points: results.filter(r => !isQualifying(r)).reduce((a, r) => a + Number(r.points || 0), 0),
     titles,
   };
 }

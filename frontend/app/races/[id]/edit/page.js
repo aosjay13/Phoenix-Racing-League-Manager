@@ -6,6 +6,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { AdminGate } from "@/components/AdminGate";
 import { ImageUpload } from "@/components/ImageUpload";
 import { RaceResultsEditor } from "@/components/RaceResultsEditor";
+import { QualifyingEditor } from "@/components/QualifyingEditor";
 import { api } from "@/lib/api";
 
 const BLANK_INFO = { name: "", track: "", date: "", round_number: "", track_logo_url: "", sessions: "Race" };
@@ -97,7 +98,8 @@ function RaceInfoTab({ race, onSaved }) {
 function UnifiedEditInner() {
   const { id } = useParams();
   const searchParams = useSearchParams();
-  const initialTab = searchParams.get("tab") === "results" ? "results" : "info";
+  const tabParam = searchParams.get("tab");
+  const initialTab = ["results", "qualifying"].includes(tabParam) ? tabParam : "info";
   const initialSession = searchParams.get("session") || undefined;
 
   const [tab, setTab] = useState(initialTab);
@@ -145,12 +147,19 @@ function UnifiedEditInner() {
 
       <div className="tab-row" style={{ marginTop: 16 }}>
         <button className={`tab${tab === "info" ? " active" : ""}`} onClick={() => setTab("info")}>Race Info</button>
+        <button className={`tab${tab === "qualifying" ? " active" : ""}`} onClick={() => setTab("qualifying")}>Qualifying</button>
         <button className={`tab${tab === "results" ? " active" : ""}`} onClick={() => setTab("results")}>Race Results</button>
       </div>
 
-      {tab === "info" ? (
+      {tab === "info" && (
         <RaceInfoTab race={race} onSaved={updated => setRace(r => ({ ...r, ...updated }))} />
-      ) : (
+      )}
+      {tab === "qualifying" && (
+        <div className="form-card" style={{ maxWidth: "100%" }}>
+          <QualifyingEditor race={race} seasonId={seasonId} entries={entries} />
+        </div>
+      )}
+      {tab === "results" && (
         <div className="form-card" style={{ maxWidth: "100%" }}>
           <RaceResultsEditor race={race} seasonId={seasonId} entries={entries} initialSession={initialSession} />
         </div>

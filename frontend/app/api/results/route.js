@@ -19,7 +19,8 @@ export async function GET(request) {
 // re-submit corrections without hitting duplicate errors. Events with
 // multiple races store one `session` name per race.
 export const POST = withAdmin(async (request, ctx, user) => {
-  const { race_id, season_id, session = "", rows } = await request.json();
+  const { race_id, season_id, session = "", session_type, rows } = await request.json();
+  const sessionType = session_type === "qualifying" ? "qualifying" : "race";
   if (!race_id || !season_id || !Array.isArray(rows)) {
     return NextResponse.json({ error: "race_id, season_id, rows[] required" }, { status: 400 });
   }
@@ -42,8 +43,15 @@ export const POST = withAdmin(async (request, ctx, user) => {
   const col = db().collection("results");
   const existing = await col.where("race_id", "==", race_id).get();
   const batch = db().batch();
+  // Replace only the exact session being saved, isolating qualifying from race
+  // sessions (and legacy race results that predate the session fields).
   existing.docs
-    .filter(d => (d.data().session || firstSession) === savingSession)
+    .filter(d => {
+      const data = d.data();
+      const docType = data.session_type || "race";
+      const docSession = data.session || firstSession;
+      return docType === sessionType && docSession === savingSession;
+    })
     .forEach(d => batch.delete(d.ref));
 
   const numOrNull = v => (v != null && v !== "" ? Number(v) : null);
@@ -55,6 +63,7 @@ export const POST = withAdmin(async (request, ctx, user) => {
       race_id,
       season_id,
       session: savingSession,
+      session_type: sessionType,
       entry_id: row.entry_id,
       finish_pos: Number(row.finish_pos),
       start_pos: numOrNull(row.start_pos),

@@ -24,15 +24,22 @@ function blankRows(entries) {
   }));
 }
 
-function buildRows(entries, existing) {
+// qualGrid: { entry_id: qualifying_position } — used to pre-fill Start when a
+// race result doesn't already carry its own start_pos.
+function buildRows(entries, existing, qualGrid = {}) {
   const byEntry = Object.fromEntries(existing.map(r => [r.entry_id, r]));
   return blankRows(entries).map(row => {
     const prev = byEntry[row.entry_id];
-    if (!prev) return row;
     const merged = { ...row };
-    for (const f of RESULT_FIELDS) {
-      if (prev[f] == null) continue;
-      merged[f] = typeof row[f] === "boolean" ? !!prev[f] : String(prev[f]);
+    if (prev) {
+      for (const f of RESULT_FIELDS) {
+        if (prev[f] == null) continue;
+        merged[f] = typeof row[f] === "boolean" ? !!prev[f] : String(prev[f]);
+      }
+    }
+    // Feed qualifying order into Start when it isn't set on the race result.
+    if ((merged.start_pos === "" || merged.start_pos == null) && qualGrid[row.entry_id] != null) {
+      merged.start_pos = String(qualGrid[row.entry_id]);
     }
     return merged;
   });
@@ -60,8 +67,11 @@ export function RaceResultsEditor({ race, seasonId, entries, initialSession }) {
     setLoading(true);
     try {
       const all = await api(`/api/results?race_id=${race.id}`);
-      const existing = all.filter(r => (r.session || sessions[0]) === sess);
-      setRows(buildRows(entries, existing));
+      const qualGrid = Object.fromEntries(
+        all.filter(r => r.session_type === "qualifying").map(r => [r.entry_id, r.finish_pos])
+      );
+      const existing = all.filter(r => r.session_type !== "qualifying" && (r.session || sessions[0]) === sess);
+      setRows(buildRows(entries, existing, qualGrid));
     } catch {
       setRows(blankRows(entries));
     } finally {

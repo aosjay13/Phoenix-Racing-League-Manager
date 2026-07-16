@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
-import { decorateRaceBonuses, pointsFor, resolveSeasonConfig } from "@/lib/standings";
+import { decorateRaceBonuses, isQualifying, pointsFor, resolveSeasonConfig } from "@/lib/standings";
 
-// Full detail for one event: qualifying + every race session with computed points.
+// Full detail for one event: a dedicated qualifying session plus every race
+// session, each with computed points.
 export async function GET(request, { params }) {
   const raceDoc = await db().collection("races").doc(params.id).get();
   if (!raceDoc.exists) return NextResponse.json({ error: "Event not found" }, { status: 404 });
@@ -19,7 +20,7 @@ export async function GET(request, { params }) {
   const config = resolveSeasonConfig(season || {});
   const entriesById = Object.fromEntries(entriesSnap.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
   const teamsById = Object.fromEntries(teamsSnap.docs.map(d => [d.id, d.data()]));
-  const results = decorateRaceBonuses(resultsSnap.docs.map(d => d.data()));
+  const all = decorateRaceBonuses(resultsSnap.docs.map(d => d.data()));
 
   const joinEntry = r => {
     const entry = entriesById[r.entry_id] || {};
@@ -32,30 +33,46 @@ export async function GET(request, { params }) {
     };
   };
 
-  // Session names: what the event declares, plus anything found in results.
+  const raceResults = all.filter(r => !isQualifying(r));
+  const qualResults = all.filter(r => isQualifying(r));
+
+  // Race sessions: whatever the event declares, plus any found in the data.
   const declared = Array.isArray(event.sessions) && event.sessions.length ? event.sessions : ["Race"];
-  const found = [...new Set(results.map(r => r.session || ""))];
   const names = [...declared];
-  for (const f of found) {
-    const label = f || declared[0];
+  for (const r of raceResults) {
+    const label = r.session || declared[0];
     if (!names.includes(label)) names.push(label);
   }
-
-  const sessions = names.map(name => {
-    const rows = results
+  const races = names.map(name => ({
+    name,
+    results: raceResults
       .filter(r => (r.session || declared[0]) === name)
       .map(r => ({ ...joinEntry(r), points: pointsFor(r, config) }))
-      .sort((a, b) => a.finish_pos - b.finish_pos);
-    const qualifying = rows
+      .sort((a, b) => a.finish_pos - b.finish_pos),
+  })).filter(s => s.results.length || names.length === 1);
+
+  // Qualifying: prefer the dedicated qualifying session; otherwise fall back to
+  // the starting positions recorded on the first race session (legacy events).
+  let qualifying = [];
+  if (qualResults.length) {
+    qualifying = qualResults
+      .map(r => ({
+        ...joinEntry(r),
+        position: Number(r.finish_pos),
+        qual_points: Number(config.qualPoints[r.finish_pos] ?? 0),
+      }))
+      .sort((a, b) => a.position - b.position);
+  } else if (races[0]) {
+    qualifying = races[0].results
       .filter(r => r.start_pos != null)
-      .map(r => ({ ...r, qual_points: Number(config.qualPoints[r.start_pos] ?? 0) }))
-      .sort((a, b) => a.start_pos - b.start_pos);
-    return { name, results: rows, qualifying };
-  }).filter(s => s.results.length || names.length === 1);
+      .map(r => ({ ...r, position: Number(r.start_pos), qual_time: r.qual_time, qual_points: Number(config.qualPoints[r.start_pos] ?? 0) }))
+      .sort((a, b) => a.position - b.position);
+  }
 
   return NextResponse.json({
     event,
     season: season ? { id: season.id, name: season.name, series_id: season.series_id } : null,
-    sessions,
+    races,
+    qualifying,
   });
 }

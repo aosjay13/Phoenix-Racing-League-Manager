@@ -1008,3 +1008,23 @@ tbody tr:hover {
   color: var(--accent-cyan);
   border-color: var(--border-accent);
 }
+
+/* ── Qualifying entry grid ───────────────────── */
+.qual-grid {
+  display: grid;
+  grid-template-columns: 70px minmax(160px, 1fr) 140px;
+  gap: 8px;
+  align-items: center;
+  min-width: 420px;
+  margin-bottom: 16px;
+}
+
+.qual-grid input {
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  color: var(--ink-0);
+  font-size: 0.9rem;
+  width: 100%;
+}
