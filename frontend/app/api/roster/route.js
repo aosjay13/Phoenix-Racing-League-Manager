@@ -9,10 +9,14 @@ export const dynamic = "force-dynamic";
 //   scope=game    → drivers across every series in a game; number omitted (multiple)
 //   scope=league  → every driver, everywhere; number omitted
 //
-// Drivers are unified across seasons by linked account (user_id) when present,
-// otherwise by roster name — the same identity rule used by the stats page.
-// Each driver also carries `series_entries`, a map of seriesId → the driver's
-// latest entry in that series, which powers the per-series number editor.
+// Identity: every entry should carry a `driver_id` pointing at the global
+// `drivers` collection (see /api/drivers) — that's the real identity, since
+// the same person can run a different display name (alias) per series/game.
+// Entries are unified by driver_id when present, falling back to linked
+// account (user_id) or lowercased name for older entries written before this
+// existed. Each driver also carries `series_entries`, a map of seriesId → the
+// driver's latest entry in that series (including that series' own alias
+// name and number), which powers the per-series alias/number editor.
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const scope = searchParams.get("scope") || "league";
@@ -59,11 +63,16 @@ export async function GET(request) {
 
     for (const doc of entriesSnap.docs) {
       const entry = { id: doc.id, ...doc.data() };
-      const key = entry.user_id ? `u:${entry.user_id}` : `n:${String(entry.name || "").trim().toLowerCase()}`;
+      const key = entry.driver_id
+        ? `d:${entry.driver_id}`
+        : entry.user_id
+          ? `u:${entry.user_id}`
+          : `n:${String(entry.name || "").trim().toLowerCase()}`;
       const bucket = (drivers[key] ??= {
         key,
         name: entry.name,
-        user_id: entry.user_id ?? null,
+        driver_id: null,
+        user_id: null,
         number: null,
         numbers: new Set(),
         team_id: null,
@@ -72,8 +81,10 @@ export async function GET(request) {
         season_id: null,
         series_entries: {},
       });
-      // Latest entry seen wins for the driver's display identity.
+      // Latest entry seen wins for the driver's display identity (overridden
+      // below by the global driver's canonical name in aggregated scopes).
       bucket.name = entry.name;
+      bucket.driver_id = entry.driver_id ?? bucket.driver_id;
       bucket.user_id = entry.user_id ?? bucket.user_id;
       bucket.team_id = entry.team_id ?? bucket.team_id;
       bucket.team_name = entry.team_id ? teamName[entry.team_id] ?? bucket.team_name : bucket.team_name;
@@ -83,18 +94,36 @@ export async function GET(request) {
         bucket.number = entry.number;
         bucket.numbers.add(entry.number);
       }
-      // Per-series: keep the driver's latest entry for that series.
+      // Per-series: keep the driver's latest entry for that series, including
+      // the alias name they race under there.
       bucket.series_entries[seriesId] = {
         entry_id: entry.id,
         season_id: season.id,
+        driver_id: entry.driver_id ?? null,
+        name: entry.name,
         number: entry.number ?? null,
       };
+    }
+  }
+
+  // In aggregated scopes (game/league) a driver can span series with
+  // different alias names, so show their canonical global-driver name
+  // instead of whichever alias happened to be seen last.
+  if (!showNumber) {
+    const driverIds = [...new Set(Object.values(drivers).map(d => d.driver_id).filter(Boolean))];
+    if (driverIds.length) {
+      const docs = await Promise.all(driverIds.map(id => db().collection("drivers").doc(id).get()));
+      const canonicalName = Object.fromEntries(docs.filter(d => d.exists).map(d => [d.id, d.data().name]));
+      for (const bucket of Object.values(drivers)) {
+        if (bucket.driver_id && canonicalName[bucket.driver_id]) bucket.name = canonicalName[bucket.driver_id];
+      }
     }
   }
 
   const rows = Object.values(drivers).map(d => ({
     key: d.key,
     name: d.name,
+    driver_id: d.driver_id,
     user_id: d.user_id,
     // Only expose a concrete number when the scope pins it to one series.
     number: showNumber ? d.number : null,

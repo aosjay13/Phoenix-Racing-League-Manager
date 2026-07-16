@@ -6,6 +6,7 @@ import { useSortable } from "@/components/useSortable";
 import { AdminGate } from "@/components/AdminGate";
 import { ImageUpload } from "@/components/ImageUpload";
 import { DriverForm } from "@/components/DriverForm";
+import { ensureDriverId } from "@/lib/driverPool";
 import { api } from "@/lib/api";
 
 // Resolve the current top-dropdown selection into a roster scope, exactly the
@@ -23,29 +24,37 @@ function useScope(league) {
   }, [gameId, seriesId, seasonId, game, series, season]);
 }
 
-// One driver's row in the "manage series" panel: shows/edits their number in
-// one series, or offers to add them to it if they aren't on that series yet.
-function SeriesMembershipRow({ s, entry, onAdd, onUpdate, onRemove }) {
+// One driver's row in the "manage series" panel: shows/edits the alias name
+// and number they use in one series, or offers to add them to it (with a
+// chosen alias) if they aren't on that series yet. Every row here shares the
+// same global driver identity — only the per-series alias/number differ.
+function SeriesMembershipRow({ s, entry, defaultName, onAdd, onUpdate, onRemove }) {
+  const [alias, setAlias] = useState(entry?.name ?? defaultName ?? "");
   const [num, setNum] = useState(entry?.number ?? "");
 
-  useEffect(() => { setNum(entry?.number ?? ""); }, [entry]);
+  useEffect(() => {
+    setAlias(entry?.name ?? defaultName ?? "");
+    setNum(entry?.number ?? "");
+  }, [entry, defaultName]);
 
   if (!entry) {
     return (
       <div className="driver-row" style={{ gap: 8 }}>
         <span style={{ flex: 1, color: "var(--ink-2)" }}>{s.name}</span>
-        <input type="number" style={{ width: 80 }} value={num} onChange={e => setNum(e.target.value)} placeholder="#" />
+        <input style={{ width: 150 }} value={alias} onChange={e => setAlias(e.target.value)} placeholder="Name for this series" />
+        <input type="number" style={{ width: 70 }} value={num} onChange={e => setNum(e.target.value)} placeholder="#" />
         <button className="btn btn-ghost" type="button" style={{ marginTop: 0, padding: "4px 10px" }}
-          onClick={() => onAdd(s.id, num)}>+ Add to Series</button>
+          onClick={() => onAdd(s.id, alias, num)}>+ Add to Series</button>
       </div>
     );
   }
   return (
     <div className="driver-row" style={{ gap: 8 }}>
       <span style={{ flex: 1 }}>{s.name}</span>
-      <input type="number" style={{ width: 80 }} value={num} onChange={e => setNum(e.target.value)} placeholder="#" />
+      <input style={{ width: 150 }} value={alias} onChange={e => setAlias(e.target.value)} placeholder="Name for this series" />
+      <input type="number" style={{ width: 70 }} value={num} onChange={e => setNum(e.target.value)} placeholder="#" />
       <button className="btn btn-ghost" type="button" style={{ marginTop: 0, padding: "4px 10px" }}
-        onClick={() => onUpdate(entry, num)}>Save</button>
+        onClick={() => onUpdate(entry, alias, num)}>Save</button>
       <button className="btn btn-danger" type="button" style={{ marginTop: 0, padding: "4px 10px" }}
         onClick={() => onRemove(entry, s.name)}>Remove</button>
     </div>
@@ -176,25 +185,28 @@ function RosterInner() {
     return seasons[seasons.length - 1]?.id ?? null;
   }
 
-  async function addToSeries(row, sid, number) {
+  async function addToSeries(row, sid, name, number) {
     if (number === "" || number == null) { showToast("error", "Enter a car number first."); return; }
+    if (!name || !name.trim()) { showToast("error", "Enter a name for this series first."); return; }
     try {
       const targetSeasonId = await latestSeasonIdFor(sid);
       if (!targetSeasonId) { showToast("error", "That series has no season to add drivers to yet."); return; }
+      const driverId = await ensureDriverId({ driverId: row.driver_id, name: row.name, user_id: row.user_id });
       await api("/api/entries", {
         method: "POST",
-        body: { name: row.name, user_id: row.user_id ?? "", team_id: "", number, season_id: targetSeasonId },
+        body: { name, user_id: row.user_id ?? "", team_id: "", number, season_id: targetSeasonId, driver_id: driverId },
       });
       showToast("success", "Driver added to series.");
       await load();
     } catch (err) { showToast("error", err.message); }
   }
 
-  async function updateSeriesNumber(entry, number) {
+  async function updateSeriesEntry(entry, name, number) {
     if (number === "" || number == null) { showToast("error", "Enter a car number first."); return; }
+    if (!name || !name.trim()) { showToast("error", "Enter a name for this series first."); return; }
     try {
-      await api(`/api/entries/${entry.entry_id}`, { method: "PATCH", body: { number } });
-      showToast("success", "Series number saved.");
+      await api(`/api/entries/${entry.entry_id}`, { method: "PATCH", body: { name, number } });
+      showToast("success", "Series entry saved.");
       await load();
     } catch (err) { showToast("error", err.message); }
   }
@@ -230,7 +242,9 @@ function RosterInner() {
     e.preventDefault();
     if (!editSeasonId) return;
     try {
-      const body = { name: addForm.name, team_id: addForm.team_id, user_id: addForm.user_id };
+      const pulled = pullKey ? gameRoster.find(r => r.key === pullKey) : null;
+      const driverId = await ensureDriverId({ driverId: pulled?.driver_id, name: addForm.name, user_id: addForm.user_id });
+      const body = { name: addForm.name, team_id: addForm.team_id, user_id: addForm.user_id, driver_id: driverId };
       if (addForm.number !== "") body.number = addForm.number;
       await api("/api/entries", { method: "POST", body: { ...body, season_id: editSeasonId } });
       showToast("success", "Driver added to roster.");
@@ -284,7 +298,7 @@ function RosterInner() {
     try {
       await api("/api/entries", {
         method: "POST",
-        body: { name: driver.name, user_id: driver.user_id || "", team_id: "", number, season_id: editSeasonId },
+        body: { name: driver.name, user_id: driver.user_id || "", team_id: "", number, season_id: editSeasonId, driver_id: driver.id },
       });
       showToast("success", `${driver.name} added to ${series?.name ?? "this series"}.`);
       setPoolAdding(null);
@@ -292,11 +306,15 @@ function RosterInner() {
     } catch (err) { showToast("error", err.message); }
   }
 
-  // Pool drivers not already on the currently selected series' roster.
+  // Pool drivers not already on the currently selected series' roster —
+  // matched by driver_id first (correct even if their alias there differs
+  // from the pool's canonical name), falling back to name for legacy rows.
   const poolNotInSeries = useMemo(() => {
     if (!seriesId) return driverPool;
-    const inSeries = new Set((roster?.rows ?? []).map(r => r.name.trim().toLowerCase()));
-    return driverPool.filter(d => !inSeries.has(d.name.trim().toLowerCase()));
+    const rows = roster?.rows ?? [];
+    const inSeriesIds = new Set(rows.map(r => r.driver_id).filter(Boolean));
+    const inSeriesNames = new Set(rows.map(r => r.name.trim().toLowerCase()));
+    return driverPool.filter(d => !inSeriesIds.has(d.id) && !inSeriesNames.has(d.name.trim().toLowerCase()));
   }, [driverPool, seriesId, roster]);
 
   const rows = roster?.rows ?? [];
@@ -560,17 +578,19 @@ function RosterInner() {
                       <tr>
                         <td colSpan={colSpan} style={{ background: "var(--surface-2, rgba(255,255,255,0.03))" }}>
                           <div style={{ padding: "10px 4px" }}>
-                            <strong style={{ fontSize: "0.85rem" }}>Series Memberships &amp; Numbers</strong>
+                            <strong style={{ fontSize: "0.85rem" }}>Aliases &amp; Numbers &mdash; tied to one global driver</strong>
                             <p style={{ margin: "2px 0 8px", color: "var(--ink-2)", fontSize: "0.8rem" }}>
-                              Add or remove {d.name} from any series in this game, and set their car number per series.
+                              {d.name} can run a different name and car number per series (useful when a game uses a
+                              different username) — every series entry below stays linked to the same global driver.
                             </p>
                             {seriesList.map(s => (
                               <SeriesMembershipRow
                                 key={s.id}
                                 s={s}
                                 entry={seriesEntriesFor(d.key)[s.id]}
-                                onAdd={(sid, num) => addToSeries(d, sid, num)}
-                                onUpdate={updateSeriesNumber}
+                                defaultName={d.name}
+                                onAdd={(sid, name, num) => addToSeries(d, sid, name, num)}
+                                onUpdate={updateSeriesEntry}
                                 onRemove={removeFromSeries}
                               />
                             ))}

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { ensureDriverId } from "@/lib/driverPool";
 import { DriverCreateModal } from "@/components/DriverCreateModal";
 
 // Autocomplete for adding a driver mid race/qualifying entry: search the
@@ -22,10 +23,10 @@ export function AddDriverToRace({ seasonId, seriesName, existingNames, onCreated
       .then(([drivers, users]) => {
         if (!live) return;
         const byName = new Map();
-        for (const d of drivers) byName.set(d.name.trim().toLowerCase(), { name: d.name, user_id: d.user_id || "" });
+        for (const d of drivers) byName.set(d.name.trim().toLowerCase(), { name: d.name, user_id: d.user_id || "", driver_id: d.id });
         for (const u of users) {
           const key = (u.display_name || "").trim().toLowerCase();
-          if (key && !byName.has(key)) byName.set(key, { name: u.display_name, user_id: u.uid });
+          if (key && !byName.has(key)) byName.set(key, { name: u.display_name, user_id: u.uid, driver_id: null });
         }
         setPool([...byName.values()]);
       })
@@ -42,7 +43,8 @@ export function AddDriverToRace({ seasonId, seriesName, existingNames, onCreated
   async function addExisting(candidate) {
     setBusy(true);
     try {
-      const body = { name: candidate.name, team_id: "", season_id: seasonId };
+      const driverId = await ensureDriverId({ driverId: candidate.driver_id, name: candidate.name, user_id: candidate.user_id });
+      const body = { name: candidate.name, team_id: "", season_id: seasonId, driver_id: driverId };
       if (candidate.user_id) body.user_id = candidate.user_id;
       const entry = await api("/api/entries", { method: "POST", body });
       onCreated(entry);

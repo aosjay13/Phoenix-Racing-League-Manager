@@ -93,7 +93,7 @@ export const SPECS = {
              fields: { name: { required: true }, user_id: {}, notes: {} } },
   entries: { collection: "entries", parentField: "season_id", sortField: "name",
              fields: { name: { required: true }, number: { number: true }, team_id: {}, user_id: {},
-                       points_adjustment: { number: true }, adjustment_note: {} } },
+                       driver_id: {}, points_adjustment: { number: true }, adjustment_note: {} } },
   pointsTemplates: { collection: "points_templates", parentField: null, sortField: "name",
              fields: { name: { required: true }, race_points: {}, qual_points: {}, bonus_points: {} } },
   races:   { collection: "races", parentField: "season_id", sortField: "round_number",

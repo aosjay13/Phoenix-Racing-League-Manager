@@ -61,8 +61,12 @@ async function buildStats(seasons) {
     const entriesById = Object.fromEntries(entries.map(e => [e.id, e]));
     const results = decorateRaceBonuses(resultsSnap.docs.map(d => d.data()));
 
+    // Prefer the global driver identity (driver_id) so a driver who races
+    // under a different alias/number in each series still aggregates as one
+    // person; fall back to linked account or name for older entries written
+    // before driver_id existed.
     const keyFor = entry =>
-      entry.user_id ? `u:${entry.user_id}` : `n:${String(entry.name || "").trim().toLowerCase()}`;
+      entry.driver_id ? `d:${entry.driver_id}` : entry.user_id ? `u:${entry.user_id}` : `n:${String(entry.name || "").trim().toLowerCase()}`;
 
     for (const r of results) {
       const entry = entriesById[r.entry_id];
@@ -71,6 +75,7 @@ async function buildStats(seasons) {
       const bucket = (drivers[key] ??= {
         driver_name: entry.name,
         driver_number: entry.number ?? null,
+        driver_id: entry.driver_id ?? null,
         user_id: entry.user_id ?? null,
         results: [],
         titles: 0,
@@ -79,6 +84,7 @@ async function buildStats(seasons) {
       bucket.driver_name = entry.name;
       if (entry.number != null) bucket.driver_number = entry.number;
       if (entry.user_id) bucket.user_id = entry.user_id;
+      if (entry.driver_id) bucket.driver_id = entry.driver_id;
       bucket.results.push({ ...r, points: isQualifying(r) ? 0 : pointsFor(r, config) });
     }
 
@@ -93,8 +99,18 @@ async function buildStats(seasons) {
     }
   }
 
+  // A driver can run a different alias per series; when aggregating across
+  // more than one season, show their canonical global-driver name instead of
+  // whichever alias happened to be seen last.
+  const driverIds = [...new Set(Object.values(drivers).map(d => d.driver_id).filter(Boolean))];
+  const canonicalName = {};
+  if (driverIds.length) {
+    const docs = await Promise.all(driverIds.map(id => db().collection("drivers").doc(id).get()));
+    for (const doc of docs) if (doc.exists) canonicalName[doc.id] = doc.data().name;
+  }
+
   const rows = Object.values(drivers).map(d => ({
-    driver_name: d.driver_name,
+    driver_name: (d.driver_id && canonicalName[d.driver_id]) || d.driver_name,
     driver_number: d.driver_number,
     user_id: d.user_id,
     ...aggregateCareerStats(d.results, d.titles),

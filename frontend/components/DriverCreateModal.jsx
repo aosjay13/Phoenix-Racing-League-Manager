@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { ensureDriverId } from "@/lib/driverPool";
 import { Modal } from "@/components/Modal";
 import { DriverForm } from "@/components/DriverForm";
 
@@ -29,10 +30,10 @@ export function DriverCreateModal({ seasonId, seriesName, initialName, onClose, 
     setBusy(true);
     setError(null);
     try {
-      // Best-effort: register the identity in the global pool too, so it's
-      // reusable from Roster or another race even if this call fails.
-      api("/api/drivers", { method: "POST", body: { name: form.name, user_id: form.user_id } }).catch(() => {});
-      const body = { name: form.name, team_id: form.team_id, user_id: form.user_id, season_id: seasonId };
+      // Registers (or reuses) the identity in the global pool, so it's tied
+      // to one driver_id and reusable from Roster or another race.
+      const driverId = await ensureDriverId({ name: form.name, user_id: form.user_id });
+      const body = { name: form.name, team_id: form.team_id, user_id: form.user_id, driver_id: driverId, season_id: seasonId };
       if (form.number !== "") body.number = form.number;
       const entry = await api("/api/entries", { method: "POST", body });
       onCreated(entry);
