@@ -64,11 +64,11 @@ export default function EventResultsPage() {
             <Link href="/schedule" style={{ color: "var(--accent-cyan)", fontSize: "0.85rem" }}>← Back to Schedule</Link>
             {isAdmin && (
               <Link
-                href={`/race-entry?race=${event.id}${tab && tab !== "__qual" ? `&session=${encodeURIComponent(tab)}` : ""}`}
+                href={`/races/${event.id}/edit?tab=results${tab && tab !== "__qual" ? `&session=${encodeURIComponent(tab)}` : ""}`}
                 className="btn btn-ghost"
                 style={{ marginTop: 0, padding: "6px 12px", fontSize: "0.82rem" }}
               >
-                ✎ Edit Results
+                ✎ Edit Race
               </Link>
             )}
           </p>

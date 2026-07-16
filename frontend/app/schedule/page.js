@@ -23,7 +23,7 @@ function RaceCard({ r, done }) {
             <button
               className="race-edit-btn"
               title="Edit race results"
-              onClick={e => { e.stopPropagation(); router.push(`/race-entry?race=${r.id}`); }}
+              onClick={e => { e.stopPropagation(); router.push(`/races/${r.id}/edit`); }}
             >
               ✎
             </button>
