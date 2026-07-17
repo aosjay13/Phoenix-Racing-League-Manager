@@ -40,7 +40,9 @@ function RankBadge({ rank }) {
 }
 
 function SortableTable({ cols, rows, defaultKey, rankKey = "rank", renderName, nameLabel, nameKey, extraCol }) {
-  const lowIsBetter = cols.filter(c => c[2]).map(c => c[0]);
+  // rank counts as low-is-better so the default view (and clicks on "Pos")
+  // put the championship leader at the top.
+  const lowIsBetter = [rankKey, ...cols.filter(c => c[2]).map(c => c[0])];
   const { sorted, clickSort, arrow } = useSortable(rows, defaultKey, lowIsBetter);
 
   return (
