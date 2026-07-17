@@ -91,9 +91,13 @@ export function resolveSessionFlags(result, racesById = {}) {
 // Stamp each result with its resolved counts_stats / counts_points flags so the
 // downstream stat/points aggregation can filter without re-consulting the race
 // docs. `racesById` maps race_id -> race doc (carrying the session_stats /
-// session_points_enabled toggle maps).
+// session_points_enabled toggle maps) and must hold every race of the season:
+// results whose race no longer exists are dropped here, so results orphaned by
+// an old race deletion never count toward stats or standings.
 export function decorateSessionFlags(results, racesById = {}) {
-  return results.map(r => ({ ...r, ...resolveSessionFlags(r, racesById) }));
+  return results
+    .filter(r => racesById[r.race_id])
+    .map(r => ({ ...r, ...resolveSessionFlags(r, racesById) }));
 }
 
 // Mark per-race derived flags (most laps led) before scoring. Events can

@@ -17,6 +17,29 @@ export async function GET(request) {
 
 const SESSION_TYPES = ["qualifying", "race", "heat", "consolation", "feature"];
 
+// Session-list metadata used to resolve which stored docs belong to the
+// session being written: legacy docs may lack the session field, in which
+// case they're treated as the event's first standard session.
+async function sessionContext(raceId) {
+  const raceDoc = await db().collection("races").doc(raceId).get();
+  const sessions = raceDoc.exists && Array.isArray(raceDoc.data().sessions) && raceDoc.data().sessions.length
+    ? raceDoc.data().sessions
+    : ["Race"];
+  return { firstSession: sessions[0] };
+}
+
+// Docs that count as "this session". Qualifying is isolated by type, but all
+// race-like types (race/heat/consolation/feature) match each other by session
+// name: the event page merges them by name, so a leftover set saved under
+// another type (e.g. before the event was switched to heat format) would
+// render as duplicate finishing positions.
+function matchesSession(data, sessionType, savingSession, firstSession) {
+  const docType = data.session_type || "race";
+  const docSession = data.session || firstSession;
+  if (docSession !== savingSession) return false;
+  return sessionType === "qualifying" ? docType === "qualifying" : docType !== "qualifying";
+}
+
 // Bulk save: replaces all results for the race session so admins can
 // re-submit corrections without hitting duplicate errors. Events with
 // multiple races (or, for heat-format events, multiple heats/consolations)
@@ -36,28 +59,14 @@ export const POST = withAdmin(async (request, ctx, user) => {
     }
   }
 
-  // Determine the event's session list so we replace only the race being saved
-  // (an event may hold several races) and still overwrite legacy results that
-  // predate the session field.
-  const raceDoc = await db().collection("races").doc(race_id).get();
-  const raceSessions = raceDoc.exists && Array.isArray(raceDoc.data().sessions) && raceDoc.data().sessions.length
-    ? raceDoc.data().sessions
-    : ["Race"];
-  const firstSession = raceSessions[0];
+  const { firstSession } = await sessionContext(race_id);
   const savingSession = session || firstSession;
 
   const col = db().collection("results");
   const existing = await col.where("race_id", "==", race_id).get();
   const batch = db().batch();
-  // Replace only the exact session being saved, isolating qualifying from race
-  // sessions (and legacy race results that predate the session fields).
   existing.docs
-    .filter(d => {
-      const data = d.data();
-      const docType = data.session_type || "race";
-      const docSession = data.session || firstSession;
-      return docType === sessionType && docSession === savingSession;
-    })
+    .filter(d => matchesSession(d.data(), sessionType, savingSession, firstSession))
     .forEach(d => batch.delete(d.ref));
 
   const saved = [];
@@ -93,4 +102,25 @@ export const POST = withAdmin(async (request, ctx, user) => {
   }
   await batch.commit();
   return NextResponse.json(saved, { status: 201 });
+});
+
+// Clears the saved results for one session of a race, leaving the rest of the
+// event untouched. ?race_id=…&session=…&session_type=… — session/type default
+// to the event's first standard session / "race", mirroring POST.
+export const DELETE = withAdmin(async (request) => {
+  const { searchParams } = new URL(request.url);
+  const raceId = searchParams.get("race_id");
+  const session = searchParams.get("session") || "";
+  const typeParam = searchParams.get("session_type");
+  const sessionType = SESSION_TYPES.includes(typeParam) ? typeParam : "race";
+  if (!raceId) return NextResponse.json({ error: "race_id required" }, { status: 400 });
+
+  const { firstSession } = await sessionContext(raceId);
+  const target = session || firstSession;
+  const existing = await db().collection("results").where("race_id", "==", raceId).get();
+  const doomed = existing.docs.filter(d => matchesSession(d.data(), sessionType, target, firstSession));
+  const batch = db().batch();
+  doomed.forEach(d => batch.delete(d.ref));
+  await batch.commit();
+  return NextResponse.json({ ok: true, deleted: doomed.length });
 });

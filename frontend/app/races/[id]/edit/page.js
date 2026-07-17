@@ -239,13 +239,21 @@ function UnifiedEditInner() {
     setRace(r => ({ ...r, ...updated }));
   }, [race]);
 
+  // Removing a session deletes its saved results too — orphaned results would
+  // otherwise linger invisibly (and resurface if a session reused the name).
+  const deleteSessionResults = useCallback(
+    (name, type) => api(`/api/results?race_id=${race.id}&session=${encodeURIComponent(name)}&session_type=${type}`, { method: "DELETE" }),
+    [race]
+  );
+
   async function addStdSession(name) {
     const sessions = [...(race.sessions?.length ? race.sessions : ["Race"]), name];
     const updated = await api(`/api/races/${race.id}`, { method: "PATCH", body: { sessions } });
     setRace(r => ({ ...r, ...updated }));
   }
   async function removeStdSession(name) {
-    if (!confirm(`Remove ${name}? Its saved results stay in the database but won't be shown.`)) return;
+    if (!confirm(`Remove ${name} and delete its saved results? This cannot be undone.`)) return;
+    await deleteSessionResults(name, "race");
     const remaining = (race.sessions?.length ? race.sessions : ["Race"]).filter(s => s !== name);
     const sessions = remaining.length ? remaining : ["Race"];
     const updated = await api(`/api/races/${race.id}`, { method: "PATCH", body: { sessions } });
@@ -258,7 +266,8 @@ function UnifiedEditInner() {
     setRace(r => ({ ...r, ...updated }));
   }
   async function removeHeat(name) {
-    if (!confirm(`Remove ${name}? Its saved results stay in the database but won't be shown.`)) return;
+    if (!confirm(`Remove ${name} and delete its saved results? This cannot be undone.`)) return;
+    await deleteSessionResults(name, "heat");
     const heats = (race.heats || []).filter(h => h !== name);
     const updated = await api(`/api/races/${race.id}`, { method: "PATCH", body: { heats } });
     setRace(r => ({ ...r, ...updated }));
@@ -269,7 +278,8 @@ function UnifiedEditInner() {
     setRace(r => ({ ...r, ...updated }));
   }
   async function removeConsolation(name) {
-    if (!confirm(`Remove ${name}? Its saved results stay in the database but won't be shown.`)) return;
+    if (!confirm(`Remove ${name} and delete its saved results? This cannot be undone.`)) return;
+    await deleteSessionResults(name, "consolation");
     const consolations = (race.consolations || []).filter(c => c !== name);
     const updated = await api(`/api/races/${race.id}`, { method: "PATCH", body: { consolations } });
     setRace(r => ({ ...r, ...updated }));

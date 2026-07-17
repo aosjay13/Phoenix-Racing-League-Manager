@@ -284,6 +284,22 @@ export function SessionEditor({
     }
   }
 
+  // Clears this session's saved results from the database and resets the grid
+  // — the "delete a portion of the race" action; the session itself stays.
+  async function handleDeleteResults() {
+    if (!confirm(`Delete all saved ${session} results? The session stays — only its results are removed. This cannot be undone.`)) return;
+    setBusy(true);
+    try {
+      await api(`/api/results?race_id=${race.id}&session=${encodeURIComponent(session)}&session_type=${sessionType}`, { method: "DELETE" });
+      showToast("success", `${session} results deleted.`);
+      await loadSession(session);
+    } catch (err) {
+      showToast("error", err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function submitNewSession(e) {
     e.preventDefault();
     const name = newName.trim();
@@ -444,6 +460,9 @@ export function SessionEditor({
           Reset Grid
         </button>
       )}
+      <button className="btn btn-danger" style={{ marginLeft: 8 }} onClick={handleDeleteResults} disabled={busy || loading}>
+        🗑 Delete {session} Results
+      </button>
     </div>
   );
 }
