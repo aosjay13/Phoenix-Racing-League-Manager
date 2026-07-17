@@ -62,6 +62,40 @@ export function configForTemplate(baseConfig, template) {
   };
 }
 
+// Whether a session counts toward stats/points by default, before any admin
+// override. Preliminary sessions (heats, consolations/B- & C-Mains) are off by
+// default so they don't skew a driver's global Win/Top-5/Average-Finish metrics
+// or award championship points; standard races, the feature, and qualifying are
+// on. Admin toggles (race.session_stats / session_points_enabled, keyed by
+// session name) override these per session.
+export function defaultSessionFlags(sessionType) {
+  const preliminary = sessionType === "heat" || sessionType === "consolation";
+  return { counts_stats: !preliminary, counts_points: !preliminary };
+}
+
+// Resolve a result's stats/points flags: an explicit admin toggle on the race
+// doc wins; otherwise the session-type default applies.
+export function resolveSessionFlags(result, racesById = {}) {
+  const race = racesById[result.race_id] || {};
+  const firstStd = Array.isArray(race.sessions) && race.sessions.length ? race.sessions[0] : "Race";
+  const name = result.session || firstStd;
+  const def = defaultSessionFlags(result.session_type || "race");
+  const statsMap = race.session_stats || {};
+  const pointsMap = race.session_points_enabled || {};
+  return {
+    counts_stats: name in statsMap ? !!statsMap[name] : def.counts_stats,
+    counts_points: name in pointsMap ? !!pointsMap[name] : def.counts_points,
+  };
+}
+
+// Stamp each result with its resolved counts_stats / counts_points flags so the
+// downstream stat/points aggregation can filter without re-consulting the race
+// docs. `racesById` maps race_id -> race doc (carrying the session_stats /
+// session_points_enabled toggle maps).
+export function decorateSessionFlags(results, racesById = {}) {
+  return results.map(r => ({ ...r, ...resolveSessionFlags(r, racesById) }));
+}
+
 // Mark per-race derived flags (most laps led) before scoring. Events can
 // hold multiple races ("sessions"), each scored independently.
 export function decorateRaceBonuses(results) {
@@ -126,7 +160,10 @@ function startInfo(qualResults) {
 // separate: race metrics come only from race sessions, while Poles and
 // Average Start come from qualifying sessions.
 function statLine(results) {
-  const rs = results.filter(r => !isQualifying(r));
+  // A race session with its stats toggle off is ignored for finishing-position
+  // metrics (Wins, Top 5s, Average Finish, Laps Led, …). Qualifying always
+  // feeds Poles/Average Start.
+  const rs = results.filter(r => !isQualifying(r) && r.counts_stats !== false);
   const qs = results.filter(r => isQualifying(r));
   const starts = rs.length;
   const sum = fn => rs.reduce((a, r) => a + fn(r), 0);
@@ -173,8 +210,10 @@ export function calculateStandings(results, entries, teams = [], config, templat
     const team = teamsById[entry.team_id] || {};
     // Championship points come only from race-type sessions (race, heat,
     // consolation, feature) — qualifying results never earn points on their
-    // own, only a starting-position bonus folded into the next session.
-    const raceResults = entryResults.filter(r => !isQualifying(r));
+    // own, only a starting-position bonus folded into the next session. A
+    // session whose points toggle is off is skipped even if it carries a
+    // points template.
+    const raceResults = entryResults.filter(r => !isQualifying(r) && r.counts_points !== false);
     const pointsList = raceResults.map(r => pointsFor(r, configFor(r), qualPosMap[`${r.race_id}|${r.entry_id}`] ?? null));
     const totalPoints = pointsList.reduce((a, b) => a + b, 0);
 

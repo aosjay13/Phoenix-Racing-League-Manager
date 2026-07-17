@@ -6,6 +6,7 @@ import {
   calculateStandings,
   configForTemplate,
   decorateRaceBonuses,
+  decorateSessionFlags,
   isQualifying,
   pointsFor,
   resolveSeasonConfig,
@@ -44,11 +45,13 @@ export async function GET(request, { params }) {
     const gameId = season.game_id || "unknown";
     const myEntryIds = new Set(myEntries.filter(e => e.season_id === seasonId).map(e => e.id));
 
-    const [resultsSnap, entriesSnap2] = await Promise.all([
+    const [resultsSnap, entriesSnap2, racesSnap] = await Promise.all([
       db().collection("results").where("season_id", "==", seasonId).get(),
       db().collection("entries").where("season_id", "==", seasonId).get(),
+      db().collection("races").where("season_id", "==", seasonId).get(),
     ]);
-    const seasonResults = decorateRaceBonuses(resultsSnap.docs.map(d => d.data()));
+    const racesById = Object.fromEntries(racesSnap.docs.map(d => [d.id, d.data()]));
+    const seasonResults = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById));
     const seasonEntries = entriesSnap2.docs.map(d => ({ id: d.id, ...d.data() }));
     const qualPosMap = buildQualPosMap(seasonResults);
 
@@ -56,7 +59,7 @@ export async function GET(request, { params }) {
       .filter(r => myEntryIds.has(r.entry_id))
       .map(r => ({
         ...r,
-        points: isQualifying(r) ? 0 : pointsFor(r, configForTemplate(config, templatesById[r.points_template_id]), qualPosMap[`${r.race_id}|${r.entry_id}`] ?? null),
+        points: (isQualifying(r) || r.counts_points === false) ? 0 : pointsFor(r, configForTemplate(config, templatesById[r.points_template_id]), qualPosMap[`${r.race_id}|${r.entry_id}`] ?? null),
       }));
     (perGame[gameId] ??= []).push(...mine);
     allResults.push(...mine);

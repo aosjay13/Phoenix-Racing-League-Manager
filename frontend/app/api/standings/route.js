@@ -4,6 +4,7 @@ import {
   calculateStandings,
   calculateTeamStandings,
   decorateRaceBonuses,
+  decorateSessionFlags,
   resolveSeasonConfig,
 } from "@/lib/standings";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
@@ -13,11 +14,12 @@ export async function GET(request) {
   const seasonId = searchParams.get("season_id");
   if (!seasonId) return NextResponse.json({ error: "season_id required" }, { status: 400 });
 
-  const [seasonDoc, entriesSnap, teamsSnap, resultsSnap, templatesById] = await Promise.all([
+  const [seasonDoc, entriesSnap, teamsSnap, resultsSnap, racesSnap, templatesById] = await Promise.all([
     db().collection("seasons").doc(seasonId).get(),
     db().collection("entries").where("season_id", "==", seasonId).get(),
     db().collection("teams").where("season_id", "==", seasonId).get(),
     db().collection("results").where("season_id", "==", seasonId).get(),
+    db().collection("races").where("season_id", "==", seasonId).get(),
     fetchTemplatesById(),
   ]);
   if (!seasonDoc.exists) return NextResponse.json({ error: "Season not found" }, { status: 404 });
@@ -25,7 +27,8 @@ export async function GET(request) {
   const season = seasonDoc.data();
   const entries = entriesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
   const teams = teamsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-  const results = decorateRaceBonuses(resultsSnap.docs.map(d => d.data()));
+  const racesById = Object.fromEntries(racesSnap.docs.map(d => [d.id, d.data()]));
+  const results = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById));
 
   const config = resolveSeasonConfig(season);
   const drivers = calculateStandings(results, entries, teams, config, templatesById);

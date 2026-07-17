@@ -207,6 +207,22 @@ function UnifiedEditInner() {
     } catch { /* toast omitted — non-critical, editor still usable with season default */ }
   }, [race, sessionPoints]);
 
+  // Per-session eligibility toggles (mirrors saveSessionPoints). Booleans are
+  // stored explicitly — including `false` — so the engine can tell an admin's
+  // deliberate "off" apart from the unset session-type default.
+  const sessionStats = race?.session_stats || {};
+  const sessionPointsEnabled = race?.session_points_enabled || {};
+  const saveSessionFlag = useCallback(async (field, name, on) => {
+    const current = (race?.[field]) || {};
+    const next = { ...current, [name]: on };
+    try {
+      const updated = await api(`/api/races/${race.id}`, { method: "PATCH", body: { [field]: next } });
+      setRace(r => ({ ...r, ...updated }));
+    } catch { /* non-critical — engine falls back to defaults */ }
+  }, [race]);
+  const saveSessionStats = useCallback((name, on) => saveSessionFlag("session_stats", name, on), [saveSessionFlag]);
+  const saveSessionPointsEnabled = useCallback((name, on) => saveSessionFlag("session_points_enabled", name, on), [saveSessionFlag]);
+
   // Rename a session and cascade the change to saved results + points mapping.
   const renameSession = useCallback(async (type, from, to) => {
     const updated = await api(`/api/races/${race.id}/rename-session`, {
@@ -301,6 +317,8 @@ function UnifiedEditInner() {
             race={race} seasonId={seasonId} entries={entries} initialSession={initialSession} onEntriesChanged={reloadEntries} seriesName={seriesName}
             sessionType="race" sessionNames={standardSessions}
             season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints}
+            sessionStats={sessionStats} onSessionStatsChange={saveSessionStats}
+            sessionPointsEnabled={sessionPointsEnabled} onSessionPointsEnabledChange={saveSessionPointsEnabled}
             canAddSession onAddSession={addStdSession} onRemoveSession={removeStdSession}
             onRenameSession={(from, to) => renameSession("race", from, to)}
           />
@@ -313,6 +331,8 @@ function UnifiedEditInner() {
             race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName}
             sessionType="heat" sessionNames={heats}
             season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints}
+            sessionStats={sessionStats} onSessionStatsChange={saveSessionStats}
+            sessionPointsEnabled={sessionPointsEnabled} onSessionPointsEnabledChange={saveSessionPointsEnabled}
             canAddSession onAddSession={addHeat} onRemoveSession={removeHeat}
             onRenameSession={(from, to) => renameSession("heat", from, to)}
           />
@@ -326,6 +346,8 @@ function UnifiedEditInner() {
               race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName}
               sessionType="consolation" sessionNames={consolations}
               season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints}
+              sessionStats={sessionStats} onSessionStatsChange={saveSessionStats}
+              sessionPointsEnabled={sessionPointsEnabled} onSessionPointsEnabledChange={saveSessionPointsEnabled}
               canAddSession onAddSession={addConsolation} onRemoveSession={removeConsolation}
               onRenameSession={(from, to) => renameSession("consolation", from, to)}
             />
@@ -346,6 +368,8 @@ function UnifiedEditInner() {
             race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName}
             sessionType="feature" sessionNames={[featureName]}
             season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints}
+            sessionStats={sessionStats} onSessionStatsChange={saveSessionStats}
+            sessionPointsEnabled={sessionPointsEnabled} onSessionPointsEnabledChange={saveSessionPointsEnabled}
             onRenameSession={(from, to) => renameSession("feature", from, to)}
           />
         </div>

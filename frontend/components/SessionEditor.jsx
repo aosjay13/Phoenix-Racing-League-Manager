@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { AddDriverToRace } from "@/components/AddDriverToRace";
-import { pointsFor, configForTemplate, resolveSeasonConfig } from "@/lib/standings";
+import { pointsFor, configForTemplate, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
 import { parseTime, formatTime, formatGap, parseLapsDown, deriveLaps } from "@/lib/raceTime";
 
 const RESULT_FIELDS = ["finish_pos", "qual_time", "race_time", "interval", "laps", "laps_led", "incidents", "fastest_lap", "halfway_leader", "hard_charger", "provisional", "status"];
@@ -81,6 +81,7 @@ const LABELS = { qualifying: "Qualifying", race: "Race", heat: "Heat", consolati
 export function SessionEditor({
   race, seasonId, entries, sessionType, sessionNames,
   season, templates = [], sessionPoints = {}, onSessionPointsChange,
+  sessionStats = {}, onSessionStatsChange, sessionPointsEnabled = {}, onSessionPointsEnabledChange,
   canAddSession = false, onAddSession, onRemoveSession, onRenameSession,
   initialSession, onEntriesChanged, seriesName,
 }) {
@@ -246,6 +247,15 @@ export function SessionEditor({
     return configForTemplate(base, template);
   }, [season, templates, templateId]);
 
+  // Per-session eligibility toggles. Qualifying is excluded — it never earns
+  // championship points on its own and always feeds Poles/Average Start, so the
+  // switches only apply to race-type sessions. Falls back to the session-type
+  // default until an admin explicitly flips a switch.
+  const flagDefaults = defaultSessionFlags(sessionType);
+  const statsOn = session in sessionStats ? !!sessionStats[session] : flagDefaults.counts_stats;
+  const pointsOn = session in sessionPointsEnabled ? !!sessionPointsEnabled[session] : flagDefaults.counts_points;
+  const showToggles = sessionType !== "qualifying" && (onSessionStatsChange || onSessionPointsEnabledChange);
+
   const rowPoints = row => (sessionType === "qualifying"
     ? Number(config.qualPoints[row.finish_pos] ?? 0)
     : pointsFor(row, config, qualPos[row.entry_id] ?? null));
@@ -334,6 +344,14 @@ export function SessionEditor({
             </select>
           </div>
         )}
+        {showToggles && (
+          <div style={{ display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap" }}>
+            <Toggle label="Count towards Official Stats" checked={statsOn}
+              onChange={v => onSessionStatsChange?.(session, v)} />
+            <Toggle label="Award Championship Points" checked={pointsOn}
+              onChange={v => onSessionPointsEnabledChange?.(session, v)} />
+          </div>
+        )}
         {onRenameSession && (
           renaming ? (
             <form onSubmit={submitRename} style={{ display: "flex", gap: 6, alignItems: "flex-end" }}>
@@ -407,6 +425,33 @@ export function SessionEditor({
         </button>
       )}
     </div>
+  );
+}
+
+// Accessible on/off switch used for the per-session Stats/Points eligibility
+// toggles. Styled inline so it needs no global CSS additions.
+function Toggle({ label, checked, onChange }) {
+  return (
+    <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: "0.82rem", color: "var(--ink-1)", margin: 0 }}>
+      <span
+        role="switch"
+        aria-checked={checked}
+        tabIndex={0}
+        onClick={() => onChange(!checked)}
+        onKeyDown={e => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); onChange(!checked); } }}
+        style={{
+          position: "relative", width: 40, height: 22, borderRadius: 999, flexShrink: 0,
+          background: checked ? "var(--accent-cyan)" : "var(--ink-2)",
+          transition: "background 0.15s", display: "inline-block",
+        }}
+      >
+        <span style={{
+          position: "absolute", top: 2, left: checked ? 20 : 2, width: 18, height: 18,
+          borderRadius: "50%", background: "#fff", transition: "left 0.15s",
+        }} />
+      </span>
+      {label}
+    </label>
   );
 }
 

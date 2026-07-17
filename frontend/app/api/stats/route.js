@@ -6,6 +6,7 @@ import {
   calculateStandings,
   configForTemplate,
   decorateRaceBonuses,
+  decorateSessionFlags,
   isQualifying,
   pointsFor,
   resolveSeasonConfig,
@@ -57,13 +58,15 @@ async function buildStats(seasons) {
 
   for (const season of seasons) {
     const config = resolveSeasonConfig(season);
-    const [entriesSnap, resultsSnap] = await Promise.all([
+    const [entriesSnap, resultsSnap, racesSnap] = await Promise.all([
       db().collection("entries").where("season_id", "==", season.id).get(),
       db().collection("results").where("season_id", "==", season.id).get(),
+      db().collection("races").where("season_id", "==", season.id).get(),
     ]);
     const entries = entriesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
     const entriesById = Object.fromEntries(entries.map(e => [e.id, e]));
-    const results = decorateRaceBonuses(resultsSnap.docs.map(d => d.data()));
+    const racesById = Object.fromEntries(racesSnap.docs.map(d => [d.id, d.data()]));
+    const results = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById));
     const qualPosMap = buildQualPosMap(results);
 
     // Prefer the global driver identity (driver_id) so a driver who races
@@ -92,7 +95,7 @@ async function buildStats(seasons) {
       if (entry.driver_id) bucket.driver_id = entry.driver_id;
       bucket.results.push({
         ...r,
-        points: isQualifying(r) ? 0 : pointsFor(r, configForTemplate(config, templatesById[r.points_template_id]), qualPosMap[`${r.race_id}|${r.entry_id}`] ?? null),
+        points: (isQualifying(r) || r.counts_points === false) ? 0 : pointsFor(r, configForTemplate(config, templatesById[r.points_template_id]), qualPosMap[`${r.race_id}|${r.entry_id}`] ?? null),
       });
     }
 

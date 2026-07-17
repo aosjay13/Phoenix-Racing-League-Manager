@@ -105,6 +105,9 @@ export const SPECS = {
                        // from the event screen) feeding into one Feature session. `session_points`
                        // maps a session name -> points_templates id, so every session (including
                        // Qualifying and standard `sessions`) can carry its own points system.
+                       // `session_stats` / `session_points_enabled` map a session name -> boolean,
+                       // letting an admin exclude a session from official stats and/or championship
+                       // points (see resolveSessionFlags in lib/standings.js for the defaults).
                        heat_format: {}, heats: {}, consolations: {}, feature_name: { default: "A-Main Feature" },
-                       session_points: {} } },
+                       session_points: {}, session_stats: {}, session_points_enabled: {} } },
 };

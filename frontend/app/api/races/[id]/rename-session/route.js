@@ -40,9 +40,13 @@ export const POST = withAdmin(async (request, { params }) => {
     updates[field] = list.map(n => (n === from ? newName : n));
   }
 
-  // Carry the per-session points template across the rename.
+  // Carry the per-session points template and stats/points toggles across the rename.
   const sp = { ...(race.session_points || {}) };
   if (from in sp) { sp[newName] = sp[from]; delete sp[from]; updates.session_points = sp; }
+  for (const field of ["session_stats", "session_points_enabled"]) {
+    const map = { ...(race[field] || {}) };
+    if (from in map) { map[newName] = map[from]; delete map[from]; updates[field] = map; }
+  }
 
   // Cascade to saved results filed under the old session name.
   const firstStd = Array.isArray(race.sessions) && race.sessions.length ? race.sessions[0] : "Race";
