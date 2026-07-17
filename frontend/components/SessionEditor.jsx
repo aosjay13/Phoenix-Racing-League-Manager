@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { AddDriverToRace } from "@/components/AddDriverToRace";
+import { PointsEditorModal } from "@/components/PointsEditorModal";
+import { NONE_TEMPLATE } from "@/lib/pointsTemplates";
 import { pointsFor, configForTemplate, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
 import { parseTime, formatTime, formatGap, parseLapsDown, deriveLaps } from "@/lib/raceTime";
 
@@ -80,7 +82,7 @@ const LABELS = { qualifying: "Qualifying", race: "Race", heat: "Heat", consolati
 // always computed from Qualifying results alone.
 export function SessionEditor({
   race, seasonId, entries, sessionType, sessionNames,
-  season, templates = [], sessionPoints = {}, onSessionPointsChange,
+  season, templates = [], sessionPoints = {}, onSessionPointsChange, onTemplatesChanged,
   sessionStats = {}, onSessionStatsChange, sessionPointsEnabled = {}, onSessionPointsEnabledChange,
   canAddSession = false, onAddSession, onRemoveSession, onRenameSession,
   initialSession, onEntriesChanged, seriesName,
@@ -102,6 +104,7 @@ export function SessionEditor({
   const [renameValue, setRenameValue] = useState("");
   const [dragIndex, setDragIndex] = useState(null);
   const [overIndex, setOverIndex] = useState(null);
+  const [pointsModal, setPointsModal] = useState(false);
 
   function showToast(type, msg) {
     setToast({ type, msg });
@@ -243,7 +246,7 @@ export function SessionEditor({
   const templateId = sessionPoints[session] || "";
   const config = useMemo(() => {
     const base = resolveSeasonConfig(season || {});
-    const template = templates.find(t => t.id === templateId);
+    const template = templateId === NONE_TEMPLATE.id ? NONE_TEMPLATE : templates.find(t => t.id === templateId);
     return configForTemplate(base, template);
   }, [season, templates, templateId]);
 
@@ -336,12 +339,20 @@ export function SessionEditor({
 
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 12 }}>
         {onSessionPointsChange && (
-          <div className="field" style={{ maxWidth: 280, margin: 0 }}>
-            <label>Points system · {session}</label>
-            <select value={templateId} onChange={e => onSessionPointsChange(session, e.target.value)}>
-              <option value="">Season default</option>
-              {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+            <div className="field" style={{ maxWidth: 280, margin: 0 }}>
+              <label>Points system · {session}</label>
+              <select value={templateId}
+                onChange={e => Promise.resolve(onSessionPointsChange(session, e.target.value, sessionType)).catch(err => showToast("error", err.message))}>
+                <option value="">Season default</option>
+                <option value={NONE_TEMPLATE.id}>{NONE_TEMPLATE.name}</option>
+                {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </div>
+            <button className="btn btn-ghost" type="button" title="View, edit, or create the points structure for this session"
+              style={{ marginTop: 0, whiteSpace: "nowrap" }} onClick={() => setPointsModal(true)}>
+              ⚙ Edit Points Structure
+            </button>
           </div>
         )}
         {showToggles && (
@@ -412,6 +423,15 @@ export function SessionEditor({
       )}
 
       <AddDriverToRace seasonId={seasonId} seriesName={seriesName} existingNames={existingNames} onCreated={handleDriverAdded} onError={msg => showToast("error", msg)} />
+
+      {pointsModal && (
+        <PointsEditorModal
+          session={session} sessionType={sessionType} value={templateId}
+          templates={templates} season={season}
+          onAssign={onSessionPointsChange} onTemplatesChanged={onTemplatesChanged}
+          onClose={() => setPointsModal(false)}
+        />
+      )}
 
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
 

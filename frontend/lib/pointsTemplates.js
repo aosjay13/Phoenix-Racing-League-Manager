@@ -63,6 +63,19 @@ export const BUILTIN_TEMPLATES = [
   },
 ];
 
+// Pseudo-template that zeroes a session out entirely: position 1 is explicit
+// so parseMaybeJson doesn't fall back to the season default, every other
+// position resolves through `?? 0`, and every bonus is explicitly 0 so
+// nothing leaks in from the base config. Assign its id ("none") to a session
+// to award no points there.
+export const NONE_TEMPLATE = {
+  id: "none",
+  name: "No Points — all drivers score 0",
+  race_points: { 1: 0 },
+  qual_points: { 1: 0 },
+  bonus_points: { pole: 0, best_lap: 0, most_laps_led: 0, lead_a_lap: 0, halfway_point: 0, hard_charger: 0 },
+};
+
 // BUILTIN_TEMPLATES use comma-list strings (race/qual/bonuses); saved
 // points_templates docs (and season docs) use table objects
 // (race_points/qual_points/bonus_points). This normalizes builtins into that

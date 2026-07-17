@@ -35,6 +35,12 @@ function RaceEntryInner() {
     setEntries(await api(`/api/entries?season_id=${seasonId}`));
   }, [seasonId]);
 
+  // Refreshes the template list after one is created/edited from the inline
+  // points-structure modal, so the Points column re-resolves immediately.
+  const reloadTemplates = useCallback(async () => {
+    setTemplates([...normalizedBuiltinTemplates(), ...(await api("/api/points-templates"))]);
+  }, []);
+
   useEffect(() => { load().catch(() => {}); }, [load]);
 
   if (!seasonId) {
@@ -46,13 +52,14 @@ function RaceEntryInner() {
 
   const patchRace = updated => setRaces(prev => prev.map(r => (r.id === raceId ? { ...r, ...updated } : r)));
 
-  async function saveSessionPoints(name, templateId) {
-    const next = { ...sessionPoints, [name]: templateId };
-    if (!templateId) delete next[name];
-    try {
-      const updated = await api(`/api/races/${raceId}`, { method: "PATCH", body: { session_points: next } });
-      patchRace(updated);
-    } catch { /* non-critical — editor still usable with season default */ }
+  // Saves the assignment on the race AND cascades it onto any already-saved
+  // results for that session, so points re-score everywhere immediately.
+  async function saveSessionPoints(name, templateId, sessionType = "race") {
+    const updated = await api(`/api/races/${raceId}/session-points`, {
+      method: "POST",
+      body: { session: name, template_id: templateId || "", session_type: sessionType },
+    });
+    patchRace(updated);
   }
 
   const stdSessions = Array.isArray(selectedRace?.sessions) && selectedRace.sessions.length ? selectedRace.sessions : ["Race"];
@@ -99,7 +106,7 @@ function RaceEntryInner() {
             key={selectedRace.id}
             race={selectedRace} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={series?.name}
             sessionType="race" sessionNames={stdSessions}
-            season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints}
+            season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
             canAddSession onAddSession={addStdSession} onRemoveSession={removeStdSession} onRenameSession={renameStdSession}
           />
         ))}

@@ -1,8 +1,15 @@
 import { db } from "@/lib/firebase";
+import { normalizedBuiltinTemplates, NONE_TEMPLATE } from "@/lib/pointsTemplates";
 
-// Loads every saved points_templates doc, keyed by id, for resolving a
-// result's `points_template_id` into an actual points system server-side.
+// Every points system a session (or result) can reference by id, keyed by id:
+// saved points_templates docs, the builtin templates, and the "none"
+// (score-0) pseudo-template — so any points_template_id stored on a result
+// resolves to an actual points system server-side.
 export async function fetchTemplatesById() {
   const snap = await db().collection("points_templates").get();
-  return Object.fromEntries(snap.docs.map(d => [d.id, d.data()]));
+  return {
+    ...Object.fromEntries(normalizedBuiltinTemplates().map(t => [t.id, t])),
+    [NONE_TEMPLATE.id]: NONE_TEMPLATE,
+    ...Object.fromEntries(snap.docs.map(d => [d.id, d.data()])),
+  };
 }
