@@ -212,6 +212,25 @@ export function SessionEditor({
     onEntriesChanged?.();
   }
 
+  // Removes a driver added by mistake — entries are season-wide (the same
+  // row shows up on every race/session), so this deletes their entry outright
+  // rather than just hiding the row here, and the server cascades that to any
+  // results already saved for them anywhere in the season.
+  async function removeEntry(row) {
+    if (!confirm(`Remove ${row.driver_name} from the season? This removes them from every race and session, not just ${session}, and deletes any results already saved for them. This cannot be undone.`)) return;
+    setBusy(true);
+    try {
+      await api(`/api/entries/${row.entry_id}`, { method: "DELETE" });
+      setRows(prev => prev.filter(r => r.entry_id !== row.entry_id));
+      onEntriesChanged?.();
+      showToast("success", `${row.driver_name} removed.`);
+    } catch (err) {
+      showToast("error", err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   // Drag a row's handle to drop it into a new finishing position — every
   // row's finish_pos is renumbered to match the new order, so admins never
   // have to hand-type positions to slot someone in; typing is still there
@@ -412,11 +431,12 @@ export function SessionEditor({
         <div style={{ overflowX: "auto" }}>
           <p style={{ margin: "0 0 8px", color: "var(--ink-2)", fontSize: "0.78rem" }}>Drag ⠿ to reorder.</p>
           <div className="qual-grid">
-            {["", "Pos", "Driver", "Qual Time", pointsLabel].map((h, i) => <span className="grid-header" key={h || i}>{h}</span>)}
+            {["", "Pos", "Driver", "Qual Time", pointsLabel, ""].map((h, i) => <span className="grid-header" key={h || i}>{h}</span>)}
             {rows.map((row, idx) => (
               <QualRow key={row.entry_id} row={row} idx={idx} updateRow={updateRow} autoFocus={row.entry_id === justAddedId} points={rowPoints(row)}
                 dragging={dragIndex === idx} dragOver={overIndex === idx && dragIndex !== idx}
-                onDragStart={() => handleDragStart(idx)} onDragOver={e => handleDragOver(idx, e)} onDrop={() => handleDrop(idx)} onDragEnd={handleDragEnd} />
+                onDragStart={() => handleDragStart(idx)} onDragOver={e => handleDragOver(idx, e)} onDrop={() => handleDrop(idx)} onDragEnd={handleDragEnd}
+                onRemove={() => removeEntry(row)} />
             ))}
           </div>
         </div>
@@ -424,7 +444,7 @@ export function SessionEditor({
         <div style={{ overflowX: "auto" }}>
           <p style={{ margin: "0 0 8px", color: "var(--ink-2)", fontSize: "0.78rem" }}>Drag ⠿ to reorder — finishing positions renumber automatically.</p>
           <div className="result-grid result-grid-wide">
-            {["", "Fin", "Driver", "Race Time", "Int", "Laps", "Led", "Inc", "FL", "½", "HC", "Prov", "Status", pointsLabel].map((h, i) => (
+            {["", "Fin", "Driver", "Race Time", "Int", "Laps", "Led", "Inc", "FL", "½", "HC", "Prov", "Status", pointsLabel, ""].map((h, i) => (
               <span className="grid-header" key={h || i}>{h}</span>
             ))}
             {rows.map((row, idx) => (
@@ -432,7 +452,8 @@ export function SessionEditor({
                 updateRaceTime={updateRaceTime} updateInterval={updateInterval} updateStatus={updateStatus}
                 autoFocus={row.entry_id === justAddedId} points={rowPoints(row)}
                 dragging={dragIndex === idx} dragOver={overIndex === idx && dragIndex !== idx}
-                onDragStart={() => handleDragStart(idx)} onDragOver={e => handleDragOver(idx, e)} onDrop={() => handleDrop(idx)} onDragEnd={handleDragEnd} />
+                onDragStart={() => handleDragStart(idx)} onDragOver={e => handleDragOver(idx, e)} onDrop={() => handleDrop(idx)} onDragEnd={handleDragEnd}
+                onRemove={() => removeEntry(row)} />
             ))}
           </div>
         </div>
@@ -528,7 +549,16 @@ function DragHandle({ dragging, dragOver, onDragStart, onDragOver, onDrop, onDra
   );
 }
 
-function RowInputs({ row, idx, updateRow, updateRaceTime, updateInterval, updateStatus, autoFocus, points, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd }) {
+function RemoveButton({ name, onRemove }) {
+  return (
+    <button type="button" className="btn btn-danger" title={`Remove ${name} from the season`}
+      style={{ marginTop: 0, padding: "2px 8px", fontSize: "0.8rem" }} onClick={onRemove}>
+      ✕
+    </button>
+  );
+}
+
+function RowInputs({ row, idx, updateRow, updateRaceTime, updateInterval, updateStatus, autoFocus, points, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove }) {
   const isLeader = Number(row.finish_pos) === 1;
   const num = (field, min = 0, focus = false) => (
     <input type="number" min={min} value={row[field]} onChange={e => updateRow(idx, field, e.target.value)} autoFocus={focus} />
@@ -558,11 +588,12 @@ function RowInputs({ row, idx, updateRow, updateRaceTime, updateInterval, update
         <option value="dq">DQ</option>
       </select>
       <div className="points-cell" style={{ textAlign: "center", fontWeight: 600 }}>{points}</div>
+      <RemoveButton name={row.driver_name} onRemove={onRemove} />
     </>
   );
 }
 
-function QualRow({ row, idx, updateRow, autoFocus, points, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd }) {
+function QualRow({ row, idx, updateRow, autoFocus, points, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove }) {
   return (
     <>
       <DragHandle dragging={dragging} dragOver={dragOver} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={onDragEnd} />
@@ -573,6 +604,7 @@ function QualRow({ row, idx, updateRow, autoFocus, points, dragging, dragOver, o
       </div>
       <input placeholder="01:43.863" value={row.qual_time} onChange={e => updateRow(idx, "qual_time", e.target.value)} />
       <div className="points-cell" style={{ textAlign: "center", fontWeight: 600 }}>{points}</div>
+      <RemoveButton name={row.driver_name} onRemove={onRemove} />
     </>
   );
 }
