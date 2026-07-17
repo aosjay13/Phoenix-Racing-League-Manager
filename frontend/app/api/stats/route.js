@@ -3,6 +3,7 @@ import { db } from "@/lib/firebase";
 import {
   aggregateCareerStats,
   buildQualPosMap,
+  buildQualTemplateMap,
   calculateStandings,
   configForTemplate,
   decorateRaceBonuses,
@@ -68,6 +69,7 @@ async function buildStats(seasons) {
     const racesById = Object.fromEntries(racesSnap.docs.map(d => [d.id, d.data()]));
     const results = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById));
     const qualPosMap = buildQualPosMap(results);
+    const qualTemplateByRace = buildQualTemplateMap(results);
 
     // Prefer the global driver identity (driver_id) so a driver who races
     // under a different alias/number in each series still aggregates as one
@@ -95,7 +97,7 @@ async function buildStats(seasons) {
       if (entry.driver_id) bucket.driver_id = entry.driver_id;
       bucket.results.push({
         ...r,
-        points: (isQualifying(r) || r.counts_points === false) ? 0 : pointsFor(r, configForTemplate(config, templatesById[r.points_template_id]), qualPosMap[`${r.race_id}|${r.entry_id}`] ?? null),
+        points: (isQualifying(r) || r.counts_points === false) ? 0 : pointsFor(r, configForTemplate(config, templatesById[r.points_template_id]), qualPosMap[`${r.race_id}|${r.entry_id}`] ?? null, configForTemplate(config, templatesById[qualTemplateByRace[r.race_id]])),
       });
     }
 

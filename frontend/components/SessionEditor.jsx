@@ -269,6 +269,18 @@ export function SessionEditor({
     return configForTemplate(base, template);
   }, [season, templates, templateId]);
 
+  // Qualifying's own points system (always the "Qualifying" session, regardless
+  // of which tab is open) — used to resolve the qualifying-position bonus
+  // folded into race-type rows below, so a points structure assigned
+  // specifically to Qualifying is reflected here too, not just the season/race
+  // default. See lib/standings.js:pointsFor's `qualConfig` param.
+  const qualTemplateId = sessionPoints["Qualifying"] || "";
+  const qualConfig = useMemo(() => {
+    const base = resolveSeasonConfig(season || {});
+    const template = qualTemplateId === NONE_TEMPLATE.id ? NONE_TEMPLATE : templates.find(t => t.id === qualTemplateId);
+    return configForTemplate(base, template);
+  }, [season, templates, qualTemplateId]);
+
   // Per-session eligibility toggles. Qualifying is excluded — it never earns
   // championship points on its own and always feeds Poles/Average Start, so the
   // switches only apply to race-type sessions. Falls back to the session-type
@@ -280,7 +292,7 @@ export function SessionEditor({
 
   const rowPoints = row => (sessionType === "qualifying"
     ? Number(config.qualPoints[row.finish_pos] ?? 0)
-    : pointsFor(row, config, qualPos[row.entry_id] ?? null));
+    : pointsFor(row, config, qualPos[row.entry_id] ?? null, qualConfig));
 
   async function handleSave() {
     const filled = rows.filter(r => r.finish_pos !== "");

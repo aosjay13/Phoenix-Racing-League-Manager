@@ -3,6 +3,7 @@ import { db } from "@/lib/firebase";
 import {
   aggregateCareerStats,
   buildQualPosMap,
+  buildQualTemplateMap,
   calculateStandings,
   configForTemplate,
   decorateRaceBonuses,
@@ -54,12 +55,13 @@ export async function GET(request, { params }) {
     const seasonResults = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById));
     const seasonEntries = entriesSnap2.docs.map(d => ({ id: d.id, ...d.data() }));
     const qualPosMap = buildQualPosMap(seasonResults);
+    const qualTemplateByRace = buildQualTemplateMap(seasonResults);
 
     const mine = seasonResults
       .filter(r => myEntryIds.has(r.entry_id))
       .map(r => ({
         ...r,
-        points: (isQualifying(r) || r.counts_points === false) ? 0 : pointsFor(r, configForTemplate(config, templatesById[r.points_template_id]), qualPosMap[`${r.race_id}|${r.entry_id}`] ?? null),
+        points: (isQualifying(r) || r.counts_points === false) ? 0 : pointsFor(r, configForTemplate(config, templatesById[r.points_template_id]), qualPosMap[`${r.race_id}|${r.entry_id}`] ?? null, configForTemplate(config, templatesById[qualTemplateByRace[r.race_id]])),
       }));
     (perGame[gameId] ??= []).push(...mine);
     allResults.push(...mine);

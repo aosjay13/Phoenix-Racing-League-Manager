@@ -119,8 +119,14 @@ export function decorateRaceBonuses(results) {
 // (looked up separately — see buildQualPosMap), not a copy stored on the
 // race result itself. That's the only source of starting-position info now;
 // there is no editable "Start" field on race/heat/consolation/feature rows.
-export function pointsFor(result, config, qualPos = null) {
-  const { racePoints, qualPoints, bonuses } = config;
+// `qualConfig` resolves the qualifying-position bonus against the Qualifying
+// session's OWN assigned points system (see buildQualTemplateMap) — falling
+// back to `config` (the race result's own template) when Qualifying carries
+// no override of its own, so a session-specific Qualifying points structure
+// actually reaches the standings total instead of being silently ignored.
+export function pointsFor(result, config, qualPos = null, qualConfig = null) {
+  const { racePoints, bonuses } = config;
+  const qualPoints = (qualConfig || config).qualPoints;
   let pts = Number(racePoints[result.finish_pos] ?? 0);
   if (qualPos != null) {
     pts += Number(qualPoints[qualPos] ?? 0);
@@ -141,6 +147,18 @@ export function buildQualPosMap(results) {
   const map = {};
   for (const r of results) {
     if (r.session_type === "qualifying") map[`${r.race_id}|${r.entry_id}`] = Number(r.finish_pos);
+  }
+  return map;
+}
+
+// race_id -> the Qualifying session's own points_template_id (or null for the
+// season default), so the qualifying-position bonus folded into a race result
+// (see pointsFor) can be resolved against the actual points system assigned
+// to Qualifying rather than whatever template the race session happens to use.
+export function buildQualTemplateMap(results) {
+  const map = {};
+  for (const r of results) {
+    if (r.session_type === "qualifying") map[r.race_id] = r.points_template_id || null;
   }
   return map;
 }
@@ -204,6 +222,8 @@ export function calculateStandings(results, entries, teams = [], config, templat
   const teamsById = Object.fromEntries(teams.map(t => [t.id, t]));
   const configFor = r => configForTemplate(config, templatesById[r.points_template_id]);
   const qualPosMap = buildQualPosMap(results);
+  const qualTemplateByRace = buildQualTemplateMap(results);
+  const qualConfigFor = r => configForTemplate(config, templatesById[qualTemplateByRace[r.race_id]]);
 
   const byEntry = {};
   for (const r of results) (byEntry[r.entry_id] ??= []).push(r);
@@ -214,11 +234,13 @@ export function calculateStandings(results, entries, teams = [], config, templat
     const team = teamsById[entry.team_id] || {};
     // Championship points come only from race-type sessions (race, heat,
     // consolation, feature) — qualifying results never earn points on their
-    // own, only a starting-position bonus folded into the next session. A
-    // session whose points toggle is off is skipped even if it carries a
+    // own, only a starting-position bonus folded into the next session, scored
+    // against Qualifying's own points structure (qualConfigFor) so a points
+    // system assigned specifically to Qualifying actually reaches the total.
+    // A session whose points toggle is off is skipped even if it carries a
     // points template.
     const raceResults = entryResults.filter(r => !isQualifying(r) && r.counts_points !== false);
-    const pointsList = raceResults.map(r => pointsFor(r, configFor(r), qualPosMap[`${r.race_id}|${r.entry_id}`] ?? null));
+    const pointsList = raceResults.map(r => pointsFor(r, configFor(r), qualPosMap[`${r.race_id}|${r.entry_id}`] ?? null, qualConfigFor(r)));
     const totalPoints = pointsList.reduce((a, b) => a + b, 0);
 
     let droppedPoints = 0;
