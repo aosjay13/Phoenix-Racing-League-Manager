@@ -105,7 +105,7 @@ export async function GET(request) {
   }
 
   const driverRows = Object.values(drivers)
-    .map(d => ({ driver_name: (d.driver_id && canonicalName[d.driver_id]) || d.driver_name, user_id: d.user_id, ...aggregateCareerStats(d.results, d.titles) }))
+    .map(d => ({ driver_name: (d.driver_id && canonicalName[d.driver_id]) || d.driver_name, driver_id: d.driver_id, user_id: d.user_id, ...aggregateCareerStats(d.results, d.titles) }))
     .sort((a, b) => b.points - a.points || b.wins - a.wins || String(a.driver_name).localeCompare(String(b.driver_name)));
 
   return NextResponse.json({

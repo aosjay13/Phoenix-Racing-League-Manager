@@ -154,6 +154,7 @@ async function buildStats(seasons) {
   const rows = Object.values(drivers).map(d => ({
     driver_name: (d.driver_id && canonicalName[d.driver_id]) || d.driver_name,
     driver_number: d.driver_number,
+    driver_id: d.driver_id,
     user_id: d.user_id,
     ...aggregateCareerStats(d.results, d.titles),
   }));

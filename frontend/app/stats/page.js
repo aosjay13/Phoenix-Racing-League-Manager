@@ -158,10 +158,10 @@ export default function StatsPage() {
                     </tr>
                   ))
                 : rows.map(r => (
-                    <tr key={(r.user_id ?? "") + r.driver_name}>
+                    <tr key={(r.driver_id ?? r.user_id ?? "") + r.driver_name}>
                       <td className="driver-name-cell sticky-col">
-                        {r.user_id
-                          ? <Link href={`/drivers/${r.user_id}`} style={{ color: "var(--accent-cyan)" }}>{r.driver_name}</Link>
+                        {(r.driver_id || r.user_id)
+                          ? <Link href={`/drivers/${r.driver_id || r.user_id}`} style={{ color: "var(--accent-cyan)" }}>{r.driver_name}</Link>
                           : r.driver_name}
                         {r.driver_number != null && <span style={{ color: "var(--ink-2)", marginLeft: 6 }}>#{r.driver_number}</span>}
                       </td>

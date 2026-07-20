@@ -256,6 +256,7 @@ export function calculateStandings(results, entries, teams = [], config, templat
       entry_id: entryId,
       driver_name: entry.name ?? "Unknown",
       driver_number: entry.number ?? null,
+      driver_id: entry.driver_id ?? null,
       user_id: entry.user_id ?? null,
       team_id: entry.team_id ?? null,
       team: team.name ?? entry.team ?? "—",

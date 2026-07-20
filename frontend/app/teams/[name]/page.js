@@ -81,10 +81,10 @@ export default function TeamProfilePage() {
             </thead>
             <tbody>
               {drivers.map(d => (
-                <tr key={(d.user_id ?? "") + d.driver_name}>
+                <tr key={(d.driver_id ?? d.user_id ?? "") + d.driver_name}>
                   <td className="driver-name-cell sticky-col" style={{ textAlign: "left" }}>
-                    {d.user_id
-                      ? <Link href={`/drivers/${d.user_id}`} style={{ color: "var(--accent-cyan)" }}>{d.driver_name}</Link>
+                    {(d.driver_id || d.user_id)
+                      ? <Link href={`/drivers/${d.driver_id || d.user_id}`} style={{ color: "var(--accent-cyan)" }}>{d.driver_name}</Link>
                       : d.driver_name}
                   </td>
                   {DRIVER_COLS.map(([key]) => <td key={key}>{d[key] ?? "—"}</td>)}

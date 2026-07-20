@@ -171,8 +171,8 @@ export default function StandingsPage() {
           nameLabel="Driver"
           renderName={r => (
             <>
-              {r.user_id
-                ? <Link href={`/drivers/${r.user_id}`} style={{ color: "var(--accent-cyan)" }}>{r.driver_name}</Link>
+              {(r.driver_id || r.user_id)
+                ? <Link href={`/drivers/${r.driver_id || r.user_id}`} style={{ color: "var(--accent-cyan)" }}>{r.driver_name}</Link>
                 : r.driver_name}
               {r.driver_number != null && <span style={{ color: "var(--ink-2)", marginLeft: 6 }}>#{r.driver_number}</span>}
               {r.points_adjustment !== 0 && (

@@ -33,6 +33,7 @@ export async function GET(request, { params }) {
       ...r,
       driver_name: entry.name ?? "Unknown",
       driver_number: entry.number ?? null,
+      driver_id: entry.driver_id ?? null,
       user_id: entry.user_id ?? null,
       team: teamsById[entry.team_id]?.name ?? null,
     };

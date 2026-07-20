@@ -19,13 +19,13 @@ export default function DriverProfilePage() {
   const [gameFilter, setGameFilter] = useState("all");
 
   useEffect(() => {
-    api(`/api/users/${uid}`).then(setData).catch(err => setError(err.message));
+    api(`/api/drivers/${uid}`).then(setData).catch(err => setError(err.message));
   }, [uid]);
 
   if (error) return <div className="empty-state"><span className="empty-state-icon">🏎</span><p>{error}</p></div>;
   if (!data) return <div className="skeleton" style={{ height: 280 }} />;
 
-  const { profile, all_games, by_game } = data;
+  const { profile, all_games, by_game, linked } = data;
   const stats = gameFilter === "all"
     ? all_games
     : by_game.find(g => g.game_id === gameFilter)?.stats ?? all_games;
@@ -44,7 +44,17 @@ export default function DriverProfilePage() {
             </h2>
           </div>
           {profile.country && <span className="page-badge">{profile.country}</span>}
+          {!linked && (
+            <span className="page-badge" style={{ background: "transparent", border: "1px solid var(--ink-2)", color: "var(--ink-2)", marginLeft: profile.country ? 8 : 0 }}>
+              ⛓️‍💥 Not linked to an account
+            </span>
+          )}
           {profile.bio && <p style={{ marginTop: 10, color: "var(--ink-1)", fontSize: "0.92rem", maxWidth: 560 }}>{profile.bio}</p>}
+          {!linked && (
+            <p style={{ marginTop: 10, color: "var(--ink-2)", fontSize: "0.85rem", maxWidth: 560 }}>
+              These stats are tracked from race results. No player account has claimed this driver yet, so there's no profile photo, bio, or country.
+            </p>
+          )}
         </div>
       </div>
 
