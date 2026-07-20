@@ -22,9 +22,19 @@ export default function TeamProfilePage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
 
+  // useParams() returns the route segment still percent-encoded, so decode it
+  // before re-encoding for the API call — otherwise "Firebird Racing" becomes
+  // "Firebird%2520Racing" and matches no team. decodeURIComponent is a safe
+  // no-op when the value is already plain text.
+  const teamName = (() => {
+    const raw = Array.isArray(name) ? name[0] : name;
+    try { return decodeURIComponent(raw ?? ""); } catch { return raw ?? ""; }
+  })();
+
   useEffect(() => {
-    api(`/api/team-stats?name=${encodeURIComponent(name)}`).then(setData).catch(err => setError(err.message));
-  }, [name]);
+    if (!teamName) return;
+    api(`/api/team-stats?name=${encodeURIComponent(teamName)}`).then(setData).catch(err => setError(err.message));
+  }, [teamName]);
 
   if (error) return <div className="empty-state"><span className="empty-state-icon">🏁</span><p>{error}</p></div>;
   if (!data) return <div className="skeleton" style={{ height: 280 }} />;
