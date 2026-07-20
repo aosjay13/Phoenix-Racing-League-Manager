@@ -8,7 +8,7 @@ import { NONE_TEMPLATE } from "@/lib/pointsTemplates";
 import { pointsFor, configForTemplate, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
 import { parseTime, formatTime, formatGap, parseLapsDown, deriveLaps } from "@/lib/raceTime";
 
-const RESULT_FIELDS = ["finish_pos", "qual_time", "race_time", "interval", "laps", "laps_led", "incidents", "fastest_lap", "halfway_leader", "hard_charger", "provisional", "status"];
+const RESULT_FIELDS = ["finish_pos", "start_pos", "qual_time", "race_time", "interval", "laps", "laps_led", "incidents", "fastest_lap", "halfway_leader", "hard_charger", "provisional", "status"];
 
 function blankRow(entry, position) {
   return {
@@ -16,6 +16,7 @@ function blankRow(entry, position) {
     driver_name: entry.name ?? entry.driver_name,
     driver_number: entry.number ?? entry.driver_number ?? null,
     finish_pos: String(position),
+    start_pos: "",
     qual_time: "",
     race_time: "",
     interval: "",
@@ -36,11 +37,20 @@ function blankRows(entries) {
 
 const rowFromEntry = (entry, position) => blankRow(entry, position);
 
-function buildRows(entries, existing, totalLaps) {
+// Builds the editable grid. Qualifying only feeds the **Start** column of
+// race-type sessions (via qualPos) — never the Finish order, which stays an
+// independent, sequential blank slate the admin fills top-down. A saved
+// result's own start_pos wins over the qualifying default once entered.
+function buildRows(entries, existing, totalLaps, qualPos = {}, sessionType = "race") {
   const byEntry = Object.fromEntries(existing.map(r => [r.entry_id, r]));
   const merged = blankRows(entries).map(row => {
     const prev = byEntry[row.entry_id];
     const out = { ...row };
+    // Default Start to the driver's Qualifying finishing position (race-type
+    // sessions only); an entered/saved start_pos below overrides it.
+    if (sessionType !== "qualifying" && qualPos[row.entry_id] != null) {
+      out.start_pos = String(qualPos[row.entry_id]);
+    }
     if (prev) {
       for (const f of RESULT_FIELDS) {
         if (prev[f] == null) continue;
@@ -121,7 +131,7 @@ export function SessionEditor({
       );
       setQualPos(qp);
       const existing = all.filter(r => r.session_type === sessionType && (r.session || names[0]) === sess);
-      setRows(buildRows(entries, existing, race.total_laps));
+      setRows(buildRows(entries, existing, race.total_laps, qp, sessionType));
     } catch {
       setQualPos({});
       setRows(blankRows(entries));
@@ -432,7 +442,7 @@ export function SessionEditor({
       <p style={{ marginTop: 0, color: "var(--ink-1)", fontSize: "0.85rem" }}>
         {sessionType === "qualifying"
           ? "Position 1 is the pole. This is the only place starting position is recorded — Average Start and Poles are calculated from Qualifying results only."
-          : <>Enter <strong>Race Time</strong> for the leader, then either a Race Time or an <strong>Int</strong> (gap behind leader, e.g. <code>+2.345</code>) for everyone else — each fills in the other. Use <code>1L</code>, <code>2L</code>… in Int for laps down.{totalLaps ? ` Laps auto-count off the ${totalLaps}-lap distance (laps down and DNF lap subtract from it).` : " Set Total Race Laps on the Race Info tab so laps auto-count."}</>}
+          : <>Fill <strong>Finish</strong> top-down (1st → last) — it starts as a clean, independent slate; qualifying never forces this order, it only pre-fills the <strong>Start</strong> column (editable). Enter <strong>Race Time</strong> for the leader, then either a Race Time or an <strong>Int</strong> (gap behind leader, e.g. <code>+2.345</code>) for everyone else — each fills in the other. Use <code>1L</code>, <code>2L</code>… in Int for laps down.{totalLaps ? ` Laps auto-count off the ${totalLaps}-lap distance (laps down and DNF lap subtract from it).` : " Set Total Race Laps on the Race Info tab so laps auto-count."}</>}
       </p>
 
       {!rows.length ? (
@@ -456,7 +466,7 @@ export function SessionEditor({
         <div style={{ overflowX: "auto" }}>
           <p style={{ margin: "0 0 8px", color: "var(--ink-2)", fontSize: "0.78rem" }}>Drag ⠿ to reorder — finishing positions renumber automatically.</p>
           <div className="result-grid result-grid-wide">
-            {["", "Fin", "Driver", "Race Time", "Int", "Laps", "Led", "Inc", "FL", "½", "HC", "Prov", "Status", pointsLabel, ""].map((h, i) => (
+            {["", "Fin", "Start", "Driver", "Race Time", "Int", "Laps", "Led", "Inc", "FL", "½", "HC", "Prov", "Status", pointsLabel, ""].map((h, i) => (
               <span className="grid-header" key={h || i}>{h}</span>
             ))}
             {rows.map((row, idx) => (
@@ -489,7 +499,13 @@ export function SessionEditor({
       </button>
       {!!rows.length && (
         <button className="btn btn-ghost" style={{ marginLeft: 8 }}
-          onClick={() => setRows(prev => prev.map((r, i) => rowFromEntry({ id: r.entry_id, name: r.driver_name, number: r.driver_number }, i + 1)))}>
+          onClick={() => setRows(prev => prev.map((r, i) => {
+            const fresh = rowFromEntry({ id: r.entry_id, name: r.driver_name, number: r.driver_number }, i + 1);
+            // Keep Start seeded from Qualifying on reset — only the entered
+            // finishing data is cleared.
+            if (sessionType !== "qualifying" && qualPos[r.entry_id] != null) fresh.start_pos = String(qualPos[r.entry_id]);
+            return fresh;
+          }))}>
           Reset Grid
         </button>
       )}
@@ -579,6 +595,8 @@ function RowInputs({ row, idx, updateRow, updateRaceTime, updateInterval, update
     <>
       <DragHandle dragging={dragging} dragOver={dragOver} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={onDragEnd} />
       {num("finish_pos", 1, autoFocus)}
+      <input type="number" min="1" title="Starting position (defaults from Qualifying)" placeholder="—"
+        value={row.start_pos} onChange={e => updateRow(idx, "start_pos", e.target.value)} />
       <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.92rem", whiteSpace: "nowrap", opacity: dragging ? 0.35 : 1 }}>
         {row.driver_number != null && <span className="badge">#{row.driver_number}</span>}
         {row.driver_name}

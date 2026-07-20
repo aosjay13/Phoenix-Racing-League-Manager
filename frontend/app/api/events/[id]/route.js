@@ -57,7 +57,13 @@ export async function GET(request, { params }) {
     name,
     results: raceResults
       .filter(r => (r.session || declared[0]) === name)
-      .map(r => ({ ...joinEntry(r), points: pointsFor(r, configFor(r), qualPosMap[`${r.race_id}|${r.entry_id}`] ?? null) }))
+      .map(r => {
+        const qp = qualPosMap[`${r.race_id}|${r.entry_id}`] ?? null;
+        // Start = the driver's own saved start_pos, else their qualifying
+        // finishing position. Finish is scored/ordered independently of both.
+        const start = r.start_pos != null ? Number(r.start_pos) : qp;
+        return { ...joinEntry(r), start_pos: start, points: pointsFor(r, configFor(r), qp) };
+      })
       .sort((a, b) => a.finish_pos - b.finish_pos),
   })).filter(s => s.results.length || names.length === 1);
 

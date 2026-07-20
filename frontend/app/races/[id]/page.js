@@ -124,7 +124,7 @@ export default function EventResultsPage() {
           <table className="stats-table">
             <thead>
               <tr>
-                <th>Pos</th><th style={{ textAlign: "left" }}>Driver</th><th style={{ textAlign: "left" }}>Team</th>
+                <th>Pos</th><th title="Starting position">Start</th><th style={{ textAlign: "left" }}>Driver</th><th style={{ textAlign: "left" }}>Team</th>
                 <th>Race Time</th><th>Int</th><th>Laps</th><th>Led</th><th>Inc</th><th>Status</th><th>Points</th>
               </tr>
             </thead>
@@ -136,6 +136,7 @@ export default function EventResultsPage() {
                       {r.finish_pos}
                     </span>
                   </td>
+                  <td style={{ color: "var(--ink-1)" }}>{r.start_pos ?? "—"}</td>
                   <td className="driver-name-cell" style={{ textAlign: "left" }}>
                     <DriverCell r={r} />
                     {r.fastest_lap && <span className="badge" title="Fastest lap" style={{ marginLeft: 6 }}>FL</span>}

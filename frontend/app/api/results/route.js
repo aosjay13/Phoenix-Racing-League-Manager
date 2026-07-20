@@ -80,6 +80,7 @@ export const POST = withAdmin(async (request, ctx, user) => {
       session_type: sessionType,
       entry_id: row.entry_id,
       finish_pos: Number(row.finish_pos),
+      start_pos: row.start_pos === "" || row.start_pos == null ? null : Number(row.start_pos),
       qual_time: row.qual_time || null,
       race_time: row.race_time || null,
       interval: row.interval || null,
