@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { api } from "@/lib/api";
+import { formatStat } from "@/lib/standings";
 
 const STAT_LABELS = [
   ["points", "Points"], ["titles", "Titles"], ["starts", "Starts"], ["wins", "Wins"],
@@ -60,7 +61,7 @@ export default function TeamProfilePage() {
         <div className="metrics" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))" }}>
           {STAT_LABELS.map(([key, label]) => (
             <article className="metric-card" key={key}>
-              <div className="metric-num">{stats[key] ?? "—"}</div>
+              <div className="metric-num">{formatStat(key, stats[key])}</div>
               <div className="metric-label">{label}</div>
             </article>
           ))}
@@ -87,7 +88,7 @@ export default function TeamProfilePage() {
                       ? <Link href={`/drivers/${d.driver_id || d.user_id}`} style={{ color: "var(--accent-cyan)" }}>{d.driver_name}</Link>
                       : d.driver_name}
                   </td>
-                  {DRIVER_COLS.map(([key]) => <td key={key}>{d[key] ?? "—"}</td>)}
+                  {DRIVER_COLS.map(([key]) => <td key={key}>{formatStat(key, d[key])}</td>)}
                 </tr>
               ))}
             </tbody>

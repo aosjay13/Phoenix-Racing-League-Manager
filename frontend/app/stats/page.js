@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLeague } from "@/components/LeagueProvider";
 import { useSortable } from "@/components/useSortable";
 import { api } from "@/lib/api";
+import { formatStat } from "@/lib/standings";
 
 // [key, header, lowerIsBetter, fullName] — fullName becomes a hover tooltip.
 const COLUMNS = [
@@ -152,7 +153,7 @@ export default function StatsPage() {
                       </td>
                       {columns.map(([key]) => (
                         <td key={key} className={best[key] != null && r[key] === best[key] ? "stat-leader" : undefined}>
-                          {r[key] ?? "—"}
+                          {formatStat(key, r[key])}
                         </td>
                       ))}
                     </tr>
@@ -167,7 +168,7 @@ export default function StatsPage() {
                       </td>
                       {columns.map(([key]) => (
                         <td key={key} className={best[key] != null && r[key] === best[key] ? "stat-leader" : undefined}>
-                          {r[key] ?? "—"}
+                          {formatStat(key, r[key])}
                         </td>
                       ))}
                     </tr>

@@ -46,7 +46,8 @@ export default function MyProfilePage() {
     try {
       await api("/api/users/me", {
         method: "PATCH",
-        body: { ...form, number: form.number === "" ? null : Number(form.number) },
+        // Car number is a string (max 3 chars) so leading zeros like "01"/"007" survive.
+        body: { ...form, number: form.number === "" ? null : String(form.number).trim().slice(0, 3) },
       });
       await refreshProfile();
       setToast({ type: "success", msg: "Profile saved." });
@@ -75,7 +76,7 @@ export default function MyProfilePage() {
           </div>
           <div className="field">
             <label>Preferred Car Number</label>
-            <input type="number" value={form.number} onChange={set("number")} placeholder="13" />
+            <input type="text" inputMode="numeric" maxLength={3} value={form.number} onChange={set("number")} placeholder="e.g. 01, 13, 007" />
           </div>
           <div className="field">
             <label>Country / Region</label>

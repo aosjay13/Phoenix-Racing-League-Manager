@@ -165,6 +165,18 @@ export function buildQualTemplateMap(results) {
 
 const round2 = n => Math.round(n * 100) / 100;
 
+// Stats whose display is always fixed to two decimal places.
+const TWO_DP_STATS = new Set(["avg_start", "avg_finish"]);
+
+// Format a stat value for display. Average Start / Average Finish always render
+// with exactly two decimals (2.00, 14.50, 8.33); null shows an em dash; every
+// other stat passes through unchanged.
+export function formatStat(key, value) {
+  if (value == null) return "—";
+  if (TWO_DP_STATS.has(key)) return Number(value).toFixed(2);
+  return value;
+}
+
 // A result belongs to a qualifying session (its finish_pos is a grid slot,
 // not a race finish) rather than a race session.
 export function isQualifying(r) {

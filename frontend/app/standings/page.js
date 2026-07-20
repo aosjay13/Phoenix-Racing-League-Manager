@@ -6,6 +6,7 @@ import { useLeague } from "@/components/LeagueProvider";
 import { useAuth } from "@/components/AuthProvider";
 import { useSortable } from "@/components/useSortable";
 import { api } from "@/lib/api";
+import { formatStat } from "@/lib/standings";
 
 // [key, label, lowIsBetter?, isText?]
 const DRIVER_COLS = [
@@ -84,7 +85,7 @@ function formatCell(r, key) {
   const v = r[key];
   if (v == null) return "—";
   if (key === "behind_leader" || key === "behind_next") return v === 0 ? "—" : v;
-  return v;
+  return formatStat(key, v);
 }
 
 export default function StandingsPage() {

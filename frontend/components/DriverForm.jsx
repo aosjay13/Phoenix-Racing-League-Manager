@@ -13,7 +13,8 @@ export function DriverForm({ value, onChange, teams, users, numberLabel = "Car N
       </div>
       <div className="field">
         <label>{numberLabel}</label>
-        <input type="number" value={value.number} onChange={e => onChange({ ...value, number: e.target.value })} placeholder="13" />
+        <input type="text" inputMode="numeric" maxLength={3} value={value.number}
+          onChange={e => onChange({ ...value, number: e.target.value })} placeholder="e.g. 01, 13, 007" />
       </div>
       <div className="field">
         <label>Team</label>

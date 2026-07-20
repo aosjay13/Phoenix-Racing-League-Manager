@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { api } from "@/lib/api";
+import { formatStat } from "@/lib/standings";
 
 const STAT_LABELS = [
   ["starts", "Starts"], ["wins", "Wins"], ["podiums", "Podiums"], ["top5", "Top 5s"],
@@ -74,7 +75,7 @@ export default function DriverProfilePage() {
         <div className="metrics" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))" }}>
           {STAT_LABELS.map(([key, label]) => (
             <article className="metric-card" key={key}>
-              <div className="metric-num">{stats[key] ?? "—"}</div>
+              <div className="metric-num">{formatStat(key, stats[key])}</div>
               <div className="metric-label">{label}</div>
             </article>
           ))}
@@ -101,7 +102,7 @@ export default function DriverProfilePage() {
                     <td>{g.stats.poles}</td>
                     <td>{g.stats.titles}</td>
                     <td className="points-cell">{g.stats.points}</td>
-                    <td>{g.stats.avg_finish}</td>
+                    <td>{formatStat("avg_finish", g.stats.avg_finish)}</td>
                   </tr>
                 ))}
               </tbody>

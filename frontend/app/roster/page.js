@@ -42,7 +42,7 @@ function SeriesMembershipRow({ s, entry, defaultName, onAdd, onUpdate, onRemove 
       <div className="driver-row" style={{ gap: 8 }}>
         <span style={{ flex: 1, color: "var(--ink-2)" }}>{s.name}</span>
         <input style={{ width: 150 }} value={alias} onChange={e => setAlias(e.target.value)} placeholder="Name for this series" />
-        <input type="number" style={{ width: 70 }} value={num} onChange={e => setNum(e.target.value)} placeholder="#" />
+        <input type="text" inputMode="numeric" maxLength={3} style={{ width: 70 }} value={num} onChange={e => setNum(e.target.value)} placeholder="#" />
         <button className="btn btn-ghost" type="button" style={{ marginTop: 0, padding: "4px 10px" }}
           onClick={() => onAdd(s.id, alias, num)}>+ Add to Series</button>
       </div>
@@ -52,7 +52,7 @@ function SeriesMembershipRow({ s, entry, defaultName, onAdd, onUpdate, onRemove 
     <div className="driver-row" style={{ gap: 8 }}>
       <span style={{ flex: 1 }}>{s.name}</span>
       <input style={{ width: 150 }} value={alias} onChange={e => setAlias(e.target.value)} placeholder="Name for this series" />
-      <input type="number" style={{ width: 70 }} value={num} onChange={e => setNum(e.target.value)} placeholder="#" />
+      <input type="text" inputMode="numeric" maxLength={3} style={{ width: 70 }} value={num} onChange={e => setNum(e.target.value)} placeholder="#" />
       <button className="btn btn-ghost" type="button" style={{ marginTop: 0, padding: "4px 10px" }}
         onClick={() => onUpdate(entry, alias, num)}>Save</button>
       <button className="btn btn-danger" type="button" style={{ marginTop: 0, padding: "4px 10px" }}
@@ -66,7 +66,7 @@ function PoolAddInline({ onAdd, onCancel }) {
   const [num, setNum] = useState("");
   return (
     <span style={{ display: "flex", gap: 6 }}>
-      <input type="number" style={{ width: 70 }} value={num} onChange={e => setNum(e.target.value)} placeholder="#" autoFocus />
+      <input type="text" inputMode="numeric" maxLength={3} style={{ width: 70 }} value={num} onChange={e => setNum(e.target.value)} placeholder="#" autoFocus />
       <button className="btn btn-primary" type="button" style={{ marginTop: 0, padding: "4px 10px" }} onClick={() => onAdd(num)}>Add</button>
       <button className="btn btn-ghost" type="button" style={{ marginTop: 0, padding: "4px 10px" }} onClick={onCancel}>Cancel</button>
     </span>
@@ -537,7 +537,7 @@ function RosterInner() {
                       {showNumber && (
                         <td>
                           {editing
-                            ? <input type="number" style={{ width: 70 }} value={rowForm.number} onChange={e => setRowForm(f => ({ ...f, number: e.target.value }))} />
+                            ? <input type="text" inputMode="numeric" maxLength={3} style={{ width: 70 }} value={rowForm.number} onChange={e => setRowForm(f => ({ ...f, number: e.target.value }))} />
                             : <span className="badge">{d.number ?? "—"}</span>}
                         </td>
                       )}

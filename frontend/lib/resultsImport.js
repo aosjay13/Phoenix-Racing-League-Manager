@@ -230,7 +230,9 @@ const toInt = v => {
 const truthyStatus = v => {
   const s = String(v ?? "").toLowerCase();
   if (/dns|did not start/.test(s)) return "dns";
-  if (/dnf|dq|disq|retired|out|crash/.test(s)) return /dq|disq/.test(s) ? "dq" : "dnf";
+  // "Disconnected" (SimRacerHub network drop) counts as a DNF, alongside the
+  // usual retired/out/crash wording. Running/finished statuses fall through.
+  if (/dnf|dq|disq|retired|out|crash|disconnect/.test(s)) return /dq|disq/.test(s) ? "dq" : "dnf";
   return "finished";
 };
 
@@ -251,6 +253,9 @@ export function buildRows({ rows }, mapping, entries, opts = {}) {
     const values = {
       finish_pos: toInt(get(row, "finish_pos")) ?? (idx + 1),
       start_pos: toInt(get(row, "start_pos")),
+      // Car number is kept as a raw string — never parsed as an integer — so
+      // leading-zero numbers like "01", "001", "0", "00", "000" survive intact.
+      car_number: (get(row, "car_number") ?? "").toString().trim(),
       laps: toInt(get(row, "laps")) ?? 0,
       laps_led: toInt(get(row, "laps_led")) ?? 0,
       incidents: toInt(get(row, "incidents")) ?? 0,
