@@ -541,6 +541,8 @@ export function SessionEditor({
       {importOpen && (
         <ImportResultsModal
           session={session} sessionType={sessionType} entries={entries}
+          seasonId={seasonId} seriesName={seriesName}
+          onDriverCreated={handleDriverAdded}
           onApply={applyImport} onClose={() => setImportOpen(false)}
         />
       )}

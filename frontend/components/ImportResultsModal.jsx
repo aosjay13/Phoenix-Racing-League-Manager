@@ -2,8 +2,10 @@
 
 import { useMemo, useRef, useState } from "react";
 import { parseTable, mapHeaders, buildRows, MAPPABLE_FIELDS } from "@/lib/resultsImport";
+import { DriverCreateModal } from "@/components/DriverCreateModal";
 
 const SKIP = "__skip__";
+const CREATE = "__create__";
 
 const statusChip = {
   matched: { bg: "rgba(46,160,67,0.18)", fg: "#3fb950", label: "matched" },
@@ -16,16 +18,23 @@ const statusChip = {
 // columns and fuzzy-matches driver names against this season's roster. The
 // admin can remap any column and resolve/skip individual drivers before
 // applying — nothing is saved until they Apply and then Save the grid.
-export function ImportResultsModal({ session, sessionType, entries, onApply, onClose }) {
+export function ImportResultsModal({ session, sessionType, entries, seasonId, seriesName, onDriverCreated, onApply, onClose }) {
   const [text, setText] = useState("");
   const [parsed, setParsed] = useState(null);      // { headers, rows, delimiter }
   const [mapping, setMapping] = useState({});
   const [overrides, setOverrides] = useState({});  // rowIdx -> entry_id | SKIP
+  const [extraEntries, setExtraEntries] = useState([]); // drivers created from this modal
+  const [createFor, setCreateFor] = useState(null);     // { idx, name } while the create form is open
+  const [dragActive, setDragActive] = useState(false);
   const fileRef = useRef(null);
 
+  // The roster this import can resolve to: the season's entries plus any driver
+  // created from the review table without leaving the modal. Newly created
+  // entries carry real ids, so a row assigned to one imports like any other.
+  const allEntries = useMemo(() => [...entries, ...extraEntries], [entries, extraEntries]);
   const sortedEntries = useMemo(
-    () => [...entries].sort((a, b) => String(a.name).localeCompare(String(b.name))),
-    [entries]
+    () => [...allEntries].sort((a, b) => String(a.name).localeCompare(String(b.name))),
+    [allEntries]
   );
 
   // Column count + labels for the mapping dropdowns.
@@ -48,12 +57,25 @@ export function ImportResultsModal({ session, sessionType, entries, onApply, onC
     setOverrides({});
   }
 
-  function onFile(e) {
-    const file = e.target.files?.[0];
+  function readFile(file) {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => { const raw = String(reader.result || ""); setText(raw); runParse(raw); };
     reader.readAsText(file);
+  }
+  function onFile(e) { readFile(e.target.files?.[0]); }
+  function onDrop(e) {
+    e.preventDefault();
+    setDragActive(false);
+    readFile(e.dataTransfer?.files?.[0]);
+  }
+
+  // Create a brand-new driver for an unresolved row, then assign the row to it.
+  function handleDriverCreated(entry) {
+    setExtraEntries(prev => [...prev, entry]);
+    if (createFor) setOverrides(o => ({ ...o, [createFor.idx]: entry.id }));
+    onDriverCreated?.(entry); // add to the grid + refresh the season roster
+    setCreateFor(null);
   }
 
   const resolvedEntryId = (row, idx) => {
@@ -115,10 +137,29 @@ export function ImportResultsModal({ session, sessionType, entries, onApply, onC
           Columns and driver names are detected automatically — review and adjust below, then Apply.
         </p>
 
-        <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-          <button type="button" className="btn btn-ghost" style={{ marginTop: 0 }} onClick={() => fileRef.current?.click()}>⬆ Upload CSV</button>
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => fileRef.current?.click()}
+          onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileRef.current?.click(); } }}
+          onDragOver={e => { e.preventDefault(); if (!dragActive) setDragActive(true); }}
+          onDragLeave={e => { e.preventDefault(); setDragActive(false); }}
+          onDrop={onDrop}
+          style={{
+            border: `1.5px dashed ${dragActive ? "var(--accent-cyan, #58a6ff)" : "var(--border)"}`,
+            background: dragActive ? "rgba(88,166,255,0.08)" : "var(--bg-elevated)",
+            borderRadius: 10, padding: "14px 16px", textAlign: "center", cursor: "pointer",
+            marginBottom: 8, transition: "background 0.12s, border-color 0.12s",
+          }}
+        >
+          <div style={{ fontSize: "1.3rem", lineHeight: 1 }}>⬆</div>
+          <div style={{ fontSize: "0.85rem", color: "var(--ink-0)", marginTop: 4 }}>
+            <strong>Drop a CSV here</strong> or click to browse
+          </div>
+          <div style={{ fontSize: "0.76rem", color: "var(--ink-2)", marginTop: 2 }}>
+            SimRacerHub / iRacing exports — or paste a table below
+          </div>
           <input ref={fileRef} type="file" accept=".csv,.tsv,.txt,text/csv" style={{ display: "none" }} onChange={onFile} />
-          <span style={{ fontSize: "0.8rem", color: "var(--ink-2)", alignSelf: "center" }}>or paste below</span>
         </div>
 
         <textarea
@@ -186,7 +227,10 @@ export function ImportResultsModal({ session, sessionType, entries, onApply, onC
                         <td style={{ textAlign: "left" }}>
                           <select
                             value={overrides[idx] ?? (row.match.entry_id || SKIP)}
-                            onChange={e => setOverrides(o => ({ ...o, [idx]: e.target.value }))}
+                            onChange={e => {
+                              if (e.target.value === CREATE) { setCreateFor({ idx, name: row.rawName }); return; }
+                              setOverrides(o => ({ ...o, [idx]: e.target.value }));
+                            }}
                             style={{ minWidth: 160 }}
                           >
                             <option value={SKIP}>— skip row —</option>
@@ -195,6 +239,7 @@ export function ImportResultsModal({ session, sessionType, entries, onApply, onC
                                 {en.name}{en.number != null ? ` (#${en.number})` : ""}
                               </option>
                             ))}
+                            {seasonId && <option value={CREATE}>+ Create new driver…</option>}
                           </select>
                         </td>
                         <td>{row.values.laps}</td>
@@ -227,6 +272,16 @@ export function ImportResultsModal({ session, sessionType, entries, onApply, onC
           </>
         )}
       </div>
+
+      {createFor && (
+        <DriverCreateModal
+          seasonId={seasonId}
+          seriesName={seriesName}
+          initialName={createFor.name}
+          onClose={() => setCreateFor(null)}
+          onCreated={handleDriverCreated}
+        />
+      )}
     </div>
   );
 }

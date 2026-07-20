@@ -58,9 +58,10 @@ function splitLine(line, delim) {
   return line.split(delim).map(c => c.trim());
 }
 
-// Parse raw text into { headers, rows, delimiter }. Detects whether the first
-// line is a header (vs. data) by checking it against the known synonyms and
-// how numeric it is. `headers` is null when no header row is detected.
+// Parse raw text into { headers, rows, delimiter }. Locates the header row
+// (which is not always the first line — SimRacerHub / iRacing exports lead with
+// a metadata block: League, Track, Race Laps, …) and treats everything above it
+// as preamble to discard. `headers` is null when no header row is detected.
 export function parseTable(text) {
   const delimiter = detectDelimiter(text);
   const lines = String(text).split(/\r?\n/).filter(l => l.trim());
@@ -68,6 +69,26 @@ export function parseTable(text) {
   const grid = lines.map(l => splitLine(l, delimiter)).filter(r => r.some(c => c !== ""));
   if (!grid.length) return { headers: null, rows: [], delimiter };
 
+  // Find the row that best looks like a column header: the one mapping the most
+  // cells to known result fields. The real header wins easily over a 2-column
+  // "Race Laps,18" metadata line, so scanning past a preamble is safe. Empty
+  // leading columns (SimRacerHub prefixes rows with ",,") map to nothing and are
+  // harmless — the same offset applies to the data rows, so indices stay aligned.
+  let headerIdx = -1, headerScore = 0;
+  const scanTo = Math.min(grid.length, 40);
+  for (let i = 0; i < scanTo; i++) {
+    const known = grid[i].filter(c => headerToField(c) != null).length;
+    if (known > headerScore) { headerScore = known; headerIdx = i; }
+  }
+
+  // A confident header row (several recognised columns) lets us drop everything
+  // above it as preamble and take the rest as data — this is the export path.
+  if (headerIdx >= 0 && headerScore >= 3) {
+    return { headers: grid[headerIdx], rows: grid.slice(headerIdx + 1), delimiter };
+  }
+
+  // Otherwise fall back to the single-row heuristic for simple pasted tables,
+  // where the header (if any) is the first line and may map only a field or two.
   const first = grid[0];
   const numericCells = first.filter(c => /^[-+]?\d+(\.\d+)?$/.test(c)).length;
   const knownCells = first.filter(c => headerToField(c) != null).length;
@@ -108,9 +129,12 @@ export function headerToField(header) {
   for (const [field, syns] of FIELD_SYNONYMS) {
     if (syns.includes(n)) return field;
   }
-  // Loose contains-match as a fallback (e.g. "Start Pos", "Driver Name").
+  // Loose contains-match as a fallback (e.g. "Start Pos", "Driver Name"). Only
+  // distinctive synonyms (4+ chars) participate — a 3-char token like "int"
+  // would otherwise match inside unrelated headers ("Total Po·int·s"); short
+  // synonyms such as int/led/pos/inc are still caught by the exact pass above.
   for (const [field, syns] of FIELD_SYNONYMS) {
-    if (syns.some(s => s.length >= 3 && (n.includes(s) || s.includes(n)))) return field;
+    if (syns.some(s => s.length >= 4 && (n.includes(s) || s.includes(n)))) return field;
   }
   return null;
 }
