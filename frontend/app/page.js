@@ -7,40 +7,66 @@ import { useAuth } from "@/components/AuthProvider";
 import { api } from "@/lib/api";
 
 export default function DashboardPage() {
-  const { seasonId, season, series, game, loading } = useLeague();
+  const { gameId, seriesId, seasonId, season, series, game, games, loading } = useLeague();
   const { isAdmin } = useAuth();
   const [data, setData] = useState(null);
 
+  // The dashboard follows whichever level of the game → series → season
+  // drop-downs is currently narrowed to. An "All …" choice ("") widens the
+  // scope: no season → the whole series, no series → the whole game, no game
+  // → the entire league.
+  const scope = seasonId ? "season" : seriesId ? "series" : gameId ? "game" : "league";
+
   useEffect(() => {
-    if (!seasonId) { setData(null); return; }
     let live = true;
-    Promise.all([
-      api(`/api/standings?season_id=${seasonId}`),
-      api(`/api/races?season_id=${seasonId}`),
-    ]).then(([standings, races]) => {
-      if (!live) return;
-      const today = new Date();
-      const completed = races.filter(r => r.date && new Date(r.date) < today).length;
-      setData({
-        leader: standings.drivers[0] ?? null,
-        teamLeader: standings.teams[0] ?? null,
-        driverCount: new Set(standings.drivers.map(d => d.entry_id)).size,
-        totalRaces: races.length,
-        completed,
-        nextRace: races.filter(r => r.date && new Date(r.date) >= today)
-          .sort((a, b) => new Date(a.date) - new Date(b.date))[0] ?? null,
-      });
-    }).catch(() => setData(null));
+    setData(null);
+
+    if (scope === "season") {
+      Promise.all([
+        api(`/api/standings?season_id=${seasonId}`),
+        api(`/api/races?season_id=${seasonId}`),
+      ]).then(([standings, races]) => {
+        if (!live) return;
+        const today = new Date();
+        const completed = races.filter(r => r.date && new Date(r.date) < today).length;
+        setData({
+          leader: standings.drivers[0] ?? null,
+          driverCount: new Set(standings.drivers.map(d => d.entry_id)).size,
+          totalRaces: races.length,
+          completed,
+          nextRace: races.filter(r => r.date && new Date(r.date) >= today)
+            .sort((a, b) => new Date(a.date) - new Date(b.date))[0] ?? null,
+        });
+      }).catch(() => setData(null));
+    } else {
+      const qs = scope === "game" ? `scope=game&game_id=${gameId}`
+        : scope === "series" ? `scope=series&series_id=${seriesId}`
+        : "scope=league";
+      api(`/api/stats?${qs}`).then(stats => {
+        if (!live) return;
+        setData({
+          leader: stats.rows[0] ?? null,
+          driverCount: stats.rows.length,
+          teamCount: stats.team_rows.length,
+          seasonsCounted: stats.seasons_counted,
+          totalRaces: stats.race_summary.total,
+          completed: stats.race_summary.completed,
+          nextRace: stats.race_summary.next_race,
+        });
+      }).catch(() => setData(null));
+    }
+
     return () => { live = false; };
-  }, [seasonId]);
+  }, [scope, gameId, seriesId, seasonId]);
 
   if (loading) return <div className="skeleton" style={{ height: 200 }} />;
 
-  if (!seasonId) {
+  // Only truly empty when nothing has been set up yet.
+  if (scope === "league" && games.length === 0) {
     return (
       <div className="empty-state">
         <span className="empty-state-icon">🏁</span>
-        <p>No season selected yet.</p>
+        <p>No games set up yet.</p>
         {isAdmin
           ? <Link href="/admin" className="btn btn-primary">Set up your first game, series & season</Link>
           : <p style={{ fontSize: "0.85rem", color: "var(--ink-2)" }}>Ask a league admin to create a season.</p>}
@@ -48,12 +74,32 @@ export default function DashboardPage() {
     );
   }
 
-  const metrics = data ? [
+  const title = scope === "season" ? `${series?.name ?? "Series"} · ${season?.name ?? "Season"}`
+    : scope === "series" ? `${series?.name ?? "Series"} · All Seasons`
+    : scope === "game" ? `${game?.name ?? "Game"} · All Series`
+    : "All Games · League Overview";
+
+  const titleLogo = scope === "game" ? game?.logo_url : series?.logo_url;
+
+  const leaderPoints = data?.leader ? (data.leader.adjusted_points ?? data.leader.points) : null;
+
+  const metrics = data ? (scope === "season" ? [
     { icon: "🏎️", num: data.driverCount, label: "Drivers Scored" },
     { icon: "🗓️", num: data.totalRaces, label: "Scheduled Races" },
     { icon: "✅", num: data.completed, label: "Completed Events" },
     { icon: "⏩", num: Math.max(0, data.totalRaces - data.completed), label: "Races Remaining" },
-  ] : [];
+  ] : [
+    { icon: "🏎️", num: data.driverCount, label: "Drivers Scored" },
+    { icon: "🏁", num: data.completed, label: "Races Run" },
+    { icon: "📅", num: data.seasonsCounted, label: data.seasonsCounted === 1 ? "Season" : "Seasons" },
+    { icon: "👥", num: data.teamCount, label: "Teams" },
+  ]) : [];
+
+  const contextLine = scope === "season"
+    ? (game?.name ? `Racing on ${game.name}. ` : "")
+    : scope === "series" ? `Every season in ${series?.name ?? "this series"}. `
+    : scope === "game" ? `Every series on ${game?.name ?? "this game"}. `
+    : "Combined totals across every game, series and season. ";
 
   const quickLinks = [
     { href: "/standings", icon: "🏆", label: "Standings", sub: "Driver & team points" },
@@ -68,17 +114,17 @@ export default function DashboardPage() {
       <div className="hero">
         <div className="page-title">
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            {series?.logo_url && <img src={series.logo_url} alt="" className="avatar" style={{ borderRadius: 10 }} />}
-            <h2>{series?.name ?? "Series"} · {season?.name ?? "Season"}</h2>
+            {titleLogo && <img src={titleLogo} alt="" className="avatar" style={{ borderRadius: 10 }} />}
+            <h2>{title}</h2>
           </div>
-          {data?.leader && (
+          {data?.leader && leaderPoints != null && (
             <span className="page-badge">
-              🏆 Leader: {data.leader.driver_name} · {data.leader.adjusted_points} pts
+              🏆 Leader: {data.leader.driver_name} · {leaderPoints} pts
             </span>
           )}
         </div>
         <p style={{ marginTop: 10, color: "var(--ink-1)", fontSize: "0.92rem", maxWidth: 620 }}>
-          {game?.name ? `Racing on ${game.name}. ` : ""}
+          {contextLine}
           {data?.nextRace
             ? `Next up: ${data.nextRace.name} (${data.nextRace.track || "TBA"}) on ${new Date(data.nextRace.date).toLocaleDateString()}.`
             : "Live overview of your racing league."}

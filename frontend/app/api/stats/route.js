@@ -59,6 +59,9 @@ async function buildStats(seasons) {
   // docs with no global id, so cross-season identity keys on the team name —
   // mirroring how drivers fall back to name when they have no driver_id.
   const teams = {};
+  // Every race across the scope, used for the dashboard's schedule metrics
+  // (total / completed / next upcoming) alongside the per-driver aggregates.
+  const allRaces = [];
   const templatesById = await fetchTemplatesById();
 
   for (const season of seasons) {
@@ -73,6 +76,7 @@ async function buildStats(seasons) {
     const entriesById = Object.fromEntries(entries.map(e => [e.id, e]));
     const teamsById = Object.fromEntries(teamsSnap.docs.map(d => [d.id, d.data()]));
     const racesById = Object.fromEntries(racesSnap.docs.map(d => [d.id, d.data()]));
+    for (const d of racesSnap.docs) allRaces.push(d.data());
     const results = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById));
     const qualPosMap = buildQualPosMap(results);
     const qualTemplateByRace = buildQualTemplateMap(results);
@@ -170,9 +174,21 @@ async function buildStats(seasons) {
   }));
   team_rows.sort((a, b) => b.points - a.points || b.wins - a.wins || String(a.team_name).localeCompare(String(b.team_name)));
 
+  const now = Date.now();
+  const dated = allRaces.filter(r => r.date);
+  const completed = dated.filter(r => new Date(r.date).getTime() < now).length;
+  const nextRace = dated
+    .filter(r => new Date(r.date).getTime() >= now)
+    .sort((a, b) => new Date(a.date) - new Date(b.date))[0] || null;
+
   return {
     seasons_counted: seasons.length,
     rows,
     team_rows,
+    race_summary: {
+      total: allRaces.length,
+      completed,
+      next_race: nextRace ? { name: nextRace.name, track: nextRace.track ?? null, date: nextRace.date } : null,
+    },
   };
 }
