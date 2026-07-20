@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { AddDriverToRace } from "@/components/AddDriverToRace";
 import { PointsEditorModal } from "@/components/PointsEditorModal";
+import { ImportResultsModal } from "@/components/ImportResultsModal";
 import { NONE_TEMPLATE } from "@/lib/pointsTemplates";
 import { pointsFor, configForTemplate, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
 import { parseTime, formatTime, formatGap, parseLapsDown, deriveLaps } from "@/lib/raceTime";
@@ -115,6 +116,7 @@ export function SessionEditor({
   const [dragIndex, setDragIndex] = useState(null);
   const [overIndex, setOverIndex] = useState(null);
   const [pointsModal, setPointsModal] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   function showToast(type, msg) {
     setToast({ type, msg });
@@ -239,6 +241,46 @@ export function SessionEditor({
     } finally {
       setBusy(false);
     }
+  }
+
+  // Merge a batch of imported results into the grid, keyed by entry_id.
+  // Matched drivers take the imported finishing data; anyone on the roster the
+  // import didn't cover is pushed to the back of the field so positions don't
+  // collide. Nothing is persisted — the admin reviews and hits Save.
+  function applyImport(imported) {
+    const byId = {};
+    for (const r of imported) byId[r.entry_id] = r; // last wins on duplicates
+    const num = (v, fallback) => (v === "" || v == null ? fallback : String(v));
+    setRows(prev => {
+      const patched = prev.map(r => {
+        const im = byId[r.entry_id];
+        if (!im) return r;
+        return {
+          ...r,
+          finish_pos: num(im.finish_pos, r.finish_pos),
+          start_pos: im.start_pos != null ? String(im.start_pos) : r.start_pos,
+          laps: num(im.laps, r.laps),
+          laps_led: num(im.laps_led, r.laps_led),
+          incidents: num(im.incidents, r.incidents),
+          interval: im.interval || r.interval,
+          race_time: im.race_time || r.race_time,
+          qual_time: im.qual_time || r.qual_time,
+          status: im.status || r.status,
+          fastest_lap: !!im.fastest_lap,
+        };
+      });
+      // Append uncovered drivers after the imported field.
+      let next = Math.max(0, ...imported.map(r => Number(r.finish_pos) || 0));
+      const result = patched.map(r => {
+        if (byId[r.entry_id]) return r;
+        next += 1;
+        return { ...r, finish_pos: String(next) };
+      });
+      return sortByFinish(result);
+    });
+    setImportOpen(false);
+    const n = Object.keys(byId).length;
+    showToast("success", `Imported ${n} result${n === 1 ? "" : "s"}. Review the grid, then Save.`);
   }
 
   // Drag a row's handle to drop it into a new finishing position — every
@@ -395,6 +437,10 @@ export function SessionEditor({
       )}
 
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 12 }}>
+        <button className="btn btn-ghost" type="button" title="Import results from a CSV export or pasted table"
+          style={{ marginTop: 0, whiteSpace: "nowrap" }} onClick={() => setImportOpen(true)} disabled={!entries.length}>
+          ⬆ Import Results
+        </button>
         {onSessionPointsChange && (
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
             <div className="field" style={{ maxWidth: 280, margin: 0 }}>
@@ -489,6 +535,13 @@ export function SessionEditor({
           templates={templates} season={season}
           onAssign={onSessionPointsChange} onTemplatesChanged={onTemplatesChanged}
           onClose={() => setPointsModal(false)}
+        />
+      )}
+
+      {importOpen && (
+        <ImportResultsModal
+          session={session} sessionType={sessionType} entries={entries}
+          onApply={applyImport} onClose={() => setImportOpen(false)}
         />
       )}
 
