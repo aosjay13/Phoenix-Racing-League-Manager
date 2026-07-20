@@ -201,10 +201,10 @@ export default function StandingsPage() {
           nameKey="team"
           nameLabel="Team"
           renderName={r => (
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <Link href={`/teams/${encodeURIComponent(r.team)}`} style={{ display: "inline-flex", alignItems: "center", gap: 8, color: "var(--accent-cyan)" }}>
               {r.logo_url && <img src={r.logo_url} alt="" className="avatar avatar-sm" style={{ borderRadius: 6 }} />}
               {r.team}
-            </span>
+            </Link>
           )}
         />
       )}
