@@ -667,6 +667,16 @@ tbody tr:hover {
   background: var(--bg-elevated);
 }
 
+/* Stat cells on an empty finishing slot (no driver picked yet) read as muted
+   so the grid stays clean until the dropdown fills the row. */
+.result-grid input:disabled,
+.result-grid select:disabled,
+.qual-grid input:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: transparent;
+}
+
 /* ── Empty state ─────────────────────────────── */
 .empty-state {
   padding: 48px 24px;
