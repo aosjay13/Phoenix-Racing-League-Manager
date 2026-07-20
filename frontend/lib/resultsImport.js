@@ -271,15 +271,22 @@ export function buildRows({ rows }, mapping, entries, opts = {}) {
     return { raw: row, rawName, match, values };
   });
 
-  // Flag the single fastest lap of the field if a lap-time column was mapped.
-  if (mapping.fastest_lap_time != null) {
+  // Flag the single fastest lap of the field as the `fastest_lap` bonus stat.
+  // On a qualifying session the qual time *is* each driver's lap time, so the
+  // pole-setter's time drives this even when the source column wasn't literally
+  // named "Fastest Lap" (it often comes through as "Qual Time" or "Time"). On
+  // other sessions we use a mapped fastest-lap-time column, as before.
+  const lapTimeSource = qualifying
+    ? (r => r.values.qual_time)
+    : (mapping.fastest_lap_time != null ? (r => r.values._fastest_lap_time) : null);
+  if (lapTimeSource) {
     const parseLap = t => {
       const m = String(t).match(/(?:(\d+):)?(\d+(?:\.\d+)?)/);
       if (!m) return Infinity;
       return (m[1] ? Number(m[1]) * 60 : 0) + Number(m[2]);
     };
     let bestI = -1, bestV = Infinity;
-    out.forEach((r, i) => { const v = parseLap(r.values._fastest_lap_time); if (r.values._fastest_lap_time && v < bestV) { bestV = v; bestI = i; } });
+    out.forEach((r, i) => { const raw = lapTimeSource(r); const v = parseLap(raw); if (raw && v < bestV) { bestV = v; bestI = i; } });
     out.forEach((r, i) => { r.values.fastest_lap = i === bestI; });
   } else {
     out.forEach(r => { r.values.fastest_lap = false; });

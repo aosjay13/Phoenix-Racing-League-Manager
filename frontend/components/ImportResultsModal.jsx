@@ -249,7 +249,10 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
                           </select>
                         </td>
                         {sessionType === "qualifying" ? (
-                          <td>{row.values.qual_time || <em style={{ color: "var(--ink-2)" }}>—</em>}</td>
+                          <td>
+                            {row.values.qual_time || <em style={{ color: "var(--ink-2)" }}>—</em>}
+                            {row.values.fastest_lap && <span title="Fastest lap of qualifying" style={{ marginLeft: 6, padding: "1px 6px", borderRadius: 10, fontSize: "0.68rem", background: "rgba(46,160,67,0.18)", color: "#3fb950" }}>FL</span>}
+                          </td>
                         ) : (
                           <>
                             <td>{row.values.laps}</td>
