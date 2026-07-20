@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLeague } from "@/components/LeagueProvider";
 import { useAuth } from "@/components/AuthProvider";
+import { RaceCreateModal } from "@/components/RaceCreateModal";
 import { api } from "@/lib/api";
 
 function RaceCard({ r, done }) {
@@ -47,12 +48,15 @@ function RaceCard({ r, done }) {
 
 export default function SchedulePage() {
   const { seasonId, season } = useLeague();
+  const { isAdmin } = useAuth();
   const [races, setRaces] = useState(null);
+  const [showCreate, setShowCreate] = useState(false);
 
-  useEffect(() => {
+  const loadRaces = () => {
     if (!seasonId) { setRaces(null); return; }
     api(`/api/races?season_id=${seasonId}`).then(setRaces).catch(() => setRaces([]));
-  }, [seasonId]);
+  };
+  useEffect(loadRaces, [seasonId]);
 
   if (!seasonId) {
     return <div className="empty-state"><span className="empty-state-icon">🗓</span><p>Select a game, series and season above.</p></div>;
@@ -65,13 +69,28 @@ export default function SchedulePage() {
     .sort((a, b) => (a.date && b.date) ? new Date(a.date) - new Date(b.date) : a.round_number - b.round_number);
   const archive = races.filter(isDone)
     .sort((a, b) => new Date(b.date) - new Date(a.date));
+  const nextRound = races.reduce((m, r) => Math.max(m, Number(r.round_number) || 0), 0) + 1;
 
   return (
     <section>
       <div className="page-title">
         <h2>Schedule · {season?.name ?? ""}</h2>
         <span className="page-badge">{races.length} Events</span>
+        {isAdmin && (
+          <button className="btn btn-primary" style={{ marginLeft: "auto", marginTop: 0 }} onClick={() => setShowCreate(true)}>
+            + New Race
+          </button>
+        )}
       </div>
+
+      {showCreate && (
+        <RaceCreateModal
+          seasonId={seasonId}
+          defaultRound={nextRound}
+          onClose={() => setShowCreate(false)}
+          onCreated={() => { setShowCreate(false); loadRaces(); }}
+        />
+      )}
 
       {races.length === 0 && (
         <div className="empty-state"><span className="empty-state-icon">🗓</span><p>No races scheduled yet.</p></div>
