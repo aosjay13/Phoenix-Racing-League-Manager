@@ -240,11 +240,14 @@ const truthyStatus = v => {
 // list still imports as an ordered field the admin can adjust.
 export function buildRows({ rows }, mapping, entries, opts = {}) {
   const warnings = [];
+  const qualifying = opts.sessionType === "qualifying";
   const get = (row, field) => (mapping[field] != null ? row[mapping[field]] : undefined);
   const out = rows.map((row, idx) => {
     const rawName = String(get(row, "driver") ?? "").trim();
     const match = rawName ? matchDriver(rawName, entries) : { raw: "", entry_id: null, status: "unmatched", candidates: [] };
     const fastRaw = get(row, "fastest_lap_time");
+    const raceTime = (get(row, "race_time") ?? "").toString().trim() || "";
+    const fastTime = fastRaw ? String(fastRaw).trim() : "";
     const values = {
       finish_pos: toInt(get(row, "finish_pos")) ?? (idx + 1),
       start_pos: toInt(get(row, "start_pos")),
@@ -252,12 +255,18 @@ export function buildRows({ rows }, mapping, entries, opts = {}) {
       laps_led: toInt(get(row, "laps_led")) ?? 0,
       incidents: toInt(get(row, "incidents")) ?? 0,
       interval: (get(row, "interval") ?? "").toString().trim() || "",
-      race_time: (get(row, "race_time") ?? "").toString().trim() || "",
-      qual_time: (get(row, "qual_time") ?? "").toString().trim() || "",
+      race_time: raceTime,
+      // On a qualifying import the lap time is what fills the grid's Qual Time
+      // field. Exports rarely label it "Qual Time" — it comes through as a
+      // fastest/best-lap or plain time column — so when this is a qualifying
+      // session, fall back to those rather than leave Qual Time blank.
+      qual_time: (get(row, "qual_time") ?? "").toString().trim()
+        || (qualifying ? (fastTime || raceTime) : "")
+        || "",
       status: truthyStatus(get(row, "status")),
       // A fastest-lap *time* column can't tell us who was fastest overall on
       // its own; we mark the fastest of the field below.
-      _fastest_lap_time: fastRaw ? String(fastRaw).trim() : "",
+      _fastest_lap_time: fastTime,
     };
     return { raw: row, rawName, match, values };
   });

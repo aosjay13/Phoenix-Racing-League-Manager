@@ -45,9 +45,10 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
   }, [parsed]);
 
   // Re-derive rows whenever the mapping changes; matching happens inside.
+  // Pass sessionType so a qualifying import routes the lap time into Qual Time.
   const built = useMemo(
-    () => (parsed ? buildRows(parsed, mapping, sortedEntries) : { rows: [], warnings: [] }),
-    [parsed, mapping, sortedEntries]
+    () => (parsed ? buildRows(parsed, mapping, sortedEntries, { sessionType }) : { rows: [], warnings: [] }),
+    [parsed, mapping, sortedEntries, sessionType]
   );
 
   function runParse(raw) {
@@ -206,8 +207,13 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
               <table className="stats-table" style={{ fontSize: "0.8rem" }}>
                 <thead>
                   <tr>
-                    <th>Fin</th><th>Start</th><th style={{ textAlign: "left" }}>Imported name</th>
-                    <th style={{ textAlign: "left" }}>Roster driver</th><th>Laps</th><th>Led</th><th>Inc</th><th>FL</th><th>Status</th>
+                    <th>{sessionType === "qualifying" ? "Pos" : "Fin"}</th>
+                    {sessionType !== "qualifying" && <th>Start</th>}
+                    <th style={{ textAlign: "left" }}>Imported name</th>
+                    <th style={{ textAlign: "left" }}>Roster driver</th>
+                    {sessionType === "qualifying"
+                      ? <th>Qual Time</th>
+                      : <><th>Laps</th><th>Led</th><th>Inc</th><th>FL</th><th>Status</th></>}
                   </tr>
                 </thead>
                 <tbody>
@@ -218,7 +224,7 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
                     return (
                       <tr key={idx} style={resolved == null ? { opacity: 0.55 } : dup ? { background: "rgba(248,81,73,0.08)" } : undefined}>
                         <td>{row.values.finish_pos}</td>
-                        <td>{row.values.start_pos ?? "—"}</td>
+                        {sessionType !== "qualifying" && <td>{row.values.start_pos ?? "—"}</td>}
                         <td style={{ textAlign: "left" }}>
                           {row.rawName || <em style={{ color: "var(--ink-2)" }}>(blank)</em>}
                           {row.rawName && <span style={{ marginLeft: 6, padding: "1px 6px", borderRadius: 10, fontSize: "0.68rem", background: chip.bg, color: chip.fg }}>{chip.label}</span>}
@@ -242,11 +248,17 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
                             {seasonId && <option value={CREATE}>+ Create new driver…</option>}
                           </select>
                         </td>
-                        <td>{row.values.laps}</td>
-                        <td>{row.values.laps_led}</td>
-                        <td>{row.values.incidents}</td>
-                        <td>{row.values.fastest_lap ? "✓" : ""}</td>
-                        <td>{row.values.status}</td>
+                        {sessionType === "qualifying" ? (
+                          <td>{row.values.qual_time || <em style={{ color: "var(--ink-2)" }}>—</em>}</td>
+                        ) : (
+                          <>
+                            <td>{row.values.laps}</td>
+                            <td>{row.values.laps_led}</td>
+                            <td>{row.values.incidents}</td>
+                            <td>{row.values.fastest_lap ? "✓" : ""}</td>
+                            <td>{row.values.status}</td>
+                          </>
+                        )}
                       </tr>
                     );
                   })}
