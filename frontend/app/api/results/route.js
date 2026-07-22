@@ -88,6 +88,11 @@ export const POST = withAdmin(async (request, ctx, user) => {
       laps_led: Number(row.laps_led || 0),
       incidents: Number(row.incidents || 0),
       fastest_lap: !!row.fastest_lap,
+      // Driver's best single lap time for this session, as a clock string
+      // ("1:23.456"). Independent of the `fastest_lap` flag (which just marks
+      // who set the session's quickest lap): the fastest of these across every
+      // race at a venue is that track's lap record. See lib/trackStatsServer.js.
+      fastest_lap_time: row.fastest_lap_time || null,
       halfway_leader: !!row.halfway_leader,
       hard_charger: !!row.hard_charger,
       provisional: !!row.provisional,

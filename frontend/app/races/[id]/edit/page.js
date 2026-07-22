@@ -6,25 +6,30 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { AdminGate } from "@/components/AdminGate";
 import { ImageUpload } from "@/components/ImageUpload";
 import { SessionEditor } from "@/components/SessionEditor";
+import { TrackSelect } from "@/components/TrackSelect";
 import { normalizedBuiltinTemplates } from "@/lib/pointsTemplates";
 import { api } from "@/lib/api";
 
 const BLANK_INFO = {
-  name: "", track: "", date: "", round_number: "", track_logo_url: "", sessions: "Race",
+  name: "", track: "", track_id: "", date: "", round_number: "", track_logo_url: "", sessions: "Race",
   total_laps: "", heat_format: false, heats: "", consolations: "", feature_name: "A-Main Feature",
 };
 
 function RaceInfoTab({ race, onSaved }) {
   const router = useRouter();
   const [form, setForm] = useState(BLANK_INFO);
+  const [tracks, setTracks] = useState([]);
   const [toast, setToast] = useState(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => { api("/api/tracks").then(setTracks).catch(() => setTracks([])); }, []);
 
   useEffect(() => {
     if (!race) return;
     setForm({
       name: race.name || "",
       track: race.track || "",
+      track_id: race.track_id || "",
       date: race.date || "",
       round_number: String(race.round_number ?? ""),
       track_logo_url: race.track_logo_url || "",
@@ -55,6 +60,7 @@ function RaceInfoTab({ race, onSaved }) {
       const body = {
         name: form.name,
         track: form.track,
+        track_id: form.track_id,
         date: form.date,
         round_number: Number(form.round_number),
         track_logo_url: form.track_logo_url,
@@ -91,7 +97,10 @@ function RaceInfoTab({ race, onSaved }) {
         <div className="field"><label>Race Name</label>
           <input required value={form.name} onChange={set("name")} placeholder="Race 1 — Daytona Duel" /></div>
         <div className="field"><label>Track</label>
-          <input value={form.track} onChange={set("track")} placeholder="Daytona International Speedway" /></div>
+          <TrackSelect tracks={tracks} valueId={form.track_id} valueName={form.track}
+            onChange={({ id, name, track }) => setForm(f => ({ ...f, track: name, track_id: id || "", track_logo_url: f.track_logo_url || (track?.logo_url ?? "") }))}
+            placeholder="Search tracks…" />
+          <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>Pick from the Tracks database — or type a name to keep it as free text.</span></div>
         <div className="field"><label>Round Number</label>
           <input type="number" min="1" required value={form.round_number} onChange={set("round_number")} /></div>
         <div className="field"><label>Date</label>

@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useLeague } from "@/components/LeagueProvider";
 import { AdminGate } from "@/components/AdminGate";
 import { ImageUpload } from "@/components/ImageUpload";
+import { TrackSelect } from "@/components/TrackSelect";
 import { api } from "@/lib/api";
 import { BONUS_TYPES } from "@/lib/standings";
 import { BUILTIN_TEMPLATES, listToTable, tableToList } from "@/lib/pointsTemplates";
@@ -45,7 +46,7 @@ function AdminInner() {
 
   const [gameForm, setGameForm] = useState({ name: "", logo_url: "" });
   const [seriesForm, setSeriesForm] = useState({ name: "", logo_url: "" });
-  const [editIds, setEditIds] = useState({ game: null, series: null, season: null, race: null });
+  const [editIds, setEditIds] = useState({ game: null, series: null, season: null, race: null, track: null });
   const setEditId = (type, id) => setEditIds(ids => ({ ...ids, [type]: id }));
   const blankSeason = {
     name: "", drop_weeks: "0", logo_url: "",
@@ -107,8 +108,16 @@ function AdminInner() {
       loadTemplates();
     } catch (err) { showToast("error", err.message); }
   }
-  const blankRace = { name: "", track: "", date: "", round_number: "", track_logo_url: "", sessions: "Race" };
+  const blankRace = { name: "", track: "", track_id: "", date: "", round_number: "", track_logo_url: "", sessions: "Race" };
   const [raceForm, setRaceForm] = useState(blankRace);
+
+  const blankTrack = { name: "", location: "", length: "", track_type: "", logo_url: "", notes: "" };
+  const [trackForm, setTrackForm] = useState(blankTrack);
+  const [tracks, setTracks] = useState([]);
+  const loadTracks = useCallback(() => {
+    api("/api/tracks").then(rows => setTracks(rows.sort((a, b) => String(a.name).localeCompare(String(b.name))))).catch(() => setTracks([]));
+  }, []);
+  useEffect(loadTracks, [loadTracks]);
 
   const loadRaces = useCallback(() => {
     if (!seasonId) { setRaces([]); return; }
@@ -322,7 +331,10 @@ function AdminInner() {
             <div className="field"><label>Race Name</label>
               <input required disabled={!seasonId} value={raceForm.name} onChange={e => setRaceForm(f => ({ ...f, name: e.target.value }))} placeholder="Race 1 — Daytona Duel" /></div>
             <div className="field"><label>Track</label>
-              <input disabled={!seasonId} value={raceForm.track} onChange={e => setRaceForm(f => ({ ...f, track: e.target.value }))} placeholder="Daytona International Speedway" /></div>
+              <TrackSelect tracks={tracks} disabled={!seasonId} valueId={raceForm.track_id} valueName={raceForm.track}
+                onChange={({ id, name, track }) => setRaceForm(f => ({ ...f, track: name, track_id: id || "", track_logo_url: f.track_logo_url || (track?.logo_url ?? "") }))}
+                placeholder="Search tracks…" />
+              <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>Pick from the Tracks database — or type a name to keep it as free text.</span></div>
             <div className="field"><label>Round Number</label>
               <input type="number" min="1" required disabled={!seasonId} value={raceForm.round_number} onChange={e => setRaceForm(f => ({ ...f, round_number: e.target.value }))} /></div>
             <div className="field"><label>Date</label>
@@ -334,7 +346,7 @@ function AdminInner() {
             <button className="btn btn-primary" type="submit" disabled={!seasonId}>{editIds.race ? "Save Changes" : "Add Race"}</button>
             {editIds.race && (
               <button className="btn btn-ghost" type="button" style={{ marginLeft: 8 }}
-                onClick={() => { setEditId("race", null); setRaceForm({ name: "", track: "", date: "", round_number: "", track_logo_url: "" }); }}>Cancel</button>
+                onClick={() => { setEditId("race", null); setRaceForm(blankRace); }}>Cancel</button>
             )}
           </form>
           <div style={{ marginTop: 16 }}>
@@ -344,6 +356,7 @@ function AdminInner() {
                 setRaceForm({
                   name: r.name || "",
                   track: r.track || "",
+                  track_id: r.track_id || "",
                   date: r.date || "",
                   round_number: String(r.round_number ?? ""),
                   track_logo_url: r.track_logo_url || "",
@@ -351,6 +364,57 @@ function AdminInner() {
                 });
               }}
               onDelete={() => remove(`/api/races/${r.id}`, `Delete race "${r.name}"?`)} />)}
+          </div>
+        </Panel>
+
+        <Panel title="Tracks" sub="Global venue database — shared across every game & season">
+          <form onSubmit={async e => {
+            e.preventDefault();
+            const body = { ...trackForm };
+            try {
+              if (editIds.track) await api(`/api/tracks/${editIds.track}`, { method: "PATCH", body });
+              else await api("/api/tracks", { method: "POST", body });
+              showToast("success", editIds.track ? "Track updated." : "Track saved.");
+              setTrackForm(blankTrack); setEditId("track", null); loadTracks();
+            } catch (err) { showToast("error", err.message); }
+          }}>
+            <div className="field"><label>Track Name</label>
+              <input required value={trackForm.name} onChange={e => setTrackForm(f => ({ ...f, name: e.target.value }))} placeholder="Daytona International Speedway" /></div>
+            <div className="field"><label>Location</label>
+              <input value={trackForm.location} onChange={e => setTrackForm(f => ({ ...f, location: e.target.value }))} placeholder="Daytona Beach, FL" /></div>
+            <div className="two-col" style={{ gap: 12 }}>
+              <div className="field"><label>Length</label>
+                <input value={trackForm.length} onChange={e => setTrackForm(f => ({ ...f, length: e.target.value }))} placeholder="2.5 mi" /></div>
+              <div className="field"><label>Type</label>
+                <select value={trackForm.track_type} onChange={e => setTrackForm(f => ({ ...f, track_type: e.target.value }))}>
+                  <option value="">—</option>
+                  {["Oval", "Superspeedway", "Short Track", "Road Course", "Street Circuit", "Dirt", "Rallycross", "Kart"].map(t => <option key={t} value={t}>{t}</option>)}
+                </select></div>
+            </div>
+            <div className="field"><label>Notes</label>
+              <input value={trackForm.notes} onChange={e => setTrackForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional description" /></div>
+            <ImageUpload label="Track Logo" kind="track-logo" value={trackForm.logo_url} onUploaded={url => setTrackForm(f => ({ ...f, logo_url: url }))} />
+            <button className="btn btn-primary" type="submit">{editIds.track ? "Save Changes" : "Add Track"}</button>
+            {editIds.track && (
+              <button className="btn btn-ghost" type="button" style={{ marginLeft: 8 }}
+                onClick={() => { setEditId("track", null); setTrackForm(blankTrack); }}>Cancel</button>
+            )}
+          </form>
+          <div style={{ marginTop: 16 }}>
+            {tracks.map(t => <ItemRow key={t.id} logo={t.logo_url}
+              name={`${t.name}${t.track_type ? ` · ${t.track_type}` : ""}`} editing={editIds.track === t.id}
+              onEdit={() => {
+                setEditId("track", t.id);
+                setTrackForm({
+                  name: t.name || "", location: t.location || "", length: t.length || "",
+                  track_type: t.track_type || "", logo_url: t.logo_url || "", notes: t.notes || "",
+                });
+              }}
+              onDelete={async () => {
+                if (!confirm(`Delete track "${t.name}"? Races already assigned to it keep their track name but lose the link.`)) return;
+                try { await api(`/api/tracks/${t.id}`, { method: "DELETE" }); loadTracks(); }
+                catch (err) { showToast("error", err.message); }
+              }} />)}
           </div>
         </Panel>
       </div>

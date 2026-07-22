@@ -120,8 +120,20 @@ export const SPECS = {
                        driver_id: {}, points_adjustment: { number: true }, adjustment_note: {} } },
   pointsTemplates: { collection: "points_templates", parentField: null, sortField: "name",
              fields: { name: { required: true }, race_points: {}, qual_points: {}, bonus_points: {} } },
+  // Global venue pool — tracks exist independently of any season and are pulled
+  // into a race event by reference (races.track_id). `length` and `track_type`
+  // are free text ("2.5 mi", "Oval"/"Road Course"/"Dirt"/…) so the stats engine
+  // never has to parse them. See frontend/app/tracks/page.js and
+  // frontend/lib/trackStatsServer.js.
+  tracks:  { collection: "tracks", parentField: null, sortField: "name",
+             fields: { name: { required: true }, location: {}, length: {}, track_type: {},
+                       logo_url: {}, notes: {} } },
   races:   { collection: "races", parentField: "season_id", sortField: "round_number",
-             fields: { name: { required: true }, track: {}, track_logo_url: {}, date: {},
+             // `track_id` references a global tracks doc; `track` still stores the
+             // resolved track NAME (kept in sync from the dropdown) so every place
+             // that renders a race's venue as text keeps working, and legacy
+             // free-text races with no track_id still display.
+             fields: { name: { required: true }, track: {}, track_id: {}, track_logo_url: {}, date: {},
                        round_number: { number: true, required: true }, sessions: {},
                        total_laps: { number: true },
                        // Heat-racing weekend structure: when heat_format is on, `heats` and

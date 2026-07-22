@@ -11,7 +11,7 @@ import { NONE_TEMPLATE } from "@/lib/pointsTemplates";
 import { pointsFor, configForTemplate, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
 import { parseTime, formatTime, formatGap, parseLapsDown, deriveLaps } from "@/lib/raceTime";
 
-const RESULT_FIELDS = ["finish_pos", "start_pos", "qual_time", "race_time", "interval", "laps", "laps_led", "incidents", "fastest_lap", "halfway_leader", "hard_charger", "provisional", "status"];
+const RESULT_FIELDS = ["finish_pos", "start_pos", "qual_time", "race_time", "interval", "fastest_lap_time", "laps", "laps_led", "incidents", "fastest_lap", "halfway_leader", "hard_charger", "provisional", "status"];
 const BOOL_FIELDS = new Set(["fastest_lap", "halfway_leader", "hard_charger", "provisional"]);
 
 // Each grid row is a *finishing position* — it may or may not yet have a
@@ -32,6 +32,7 @@ function makeRow(position) {
     qual_time: "",
     race_time: "",
     interval: "",
+    fastest_lap_time: "",
     laps: "",
     laps_led: "0",
     incidents: "0",
@@ -327,6 +328,7 @@ export function SessionEditor({
         incidents: num(im.incidents, row.incidents),
         interval: im.interval || row.interval,
         race_time: im.race_time || row.race_time,
+        fastest_lap_time: im.fastest_lap_time || row.fastest_lap_time,
         qual_time: im.qual_time || row.qual_time,
         status: im.status || row.status,
         fastest_lap: !!im.fastest_lap,
@@ -586,7 +588,7 @@ export function SessionEditor({
         <div style={{ overflowX: "auto" }}>
           <p style={{ margin: "0 0 8px", color: "var(--ink-2)", fontSize: "0.78rem" }}>Drag ⠿ to reorder — finishing positions renumber automatically.</p>
           <div className="result-grid result-grid-wide">
-            {["", "Fin", "Start", "Driver", "Race Time", "Int", "Laps", "Led", "Inc", "FL", "½", "HC", "Prov", "Status", pointsLabel, ""].map((h, i) => (
+            {["", "Fin", "Start", "Driver", "Race Time", "Int", "Best Lap", "Laps", "Led", "Inc", "FL", "½", "HC", "Prov", "Status", pointsLabel, ""].map((h, i) => (
               <span className="grid-header" key={h || i}>{h}</span>
             ))}
             {rows.map((row, idx) => (
@@ -855,6 +857,9 @@ function RowInputs({ row, idx, updateRow, updateRaceTime, updateInterval, update
       <input placeholder={isLeader ? "1:23.456" : "1:24.567"} value={row.race_time} disabled={!hasDriver} onChange={e => updateRaceTime(idx, e.target.value)} />
       <input placeholder={isLeader ? "leader" : "+2.345 / 1L"} value={isLeader ? "" : row.interval} disabled={!hasDriver || isLeader}
         onChange={e => updateInterval(idx, e.target.value)} />
+      <input title="Driver's best lap time (e.g. 1:23.456) — the fastest of these across every race here is the track record"
+        placeholder="1:23.456" value={row.fastest_lap_time} disabled={!hasDriver}
+        onChange={e => updateRow(idx, "fastest_lap_time", e.target.value)} />
       {num("laps")}
       {num("laps_led")}
       {num("incidents")}

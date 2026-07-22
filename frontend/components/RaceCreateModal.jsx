@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { Modal } from "@/components/Modal";
 import { ImageUpload } from "@/components/ImageUpload";
+import { TrackSelect } from "@/components/TrackSelect";
 
-const blankRace = { name: "", track: "", date: "", round_number: "", track_logo_url: "", sessions: "Race" };
+const blankRace = { name: "", track: "", track_id: "", date: "", round_number: "", track_logo_url: "", sessions: "Race" };
 
 function sessionsToArray(str) {
   const list = String(str || "").split(",").map(s => s.trim()).filter(Boolean);
@@ -16,8 +17,22 @@ function sessionsToArray(str) {
 // panel captures, so a race created here is identical to one built in setup.
 export function RaceCreateModal({ seasonId, defaultRound, onClose, onCreated }) {
   const [form, setForm] = useState({ ...blankRace, round_number: defaultRound ? String(defaultRound) : "" });
+  const [tracks, setTracks] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+
+  useEffect(() => { api("/api/tracks").then(setTracks).catch(() => setTracks([])); }, []);
+
+  // Picking a track from the pool pins its id + name; a fresh track logo fills
+  // in only when the race doesn't already carry one.
+  function pickTrack({ id, name, track }) {
+    setForm(f => ({
+      ...f,
+      track: name,
+      track_id: id || "",
+      track_logo_url: f.track_logo_url || (track?.logo_url ?? ""),
+    }));
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -39,7 +54,9 @@ export function RaceCreateModal({ seasonId, defaultRound, onClose, onCreated }) 
         <div className="field"><label>Race Name</label>
           <input required value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Race 1 — Daytona Duel" /></div>
         <div className="field"><label>Track</label>
-          <input value={form.track} onChange={e => setForm(f => ({ ...f, track: e.target.value }))} placeholder="Daytona International Speedway" /></div>
+          <TrackSelect tracks={tracks} valueId={form.track_id} valueName={form.track} onChange={pickTrack}
+            placeholder="Search tracks…" />
+          <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>Pick from the Tracks database — or type a name to keep it as free text.</span></div>
         <div className="field"><label>Round Number</label>
           <input type="number" min="1" required value={form.round_number} onChange={e => setForm(f => ({ ...f, round_number: e.target.value }))} /></div>
         <div className="field"><label>Date</label>
