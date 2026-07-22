@@ -46,7 +46,7 @@ function AdminInner() {
 
   const [gameForm, setGameForm] = useState({ name: "", logo_url: "" });
   const [seriesForm, setSeriesForm] = useState({ name: "", logo_url: "" });
-  const [editIds, setEditIds] = useState({ game: null, series: null, season: null, race: null, track: null });
+  const [editIds, setEditIds] = useState({ game: null, series: null, season: null, race: null, track: null, template: null });
   const setEditId = (type, id) => setEditIds(ids => ({ ...ids, [type]: id }));
   const blankSeason = {
     name: "", drop_weeks: "0", logo_url: "", car: "",
@@ -58,11 +58,59 @@ function AdminInner() {
   const [templates, setTemplates] = useState([]);
   const [templateId, setTemplateId] = useState("");
   const [templateName, setTemplateName] = useState("");
+  const blankTemplate = {
+    name: "", race_points: "", qual_points: "",
+    bonuses: Object.fromEntries(BONUS_TYPES.map(([k]) => [k, "0"])),
+  };
+  const [templateForm, setTemplateForm] = useState(blankTemplate);
 
   const loadTemplates = useCallback(() => {
     api("/api/points-templates").then(setTemplates).catch(() => setTemplates([]));
   }, []);
   useEffect(loadTemplates, [loadTemplates]);
+
+  // Load a saved template into the dedicated Points Templates editor. bonus_points
+  // may arrive as an object or a JSON string, so normalize it to string inputs.
+  function editTemplate(t) {
+    let bonusSrc = t.bonus_points || {};
+    if (typeof bonusSrc === "string") { try { bonusSrc = JSON.parse(bonusSrc); } catch { bonusSrc = {}; } }
+    setEditId("template", t.id);
+    setTemplateForm({
+      name: t.name || "",
+      race_points: tableToList(t.race_points),
+      qual_points: tableToList(t.qual_points),
+      bonuses: Object.fromEntries(BONUS_TYPES.map(([k]) => [k, String(bonusSrc[k] ?? 0)])),
+    });
+  }
+
+  // Create (no editId) or update (PATCH) a points template from the editor form.
+  async function saveTemplateForm() {
+    if (!templateForm.name.trim()) return showToast("error", "Give the template a name first.");
+    const body = {
+      name: templateForm.name.trim(),
+      race_points: listToTable(templateForm.race_points),
+      qual_points: listToTable(templateForm.qual_points),
+      bonus_points: Object.fromEntries(Object.entries(templateForm.bonuses).map(([k, v]) => [k, Number(v || 0)])),
+    };
+    try {
+      if (editIds.template) await api(`/api/points-templates/${editIds.template}`, { method: "PATCH", body });
+      else await api("/api/points-templates", { method: "POST", body });
+      showToast("success", editIds.template ? "Template updated." : "Template saved.");
+      setTemplateForm(blankTemplate);
+      setEditId("template", null);
+      loadTemplates();
+    } catch (err) { showToast("error", err.message); }
+  }
+
+  async function deleteTemplateById(t) {
+    if (!confirm(`Delete template "${t.name}"? Sessions already using it keep their saved points; they just can't reload it.`)) return;
+    try {
+      await api(`/api/points-templates/${t.id}`, { method: "DELETE" });
+      if (editIds.template === t.id) { setTemplateForm(blankTemplate); setEditId("template", null); }
+      if (templateId === t.id) setTemplateId("");
+      loadTemplates();
+    } catch (err) { showToast("error", err.message); }
+  }
 
   function applyTemplate(id) {
     setTemplateId(id);
@@ -319,6 +367,45 @@ function AdminInner() {
                   {s.status === "completed" ? "✓ Completed" : "Mark Completed"}
                 </button>
               </ItemRow>
+            ))}
+          </div>
+        </Panel>
+
+        <Panel title="Points Templates" sub="Reusable scoring structures — assign them to a season or any session's points">
+          <form onSubmit={e => { e.preventDefault(); saveTemplateForm(); }}>
+            <div className="field"><label>Template Name</label>
+              <input required value={templateForm.name} placeholder="e.g. PRA Standard, Sprint Cup, Heat Race"
+                onChange={e => setTemplateForm(f => ({ ...f, name: e.target.value }))} /></div>
+            <div className="field"><label>Race Points — comma-separated, 1st place first</label>
+              <textarea rows={3} value={templateForm.race_points}
+                placeholder="350, 320, 300, 280, 260, 250, 240, …"
+                onChange={e => setTemplateForm(f => ({ ...f, race_points: e.target.value }))}
+                style={{ padding: 10, border: "1px solid var(--border)", borderRadius: 9, background: "var(--bg-elevated)", color: "var(--ink-0)", fontFamily: "monospace", fontSize: "0.85rem", resize: "vertical" }} /></div>
+            <div className="field"><label>Qualifying Points — comma-separated, pole first</label>
+              <textarea rows={2} value={templateForm.qual_points}
+                placeholder="35, 32, 30, 28, 26, 25, …"
+                onChange={e => setTemplateForm(f => ({ ...f, qual_points: e.target.value }))}
+                style={{ padding: 10, border: "1px solid var(--border)", borderRadius: 9, background: "var(--bg-elevated)", color: "var(--ink-0)", fontFamily: "monospace", fontSize: "0.85rem", resize: "vertical" }} /></div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>
+              {BONUS_TYPES.map(([key, label]) => (
+                <div className="field" key={key}><label>{label}</label>
+                  <input type="number" min="0" value={templateForm.bonuses[key]}
+                    onChange={e => setTemplateForm(f => ({ ...f, bonuses: { ...f.bonuses, [key]: e.target.value } }))} /></div>
+              ))}
+            </div>
+            <button className="btn btn-primary" type="submit">{editIds.template ? "Save Changes" : "Add Template"}</button>
+            {editIds.template && (
+              <button className="btn btn-ghost" type="button" style={{ marginLeft: 8 }}
+                onClick={() => { setEditId("template", null); setTemplateForm(blankTemplate); }}>Cancel</button>
+            )}
+          </form>
+          <div style={{ marginTop: 16 }}>
+            {templates.length === 0 ? (
+              <p style={{ fontSize: "0.82rem", color: "var(--ink-2)", margin: 0 }}>No saved templates yet. The Standard presets (NASCAR, IMSA, F1, …) are always available when assigning points.</p>
+            ) : templates.map(t => (
+              <ItemRow key={t.id} name={t.name} editing={editIds.template === t.id}
+                onEdit={() => editTemplate(t)}
+                onDelete={() => deleteTemplateById(t)} />
             ))}
           </div>
         </Panel>
