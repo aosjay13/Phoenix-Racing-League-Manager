@@ -4,22 +4,26 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
 import { DirectoryRow } from "@/components/DirectoryRow";
+import { DriverPoolCreateModal } from "@/components/DriverPoolCreateModal";
 import { DriverEditModal } from "@/components/DriverEditModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 export default function DriversPage() {
   const { isAdmin } = useAuth();
   const [drivers, setDrivers] = useState(null);
+  const [users, setUsers] = useState([]);
+  const [creating, setCreating] = useState(false); // new-driver modal open
   const [editing, setEditing] = useState(null);   // driver row being edited
   const [deleting, setDeleting] = useState(null); // driver row being deleted
 
-  useEffect(() => {
-    // The global driver pool is the full roster of everyone who has raced,
-    // whether or not they've made an account. Join with the account directory
-    // so linked drivers can show their profile photo and country.
-    Promise.all([api("/api/drivers"), api("/api/users")])
-      .then(([pool, users]) => {
-        const byUid = Object.fromEntries(users.map(u => [u.uid, u]));
+  // The global driver pool is the full roster of everyone who has raced,
+  // whether or not they've made an account. Join with the account directory so
+  // linked drivers can show their profile photo and country.
+  function load() {
+    return Promise.all([api("/api/drivers"), api("/api/users")])
+      .then(([pool, accts]) => {
+        setUsers(accts);
+        const byUid = Object.fromEntries(accts.map(u => [u.uid, u]));
         const rows = pool.map(d => {
           const account = d.user_id ? byUid[d.user_id] : null;
           return {
@@ -36,7 +40,9 @@ export default function DriversPage() {
         setDrivers(rows);
       })
       .catch(() => setDrivers([]));
-  }, []);
+  }
+
+  useEffect(() => { load(); }, []);
 
   async function deleteDriver(driver) {
     await api(`/api/drivers/${driver.id}`, { method: "DELETE" });
@@ -63,6 +69,11 @@ export default function DriversPage() {
       <div className="page-title">
         <h2>Drivers</h2>
         <span className="page-badge">{drivers.length} Drivers</span>
+        {isAdmin && (
+          <button className="btn btn-primary" style={{ marginTop: 0, marginLeft: "auto" }} onClick={() => setCreating(true)}>
+            ＋ New Driver
+          </button>
+        )}
       </div>
       <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.9rem" }}>
         Everyone who has raced in the league. Open a profile to see career stats across all games.
@@ -93,6 +104,13 @@ export default function DriversPage() {
         </div>
       )}
 
+      {creating && (
+        <DriverPoolCreateModal
+          users={users}
+          onClose={() => setCreating(false)}
+          onCreated={() => { setCreating(false); load(); }}
+        />
+      )}
       {editing && (
         <DriverEditModal
           driver={{ id: editing.id, name: editing.pool_name, notes: editing.notes, linked: editing.linked }}
