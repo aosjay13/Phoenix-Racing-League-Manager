@@ -179,7 +179,7 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
       onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="form-card" style={{ maxWidth: 900, width: "100%", maxHeight: "88vh", overflowY: "auto" }} onMouseDown={e => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h3 style={{ margin: 0 }}>Smart Import · {session}</h3>
+          <h3 style={{ margin: 0 }}>{ocrSource > 0 ? "GT7 Results Importer" : "Smart Import"} · {session}</h3>
           <button className="btn btn-ghost" type="button" style={{ marginTop: 0, padding: "4px 10px" }} onClick={onClose}>✕</button>
         </div>
 
