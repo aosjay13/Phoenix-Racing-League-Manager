@@ -51,7 +51,7 @@ export default function DriversPage() {
         <div className="quick-links" style={{ marginTop: 18 }}>
           {drivers.map(d => (
             <Link href={`/drivers/${d.id}`} key={d.id}>
-              <div className="quick-card" style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+              <div className={`quick-card${d.linked ? " linked" : ""}`} style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
                 {d.photo_url
                   ? <img src={d.photo_url} alt="" className="avatar" />
                   : <span className="avatar avatar-fallback">{String(d.name || "?")[0]?.toUpperCase()}</span>}

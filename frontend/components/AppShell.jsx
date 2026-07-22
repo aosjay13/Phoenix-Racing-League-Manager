@@ -11,6 +11,7 @@ const publicNav = [
   { href: "/stats",     label: "Stats",     icon: "📊" },
   { href: "/schedule",  label: "Schedule",  icon: "🗓" },
   { href: "/drivers",   label: "Drivers",   icon: "🏎" },
+  { href: "/teams",     label: "Teams",     icon: "🛡" },
 ];
 
 const adminNav = [

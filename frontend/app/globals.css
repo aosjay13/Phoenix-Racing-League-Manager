@@ -297,6 +297,17 @@ a {
   transform: translateY(-2px);
 }
 
+/* A driver whose profile has been claimed by a real user account gets a gold
+   frame so linked players stand out in the directory grid. */
+.quick-card.linked {
+  border: 2px solid #eab308;
+  box-shadow: 0 0 0 1px rgba(234, 179, 8, 0.25), 0 2px 10px rgba(234, 179, 8, 0.2);
+}
+
+.quick-card.linked:hover {
+  border-color: #facc15;
+}
+
 .quick-card-icon {
   font-size: 1.3rem;
   margin-bottom: 4px;
