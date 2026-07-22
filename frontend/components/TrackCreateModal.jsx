@@ -8,11 +8,17 @@ import { ImageUpload } from "@/components/ImageUpload";
 const TRACK_TYPES = ["Oval", "Superspeedway", "Short Track", "Road Course", "Street Circuit", "Dirt", "Rallycross", "Kart"];
 const blankTrack = { name: "", location: "", length: "", track_type: "", logo_url: "", notes: "" };
 
-// Standalone "add a track" dialog — the same fields the League Setup Tracks
-// panel captures, so a track created here is identical to one built in setup.
-// Opened from the admin-only button on the Tracks directory page.
-export function TrackCreateModal({ onClose, onCreated, initialName }) {
-  const [form, setForm] = useState({ ...blankTrack, name: initialName || "" });
+// Standalone track dialog — the same fields the League Setup Tracks panel
+// captures, so a track created here is identical to one built in setup. Opened
+// from the admin-only controls on the Tracks directory page. Pass `track` to
+// edit an existing venue (PATCH); omit it to create a new one (POST).
+export function TrackCreateModal({ onClose, onCreated, onSaved, initialName, track }) {
+  const editing = !!track;
+  const [form, setForm] = useState(
+    editing
+      ? { ...blankTrack, ...track }
+      : { ...blankTrack, name: initialName || "" }
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
@@ -21,8 +27,13 @@ export function TrackCreateModal({ onClose, onCreated, initialName }) {
     setBusy(true);
     setError(null);
     try {
-      const track = await api("/api/tracks", { method: "POST", body: { ...form } });
-      onCreated(track);
+      if (editing) {
+        const updated = await api(`/api/tracks/${track.id}`, { method: "PATCH", body: { ...form } });
+        onSaved(updated);
+      } else {
+        const created = await api("/api/tracks", { method: "POST", body: { ...form } });
+        onCreated(created);
+      }
     } catch (err) {
       setError(err.message);
       setBusy(false);
@@ -30,7 +41,7 @@ export function TrackCreateModal({ onClose, onCreated, initialName }) {
   }
 
   return (
-    <Modal title="New Track" onClose={onClose}>
+    <Modal title={editing ? "Edit Track" : "New Track"} onClose={busy ? () => {} : onClose}>
       <form onSubmit={handleSubmit}>
         <div className="field"><label>Track Name</label>
           <input required autoFocus value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Daytona International Speedway" /></div>
@@ -49,7 +60,7 @@ export function TrackCreateModal({ onClose, onCreated, initialName }) {
           <input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional description" /></div>
         <ImageUpload label="Track Logo" kind="track-logo" value={form.logo_url} onUploaded={url => setForm(f => ({ ...f, logo_url: url }))} />
         {error && <p style={{ color: "#e5484d", fontSize: "0.85rem" }}>{error}</p>}
-        <button className="btn btn-primary" type="submit" disabled={busy}>{busy ? "Saving…" : "Add Track"}</button>
+        <button className="btn btn-primary" type="submit" disabled={busy}>{busy ? "Saving…" : editing ? "Save Changes" : "Add Track"}</button>
         <button className="btn btn-ghost" type="button" style={{ marginLeft: 8 }} onClick={onClose} disabled={busy}>Cancel</button>
       </form>
     </Modal>

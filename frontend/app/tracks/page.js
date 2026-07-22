@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
 import { TrackCreateModal } from "@/components/TrackCreateModal";
 import { DirectoryRow } from "@/components/DirectoryRow";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 // Canonical display order for the type sub-sections (matches TrackCreateModal).
 // Any type not listed here falls in after these, alphabetically; untyped tracks
@@ -16,6 +17,8 @@ export default function TracksPage() {
   const { isAdmin } = useAuth();
   const [tracks, setTracks] = useState(null);
   const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState(null);   // track being edited
+  const [deleting, setDeleting] = useState(null); // track being deleted
   const [collapsed, setCollapsed] = useState({}); // type -> true when hidden
 
   useEffect(() => {
@@ -34,6 +37,20 @@ export default function TracksPage() {
   function handleCreated(track) {
     setTracks(prev => [...(prev || []), track].sort((a, b) => String(a.name).localeCompare(String(b.name))));
     setCreating(false);
+  }
+
+  // Merge an edited track back into the grid, keeping it alphabetized (a rename
+  // can move it).
+  function handleSaved(updated) {
+    setTracks(prev => (prev || [])
+      .map(t => (t.id === updated.id ? { ...t, ...updated } : t))
+      .sort((a, b) => String(a.name).localeCompare(String(b.name))));
+    setEditing(null);
+  }
+
+  async function deleteTrack(track) {
+    await api(`/api/tracks/${track.id}`, { method: "DELETE" });
+    setTracks(prev => (prev || []).filter(t => t.id !== track.id));
   }
 
   // Bucket tracks by type, then order the sections: canonical types first (in
@@ -104,6 +121,12 @@ export default function TracksPage() {
                         title={t.name}
                         subtitle={t.location || "—"}
                         meta={[{ label: "Length", value: t.length || "—" }]}
+                        actions={isAdmin ? (
+                          <>
+                            <button type="button" className="btn btn-ghost" onClick={() => setEditing(t)}>Edit</button>
+                            <button type="button" className="btn btn-danger" onClick={() => setDeleting(t)}>Delete</button>
+                          </>
+                        ) : null}
                       />
                     ))}
                   </div>
@@ -115,6 +138,16 @@ export default function TracksPage() {
       )}
 
       {creating && <TrackCreateModal onClose={() => setCreating(false)} onCreated={handleCreated} />}
+      {editing && <TrackCreateModal track={editing} onClose={() => setEditing(null)} onSaved={handleSaved} />}
+      {deleting && (
+        <ConfirmDialog
+          title="Delete Track"
+          message={`Delete “${deleting.name}”? Past races held here keep their results, but the venue profile and its records will be removed.`}
+          confirmLabel="Delete Track"
+          onConfirm={() => deleteTrack(deleting)}
+          onClose={() => setDeleting(null)}
+        />
+      )}
     </section>
   );
 }
