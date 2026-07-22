@@ -580,8 +580,11 @@ export function SessionEditor({
       )}
 
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 12 }}>
-        <button className="btn btn-ghost" type="button" title="Import results from a CSV export or pasted table"
-          style={{ marginTop: 0, whiteSpace: "nowrap" }} onClick={() => setImportOpen(true)} disabled={!entries.length}>
+        <button className="btn btn-ghost" type="button"
+          title={entries.length
+            ? "Import results from a CSV export or pasted table"
+            : "Import results from a CSV export or pasted table — you can create drivers inline as you resolve each row"}
+          style={{ marginTop: 0, whiteSpace: "nowrap" }} onClick={() => setImportOpen(true)} disabled={!entries.length && !seasonId}>
           ⬆ Import Results
         </button>
         {onSessionPointsChange && (
