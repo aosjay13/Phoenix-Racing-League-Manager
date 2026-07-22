@@ -8,6 +8,17 @@ import { DriverCreateModal } from "@/components/DriverCreateModal";
 const SKIP = "__skip__";
 const CREATE = "__create__";
 
+// A file is an image if the browser tags it image/* OR the extension says so —
+// some OSes hand back an empty `type` for .webp (and occasionally other
+// formats), which would otherwise misroute a valid screenshot to the CSV path.
+const IMAGE_EXTS = ["png", "jpg", "jpeg", "webp", "gif"];
+function isImageFile(f) {
+  if (!f) return false;
+  if (f.type?.startsWith("image/")) return true;
+  const ext = String(f.name || "").split(".").pop()?.toLowerCase();
+  return IMAGE_EXTS.includes(ext);
+}
+
 const statusChip = {
   matched: { bg: "rgba(46,160,67,0.18)", fg: "#3fb950", label: "matched" },
   suggested: { bg: "rgba(210,153,34,0.18)", fg: "#d29922", label: "check" },
@@ -89,7 +100,7 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
   // Run GT7 screenshots through the vision OCR route. Accepts multiple images so
   // a full 16-car lobby (two screenshots) resolves in one pass.
   async function readImages(files) {
-    const imgs = [...files].filter(f => f && f.type?.startsWith("image/"));
+    const imgs = [...files].filter(isImageFile);
     if (!imgs.length) return;
     setOcrError("");
     setOcrBusy(true);
@@ -111,7 +122,7 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
     const files = e.dataTransfer?.files;
     if (!files?.length) return;
     // A GT7 import is images; a CSV import is a single text file. Route by type.
-    if ([...files].some(f => f.type?.startsWith("image/"))) readImages(files);
+    if ([...files].some(isImageFile)) readImages(files);
     else readFile(files[0]);
   }
 
@@ -225,7 +236,7 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
             </button>
           </div>
           <input ref={fileRef} type="file" accept=".csv,.tsv,.txt,text/csv" style={{ display: "none" }} onChange={onFile} />
-          <input ref={imageRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={onImages} />
+          <input ref={imageRef} type="file" accept="image/*,.png,.jpg,.jpeg,.webp,.gif" multiple style={{ display: "none" }} onChange={onImages} />
         </div>
         {ocrError && (
           <p style={{ margin: "0 0 8px", fontSize: "0.8rem", color: "#f85149" }}>⚠ {ocrError}</p>

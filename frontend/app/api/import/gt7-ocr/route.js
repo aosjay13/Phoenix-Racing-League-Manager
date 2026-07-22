@@ -22,6 +22,22 @@ const MAX_IMAGES = 6;                 // two screenshots is typical; allow a few
 const MAX_BYTES = 8 * 1024 * 1024;    // per image
 const ALLOWED = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 
+// Some browsers/OSes hand us a File with an empty or generic `type` for .webp
+// (and occasionally other formats). Fall back to the filename extension so a
+// perfectly valid screenshot isn't rejected as "unknown".
+const EXT_TO_MEDIA = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  webp: "image/webp",
+  gif: "image/gif",
+};
+function resolveMediaType(file) {
+  if (ALLOWED.includes(file.type)) return file.type;
+  const ext = String(file.name || "").split(".").pop()?.toLowerCase();
+  return EXT_TO_MEDIA[ext] || null;
+}
+
 // Structured-output schema — guarantees the model returns exactly this shape,
 // so the route never has to defensively parse free-form text.
 const RESULT_SCHEMA = {
@@ -79,14 +95,15 @@ export const POST = withAdmin(async (request) => {
 
   const imageBlocks = [];
   for (const file of files) {
-    if (!ALLOWED.includes(file.type)) {
-      return NextResponse.json({ error: `Unsupported image type: ${file.type || "unknown"}` }, { status: 400 });
+    const mediaType = resolveMediaType(file);
+    if (!mediaType) {
+      return NextResponse.json({ error: `Unsupported image type: ${file.type || file.name || "unknown"}` }, { status: 400 });
     }
     if (file.size > MAX_BYTES) {
       return NextResponse.json({ error: "Each image must be under 8 MB." }, { status: 400 });
     }
     const data = Buffer.from(await file.arrayBuffer()).toString("base64");
-    imageBlocks.push({ type: "image", source: { type: "base64", media_type: file.type, data } });
+    imageBlocks.push({ type: "image", source: { type: "base64", media_type: mediaType, data } });
   }
 
   let res;
