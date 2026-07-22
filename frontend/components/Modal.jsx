@@ -1,8 +1,18 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+
 // Minimal overlay dialog. Clicking the backdrop (not the card itself) closes it.
+// Rendered through a portal to document.body so the dialog (and its own <form>)
+// never nests inside a caller's form — nested forms misroute the submit button,
+// which broke the inline "Add Track" modal opened from the race edit form.
 export function Modal({ title, onClose, children }) {
-  return (
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+  if (!mounted) return null;
+
+  return createPortal(
     <div
       style={{
         position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 200,
@@ -18,6 +28,7 @@ export function Modal({ title, onClose, children }) {
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
