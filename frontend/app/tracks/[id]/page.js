@@ -7,6 +7,16 @@ import { api } from "@/lib/api";
 import { formatStat } from "@/lib/standings";
 import { useLeague } from "@/components/LeagueProvider";
 
+// Links a pole/winner name to their driver profile when resolvable, else plain
+// text; em-dash when the event had no recorded pole.
+function Person({ p }) {
+  if (!p || !p.name) return <span style={{ color: "var(--ink-2)" }}>—</span>;
+  const id = p.driver_id || p.user_id;
+  return id
+    ? <Link href={`/drivers/${id}`} style={{ color: "var(--accent-cyan)" }}>{p.name}</Link>
+    : <span>{p.name}</span>;
+}
+
 const DRIVER_COLS = [
   ["starts", "Races"], ["wins", "Wins"], ["podiums", "Podiums"], ["top5", "Top 5s"],
   ["poles", "Poles"], ["best_laps", "Best Laps"], ["laps_led", "Laps Led"], ["avg_finish", "Avg Fin"],
@@ -161,7 +171,10 @@ export default function TrackProfilePage() {
                         <th style={{ textAlign: "left" }}>Series</th>
                         <th style={{ textAlign: "left" }}>Season</th>
                         <th>Date</th>
+                        <th>Length</th>
+                        <th style={{ textAlign: "left" }}>Pole</th>
                         <th style={{ textAlign: "left" }}>Winner</th>
+                        <th>Drivers</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -174,12 +187,15 @@ export default function TrackProfilePage() {
                           </td>
                           <td style={{ textAlign: "left" }}>{w.series_name || "—"}</td>
                           <td style={{ textAlign: "left" }}>{w.season_name}</td>
-                          <td>{w.date || "—"}</td>
+                          <td style={{ whiteSpace: "nowrap" }}>{w.date || "—"}</td>
+                          <td style={{ whiteSpace: "nowrap" }}>{w.laps ? `${w.laps} Laps` : "—"}</td>
+                          <td style={{ textAlign: "left" }}><Person p={w.pole} /></td>
                           <td style={{ textAlign: "left" }}>
                             {(w.driver_id || w.user_id)
                               ? <Link href={`/drivers/${w.driver_id || w.user_id}`} style={{ color: "var(--accent-cyan)" }}>{w.driver_name}</Link>
                               : w.driver_name}
                           </td>
+                          <td style={{ fontVariantNumeric: "tabular-nums" }}>{w.num_drivers || "—"}</td>
                         </tr>
                       ))}
                     </tbody>

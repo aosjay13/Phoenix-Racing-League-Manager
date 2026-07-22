@@ -411,6 +411,42 @@ a {
   .list-row-meta { display: none; }
 }
 
+/* Collapsible sub-section header for grouped directories (Tracks by type). */
+.list-group-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 4px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  color: var(--ink-0);
+}
+
+.list-group-caret {
+  color: var(--ink-2);
+  font-size: 0.8rem;
+  transition: transform 140ms ease;
+}
+
+.list-group-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.list-group-count {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--ink-2);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 9px;
+}
+
 /* ── Table ──────────────────────────────────── */
 .table-wrap {
   margin-top: 18px;
@@ -1117,6 +1153,35 @@ tbody tr:hover {
   color: var(--accent-cyan);
   border-color: var(--border-accent);
 }
+
+/* Compact icon buttons for the schedule table's Admin column. */
+.icon-btn {
+  padding: 3px 7px;
+  margin: 0 2px;
+  font-size: 0.9rem;
+  line-height: 1;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--ink-1);
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+.icon-btn:hover {
+  background: var(--accent-cyan-dim);
+  color: var(--accent-cyan);
+  border-color: var(--border-accent);
+}
+
+.icon-btn-danger:hover {
+  background: rgba(229, 72, 77, 0.12);
+  color: #e5484d;
+  border-color: #e5484d;
+}
+
+/* Keep the schedule table's driver/name cells from wrapping into the numbers. */
+.schedule-table td { vertical-align: middle; }
 
 /* ── Qualifying entry grid ───────────────────── */
 .qual-grid {

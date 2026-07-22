@@ -12,15 +12,7 @@ import {
 } from "@/lib/standings";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
 import { parseTime, formatTime } from "@/lib/raceTime";
-
-// Which single session decides "the winner" of an event held at a venue: the
-// Feature for heat-format weekends, otherwise the last standard session in the
-// event. Mirrors the session-naming rules the results pipeline already uses.
-function finalSessionName(race) {
-  if (race.heat_format) return race.feature_name || "A-Main Feature";
-  const s = Array.isArray(race.sessions) && race.sessions.length ? race.sessions : ["Race"];
-  return s[s.length - 1];
-}
+import { finalSessionName, summarizeRace } from "@/lib/raceSummaryServer";
 
 // Aggregates a venue's history from every race held there. Races are linked by
 // `track_id`; legacy races that only stored the track NAME (before track_id
@@ -147,6 +139,7 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
         r.race_id === race.id && !isQualifying(r) && (r.session || firstStd) === finalName && Number(r.finish_pos) === 1);
       if (!winner) continue;
       const entry = entriesById[winner.entry_id];
+      const summary = summarizeRace(race, results, entriesById);
       winners.push({
         race_id: race.id,
         race_name: race.name,
@@ -158,6 +151,9 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
         driver_name: entry?.name ?? "Unknown",
         driver_id: entry?.driver_id ?? null,
         user_id: entry?.user_id ?? null,
+        laps: summary.laps,
+        num_drivers: summary.num_drivers,
+        pole: summary.pole,
       });
     }
   }
