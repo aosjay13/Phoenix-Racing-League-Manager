@@ -71,6 +71,9 @@ export function ImageUpload({ label, kind = "logo", value, onUploaded }) {
         <input type="file" accept="image/*" onChange={handleChange} disabled={busy} />
         {busy && <span style={{ fontSize: "0.8rem", color: "var(--ink-1)" }}>Uploading…</span>}
       </div>
+      <span style={{ fontSize: "0.75rem", color: "var(--ink-1)" }}>
+        Max {MAX_DIM}×{MAX_DIM}px, under 1 MB — larger images are automatically resized and their quality adjusted to fit.
+      </span>
       {error && <span style={{ fontSize: "0.8rem", color: "#f87171" }}>{error}</span>}
     </div>
   );
