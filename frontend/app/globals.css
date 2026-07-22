@@ -411,6 +411,33 @@ a {
   .list-row-meta { display: none; }
 }
 
+/* A directory row that carries admin actions: the link still fills the row,
+   with the action buttons overlaid on the right edge (outside the anchor so
+   clicks don't navigate). Extra right padding keeps the row's own meta clear
+   of the buttons. */
+.list-row-wrap {
+  position: relative;
+}
+
+.list-row-wrap .list-row {
+  padding-right: 132px;
+}
+
+.list-row-actions {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 8px;
+}
+
+.list-row-actions .btn {
+  margin-top: 0;
+  padding: 5px 12px;
+  font-size: 0.8rem;
+}
+
 /* Collapsible sub-section header for grouped directories (Tracks by type). */
 .list-group-header {
   display: flex;

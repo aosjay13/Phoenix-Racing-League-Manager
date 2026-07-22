@@ -14,8 +14,10 @@ import Link from "next/link";
 //   subtitle— muted secondary line
 //   meta    — [{ label, value }] right-aligned stat cells (hidden on mobile)
 //   linked  — adds the gold "linked account" emphasis (Drivers directory)
-export function DirectoryRow({ href, avatar = {}, title, subtitle, meta = [], linked = false }) {
-  return (
+//   actions — optional node (e.g. admin Edit/Delete buttons) rendered as a
+//             sibling *outside* the link so clicking it never navigates the row.
+export function DirectoryRow({ href, avatar = {}, title, subtitle, meta = [], linked = false, actions = null }) {
+  const link = (
     <Link href={href} className={`list-row${linked ? " linked" : ""}`}>
       {avatar.url
         ? <img src={avatar.url} alt="" className="avatar" style={avatar.square ? { borderRadius: 6 } : undefined} />
@@ -37,5 +39,13 @@ export function DirectoryRow({ href, avatar = {}, title, subtitle, meta = [], li
         </span>
       )}
     </Link>
+  );
+
+  if (!actions) return link;
+  return (
+    <div className="list-row-wrap">
+      {link}
+      <div className="list-row-actions">{actions}</div>
+    </div>
   );
 }
