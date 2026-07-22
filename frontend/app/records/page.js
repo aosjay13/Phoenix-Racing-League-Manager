@@ -31,6 +31,13 @@ const DriverLink = ({ r }) =>
     ? <Link href={`/drivers/${r.driver_id || r.user_id}`} style={{ color: "var(--accent-cyan)" }}>{r.driver_name}</Link>
     : <span>{r.driver_name}</span>;
 
+const TeamLink = ({ r }) => (
+  <Link href={`/teams/${encodeURIComponent(r.team_name)}`} style={{ color: "var(--accent-cyan)", display: "inline-flex", alignItems: "center", gap: 6 }}>
+    {r.logo_url && <img src={r.logo_url} alt="" className="avatar avatar-sm" style={{ borderRadius: 6 }} />}
+    {r.team_name}
+  </Link>
+);
+
 // Find the record holder(s) for one category. Ties surface every holder.
 // Lower-is-better categories ignore rows with no value or no starts (a driver
 // who only ever qualified has no average finish to compare).
@@ -51,6 +58,7 @@ export default function RecordsPage() {
   const { gameId, seriesId, seasonId, game, series, season, loading } = league ?? {};
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [tab, setTab] = useState("drivers"); // "drivers" | "teams"
 
   // Scope + title mirror the /stats page exactly, driven by the shared
   // Game / Series / Season dropdowns in the top bar.
@@ -70,12 +78,14 @@ export default function RecordsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active.params, loading]);
 
+  const isTeams = tab === "teams";
   const records = useMemo(() => {
-    const rows = data?.rows ?? [];
+    const rows = (isTeams ? data?.team_rows : data?.rows) ?? [];
     return CATEGORIES.map(([key, label, lower]) => ({ key, label, lower, ...holdersFor(rows, key, lower) }));
-  }, [data]);
+  }, [data, isTeams]);
 
   const hasAny = records.some(r => r.holders.length);
+  const count = (isTeams ? data?.team_rows?.length : data?.rows?.length) ?? 0;
 
   return (
     <section>
@@ -83,7 +93,7 @@ export default function RecordsPage() {
         <h2>{active.title}</h2>
         {data && (
           <span className="page-badge">
-            {data.rows.length} Driver{data.rows.length === 1 ? "" : "s"}
+            {count} {isTeams ? "Team" : "Driver"}{count === 1 ? "" : "s"}
             {" · "}{data.seasons_counted} Season{data.seasons_counted === 1 ? "" : "s"}
           </span>
         )}
@@ -93,6 +103,11 @@ export default function RecordsPage() {
         above to change scope (pick &quot;All&quot; to widen it).
       </p>
 
+      <div className="tab-row">
+        <button className={`tab${tab === "drivers" ? " active" : ""}`} onClick={() => setTab("drivers")}>Drivers</button>
+        <button className={`tab${tab === "teams" ? " active" : ""}`} onClick={() => setTab("teams")}>Teams</button>
+      </div>
+
       {error ? (
         <div className="empty-state"><span className="empty-state-icon">🏅</span><p>{error}</p></div>
       ) : !data ? (
@@ -100,9 +115,11 @@ export default function RecordsPage() {
       ) : !hasAny ? (
         <div className="empty-state">
           <span className="empty-state-icon">🏅</span>
-          <p>No records in this scope yet.</p>
+          <p>No {isTeams ? "team " : ""}records in this scope yet.</p>
           <p style={{ fontSize: "0.85rem", color: "var(--ink-2)", margin: 0 }}>
-            Records build automatically as admins enter race results.
+            {isTeams
+              ? "Team records build automatically as drivers assigned to a team score results."
+              : "Records build automatically as admins enter race results."}
           </p>
         </div>
       ) : (
@@ -117,9 +134,9 @@ export default function RecordsPage() {
                   <div className="metric-num" style={{ fontSize: "1.5rem" }}>{formatStat(rec.key, rec.value)}</div>
                   <div style={{ marginTop: 4, fontSize: "0.9rem", lineHeight: 1.4 }}>
                     {rec.holders.map((h, i) => (
-                      <span key={(h.driver_id ?? h.user_id ?? "") + h.driver_name}>
+                      <span key={isTeams ? h.team_name : (h.driver_id ?? h.user_id ?? "") + h.driver_name}>
                         {i > 0 && ", "}
-                        <DriverLink r={h} />
+                        {isTeams ? <TeamLink r={h} /> : <DriverLink r={h} />}
                       </span>
                     ))}
                   </div>
