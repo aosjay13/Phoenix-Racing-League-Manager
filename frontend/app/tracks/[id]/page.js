@@ -34,6 +34,7 @@ export default function TrackProfilePage() {
   const { id } = useParams();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [tab, setTab] = useState("records"); // "records" | "results"
 
   useEffect(() => {
     if (!id) return;
@@ -71,93 +72,106 @@ export default function TrackProfilePage() {
         </div>
       ) : (
         <>
-          {record && (
-            <article className="metric-card" style={{ marginTop: 20, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", borderColor: "var(--accent-cyan)" }}>
-              <span style={{ fontSize: "2rem" }}>⏱</span>
-              <div style={{ flex: 1, minWidth: 200 }}>
-                <div className="metric-label" style={{ marginBottom: 2 }}>Track Record (Fastest Lap)</div>
-                <div className="metric-num" style={{ fontVariantNumeric: "tabular-nums" }}>{record.time}</div>
-                <div style={{ color: "var(--ink-1)", fontSize: "0.85rem", marginTop: 2 }}>
-                  {(record.driver_id || record.user_id)
-                    ? <Link href={`/drivers/${record.driver_id || record.user_id}`} style={{ color: "var(--accent-cyan)" }}>{record.driver_name}</Link>
-                    : record.driver_name}
-                  {record.race_name ? ` · ${record.race_name}` : ""}
-                  {record.season_name ? ` · ${record.season_name}` : ""}
-                </div>
-              </div>
-            </article>
-          )}
-
-          <div className="section-header"><h3>Venue Records</h3></div>
-          <div className="metrics" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))" }}>
-            {recs.map(r => (
-              <article className="metric-card" key={r.label}>
-                <div className="metric-num" style={{ fontSize: "1.1rem" }}>
-                  {r.d ? <>{r.d.driver_name} <span style={{ color: "var(--ink-2)" }}>({formatStat(r.key, r.d[r.key])})</span></> : "—"}
-                </div>
-                <div className="metric-label">{r.label}</div>
-              </article>
-            ))}
+          <div className="tab-row" style={{ marginTop: 18 }}>
+            <button className={`tab${tab === "records" ? " active" : ""}`} onClick={() => setTab("records")}>Records</button>
+            <button className={`tab${tab === "results" ? " active" : ""}`} onClick={() => setTab("results")}>
+              Past Results{winners.length ? ` (${winners.length})` : ""}
+            </button>
           </div>
 
-          <div className="section-header"><h3>Driver History Here</h3></div>
-          <div className="table-wrap">
-            <table className="stats-table">
-              <thead>
-                <tr>
-                  <th className="sticky-col" style={{ textAlign: "left" }}>Driver</th>
-                  {DRIVER_COLS.map(([key, label]) => <th key={key}>{label}</th>)}
-                </tr>
-              </thead>
-              <tbody>
-                {drivers.map(d => (
-                  <tr key={(d.driver_id ?? d.user_id ?? "") + d.driver_name}>
-                    <td className="driver-name-cell sticky-col" style={{ textAlign: "left" }}>
-                      {(d.driver_id || d.user_id)
-                        ? <Link href={`/drivers/${d.driver_id || d.user_id}`} style={{ color: "var(--accent-cyan)" }}>{d.driver_name}</Link>
-                        : d.driver_name}
-                    </td>
-                    {DRIVER_COLS.map(([key]) => <td key={key}>{formatStat(key, d[key])}</td>)}
-                  </tr>
+          {tab === "records" ? (
+            <>
+              {record && (
+                <article className="metric-card" style={{ marginTop: 18, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", borderColor: "var(--accent-cyan)" }}>
+                  <span style={{ fontSize: "2rem" }}>⏱</span>
+                  <div style={{ flex: 1, minWidth: 200 }}>
+                    <div className="metric-label" style={{ marginBottom: 2 }}>Track Record (Fastest Lap)</div>
+                    <div className="metric-num" style={{ fontVariantNumeric: "tabular-nums" }}>{record.time}</div>
+                    <div style={{ color: "var(--ink-1)", fontSize: "0.85rem", marginTop: 2 }}>
+                      {(record.driver_id || record.user_id)
+                        ? <Link href={`/drivers/${record.driver_id || record.user_id}`} style={{ color: "var(--accent-cyan)" }}>{record.driver_name}</Link>
+                        : record.driver_name}
+                      {record.race_name ? ` · ${record.race_name}` : ""}
+                      {record.season_name ? ` · ${record.season_name}` : ""}
+                    </div>
+                  </div>
+                </article>
+              )}
+
+              <div className="section-header"><h3>Venue Records</h3></div>
+              <div className="metrics" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))" }}>
+                {recs.map(r => (
+                  <article className="metric-card" key={r.label}>
+                    <div className="metric-num" style={{ fontSize: "1.1rem" }}>
+                      {r.d ? <>{r.d.driver_name} <span style={{ color: "var(--ink-2)" }}>({formatStat(r.key, r.d[r.key])})</span></> : "—"}
+                    </div>
+                    <div className="metric-label">{r.label}</div>
+                  </article>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </div>
 
-          <div className="section-header"><h3>Past Winners</h3></div>
-          {winners.length === 0 ? (
-            <p style={{ color: "var(--ink-1)" }}>No completed events with a recorded winner yet.</p>
-          ) : (
-            <div className="table-wrap">
-              <table className="stats-table">
-                <thead>
-                  <tr>
-                    <th className="sticky-col" style={{ textAlign: "left" }}>Event</th>
-                    <th style={{ textAlign: "left" }}>Season</th>
-                    <th>Date</th>
-                    <th style={{ textAlign: "left" }}>Winner</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {winners.map(w => (
-                    <tr key={w.race_id}>
-                      <td className="sticky-col" style={{ textAlign: "left" }}>
-                        <Link href={`/races/${w.race_id}`} style={{ color: "var(--accent-cyan)" }}>
-                          {w.round_number != null ? `R${w.round_number} · ` : ""}{w.race_name}
-                        </Link>
-                      </td>
-                      <td style={{ textAlign: "left" }}>{w.season_name}</td>
-                      <td>{w.date || "—"}</td>
-                      <td style={{ textAlign: "left" }}>
-                        {(w.driver_id || w.user_id)
-                          ? <Link href={`/drivers/${w.driver_id || w.user_id}`} style={{ color: "var(--accent-cyan)" }}>{w.driver_name}</Link>
-                          : w.driver_name}
-                      </td>
+              <div className="section-header"><h3>Driver History Here</h3></div>
+              <div className="table-wrap">
+                <table className="stats-table">
+                  <thead>
+                    <tr>
+                      <th className="sticky-col" style={{ textAlign: "left" }}>Driver</th>
+                      {DRIVER_COLS.map(([key, label]) => <th key={key}>{label}</th>)}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {drivers.map(d => (
+                      <tr key={(d.driver_id ?? d.user_id ?? "") + d.driver_name}>
+                        <td className="driver-name-cell sticky-col" style={{ textAlign: "left" }}>
+                          {(d.driver_id || d.user_id)
+                            ? <Link href={`/drivers/${d.driver_id || d.user_id}`} style={{ color: "var(--accent-cyan)" }}>{d.driver_name}</Link>
+                            : d.driver_name}
+                        </td>
+                        {DRIVER_COLS.map(([key]) => <td key={key}>{formatStat(key, d[key])}</td>)}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="section-header"><h3>Past Results</h3></div>
+              {winners.length === 0 ? (
+                <p style={{ color: "var(--ink-1)" }}>No completed events with a recorded winner yet.</p>
+              ) : (
+                <div className="table-wrap">
+                  <table className="stats-table">
+                    <thead>
+                      <tr>
+                        <th className="sticky-col" style={{ textAlign: "left" }}>Event</th>
+                        <th style={{ textAlign: "left" }}>Season</th>
+                        <th>Date</th>
+                        <th style={{ textAlign: "left" }}>Winner</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {winners.map(w => (
+                        <tr key={w.race_id}>
+                          <td className="sticky-col" style={{ textAlign: "left" }}>
+                            <Link href={`/races/${w.race_id}`} style={{ color: "var(--accent-cyan)" }}>
+                              {w.round_number != null ? `R${w.round_number} · ` : ""}{w.race_name}
+                            </Link>
+                          </td>
+                          <td style={{ textAlign: "left" }}>{w.season_name}</td>
+                          <td>{w.date || "—"}</td>
+                          <td style={{ textAlign: "left" }}>
+                            {(w.driver_id || w.user_id)
+                              ? <Link href={`/drivers/${w.driver_id || w.user_id}`} style={{ color: "var(--accent-cyan)" }}>{w.driver_name}</Link>
+                              : w.driver_name}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
           )}
         </>
       )}
