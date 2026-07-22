@@ -9,12 +9,33 @@ import { api } from "@/lib/api";
 import { BONUS_TYPES } from "@/lib/standings";
 import { BUILTIN_TEMPLATES, listToTable, tableToList } from "@/lib/pointsTemplates";
 
-function Panel({ title, sub, children }) {
+function Panel({ title, sub, step, muted, children }) {
   return (
     <div className="form-card" style={{ maxWidth: "100%" }}>
-      <h3>{title}</h3>
-      {sub && <p style={{ margin: "0 0 4px", fontSize: "0.82rem", color: "var(--ink-1)" }}>{sub}</p>}
+      <div className="setup-panel-head">
+        {step != null && <span className="setup-step">{step}</span>}
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <h3 style={{ margin: 0 }}>{title}</h3>
+          {sub && <p className={`setup-panel-sub${muted ? " is-muted" : ""}`}>{sub}</p>}
+        </div>
+      </div>
       {children}
+    </div>
+  );
+}
+
+// One node of the Game ▸ Series ▸ Season breadcrumb. `active` is the deepest
+// level currently selected, so admins can see at a glance what they're editing.
+function Crumb({ icon, label, value, logo, active }) {
+  return (
+    <div className={`setup-crumb${active ? " is-active" : ""}`}>
+      {logo
+        ? <img src={logo} alt="" className="setup-crumb-logo" />
+        : <span className="setup-crumb-logo">{icon}</span>}
+      <span style={{ minWidth: 0 }}>
+        <span className="setup-crumb-label">{label}</span>
+        <span className={`setup-crumb-value${value ? "" : " is-empty"}`}>{value || "Not selected"}</span>
+      </span>
     </div>
   );
 }
@@ -40,7 +61,7 @@ function sessionsToArray(str) {
 
 function AdminInner() {
   const league = useLeague();
-  const { games, seriesList, seasons, gameId, seriesId, seasonId, refresh } = league;
+  const { games, seriesList, seasons, gameId, seriesId, seasonId, game, series, season, refresh } = league;
   const [races, setRaces] = useState([]);
   const [toast, setToast] = useState(null);
 
@@ -201,14 +222,30 @@ function AdminInner() {
   return (
     <section>
       <div className="page-title"><h2>League Setup</h2><span className="page-badge">Admin</span></div>
-      <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.9rem", maxWidth: 640 }}>
-        Build your hierarchy: <strong>Game → Series → Season → Race</strong>. Name everything yourself and
-        upload your own logos. The dropdowns at the top of the page control which branch you&apos;re editing.
+      <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.9rem", maxWidth: 680 }}>
+        Your league is a hierarchy — a <strong>Game</strong> holds <strong>Series</strong>, a series holds
+        <strong> Seasons</strong>, and a season holds <strong>Races</strong>. Pick what you&apos;re working in with
+        the dropdowns at the top of the page; the banner below always shows your current spot.
       </p>
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
 
-      <div className="two-col" style={{ marginTop: 18 }}>
-        <Panel title="Games" sub="e.g. iRacing, F1 25, Gran Turismo 7">
+      {/* Always-visible "you are here" breadcrumb, driven by the top dropdowns. */}
+      <div className="setup-context">
+        <Crumb icon="🎮" label="Game" value={game?.name} logo={game?.logo_url} active={!!gameId && !seriesId} />
+        <span className="setup-context-sep">▸</span>
+        <Crumb icon="🏆" label="Series" value={series?.name} logo={series?.logo_url} active={!!seriesId && !seasonId} />
+        <span className="setup-context-sep">▸</span>
+        <Crumb icon="📅" label="Season" value={season?.name} logo={season?.logo_url} active={!!seasonId} />
+        <span className="setup-context-sep">▸</span>
+        <Crumb icon="🏁" label="Races" value={seasonId ? `${races.length} scheduled` : ""} />
+      </div>
+
+      <h3 className="setup-section-title">
+        League Structure
+        <span className="setup-section-hint">Build the tree top-down — each step fills in the one below it</span>
+      </h3>
+      <div className="two-col" style={{ marginTop: 14 }}>
+        <Panel title="Games" step={1} sub="e.g. iRacing, F1 25, Gran Turismo 7">
           <form onSubmit={e => {
             e.preventDefault();
             save("/api/games", gameForm, editIds.game, () => { setGameForm({ name: "", logo_url: "" }); setEditId("game", null); });
@@ -229,7 +266,7 @@ function AdminInner() {
           </div>
         </Panel>
 
-        <Panel title="Series" sub={gameId ? `Inside ${league.game?.name}` : "Select a game first"}>
+        <Panel title="Series" step={2} muted={!gameId} sub={gameId ? `In ${game?.name}` : "Select a game above first"}>
           <form onSubmit={e => {
             e.preventDefault();
             save("/api/series", editIds.series ? seriesForm : { ...seriesForm, game_id: gameId }, editIds.series,
@@ -251,7 +288,7 @@ function AdminInner() {
           </div>
         </Panel>
 
-        <Panel title="Seasons" sub={seriesId ? `Inside ${league.series?.name}` : "Select a series first"}>
+        <Panel title="Seasons" step={3} muted={!seriesId} sub={seriesId ? `In ${series?.name}` : "Select a series above first"}>
           <form onSubmit={e => {
             e.preventDefault();
             const { bonuses, ...rest } = seasonForm;
@@ -305,13 +342,11 @@ function AdminInner() {
                 <div className="field"><label>Race Points — comma-separated, 1st place first (blank = IMSA-style default)</label>
                   <textarea rows={3} value={seasonForm.race_points}
                     placeholder="350, 320, 300, 280, 260, 250, 240, …"
-                    onChange={e => setSeasonForm(f => ({ ...f, race_points: e.target.value }))}
-                    style={{ padding: 10, border: "1px solid var(--border)", borderRadius: 9, background: "var(--bg-elevated)", color: "var(--ink-0)", fontFamily: "monospace", fontSize: "0.85rem", resize: "vertical" }} /></div>
+                    onChange={e => setSeasonForm(f => ({ ...f, race_points: e.target.value }))} /></div>
                 <div className="field"><label>Qualifying Points — comma-separated, pole first (blank = 35/32/30… default)</label>
                   <textarea rows={2} value={seasonForm.qual_points}
                     placeholder="35, 32, 30, 28, 26, 25, …"
-                    onChange={e => setSeasonForm(f => ({ ...f, qual_points: e.target.value }))}
-                    style={{ padding: 10, border: "1px solid var(--border)", borderRadius: 9, background: "var(--bg-elevated)", color: "var(--ink-0)", fontFamily: "monospace", fontSize: "0.85rem", resize: "vertical" }} /></div>
+                    onChange={e => setSeasonForm(f => ({ ...f, qual_points: e.target.value }))} /></div>
                 {BONUS_TYPES.map(([key, label]) => (
                   <div className="field" key={key}><label>{label}</label>
                     <input type="number" min="0" value={seasonForm.bonuses[key]}
@@ -371,46 +406,7 @@ function AdminInner() {
           </div>
         </Panel>
 
-        <Panel title="Points Templates" sub="Reusable scoring structures — assign them to a season or any session's points">
-          <form onSubmit={e => { e.preventDefault(); saveTemplateForm(); }}>
-            <div className="field"><label>Template Name</label>
-              <input required value={templateForm.name} placeholder="e.g. PRA Standard, Sprint Cup, Heat Race"
-                onChange={e => setTemplateForm(f => ({ ...f, name: e.target.value }))} /></div>
-            <div className="field"><label>Race Points — comma-separated, 1st place first</label>
-              <textarea rows={3} value={templateForm.race_points}
-                placeholder="350, 320, 300, 280, 260, 250, 240, …"
-                onChange={e => setTemplateForm(f => ({ ...f, race_points: e.target.value }))}
-                style={{ padding: 10, border: "1px solid var(--border)", borderRadius: 9, background: "var(--bg-elevated)", color: "var(--ink-0)", fontFamily: "monospace", fontSize: "0.85rem", resize: "vertical" }} /></div>
-            <div className="field"><label>Qualifying Points — comma-separated, pole first</label>
-              <textarea rows={2} value={templateForm.qual_points}
-                placeholder="35, 32, 30, 28, 26, 25, …"
-                onChange={e => setTemplateForm(f => ({ ...f, qual_points: e.target.value }))}
-                style={{ padding: 10, border: "1px solid var(--border)", borderRadius: 9, background: "var(--bg-elevated)", color: "var(--ink-0)", fontFamily: "monospace", fontSize: "0.85rem", resize: "vertical" }} /></div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>
-              {BONUS_TYPES.map(([key, label]) => (
-                <div className="field" key={key}><label>{label}</label>
-                  <input type="number" min="0" value={templateForm.bonuses[key]}
-                    onChange={e => setTemplateForm(f => ({ ...f, bonuses: { ...f.bonuses, [key]: e.target.value } }))} /></div>
-              ))}
-            </div>
-            <button className="btn btn-primary" type="submit">{editIds.template ? "Save Changes" : "Add Template"}</button>
-            {editIds.template && (
-              <button className="btn btn-ghost" type="button" style={{ marginLeft: 8 }}
-                onClick={() => { setEditId("template", null); setTemplateForm(blankTemplate); }}>Cancel</button>
-            )}
-          </form>
-          <div style={{ marginTop: 16 }}>
-            {templates.length === 0 ? (
-              <p style={{ fontSize: "0.82rem", color: "var(--ink-2)", margin: 0 }}>No saved templates yet. The Standard presets (NASCAR, IMSA, F1, …) are always available when assigning points.</p>
-            ) : templates.map(t => (
-              <ItemRow key={t.id} name={t.name} editing={editIds.template === t.id}
-                onEdit={() => editTemplate(t)}
-                onDelete={() => deleteTemplateById(t)} />
-            ))}
-          </div>
-        </Panel>
-
-        <Panel title="Races" sub={seasonId ? `Inside ${league.season?.name}` : "Select a season first"}>
+        <Panel title="Races" step={4} muted={!seasonId} sub={seasonId ? `In ${season?.name}` : "Select a season above first"}>
           <form onSubmit={e => {
             e.preventDefault();
             const body = { ...raceForm, sessions: sessionsToArray(raceForm.sessions) };
@@ -461,8 +457,14 @@ function AdminInner() {
               onDelete={() => remove(`/api/races/${r.id}`, `Delete race "${r.name}"?`)} />)}
           </div>
         </Panel>
+      </div>
 
-        <Panel title="Tracks" sub="Global venue database — shared across every game & season">
+      <h3 className="setup-section-title">
+        Shared Library
+        <span className="setup-section-hint">Reusable building blocks — the same across every game &amp; season</span>
+      </h3>
+      <div className="two-col" style={{ marginTop: 14 }}>
+        <Panel title="Tracks" sub="Venue database shared across every game & season">
           <form onSubmit={async e => {
             e.preventDefault();
             const body = { ...trackForm };
@@ -510,6 +512,43 @@ function AdminInner() {
                 try { await api(`/api/tracks/${t.id}`, { method: "DELETE" }); loadTracks(); }
                 catch (err) { showToast("error", err.message); }
               }} />)}
+          </div>
+        </Panel>
+
+        <Panel title="Points Templates" sub="Reusable scoring structures — assign to a season or any session's points">
+          <form onSubmit={e => { e.preventDefault(); saveTemplateForm(); }}>
+            <div className="field"><label>Template Name</label>
+              <input required value={templateForm.name} placeholder="e.g. PRA Standard, Sprint Cup, Heat Race"
+                onChange={e => setTemplateForm(f => ({ ...f, name: e.target.value }))} /></div>
+            <div className="field"><label>Race Points — comma-separated, 1st place first</label>
+              <textarea rows={3} value={templateForm.race_points}
+                placeholder="350, 320, 300, 280, 260, 250, 240, …"
+                onChange={e => setTemplateForm(f => ({ ...f, race_points: e.target.value }))} /></div>
+            <div className="field"><label>Qualifying Points — comma-separated, pole first</label>
+              <textarea rows={2} value={templateForm.qual_points}
+                placeholder="35, 32, 30, 28, 26, 25, …"
+                onChange={e => setTemplateForm(f => ({ ...f, qual_points: e.target.value }))} /></div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>
+              {BONUS_TYPES.map(([key, label]) => (
+                <div className="field" key={key}><label>{label}</label>
+                  <input type="number" min="0" value={templateForm.bonuses[key]}
+                    onChange={e => setTemplateForm(f => ({ ...f, bonuses: { ...f.bonuses, [key]: e.target.value } }))} /></div>
+              ))}
+            </div>
+            <button className="btn btn-primary" type="submit">{editIds.template ? "Save Changes" : "Add Template"}</button>
+            {editIds.template && (
+              <button className="btn btn-ghost" type="button" style={{ marginLeft: 8 }}
+                onClick={() => { setEditId("template", null); setTemplateForm(blankTemplate); }}>Cancel</button>
+            )}
+          </form>
+          <div style={{ marginTop: 16 }}>
+            {templates.length === 0 ? (
+              <p style={{ fontSize: "0.82rem", color: "var(--ink-2)", margin: 0 }}>No saved templates yet. The Standard presets (NASCAR, IMSA, F1, …) are always available when assigning points.</p>
+            ) : templates.map(t => (
+              <ItemRow key={t.id} name={t.name} editing={editIds.template === t.id}
+                onEdit={() => editTemplate(t)}
+                onDelete={() => deleteTemplateById(t)} />
+            ))}
           </div>
         </Panel>
       </div>

@@ -579,7 +579,12 @@ tbody tr:hover {
 }
 
 .field input,
-.field select {
+.field select,
+.field textarea {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 9px;
@@ -588,6 +593,20 @@ tbody tr:hover {
   color: var(--ink-0);
   transition: border-color 140ms ease, box-shadow 140ms ease;
   outline: none;
+}
+
+/* Monospace points/bonus lists — full-width, vertically resizable only so they
+   can never blow out the card horizontally. */
+.field textarea {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.field textarea:focus {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 3px rgba(0, 180, 216, 0.12);
 }
 
 .field input::placeholder {
@@ -1033,6 +1052,131 @@ tbody tr:hover {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 16px;
+}
+
+/* ── League Setup: context breadcrumb + sections ─────────── */
+.setup-context {
+  display: flex;
+  align-items: stretch;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 14px 16px;
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+}
+
+.setup-crumb {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border-radius: 12px;
+  min-width: 0;
+}
+
+.setup-crumb.is-active {
+  background: var(--accent-cyan-dim);
+  box-shadow: inset 0 0 0 1px rgba(0, 180, 216, 0.25);
+}
+
+.setup-crumb .setup-crumb-logo {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.setup-crumb-label {
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ink-2);
+  display: block;
+  line-height: 1.3;
+}
+
+.setup-crumb-value {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--ink-0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+  line-height: 1.3;
+}
+
+.setup-crumb-value.is-empty {
+  color: var(--ink-2);
+  font-weight: 400;
+  font-style: italic;
+}
+
+.setup-context-sep {
+  display: flex;
+  align-items: center;
+  color: var(--ink-2);
+  font-size: 1rem;
+  padding: 0 2px;
+}
+
+.setup-section-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 30px 0 2px;
+  font-size: 1.15rem;
+  color: var(--ink-0);
+}
+
+.setup-section-title .setup-section-hint {
+  font-size: 0.82rem;
+  font-weight: 400;
+  color: var(--ink-2);
+}
+
+/* Numbered step chip on a structure panel's heading. */
+.setup-panel-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.setup-step {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--accent-cyan-dim);
+  color: var(--accent-cyan);
+  border: 1px solid rgba(0, 180, 216, 0.25);
+  font-size: 0.85rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 2px;
+}
+
+.setup-panel-sub {
+  margin: 2px 0 0;
+  font-size: 0.82rem;
+  color: var(--ink-1);
+}
+
+.setup-panel-sub.is-muted {
+  color: var(--ink-2);
+  font-style: italic;
 }
 
 .upload-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
