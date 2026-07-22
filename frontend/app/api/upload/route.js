@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { bucket } from "@/lib/firebase";
 import { withUser, isAdmin } from "@/lib/serverAuth";
 
-const MAX_BYTES = 4 * 1024 * 1024;
+const MAX_BYTES = 1 * 1024 * 1024;
 const ALLOWED = ["image/png", "image/jpeg", "image/webp", "image/gif", "image/svg+xml"];
 
 export const POST = withUser(async (request, ctx, user) => {
@@ -17,7 +17,7 @@ export const POST = withUser(async (request, ctx, user) => {
     return NextResponse.json({ error: "Only PNG, JPEG, WebP, GIF or SVG images allowed" }, { status: 400 });
   }
   if (file.size > MAX_BYTES) {
-    return NextResponse.json({ error: "Image must be under 4 MB" }, { status: 400 });
+    return NextResponse.json({ error: "Image must be under 1 MB" }, { status: 400 });
   }
   // Players can only upload their own avatar; league imagery is admin-only.
   if (kind !== "avatar" && !(await isAdmin(user))) {

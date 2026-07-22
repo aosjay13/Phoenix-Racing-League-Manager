@@ -3,7 +3,44 @@
 import { useState } from "react";
 import { uploadImage } from "@/lib/api";
 
-// Small "pick file → upload → preview" widget. Calls onUploaded(url).
+// Longest edge (px) any stored image is shrunk to. Keeps storage cheap and
+// downloads fast — avatars/logos never display much larger than this.
+const MAX_DIM = 128;
+
+// Downscale a raster image in the browser so we never upload/store huge files.
+// SVGs are vectors (already tiny) so they pass through untouched.
+async function shrinkImage(file) {
+  if (file.type === "image/svg+xml") return file;
+
+  const bitmap = await createImageBitmap(file);
+  const { width, height } = bitmap;
+  const scale = Math.min(1, MAX_DIM / Math.max(width, height));
+  if (scale >= 1) {
+    bitmap.close?.();
+    return file; // already within bounds — don't re-encode
+  }
+
+  const w = Math.max(1, Math.round(width * scale));
+  const h = Math.max(1, Math.round(height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  canvas.getContext("2d").drawImage(bitmap, 0, 0, w, h);
+  bitmap.close?.();
+
+  // Keep JPEGs as JPEG (with alpha-less content); everything else → PNG so we
+  // don't flatten transparency on logos.
+  const outType = file.type === "image/jpeg" ? "image/jpeg" : "image/png";
+  const blob = await new Promise((resolve, reject) =>
+    canvas.toBlob(b => (b ? resolve(b) : reject(new Error("Could not process image"))), outType, 0.9)
+  );
+
+  const ext = outType === "image/jpeg" ? "jpg" : "png";
+  const base = (file.name || "image").replace(/\.[^.]+$/, "");
+  return new File([blob], `${base}.${ext}`, { type: outType });
+}
+
+// Small "pick file → shrink → upload → preview" widget. Calls onUploaded(url).
 export function ImageUpload({ label, kind = "logo", value, onUploaded }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -14,7 +51,8 @@ export function ImageUpload({ label, kind = "logo", value, onUploaded }) {
     setBusy(true);
     setError(null);
     try {
-      onUploaded(await uploadImage(file, kind));
+      const shrunk = await shrinkImage(file);
+      onUploaded(await uploadImage(shrunk, kind));
     } catch (err) {
       setError(err.message);
     } finally {
