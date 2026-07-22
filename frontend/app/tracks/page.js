@@ -52,20 +52,26 @@ export default function TracksPage() {
           <p>No tracks yet.{isAdmin ? " Use “＋ Add Track” above to create one." : " Add them in League Setup → Tracks."}</p>
         </div>
       ) : (
-        <div className="quick-links" style={{ marginTop: 18 }}>
+        <div className="list-rows">
           {tracks.map(t => (
-            <Link href={`/tracks/${t.id}`} key={t.id}>
-              <div className="quick-card" style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-                {t.logo_url
-                  ? <img src={t.logo_url} alt="" className="avatar" style={{ borderRadius: 6 }} />
-                  : <span className="avatar avatar-fallback" style={{ borderRadius: 6 }}>🏁</span>}
-                <div>
-                  <strong>{t.name}</strong>
-                  <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.8rem" }}>
-                    {[t.location, t.track_type, t.length].filter(Boolean).join(" · ") || "Track"}
-                  </span>
-                </div>
-              </div>
+            <Link href={`/tracks/${t.id}`} key={t.id} className="list-row">
+              {t.logo_url
+                ? <img src={t.logo_url} alt="" className="avatar" style={{ borderRadius: 6 }} />
+                : <span className="avatar avatar-fallback" style={{ borderRadius: 6 }}>🏁</span>}
+              <span className="list-row-name">
+                <strong>{t.name}</strong>
+                <span>{t.location || "—"}</span>
+              </span>
+              <span className="list-row-meta">
+                <span>
+                  <span className="list-row-meta-label">Type</span>
+                  <span className="list-row-meta-value">{t.track_type || "—"}</span>
+                </span>
+                <span>
+                  <span className="list-row-meta-label">Length</span>
+                  <span className="list-row-meta-value">{t.length || "—"}</span>
+                </span>
+              </span>
             </Link>
           ))}
         </div>

@@ -48,20 +48,24 @@ export default function DriversPage() {
       {drivers.length === 0 ? (
         <div className="empty-state"><span className="empty-state-icon">🏎</span><p>No drivers yet.</p></div>
       ) : (
-        <div className="quick-links" style={{ marginTop: 18 }}>
+        <div className="list-rows">
           {drivers.map(d => (
-            <Link href={`/drivers/${d.id}`} key={d.id}>
-              <div className={`quick-card${d.linked ? " linked" : ""}`} style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-                {d.photo_url
-                  ? <img src={d.photo_url} alt="" className="avatar" />
-                  : <span className="avatar avatar-fallback">{String(d.name || "?")[0]?.toUpperCase()}</span>}
-                <div>
-                  <strong>{d.name}</strong>
-                  <span style={{ display: "block", color: d.linked ? undefined : "var(--ink-2)", fontSize: "0.8rem" }}>
-                    {d.linked ? (d.country || "Linked account") : "Not linked"}
-                  </span>
-                </div>
-              </div>
+            <Link href={`/drivers/${d.id}`} key={d.id} className={`list-row${d.linked ? " linked" : ""}`}>
+              {d.photo_url
+                ? <img src={d.photo_url} alt="" className="avatar" />
+                : <span className="avatar avatar-fallback">{String(d.name || "?")[0]?.toUpperCase()}</span>}
+              <span className="list-row-name">
+                <strong>{d.name}</strong>
+                <span style={{ color: d.linked ? undefined : "var(--ink-2)" }}>
+                  {d.linked ? (d.country || "Linked account") : "Not linked"}
+                </span>
+              </span>
+              <span className="list-row-meta">
+                <span>
+                  <span className="list-row-meta-label">Account</span>
+                  <span className="list-row-meta-value">{d.linked ? "Linked" : "—"}</span>
+                </span>
+              </span>
             </Link>
           ))}
         </div>
