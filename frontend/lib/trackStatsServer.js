@@ -133,6 +133,7 @@ export async function buildTrackProfile({ trackId, trackName }) {
         date: race.date || null,
         season_id: seasonId,
         season_name: season.name,
+        series_id: season.series_id ?? null,
         driver_name: entry?.name ?? "Unknown",
         driver_id: entry?.driver_id ?? null,
         user_id: entry?.user_id ?? null,
@@ -147,6 +148,15 @@ export async function buildTrackProfile({ trackId, trackName }) {
     const docs = await Promise.all(driverIds.map(id => db().collection("drivers").doc(id).get()));
     for (const doc of docs) if (doc.exists) canonicalName[doc.id] = doc.data().name;
   }
+
+  // Resolve the series each past-result event ran in (seasons sit under series).
+  const seriesIds = [...new Set(winners.map(w => w.series_id).filter(Boolean))];
+  const seriesName = {};
+  if (seriesIds.length) {
+    const docs = await Promise.all(seriesIds.map(id => db().collection("series").doc(id).get()));
+    for (const doc of docs) if (doc.exists) seriesName[doc.id] = doc.data().name;
+  }
+  for (const w of winners) w.series_name = (w.series_id && seriesName[w.series_id]) || null;
 
   const driverRows = Object.values(drivers)
     .map(d => ({
