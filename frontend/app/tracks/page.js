@@ -3,9 +3,13 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { useAuth } from "@/components/AuthProvider";
+import { TrackCreateModal } from "@/components/TrackCreateModal";
 
 export default function TracksPage() {
+  const { isAdmin } = useAuth();
   const [tracks, setTracks] = useState(null);
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     // The global tracks pool is every venue in the database. Open a profile to
@@ -18,6 +22,13 @@ export default function TracksPage() {
       .catch(() => setTracks([]));
   }, []);
 
+  // Drop a newly-created track into the grid without a round-trip, keeping the
+  // list alphabetized.
+  function handleCreated(track) {
+    setTracks(prev => [...(prev || []), track].sort((a, b) => String(a.name).localeCompare(String(b.name))));
+    setCreating(false);
+  }
+
   if (!tracks) return <div className="skeleton" style={{ height: 240 }} />;
 
   return (
@@ -25,6 +36,11 @@ export default function TracksPage() {
       <div className="page-title">
         <h2>Tracks</h2>
         <span className="page-badge">{tracks.length} Track{tracks.length === 1 ? "" : "s"}</span>
+        {isAdmin && (
+          <button className="btn btn-primary" style={{ marginTop: 0, marginLeft: "auto" }} onClick={() => setCreating(true)}>
+            ＋ Add Track
+          </button>
+        )}
       </div>
       <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.9rem" }}>
         Every venue in the league. Open a profile to see who wins here, past race winners, and venue records.
@@ -33,7 +49,7 @@ export default function TracksPage() {
       {tracks.length === 0 ? (
         <div className="empty-state">
           <span className="empty-state-icon">🏁</span>
-          <p>No tracks yet. Add them in League Setup → Tracks.</p>
+          <p>No tracks yet.{isAdmin ? " Use “＋ Add Track” above to create one." : " Add them in League Setup → Tracks."}</p>
         </div>
       ) : (
         <div className="quick-links" style={{ marginTop: 18 }}>
@@ -54,6 +70,8 @@ export default function TracksPage() {
           ))}
         </div>
       )}
+
+      {creating && <TrackCreateModal onClose={() => setCreating(false)} onCreated={handleCreated} />}
     </section>
   );
 }
