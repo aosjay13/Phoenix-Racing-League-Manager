@@ -55,6 +55,11 @@ export default function EventResultsPage() {
   const { event, season, races, qualifying } = data;
   const hasQualifying = qualifying.length > 0;
   const activeRace = races.find(s => s.name === tab);
+  const activeResults = activeRace?.results ?? [];
+  // Provisional entries (points only, didn't race) are listed separately so
+  // they never read as back-of-field finishers.
+  const finishers = activeResults.filter(r => !r.provisional);
+  const provisionals = activeResults.filter(r => r.provisional);
 
   return (
     <section>
@@ -119,7 +124,9 @@ export default function EventResultsPage() {
             </tbody>
           </table>
         </div>
-      ) : activeRace && activeRace.results.length ? (
+      ) : activeRace && activeResults.length ? (
+        <>
+        {finishers.length > 0 && (
         <div className="table-wrap">
           <table className="stats-table">
             <thead>
@@ -129,7 +136,7 @@ export default function EventResultsPage() {
               </tr>
             </thead>
             <tbody>
-              {activeRace.results.map(r => (
+              {finishers.map(r => (
                 <tr key={r.entry_id}>
                   <td>
                     <span className={`rank-badge ${r.finish_pos === 1 ? "rank-p1" : r.finish_pos === 2 ? "rank-p2" : r.finish_pos === 3 ? "rank-p3" : "rank-default"}`}>
@@ -155,6 +162,29 @@ export default function EventResultsPage() {
             </tbody>
           </table>
         </div>
+        )}
+        {provisionals.length > 0 && (
+          <div className="table-wrap" style={{ marginTop: finishers.length ? 16 : 0 }}>
+            <table className="stats-table">
+              <thead>
+                <tr>
+                  <th style={{ textAlign: "left" }} colSpan={2}>Provisional Entries · points only, not counted in stats</th>
+                  <th>Points</th>
+                </tr>
+              </thead>
+              <tbody>
+                {provisionals.map(r => (
+                  <tr key={r.entry_id}>
+                    <td style={{ width: 40 }}><span className="badge" title="Provisional">P</span></td>
+                    <td className="driver-name-cell" style={{ textAlign: "left" }}><DriverCell r={r} /></td>
+                    <td className="points-cell">{r.points}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        </>
       ) : (
         <div className="empty-state">
           <span className="empty-state-icon">⏱</span>

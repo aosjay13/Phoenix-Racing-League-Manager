@@ -125,6 +125,18 @@ export function decorateRaceBonuses(results) {
 // no override of its own, so a session-specific Qualifying points structure
 // actually reaches the standings total instead of being silently ignored.
 export function pointsFor(result, config, qualPos = null, qualConfig = null) {
+  // A per-result adjustment (penalties/corrections) is applied on top of the
+  // scored points in every case — an admin can dock or add points without
+  // touching the driver's finishing position. Negative = penalty.
+  const adjustment = Number(result.points_adjustment || 0);
+
+  // Provisional entries (drivers who didn't make the race) score a flat,
+  // admin-entered value instead of position-based points — see the Provisional
+  // section of the results editor. They're also excluded from stats (statLine).
+  if (result.provisional && result.manual_points != null && result.manual_points !== "") {
+    return Number(result.manual_points || 0) + adjustment;
+  }
+
   const { racePoints, bonuses } = config;
   const qualPoints = (qualConfig || config).qualPoints;
   let pts = Number(racePoints[result.finish_pos] ?? 0);
@@ -138,6 +150,7 @@ export function pointsFor(result, config, qualPos = null, qualConfig = null) {
   if (result.halfway_leader) pts += Number(bonuses.halfway_point || 0);
   if (result.hard_charger) pts += Number(bonuses.hard_charger || 0);
   pts += Number(result.bonus_points || 0) - Number(result.penalty_points || 0);
+  pts += adjustment;
   return pts;
 }
 
@@ -195,10 +208,13 @@ function startInfo(qualResults) {
 // Average Start come from qualifying sessions.
 function statLine(results) {
   // A race session with its stats toggle off is ignored for finishing-position
-  // metrics (Wins, Top 5s, Average Finish, Laps Led, …). Qualifying always
-  // feeds Poles/Average Start.
-  const rs = results.filter(r => !isQualifying(r) && r.counts_stats !== false);
+  // metrics (Wins, Top 5s, Average Finish, Laps Led, …). Provisional entries
+  // (drivers who didn't race) are excluded too — they earn points only, never
+  // stats. Qualifying always feeds Poles/Average Start.
+  const rs = results.filter(r => !isQualifying(r) && r.counts_stats !== false && !r.provisional);
   const qs = results.filter(r => isQualifying(r));
+  // Provisionals are counted from the full race set, since `rs` now omits them.
+  const provisionalCount = results.filter(r => !isQualifying(r) && r.provisional).length;
   const starts = rs.length;
   const sum = fn => rs.reduce((a, r) => a + fn(r), 0);
   const { positions, poles } = startInfo(qs);
@@ -217,7 +233,7 @@ function statLine(results) {
     qualifying_sessions: qs.length,
     avg_start: positions.length ? round2(positions.reduce((a, b) => a + b, 0) / positions.length) : null,
     dnfs: rs.filter(r => r.status === "dnf").length,
-    provisionals: rs.filter(r => r.provisional).length,
+    provisionals: provisionalCount,
     incidents: sum(r => Number(r.incidents || 0)),
     best_finish: starts ? Math.min(...rs.map(r => r.finish_pos)) : null,
   };

@@ -11,7 +11,7 @@ import { NONE_TEMPLATE } from "@/lib/pointsTemplates";
 import { pointsFor, configForTemplate, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
 import { parseTime, formatTime, formatGap, parseLapsDown, deriveLaps } from "@/lib/raceTime";
 
-const RESULT_FIELDS = ["finish_pos", "start_pos", "qual_time", "race_time", "interval", "fastest_lap_time", "laps", "laps_led", "incidents", "fastest_lap", "halfway_leader", "hard_charger", "provisional", "status"];
+const RESULT_FIELDS = ["finish_pos", "start_pos", "qual_time", "race_time", "interval", "fastest_lap_time", "laps", "laps_led", "incidents", "fastest_lap", "halfway_leader", "hard_charger", "provisional", "points_adjustment", "manual_points", "status"];
 const BOOL_FIELDS = new Set(["fastest_lap", "halfway_leader", "hard_charger", "provisional"]);
 
 // Each grid row is a *finishing position* — it may or may not yet have a
@@ -40,6 +40,8 @@ function makeRow(position) {
     halfway_leader: false,
     hard_charger: false,
     provisional: false,
+    points_adjustment: "0",
+    manual_points: "",
     status: "finished",
   };
 }
@@ -47,6 +49,20 @@ function makeRow(position) {
 // A clean slate of numbered, driverless finishing positions.
 function emptySlots(n) {
   return Array.from({ length: Math.max(0, n) }, (_, i) => makeRow(i + 1));
+}
+
+// A provisional entry: a driver awarded a flat, custom points value without
+// having raced (so they never take a finishing position or count toward stats).
+let PROV_SEQ = 0;
+function makeProvRow(src = {}) {
+  PROV_SEQ += 1;
+  return {
+    slot_id: `prov-${PROV_SEQ}`,
+    entry_id: src.entry_id ?? null,
+    driver_name: src.driver_name ?? "",
+    driver_number: src.driver_number ?? null,
+    manual_points: src.manual_points != null ? String(src.manual_points) : "",
+  };
 }
 
 // Attaches a driver (roster entry) to a slot, pre-filling laps to the full
@@ -127,6 +143,7 @@ export function SessionEditor({
     initialSession && names.includes(initialSession) ? initialSession : names[0]
   );
   const [rows, setRows] = useState(() => emptySlots(entries.length));
+  const [provRows, setProvRows] = useState([]); // provisional entries (points only, no stats)
   const [qualPos, setQualPos] = useState({}); // entry_id -> this race's Qualifying finish position
   const [toast, setToast] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -157,10 +174,20 @@ export function SessionEditor({
       );
       setQualPos(qp);
       const existing = all.filter(r => r.session_type === sessionType && (r.session || names[0]) === sess);
-      setRows(buildRows(entries, existing, race.total_laps, qp, sessionType));
+      // Provisional results live in their own section — keep them out of the
+      // finishing-order grid.
+      const mains = existing.filter(r => !r.provisional);
+      const provs = existing.filter(r => r.provisional);
+      setRows(buildRows(entries, mains, race.total_laps, qp, sessionType));
+      const entryById = new Map(entries.map(e => [e.id ?? e.entry_id, e]));
+      setProvRows(provs.map(r => {
+        const e = entryById.get(r.entry_id);
+        return makeProvRow({ entry_id: r.entry_id, driver_name: e?.name ?? "", driver_number: e?.number ?? null, manual_points: r.manual_points });
+      }));
     } catch {
       setQualPos({});
       setRows(emptySlots(entries.length));
+      setProvRows([]);
     } finally {
       setLoading(false);
     }
@@ -205,12 +232,26 @@ export function SessionEditor({
   }
 
   const assignedIds = useMemo(() => new Set(rows.map(r => r.entry_id).filter(Boolean)), [rows]);
+  const provAssignedIds = useMemo(() => new Set(provRows.map(r => r.entry_id).filter(Boolean)), [provRows]);
   // Roster drivers not already placed in another slot (plus this slot's own
   // driver, so a filled row can be re-searched without hiding itself).
   const availableFor = row => entries.filter(e => {
     const id = e.id ?? e.entry_id;
     return id === row.entry_id || !assignedIds.has(id);
   });
+  // For a provisional slot: roster drivers not already in the finishing grid or
+  // another provisional slot.
+  const availableForProv = row => entries.filter(e => {
+    const id = e.id ?? e.entry_id;
+    return id === row.entry_id || (!assignedIds.has(id) && !provAssignedIds.has(id));
+  });
+
+  function addProvRow() { setProvRows(prev => [...prev, makeProvRow()]); }
+  function updateProvRow(slotId, patch) { setProvRows(prev => prev.map(r => (r.slot_id === slotId ? { ...r, ...patch } : r))); }
+  function removeProvRow(slotId) { setProvRows(prev => prev.filter(r => r.slot_id !== slotId)); }
+  function assignProv(slotId, entry) {
+    updateProvRow(slotId, { entry_id: entry.id ?? entry.entry_id, driver_name: entry.name ?? entry.driver_name ?? "", driver_number: entry.number ?? entry.driver_number ?? null });
+  }
 
   const leaderTimeOf = rs => {
     const L = rs.find(r => Number(r.finish_pos) === 1);
@@ -412,7 +453,8 @@ export function SessionEditor({
 
   async function handleSave() {
     const filled = rows.filter(r => r.entry_id && r.finish_pos !== "");
-    if (!filled.length) return showToast("error", "Assign at least one driver to a finishing position.");
+    const provReady = provRows.filter(r => r.entry_id);
+    if (!filled.length && !provReady.length) return showToast("error", "Assign at least one driver to a finishing position.");
     const positions = filled.map(r => Number(r.finish_pos));
     if (new Set(positions).size !== positions.length) {
       return showToast("error", "Two drivers share the same finishing position.");
@@ -421,11 +463,31 @@ export function SessionEditor({
     if (new Set(ids).size !== ids.length) {
       return showToast("error", "A driver is entered in more than one position.");
     }
+    const provIds = provReady.map(r => r.entry_id);
+    if (new Set(provIds).size !== provIds.length) {
+      return showToast("error", "A driver is listed twice in provisional entries.");
+    }
+    const filledIds = new Set(ids);
+    if (provIds.some(id => filledIds.has(id))) {
+      return showToast("error", "A provisional driver is also in the finishing order — remove one.");
+    }
+
+    // Provisionals are parked behind the field so they never collide with real
+    // finishing positions; they carry only their flat manual points.
+    const maxPos = filled.reduce((m, r) => Math.max(m, Number(r.finish_pos) || 0), 0);
+    const provPayload = provReady.map((r, i) => ({
+      entry_id: r.entry_id,
+      finish_pos: maxPos + i + 1,
+      provisional: true,
+      manual_points: r.manual_points === "" ? 0 : Number(r.manual_points),
+      laps: 0, laps_led: 0, incidents: 0, status: "finished",
+    }));
+
     setBusy(true);
     try {
       await api("/api/results", {
         method: "POST",
-        body: { race_id: race.id, season_id: seasonId, session, session_type: sessionType, points_template_id: templateId || null, rows: filled },
+        body: { race_id: race.id, season_id: seasonId, session, session_type: sessionType, points_template_id: templateId || null, rows: [...filled, ...provPayload] },
       });
       showToast("success", "Results saved. Standings and profiles update instantly.");
     } catch (err) {
@@ -588,7 +650,7 @@ export function SessionEditor({
         <div style={{ overflowX: "auto" }}>
           <p style={{ margin: "0 0 8px", color: "var(--ink-2)", fontSize: "0.78rem" }}>Drag ⠿ to reorder — finishing positions renumber automatically.</p>
           <div className="result-grid result-grid-wide">
-            {["", "Fin", "Start", "Driver", "Race Time", "Int", "Best Lap", "Laps", "Led", "Inc", "FL", "½", "HC", "Prov", "Status", pointsLabel, ""].map((h, i) => (
+            {["", "Fin", "Start", "Driver", "Race Time", "Int", "Best Lap", "Laps", "Led", "Inc", "FL", "½", "HC", "Adj", "Status", pointsLabel, ""].map((h, i) => (
               <span className="grid-header" key={h || i}>{h}</span>
             ))}
             {rows.map((row, idx) => (
@@ -607,6 +669,47 @@ export function SessionEditor({
         <button className="btn btn-ghost" type="button" onClick={addSlot} style={{ marginTop: 10 }}>
           ＋ Add finishing position
         </button>
+      )}
+
+      {sessionType !== "qualifying" && !loading && (
+        <div style={{ marginTop: 22, borderTop: "1px solid var(--border)", paddingTop: 16 }}>
+          <h4 style={{ margin: "0 0 4px" }}>Provisional Entries</h4>
+          <p style={{ margin: "0 0 10px", color: "var(--ink-1)", fontSize: "0.82rem" }}>
+            Drivers who didn&rsquo;t make the race but are still awarded points. Each earns the flat points you enter here and does <strong>not</strong> count toward stats (starts, wins, average finish…).
+          </p>
+          {provRows.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
+              {provRows.map(row => (
+                <div key={row.slot_id} style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                  <div style={{ flex: "1 1 240px", minWidth: 220 }}>
+                    {row.entry_id ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.92rem" }}>
+                        {row.driver_number != null && <span className="badge">#{row.driver_number}</span>}
+                        <span>{row.driver_name}</span>
+                        <button type="button" title="Change driver" className="btn btn-ghost"
+                          style={{ marginTop: 0, padding: "0 6px", color: "var(--ink-2)", lineHeight: 1.4 }}
+                          onClick={() => updateProvRow(row.slot_id, { entry_id: null, driver_name: "", driver_number: null })}>✕</button>
+                      </div>
+                    ) : (
+                      <DriverCombobox available={availableForProv(row)} onAssign={e => assignProv(row.slot_id, e)}
+                        onRequestCreate={name => setCreateFor({ slotId: row.slot_id, name, prov: true })} />
+                    )}
+                  </div>
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.82rem", color: "var(--ink-1)", margin: 0 }}>
+                    Points
+                    <input type="number" value={row.manual_points} placeholder="0" style={{ width: 90 }}
+                      onChange={e => updateProvRow(row.slot_id, { manual_points: e.target.value })} />
+                  </label>
+                  <button type="button" className="btn btn-danger" style={{ marginTop: 0, padding: "2px 10px", fontSize: "0.8rem" }}
+                    onClick={() => removeProvRow(row.slot_id)}>Remove</button>
+                </div>
+              ))}
+            </div>
+          )}
+          <button className="btn btn-ghost" type="button" onClick={addProvRow} disabled={!entries.length} style={{ marginTop: 0 }}>
+            ＋ Add provisional entry
+          </button>
+        </div>
       )}
 
       <AddDriverToRace seasonId={seasonId} seriesName={seriesName} existingNames={existingNames} onCreated={handleDriverAdded} onError={msg => showToast("error", msg)} />
@@ -633,7 +736,11 @@ export function SessionEditor({
         <DriverCreateModal
           seasonId={seasonId} seriesName={seriesName} initialName={createFor.name}
           onClose={() => setCreateFor(null)}
-          onCreated={entry => { assignToSlot(createFor.slotId, entry); setCreateFor(null); onEntriesChanged?.(); }}
+          onCreated={entry => {
+            if (createFor.prov) assignProv(createFor.slotId, entry);
+            else assignToSlot(createFor.slotId, entry);
+            setCreateFor(null); onEntriesChanged?.();
+          }}
         />
       )}
 
@@ -866,7 +973,9 @@ function RowInputs({ row, idx, updateRow, updateRaceTime, updateInterval, update
       <Check title="Fastest lap" value={row.fastest_lap} disabled={!hasDriver} onChange={v => updateRow(idx, "fastest_lap", v)} />
       <Check title="Halfway-point leader" value={row.halfway_leader} disabled={!hasDriver} onChange={v => updateRow(idx, "halfway_leader", v)} />
       <Check title="Hard charger" value={row.hard_charger} disabled={!hasDriver} onChange={v => updateRow(idx, "hard_charger", v)} />
-      <Check title="Provisional" value={row.provisional} disabled={!hasDriver} onChange={v => updateRow(idx, "provisional", v)} />
+      <input type="number" title="Points adjustment — penalty (−) or bonus (+). Applied on top of scored points without changing the finishing position."
+        placeholder="0" value={row.points_adjustment} disabled={!hasDriver}
+        onChange={e => updateRow(idx, "points_adjustment", e.target.value)} style={{ textAlign: "center" }} />
       <select value={row.status} disabled={!hasDriver} onChange={e => updateStatus(idx, e.target.value)}>
         <option value="finished">Running</option>
         <option value="dnf">DNF</option>

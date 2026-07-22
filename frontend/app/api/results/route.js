@@ -98,6 +98,12 @@ export const POST = withAdmin(async (request, ctx, user) => {
       provisional: !!row.provisional,
       bonus_points: Number(row.bonus_points || 0),
       penalty_points: Number(row.penalty_points || 0),
+      // Signed per-result adjustment (penalties/corrections), applied on top of
+      // scored points without changing the finishing position. Negative docks.
+      points_adjustment: Number(row.points_adjustment || 0),
+      // Flat, admin-entered points for a provisional entry (a driver who didn't
+      // make the race). Overrides position-based scoring; null for normal rows.
+      manual_points: row.manual_points === "" || row.manual_points == null ? null : Number(row.manual_points),
       status: row.status || "finished",
       points_template_id: points_template_id || null,
       created_at: now,
