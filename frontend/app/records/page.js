@@ -38,11 +38,22 @@ const TeamLink = ({ r }) => (
   </Link>
 );
 
+// Average-based categories require a minimum number of starts to hold the
+// record — otherwise a "one-hit wonder" who ran a single race and won it would
+// post a perfect 1.00 average and unfairly outrank series regulars who kept a
+// strong average across dozens of races. Cumulative stats (wins, poles, laps
+// led, …) are intentionally excluded: a driver with one start and one win
+// should still tie for Most Wins. The Stats and Standings pages still show
+// that driver's 1.00 average; they just can't be crowned the record holder.
+const MIN_STARTS_FOR_AVG = 2;
+const AVG_CATEGORIES = new Set(["avg_finish", "avg_start"]);
+
 // Find the record holder(s) for one category. Ties surface every holder.
-// Lower-is-better categories ignore rows with no value or no starts (a driver
-// who only ever qualified has no average finish to compare).
+// Lower-is-better categories ignore rows with no value, and average categories
+// additionally require at least MIN_STARTS_FOR_AVG starts to be eligible.
 function holdersFor(rows, key, lowerIsBetter) {
-  const eligible = rows.filter(r => r[key] != null && (lowerIsBetter ? r.starts > 0 : true));
+  const minStarts = AVG_CATEGORIES.has(key) ? MIN_STARTS_FOR_AVG : (lowerIsBetter ? 1 : 0);
+  const eligible = rows.filter(r => r[key] != null && (r.starts ?? 0) >= minStarts);
   if (!eligible.length) return { value: null, holders: [] };
   const best = eligible.reduce(
     (acc, r) => (lowerIsBetter ? Math.min(acc, r[key]) : Math.max(acc, r[key])),
