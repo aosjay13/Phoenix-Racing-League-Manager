@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { parseTable, mapHeaders, buildRows, MAPPABLE_FIELDS } from "@/lib/resultsImport";
+import { importGt7Screenshots } from "@/lib/api";
 import { DriverCreateModal } from "@/components/DriverCreateModal";
 
 const SKIP = "__skip__";
@@ -26,7 +27,11 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
   const [extraEntries, setExtraEntries] = useState([]); // drivers created from this modal
   const [createFor, setCreateFor] = useState(null);     // { idx, name } while the create form is open
   const [dragActive, setDragActive] = useState(false);
+  const [ocrBusy, setOcrBusy] = useState(false);        // vision OCR request in flight
+  const [ocrError, setOcrError] = useState("");
+  const [ocrSource, setOcrSource] = useState(0);        // how many screenshots produced the current preview
   const fileRef = useRef(null);
+  const imageRef = useRef(null);
 
   // The roster this import can resolve to: the season's entries plus any driver
   // created from the review table without leaving the modal. Newly created
@@ -56,6 +61,22 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
     setParsed(t);
     setMapping(mapHeaders(t.headers, t.rows.slice(0, 8)));
     setOverrides({});
+    setOcrSource(0);
+  }
+
+  // Feed OCR-extracted GT7 rows into the exact same pipeline as a pasted table:
+  // build a tiny { headers, rows } grid whose columns the auto-mapper resolves
+  // to Finish / Driver / Best Lap, then let buildRows do fuzzy matching and the
+  // fastest-lap calculation just as it does for a CSV.
+  function loadOcrRows(rows, imageCount) {
+    const headers = ["Pos", "Driver", "Best Lap"];
+    const grid = rows.map(r => [String(r.position ?? ""), r.driver ?? "", r.best_lap ?? ""]);
+    const t = { headers, rows: grid, delimiter: "ocr" };
+    setParsed(t);
+    setMapping(mapHeaders(headers));
+    setOverrides({});
+    setText("");
+    setOcrSource(imageCount);
   }
 
   function readFile(file) {
@@ -64,11 +85,34 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
     reader.onload = () => { const raw = String(reader.result || ""); setText(raw); runParse(raw); };
     reader.readAsText(file);
   }
+
+  // Run GT7 screenshots through the vision OCR route. Accepts multiple images so
+  // a full 16-car lobby (two screenshots) resolves in one pass.
+  async function readImages(files) {
+    const imgs = [...files].filter(f => f && f.type?.startsWith("image/"));
+    if (!imgs.length) return;
+    setOcrError("");
+    setOcrBusy(true);
+    try {
+      const rows = await importGt7Screenshots(imgs);
+      loadOcrRows(rows, imgs.length);
+    } catch (err) {
+      setOcrError(err.message || "Could not read the screenshots.");
+    } finally {
+      setOcrBusy(false);
+    }
+  }
+
   function onFile(e) { readFile(e.target.files?.[0]); }
+  function onImages(e) { readImages(e.target.files || []); }
   function onDrop(e) {
     e.preventDefault();
     setDragActive(false);
-    readFile(e.dataTransfer?.files?.[0]);
+    const files = e.dataTransfer?.files;
+    if (!files?.length) return;
+    // A GT7 import is images; a CSV import is a single text file. Route by type.
+    if ([...files].some(f => f.type?.startsWith("image/"))) readImages(files);
+    else readFile(files[0]);
   }
 
   // Create a brand-new driver for an unresolved row, then assign the row to it.
@@ -140,8 +184,9 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
         </div>
 
         <p style={{ margin: "6px 0 10px", fontSize: "0.82rem", color: "var(--ink-1)" }}>
-          Paste a results table (SimRacerHub, a spreadsheet, any game) or upload a CSV (e.g. an iRacing export).
-          Columns and driver names are detected automatically — review and adjust below, then Apply.
+          Paste a results table (SimRacerHub, a spreadsheet, any game), upload a CSV (e.g. an iRacing export),
+          or drop <strong>Gran Turismo 7 screenshots</strong> — the two shots a 16-car lobby needs are read and combined
+          automatically. Columns and driver names are detected — review and adjust below, then Apply.
         </p>
 
         <div
@@ -159,15 +204,32 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
             marginBottom: 8, transition: "background 0.12s, border-color 0.12s",
           }}
         >
-          <div style={{ fontSize: "1.3rem", lineHeight: 1 }}>⬆</div>
+          <div style={{ fontSize: "1.3rem", lineHeight: 1 }}>{ocrBusy ? "⏳" : "⬆"}</div>
           <div style={{ fontSize: "0.85rem", color: "var(--ink-0)", marginTop: 4 }}>
-            <strong>Drop a CSV here</strong> or click to browse
+            {ocrBusy
+              ? <strong>Reading screenshots…</strong>
+              : <><strong>Drop a CSV or GT7 screenshots here</strong> or click to browse</>}
           </div>
           <div style={{ fontSize: "0.76rem", color: "var(--ink-2)", marginTop: 2 }}>
-            SimRacerHub / iRacing exports — or paste a table below
+            SimRacerHub / iRacing CSV — or paste a table below
+          </div>
+          <div style={{ marginTop: 8 }}>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              style={{ marginTop: 0, padding: "4px 10px", fontSize: "0.78rem" }}
+              disabled={ocrBusy}
+              onClick={e => { e.stopPropagation(); imageRef.current?.click(); }}
+            >
+              🖼 Browse GT7 screenshots…
+            </button>
           </div>
           <input ref={fileRef} type="file" accept=".csv,.tsv,.txt,text/csv" style={{ display: "none" }} onChange={onFile} />
+          <input ref={imageRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={onImages} />
         </div>
+        {ocrError && (
+          <p style={{ margin: "0 0 8px", fontSize: "0.8rem", color: "#f85149" }}>⚠ {ocrError}</p>
+        )}
 
         <textarea
           rows={6}
@@ -178,7 +240,7 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
         />
         <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
           <button type="button" className="btn btn-primary" style={{ marginTop: 0 }} disabled={!text.trim()} onClick={() => runParse(text)}>Parse</button>
-          {parsed && <button type="button" className="btn btn-ghost" style={{ marginTop: 0 }} onClick={() => { setText(""); setParsed(null); setMapping({}); setOverrides({}); }}>Clear</button>}
+          {parsed && <button type="button" className="btn btn-ghost" style={{ marginTop: 0 }} onClick={() => { setText(""); setParsed(null); setMapping({}); setOverrides({}); setOcrSource(0); setOcrError(""); }}>Clear</button>}
         </div>
 
         {parsed && (
@@ -201,6 +263,11 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
               ))}
             </div>
 
+            {ocrSource > 0 && (
+              <p style={{ margin: "8px 0 0", fontSize: "0.8rem", color: "var(--ink-2)" }}>
+                🖼 Read from {ocrSource} GT7 screenshot{ocrSource === 1 ? "" : "s"} — verify positions, names, and lap times below before applying.
+              </p>
+            )}
             {built.warnings.map((w, i) => (
               <p key={i} style={{ margin: "8px 0 0", fontSize: "0.8rem", color: "var(--accent-amber, #d29922)" }}>⚠ {w}</p>
             ))}

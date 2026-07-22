@@ -20,6 +20,26 @@ export async function api(path, { method = "GET", body } = {}) {
   return res.json();
 }
 
+// Send one or more Gran Turismo 7 result/qualifying screenshots to the vision
+// OCR route. Returns the extracted rows: [{ position, driver, best_lap }].
+export async function importGt7Screenshots(files) {
+  const user = clientAuth().currentUser;
+  if (!user) throw new Error("Sign in required");
+  const form = new FormData();
+  for (const f of files) form.append("images", f);
+  const res = await fetch("/api/import/gt7-ocr", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${await user.getIdToken()}` },
+    body: form,
+  });
+  if (!res.ok) {
+    let msg = "Screenshot import failed";
+    try { msg = (await res.json()).error || msg; } catch {}
+    throw new Error(msg);
+  }
+  return (await res.json()).rows;
+}
+
 export async function uploadImage(file, kind = "logo") {
   const user = clientAuth().currentUser;
   if (!user) throw new Error("Sign in required");
