@@ -99,6 +99,7 @@ function RaceInfoTab({ race, onSaved }) {
         <div className="field"><label>Track</label>
           <TrackSelect tracks={tracks} valueId={form.track_id} valueName={form.track}
             onChange={({ id, name, track }) => setForm(f => ({ ...f, track: name, track_id: id || "", track_logo_url: f.track_logo_url || (track?.logo_url ?? "") }))}
+            onTrackCreated={track => setTracks(ts => [...ts, track])}
             placeholder="Search tracks…" />
           <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>Pick from the Tracks database — or type a name to keep it as free text.</span></div>
         <div className="field"><label>Round Number</label>

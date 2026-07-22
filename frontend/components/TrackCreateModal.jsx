@@ -11,8 +11,8 @@ const blankTrack = { name: "", location: "", length: "", track_type: "", logo_ur
 // Standalone "add a track" dialog — the same fields the League Setup Tracks
 // panel captures, so a track created here is identical to one built in setup.
 // Opened from the admin-only button on the Tracks directory page.
-export function TrackCreateModal({ onClose, onCreated }) {
-  const [form, setForm] = useState(blankTrack);
+export function TrackCreateModal({ onClose, onCreated, initialName }) {
+  const [form, setForm] = useState({ ...blankTrack, name: initialName || "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
