@@ -110,9 +110,11 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
       if (entry.user_id) bucket.user_id = entry.user_id;
       bucket.results.push(scored);
 
-      // Track record = the fastest single lap time recorded in any race-type
-      // session here. Qualifying laps are excluded (they live in qual_time).
-      const secs = isQualifying(r) ? null : parseTime(r.fastest_lap_time);
+      // Track record = the fastest single lap turned here, across BOTH race-type
+      // sessions (whose lap lives in fastest_lap_time) and Qualifying (whose hot
+      // lap lives in qual_time) — a qualifying lap is still a real lap set at
+      // this venue, so it counts toward the venue record.
+      const secs = isQualifying(r) ? parseTime(r.qual_time) : parseTime(r.fastest_lap_time);
       if (secs != null && (record == null || secs < record.seconds)) {
         const race = racesById[r.race_id];
         record = {
@@ -123,6 +125,8 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
           user_id: entry.user_id ?? null,
           race_id: r.race_id,
           race_name: race?.name ?? null,
+          session: r.session || (isQualifying(r) ? "Qualifying" : null),
+          from_qualifying: isQualifying(r),
           season_id: seasonId,
           season_name: season.name,
           date: race?.date || null,

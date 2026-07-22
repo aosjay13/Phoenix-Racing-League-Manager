@@ -115,6 +115,7 @@ export default function TrackProfilePage() {
                         ? <Link href={`/drivers/${record.driver_id || record.user_id}`} style={{ color: "var(--accent-cyan)" }}>{record.driver_name}</Link>
                         : record.driver_name}
                       {record.race_name ? ` · ${record.race_name}` : ""}
+                      {record.from_qualifying ? " · Qualifying" : ""}
                       {record.season_name ? ` · ${record.season_name}` : ""}
                     </div>
                   </div>
