@@ -28,7 +28,12 @@ function finalSessionName(race) {
 // isn't lost. Results are scored the same way standings/career stats are, then
 // grouped into a per-driver leaderboard ("most wins here") and a chronological
 // list of past event winners.
-export async function buildTrackProfile({ trackId, trackName }) {
+// `scope` mirrors the top-of-page Game / Series / Season dropdowns, so the
+// venue's records/history reflect exactly the branch the user is viewing:
+// a season narrows to that season, a series to its seasons, a game to its
+// seasons, and nothing selected shows every race ever held here.
+export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
+  const empty = { races_held: 0, seasons_raced: 0, record: null, drivers: [], winners: [] };
   const wantedName = String(trackName || "").trim();
   const queries = [db().collection("races").where("track_id", "==", trackId).get()];
   if (wantedName) queries.push(db().collection("races").where("track", "==", wantedName).get());
@@ -44,8 +49,25 @@ export async function buildTrackProfile({ trackId, trackName }) {
       if (!data.track_id) raceMap.set(d.id, { id: d.id, ...data });
     }
   }
-  const races = [...raceMap.values()];
-  if (!races.length) return { races_held: 0, seasons_raced: 0, drivers: [], winners: [] };
+  const allRaces = [...raceMap.values()];
+  if (!allRaces.length) return empty;
+
+  // Load the season docs for every matched race, then keep only the races whose
+  // season falls inside the selected Game/Series/Season context.
+  const matchedSeasonIds = [...new Set(allRaces.map(r => r.season_id).filter(Boolean))];
+  const seasonDocs = await Promise.all(matchedSeasonIds.map(id => db().collection("seasons").doc(id).get()));
+  const seasonsById = {};
+  for (const doc of seasonDocs) if (doc.exists) seasonsById[doc.id] = { id: doc.id, ...doc.data() };
+
+  const inScope = season => {
+    if (!season) return false;
+    if (scope.seasonId) return season.id === scope.seasonId;
+    if (scope.seriesId) return season.series_id === scope.seriesId;
+    if (scope.gameId) return season.game_id === scope.gameId;
+    return true;
+  };
+  const races = allRaces.filter(r => inScope(seasonsById[r.season_id]));
+  if (!races.length) return empty;
 
   const raceIds = new Set(races.map(r => r.id));
   const seasonIds = [...new Set(races.map(r => r.season_id).filter(Boolean))];
@@ -59,9 +81,8 @@ export async function buildTrackProfile({ trackId, trackName }) {
   let record = null;  // fastest single lap ever turned here (the track record)
 
   for (const seasonId of seasonIds) {
-    const seasonDoc = await db().collection("seasons").doc(seasonId).get();
-    if (!seasonDoc.exists) continue;
-    const season = { id: seasonDoc.id, ...seasonDoc.data() };
+    const season = seasonsById[seasonId];
+    if (!season) continue;
     const config = resolveSeasonConfig(season);
 
     const [entriesSnap, resultsSnap, racesSnap] = await Promise.all([

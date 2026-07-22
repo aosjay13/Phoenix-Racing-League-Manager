@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { formatStat } from "@/lib/standings";
+import { useLeague } from "@/components/LeagueProvider";
 
 const DRIVER_COLS = [
   ["starts", "Races"], ["wins", "Wins"], ["podiums", "Podiums"], ["top5", "Top 5s"],
@@ -32,14 +33,24 @@ function records(drivers) {
 
 export default function TrackProfilePage() {
   const { id } = useParams();
+  const { gameId, seriesId, seasonId } = useLeague();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [tab, setTab] = useState("records"); // "records" | "results"
 
+  // Scope the venue stats to the top-of-page Game/Series/Season dropdowns, and
+  // re-fetch whenever that context changes.
   useEffect(() => {
     if (!id) return;
-    api(`/api/tracks/${id}`).then(setData).catch(err => setError(err.message));
-  }, [id]);
+    setData(null);
+    setError(null);
+    const params = new URLSearchParams();
+    if (seasonId) params.set("season_id", seasonId);
+    else if (seriesId) params.set("series_id", seriesId);
+    else if (gameId) params.set("game_id", gameId);
+    const qs = params.toString();
+    api(`/api/tracks/${id}${qs ? `?${qs}` : ""}`).then(setData).catch(err => setError(err.message));
+  }, [id, gameId, seriesId, seasonId]);
 
   if (error) return <div className="empty-state"><span className="empty-state-icon">🏁</span><p>{error}</p></div>;
   if (!data) return <div className="skeleton" style={{ height: 280 }} />;
@@ -68,7 +79,9 @@ export default function TrackProfilePage() {
       {races_held === 0 ? (
         <div className="empty-state" style={{ marginTop: 24 }}>
           <span className="empty-state-icon">📊</span>
-          <p>No races have been held here yet. Assign this track to a race in League Setup.</p>
+          <p>{(gameId || seriesId || seasonId)
+            ? "No races held here in the current selection — adjust the Game / Series / Season filters at the top."
+            : "No races have been held here yet. Assign this track to a race in League Setup."}</p>
         </div>
       ) : (
         <>
