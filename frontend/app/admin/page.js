@@ -49,7 +49,7 @@ function AdminInner() {
   const [editIds, setEditIds] = useState({ game: null, series: null, season: null, race: null, track: null });
   const setEditId = (type, id) => setEditIds(ids => ({ ...ids, [type]: id }));
   const blankSeason = {
-    name: "", drop_weeks: "0", logo_url: "",
+    name: "", drop_weeks: "0", logo_url: "", car: "",
     race_points: "", qual_points: "",
     bonuses: Object.fromEntries(BONUS_TYPES.map(([k]) => [k, "0"])),
   };
@@ -108,7 +108,7 @@ function AdminInner() {
       loadTemplates();
     } catch (err) { showToast("error", err.message); }
   }
-  const blankRace = { name: "", track: "", track_id: "", date: "", round_number: "", track_logo_url: "", sessions: "Race" };
+  const blankRace = { name: "", track: "", track_id: "", date: "", round_number: "", track_logo_url: "", sessions: "Race", car: "" };
   const [raceForm, setRaceForm] = useState(blankRace);
 
   const blankTrack = { name: "", location: "", length: "", track_type: "", logo_url: "", notes: "" };
@@ -225,6 +225,9 @@ function AdminInner() {
               <input required disabled={!seriesId} value={seasonForm.name} onChange={e => setSeasonForm(f => ({ ...f, name: e.target.value }))} placeholder="Season 3" /></div>
             <div className="field"><label>Drop Weeks (worst results ignored)</label>
               <input type="number" min="0" disabled={!seriesId} value={seasonForm.drop_weeks} onChange={e => setSeasonForm(f => ({ ...f, drop_weeks: e.target.value }))} /></div>
+            <div className="field"><label>Car Type</label>
+              <input disabled={!seriesId} value={seasonForm.car} onChange={e => setSeasonForm(f => ({ ...f, car: e.target.value }))} placeholder="e.g. NASCAR Next Gen, GT3" />
+              <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>The car this season races. Each race defaults to this — override it per race below.</span></div>
             <ImageUpload label="Season Logo" kind="season-logo" value={seasonForm.logo_url} onUploaded={url => setSeasonForm(f => ({ ...f, logo_url: url }))} />
 
             <button type="button" className="btn btn-ghost" style={{ marginTop: 14 }} onClick={() => setShowPoints(v => !v)}>
@@ -294,6 +297,7 @@ function AdminInner() {
                     name: s.name,
                     drop_weeks: String(s.drop_weeks ?? 0),
                     logo_url: s.logo_url || "",
+                    car: s.car || "",
                     race_points: tableToList(s.race_points ?? s.points_scale),
                     qual_points: tableToList(s.qual_points),
                     bonuses: Object.fromEntries(BONUS_TYPES.map(([k]) => {
@@ -342,6 +346,9 @@ function AdminInner() {
             <div className="field"><label>Races in this event — comma-separated (e.g. Race 1, Race 2, Sprint)</label>
               <input disabled={!seasonId} value={raceForm.sessions} placeholder="Race"
                 onChange={e => setRaceForm(f => ({ ...f, sessions: e.target.value }))} /></div>
+            <div className="field"><label>Car Type</label>
+              <input disabled={!seasonId} value={raceForm.car} placeholder="Leave blank to use the season's car"
+                onChange={e => setRaceForm(f => ({ ...f, car: e.target.value }))} /></div>
             <ImageUpload label="Track Logo" kind="track-logo" value={raceForm.track_logo_url} onUploaded={url => setRaceForm(f => ({ ...f, track_logo_url: url }))} />
             <button className="btn btn-primary" type="submit" disabled={!seasonId}>{editIds.race ? "Save Changes" : "Add Race"}</button>
             {editIds.race && (
@@ -361,6 +368,7 @@ function AdminInner() {
                   round_number: String(r.round_number ?? ""),
                   track_logo_url: r.track_logo_url || "",
                   sessions: Array.isArray(r.sessions) && r.sessions.length ? r.sessions.join(", ") : "Race",
+                  car: r.car || "",
                 });
               }}
               onDelete={() => remove(`/api/races/${r.id}`, `Delete race "${r.name}"?`)} />)}

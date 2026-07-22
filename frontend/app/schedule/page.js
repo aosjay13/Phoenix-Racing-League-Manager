@@ -85,6 +85,7 @@ export default function SchedulePage() {
                 <th>Race Date</th>
                 <th className="sticky-col" style={{ textAlign: "left" }}>Event / Track</th>
                 <th>Race Length</th>
+                <th style={{ textAlign: "left" }}>Car</th>
                 <th style={{ textAlign: "left" }}>Pole</th>
                 <th style={{ textAlign: "left" }}>Winner</th>
                 <th>Num Drivers</th>
@@ -104,7 +105,14 @@ export default function SchedulePage() {
                       <Link href={`/races/${r.id}`} style={{ color: "var(--accent-cyan)", fontWeight: 600 }}>{r.name}</Link>
                       {r.track && <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.78rem" }}>{r.track}</span>}
                     </td>
-                    <td style={{ whiteSpace: "nowrap" }}>{s.laps ? `${s.laps} Laps` : "—"}</td>
+                    <td style={{ whiteSpace: "nowrap" }}>
+                      {s.laps ? `${s.laps} Laps` : "—"}
+                      {s.laps_extended && (
+                        <span title={`Scheduled ${s.scheduled_laps} laps — extended by a green-white-checkered / overtime finish`}
+                          style={{ marginLeft: 5, fontSize: "0.7rem", color: "var(--accent-cyan)", fontWeight: 700 }}>GWC</span>
+                      )}
+                    </td>
+                    <td style={{ textAlign: "left" }}>{s.car || <span style={{ color: "var(--ink-2)" }}>—</span>}</td>
                     <td style={{ textAlign: "left" }}><Person p={s.pole} /></td>
                     <td style={{ textAlign: "left", fontWeight: s.winner ? 600 : undefined }}><Person p={s.winner} /></td>
                     <td style={{ fontVariantNumeric: "tabular-nums" }}>{s.num_drivers || "—"}</td>

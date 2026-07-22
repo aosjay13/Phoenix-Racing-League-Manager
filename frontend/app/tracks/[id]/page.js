@@ -172,6 +172,7 @@ export default function TrackProfilePage() {
                         <th style={{ textAlign: "left" }}>Season</th>
                         <th>Date</th>
                         <th>Length</th>
+                        <th style={{ textAlign: "left" }}>Car</th>
                         <th style={{ textAlign: "left" }}>Pole</th>
                         <th style={{ textAlign: "left" }}>Winner</th>
                         <th>Drivers</th>
@@ -188,7 +189,14 @@ export default function TrackProfilePage() {
                           <td style={{ textAlign: "left" }}>{w.series_name || "—"}</td>
                           <td style={{ textAlign: "left" }}>{w.season_name}</td>
                           <td style={{ whiteSpace: "nowrap" }}>{w.date || "—"}</td>
-                          <td style={{ whiteSpace: "nowrap" }}>{w.laps ? `${w.laps} Laps` : "—"}</td>
+                          <td style={{ whiteSpace: "nowrap" }}>
+                            {w.laps ? `${w.laps} Laps` : "—"}
+                            {w.laps_extended && (
+                              <span title={`Scheduled ${w.scheduled_laps} laps — extended by a green-white-checkered / overtime finish`}
+                                style={{ marginLeft: 5, fontSize: "0.7rem", color: "var(--accent-cyan)", fontWeight: 700 }}>GWC</span>
+                            )}
+                          </td>
+                          <td style={{ textAlign: "left" }}>{w.car || <span style={{ color: "var(--ink-2)" }}>—</span>}</td>
                           <td style={{ textAlign: "left" }}><Person p={w.pole} /></td>
                           <td style={{ textAlign: "left" }}>
                             {(w.driver_id || w.user_id)

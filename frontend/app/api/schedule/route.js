@@ -14,17 +14,19 @@ export async function GET(request) {
   const seasonId = searchParams.get("season_id");
   if (!seasonId) return NextResponse.json({ error: "season_id is required" }, { status: 400 });
 
-  const [racesSnap, entriesSnap, resultsSnap] = await Promise.all([
+  const [seasonDoc, racesSnap, entriesSnap, resultsSnap] = await Promise.all([
+    db().collection("seasons").doc(seasonId).get(),
     db().collection("races").where("season_id", "==", seasonId).get(),
     db().collection("entries").where("season_id", "==", seasonId).get(),
     db().collection("results").where("season_id", "==", seasonId).get(),
   ]);
 
+  const seasonCar = seasonDoc.exists ? (seasonDoc.data().car || null) : null;
   const races = racesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
   const entriesById = Object.fromEntries(entriesSnap.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
   const racesById = Object.fromEntries(races.map(r => [r.id, r]));
   const results = decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById);
 
-  const rows = races.map(r => ({ ...r, summary: summarizeRace(r, results, entriesById) }));
+  const rows = races.map(r => ({ ...r, summary: summarizeRace(r, results, entriesById, seasonCar) }));
   return NextResponse.json(rows);
 }

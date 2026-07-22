@@ -102,8 +102,11 @@ export const SPECS = {
   series:  { collection: "series", parentField: "game_id", sortField: "name",
              fields: { name: { required: true }, logo_url: {}, description: {} } },
   seasons: { collection: "seasons", parentField: "series_id", sortField: "created_at",
+             // `car` is the free-text car/model this season races (e.g. "NASCAR
+             // Next Gen", "GT3"). It's the season-wide default; a race can
+             // override it with its own `car` (see SPECS.races).
              fields: { name: { required: true }, game_id: {}, logo_url: {}, status: { default: "active" },
-                       drop_weeks: { number: true, default: 0 }, points_scale: {},
+                       drop_weeks: { number: true, default: 0 }, points_scale: {}, car: {},
                        race_points: {}, qual_points: {}, bonus_points: {} } },
   teams:   { collection: "teams", parentField: "season_id", sortField: "name",
              fields: { name: { required: true }, logo_url: {}, color: {} } },
@@ -133,9 +136,11 @@ export const SPECS = {
              // resolved track NAME (kept in sync from the dropdown) so every place
              // that renders a race's venue as text keeps working, and legacy
              // free-text races with no track_id still display.
+             // `car` overrides the season's default car for this one event
+             // (blank = inherit the season's car).
              fields: { name: { required: true }, track: {}, track_id: {}, track_logo_url: {}, date: {},
                        round_number: { number: true, required: true }, sessions: {},
-                       total_laps: { number: true },
+                       total_laps: { number: true }, car: {},
                        // Heat-racing weekend structure: when heat_format is on, `heats` and
                        // `consolations` are ordered lists of session names (each addable/removable
                        // from the event screen) feeding into one Feature session. `session_points`

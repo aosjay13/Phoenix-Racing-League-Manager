@@ -21,19 +21,34 @@ function personFromEntry(entry) {
 
 // Distils one race into the SimRacerHub-style summary row: pole sitter (P1 of
 // its Qualifying session), winner (P1 of its deciding session), the field size
-// (distinct entries in that deciding session) and the scheduled distance.
+// (distinct entries in that deciding session) and the race distance.
 // `results` may span many races — it's filtered to this one here.
-export function summarizeRace(race, results, entriesById) {
+//
+// The lap count auto-tracks what the winner actually ran, not the scheduled
+// total_laps: the winner is a lead-lap finisher, so their laps completed is the
+// event's true distance — capturing green-white-checkered finishes that push
+// the race past its scheduled length. Falls back to the scheduled total (then
+// null) when the winner has no laps recorded.
+export function summarizeRace(race, results, entriesById, seasonCar = null) {
   const firstStd = Array.isArray(race.sessions) && race.sessions.length ? race.sessions[0] : "Race";
   const finalName = finalSessionName(race);
   const raceResults = results.filter(r => r.race_id === race.id);
-  const finalResults = raceResults.filter(r => !isQualifying(r) && (r.session || firstStd) === finalName);
+  // Provisional entries (drivers who didn't race) never count as part of the
+  // field or as the winner — they only carry points.
+  const finalResults = raceResults.filter(r => !isQualifying(r) && !r.provisional && (r.session || firstStd) === finalName);
 
   const winnerRes = finalResults.find(r => Number(r.finish_pos) === 1);
   const poleRes = raceResults.find(r => isQualifying(r) && Number(r.finish_pos) === 1);
 
+  const winnerLaps = winnerRes && Number(winnerRes.laps) > 0 ? Number(winnerRes.laps) : null;
+  const scheduledLaps = race.total_laps ? Number(race.total_laps) : null;
+
   return {
-    laps: race.total_laps ? Number(race.total_laps) : null,
+    // Race-level car overrides the season default; blank inherits the season's.
+    car: (race.car && String(race.car).trim()) || (seasonCar && String(seasonCar).trim()) || null,
+    laps: winnerLaps ?? scheduledLaps,
+    scheduled_laps: scheduledLaps,
+    laps_extended: winnerLaps != null && scheduledLaps != null && winnerLaps > scheduledLaps,
     num_drivers: new Set(finalResults.map(r => r.entry_id)).size,
     winner: personFromEntry(winnerRes && entriesById[winnerRes.entry_id]),
     pole: personFromEntry(poleRes && entriesById[poleRes.entry_id]),

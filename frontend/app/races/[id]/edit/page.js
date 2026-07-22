@@ -12,7 +12,7 @@ import { api } from "@/lib/api";
 
 const BLANK_INFO = {
   name: "", track: "", track_id: "", date: "", round_number: "", track_logo_url: "", sessions: "Race",
-  total_laps: "", heat_format: false, heats: "", consolations: "", feature_name: "A-Main Feature",
+  total_laps: "", car: "", heat_format: false, heats: "", consolations: "", feature_name: "A-Main Feature",
 };
 
 function RaceInfoTab({ race, onSaved }) {
@@ -35,6 +35,7 @@ function RaceInfoTab({ race, onSaved }) {
       track_logo_url: race.track_logo_url || "",
       sessions: Array.isArray(race.sessions) && race.sessions.length ? race.sessions.join(", ") : "Race",
       total_laps: race.total_laps != null ? String(race.total_laps) : "",
+      car: race.car || "",
       heat_format: !!race.heat_format,
       heats: Array.isArray(race.heats) ? race.heats.join(", ") : "",
       consolations: Array.isArray(race.consolations) ? race.consolations.join(", ") : "",
@@ -66,6 +67,7 @@ function RaceInfoTab({ race, onSaved }) {
         track_logo_url: form.track_logo_url,
         sessions: sessions.length ? sessions : ["Race"],
         total_laps: form.total_laps === "" ? 0 : Number(form.total_laps),
+        car: form.car,
         heat_format: !!form.heat_format,
         heats: form.heat_format ? (heats.length ? heats : ["Heat 1"]) : [],
         consolations: form.heat_format ? consolations : [],
@@ -111,6 +113,10 @@ function RaceInfoTab({ race, onSaved }) {
           <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
             Used to auto-count laps completed: lead-lap finishers get the full total, laps-down (e.g. 2L) and DNFs subtract from it.
           </span>
+        </div>
+        <div className="field"><label>Car Type</label>
+          <input value={form.car} onChange={set("car")} placeholder="Leave blank to use the season's car" />
+          <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>Overrides the season's car for this event only.</span>
         </div>
 
         <div className="field" style={{ display: "flex", alignItems: "center", gap: 8, flexDirection: "row" }}>

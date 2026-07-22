@@ -6,7 +6,7 @@ import { Modal } from "@/components/Modal";
 import { ImageUpload } from "@/components/ImageUpload";
 import { TrackSelect } from "@/components/TrackSelect";
 
-const blankRace = { name: "", track: "", track_id: "", date: "", round_number: "", track_logo_url: "", sessions: "Race" };
+const blankRace = { name: "", track: "", track_id: "", date: "", round_number: "", track_logo_url: "", sessions: "Race", car: "" };
 
 function sessionsToArray(str) {
   const list = String(str || "").split(",").map(s => s.trim()).filter(Boolean);
@@ -63,6 +63,8 @@ export function RaceCreateModal({ seasonId, defaultRound, onClose, onCreated }) 
           <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} /></div>
         <div className="field"><label>Races in this event — comma-separated (e.g. Race 1, Race 2, Sprint)</label>
           <input value={form.sessions} placeholder="Race" onChange={e => setForm(f => ({ ...f, sessions: e.target.value }))} /></div>
+        <div className="field"><label>Car Type</label>
+          <input value={form.car} placeholder="Leave blank to use the season's car" onChange={e => setForm(f => ({ ...f, car: e.target.value }))} /></div>
         <ImageUpload label="Track Logo" kind="track-logo" value={form.track_logo_url} onUploaded={url => setForm(f => ({ ...f, track_logo_url: url }))} />
         {error && <p style={{ color: "#e5484d", fontSize: "0.85rem" }}>{error}</p>}
         <button className="btn btn-primary" type="submit" disabled={busy}>{busy ? "Saving…" : "Add Race"}</button>

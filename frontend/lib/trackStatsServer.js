@@ -136,10 +136,10 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
       const finalName = finalSessionName(race);
       const firstStd = Array.isArray(race.sessions) && race.sessions.length ? race.sessions[0] : "Race";
       const winner = results.find(r =>
-        r.race_id === race.id && !isQualifying(r) && (r.session || firstStd) === finalName && Number(r.finish_pos) === 1);
+        r.race_id === race.id && !isQualifying(r) && !r.provisional && (r.session || firstStd) === finalName && Number(r.finish_pos) === 1);
       if (!winner) continue;
       const entry = entriesById[winner.entry_id];
-      const summary = summarizeRace(race, results, entriesById);
+      const summary = summarizeRace(race, results, entriesById, season.car || null);
       winners.push({
         race_id: race.id,
         race_name: race.name,
@@ -151,7 +151,10 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
         driver_name: entry?.name ?? "Unknown",
         driver_id: entry?.driver_id ?? null,
         user_id: entry?.user_id ?? null,
+        car: summary.car,
         laps: summary.laps,
+        scheduled_laps: summary.scheduled_laps,
+        laps_extended: summary.laps_extended,
         num_drivers: summary.num_drivers,
         pole: summary.pole,
       });
