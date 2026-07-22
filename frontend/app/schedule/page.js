@@ -25,12 +25,23 @@ function fmtDate(d) {
 }
 
 export default function SchedulePage() {
-  const { seasonId, season } = useLeague();
+  const { seasonId, season, refresh } = useLeague();
   const { isAdmin } = useAuth();
   const router = useRouter();
   const [races, setRaces] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
   const [toDelete, setToDelete] = useState(null); // race pending delete confirmation
+  const [toggleComplete, setToggleComplete] = useState(false); // season completion pending confirmation
+
+  const completed = season?.status === "completed";
+
+  async function confirmToggleComplete() {
+    // Mirrors the "Mark Completed" control on League Setup: a completed season
+    // credits its champion(s) with a Title in career/team stats. refresh() pulls
+    // the updated season back into the league selector so the button re-labels.
+    await api(`/api/seasons/${seasonId}`, { method: "PATCH", body: { status: completed ? "active" : "completed" } });
+    refresh();
+  }
 
   const loadRaces = () => {
     if (!seasonId) { setRaces(null); return; }
@@ -62,11 +73,34 @@ export default function SchedulePage() {
         <h2>Schedule · {season?.name ?? ""}</h2>
         <span className="page-badge">{races.length} Event{races.length === 1 ? "" : "s"}</span>
         {isAdmin && (
-          <button className="btn btn-primary" style={{ marginLeft: "auto", marginTop: 0 }} onClick={() => setShowCreate(true)}>
-            + New Race
-          </button>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
+            <button
+              className="btn btn-ghost"
+              style={{ marginTop: 0 }}
+              title={completed
+                ? "This season is complete and its champion holds a Title. Click to reopen it."
+                : "Mark this season complete — its champion earns a Title in career stats."}
+              onClick={() => setToggleComplete(true)}>
+              {completed ? "✓ Season Complete" : "Mark Season Complete"}
+            </button>
+            <button className="btn btn-primary" style={{ marginTop: 0 }} onClick={() => setShowCreate(true)}>
+              + New Race
+            </button>
+          </div>
         )}
       </div>
+
+      {isAdmin && toggleComplete && (
+        <ConfirmDialog
+          title={completed ? "Reopen this season?" : "Mark season complete?"}
+          message={completed
+            ? `Reopen "${season?.name}"? It will no longer count as a finished season, and its champion's Title will be removed until you mark it complete again.`
+            : `Mark "${season?.name}" complete? This closes out the season and credits its champion — the points leader — with a Title in their career and team stats.`}
+          confirmLabel={completed ? "Reopen season" : "Mark complete"}
+          onConfirm={confirmToggleComplete}
+          onClose={() => setToggleComplete(false)}
+        />
+      )}
 
       {showCreate && (
         <RaceCreateModal
