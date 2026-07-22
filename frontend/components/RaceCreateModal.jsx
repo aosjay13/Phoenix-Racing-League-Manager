@@ -55,8 +55,9 @@ export function RaceCreateModal({ seasonId, defaultRound, onClose, onCreated }) 
           <input required value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Race 1 — Daytona Duel" /></div>
         <div className="field"><label>Track</label>
           <TrackSelect tracks={tracks} valueId={form.track_id} valueName={form.track} onChange={pickTrack}
+            onTrackCreated={track => setTracks(ts => [...ts, track])}
             placeholder="Search tracks…" />
-          <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>Pick from the Tracks database — or type a name to keep it as free text.</span></div>
+          <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>Pick from the Tracks database, add a brand-new venue to it inline, or type a name to keep it as free text.</span></div>
         <div className="field"><label>Round Number</label>
           <input type="number" min="1" required value={form.round_number} onChange={e => setForm(f => ({ ...f, round_number: e.target.value }))} /></div>
         <div className="field"><label>Date</label>
