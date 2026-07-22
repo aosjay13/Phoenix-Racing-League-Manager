@@ -9,6 +9,7 @@ const publicNav = [
   { href: "/",          label: "Dashboard", icon: "◈" },
   { href: "/standings", label: "Standings", icon: "🏆" },
   { href: "/stats",     label: "Stats",     icon: "📊" },
+  { href: "/records",   label: "Records",   icon: "🏅" },
   { href: "/schedule",  label: "Schedule",  icon: "🗓" },
   { href: "/drivers",   label: "Drivers",   icon: "🏎" },
   { href: "/teams",     label: "Teams",     icon: "🛡" },

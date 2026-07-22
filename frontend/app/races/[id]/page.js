@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { api } from "@/lib/api";
 
 function DriverCell({ r }) {
@@ -34,20 +35,40 @@ function editTabFor(event, sessionTab) {
 
 export default function EventResultsPage() {
   const { id } = useParams();
+  const router = useRouter();
   const { isAdmin } = useAuth();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [tab, setTab] = useState(null); // "qual" or session name
+  const [confirmKind, setConfirmKind] = useState(null); // "event" | "session" | null
 
-  useEffect(() => {
+  const load = () =>
     api(`/api/events/${id}`)
       .then(d => {
         setData(d);
         const withResults = d.races.find(s => s.results.length);
-        setTab(withResults ? withResults.name : (d.qualifying.length ? "__qual" : d.races[0]?.name ?? null));
+        setTab(prev => prev ?? (withResults ? withResults.name : (d.qualifying.length ? "__qual" : d.races[0]?.name ?? null)));
       })
       .catch(err => setError(err.message));
-  }, [id]);
+  useEffect(() => { load(); }, [id]);
+
+  // Delete the whole event (race doc + every session's results); stats/points
+  // recompute from results on read, so they scrub automatically.
+  async function deleteEvent() {
+    await api(`/api/races/${id}`, { method: "DELETE" });
+    router.push("/schedule");
+  }
+
+  // Clear only the currently-viewed session's results, leaving the rest of the
+  // event intact. Qualifying is isolated by type; every race-like session
+  // matches by name (session_type defaults to "race" server-side).
+  async function deleteSession() {
+    const qs = new URLSearchParams({ race_id: id });
+    if (tab === "__qual") { qs.set("session", "Qualifying"); qs.set("session_type", "qualifying"); }
+    else { qs.set("session", tab); }
+    await api(`/api/results?${qs.toString()}`, { method: "DELETE" });
+    await load();
+  }
 
   if (error) return <div className="empty-state"><span className="empty-state-icon">🏁</span><p>{error}</p></div>;
   if (!data) return <div className="skeleton" style={{ height: 280 }} />;
@@ -79,13 +100,23 @@ export default function EventResultsPage() {
           <p style={{ margin: "6px 0 0", display: "flex", gap: 14, alignItems: "center" }}>
             <Link href="/schedule" style={{ color: "var(--accent-cyan)", fontSize: "0.85rem" }}>← Back to Schedule</Link>
             {isAdmin && (
-              <Link
-                href={`/races/${event.id}/edit?tab=${editTabFor(event, tab)}${tab && tab !== "__qual" ? `&session=${encodeURIComponent(tab)}` : ""}`}
-                className="btn btn-ghost"
-                style={{ marginTop: 0, padding: "6px 12px", fontSize: "0.82rem" }}
-              >
-                ✎ Edit Race
-              </Link>
+              <>
+                <Link
+                  href={`/races/${event.id}/edit?tab=${editTabFor(event, tab)}${tab && tab !== "__qual" ? `&session=${encodeURIComponent(tab)}` : ""}`}
+                  className="btn btn-ghost"
+                  style={{ marginTop: 0, padding: "6px 12px", fontSize: "0.82rem" }}
+                >
+                  ✎ Edit Race
+                </Link>
+                <button
+                  type="button"
+                  className="btn btn-danger"
+                  style={{ marginTop: 0, padding: "6px 12px", fontSize: "0.82rem" }}
+                  onClick={() => setConfirmKind("event")}
+                >
+                  🗑 Delete Event
+                </button>
+              </>
             )}
           </p>
         </div>
@@ -100,7 +131,37 @@ export default function EventResultsPage() {
             {s.name}
           </button>
         ))}
+        {isAdmin && tab && (tab === "__qual" ? hasQualifying : activeResults.length > 0) && (
+          <button
+            type="button"
+            className="icon-btn icon-btn-danger"
+            title={`Delete the ${tab === "__qual" ? "Qualifying" : tab} results`}
+            style={{ marginLeft: "auto" }}
+            onClick={() => setConfirmKind("session")}
+          >
+            🗑 Delete {tab === "__qual" ? "Qualifying" : tab} results
+          </button>
+        )}
       </div>
+
+      {isAdmin && confirmKind === "event" && (
+        <ConfirmDialog
+          title="Delete this event?"
+          message={`Are you sure you want to delete "${event.name}"? This removes the event and all associated qualifying, heat, main, and race results — and the points and stats those results gave every driver. This cannot be undone.`}
+          confirmLabel="Delete event"
+          onConfirm={deleteEvent}
+          onClose={() => setConfirmKind(null)}
+        />
+      )}
+      {isAdmin && confirmKind === "session" && (
+        <ConfirmDialog
+          title={`Delete ${tab === "__qual" ? "Qualifying" : tab} results?`}
+          message={`Are you sure you want to delete the ${tab === "__qual" ? "Qualifying" : tab} results for this event? This removes all associated points and stats for these drivers, and cannot be undone. The rest of the event is left untouched.`}
+          confirmLabel="Delete results"
+          onConfirm={deleteSession}
+          onClose={() => setConfirmKind(null)}
+        />
+      )}
 
       {tab === "__qual" ? (
         <div className="table-wrap">

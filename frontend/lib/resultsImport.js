@@ -129,6 +129,15 @@ export function headerToField(header) {
   for (const [field, syns] of FIELD_SYNONYMS) {
     if (syns.includes(n)) return field;
   }
+  // A lap-time column ("Fast Lap Time", "Fastest Lap Time", "Best Lap Time")
+  // must resolve to the fastest-lap field BEFORE the generic contains-match
+  // below — otherwise race_time's "time" synonym (which comes earlier in
+  // FIELD_SYNONYMS) steals any header that merely contains "time". This is the
+  // SimRacerHub / iRacing fastest-lap column that previously imported as blank.
+  if (n.includes("lap") && (n.includes("fast") || n.includes("best"))) return "fastest_lap_time";
+  // A car-number column ("Car Number", "Car #", "Car No") maps to car_number
+  // before "car" could be swallowed by a looser match.
+  if (n.startsWith("car") && (n.includes("number") || n.includes("no") || n === "car")) return "car_number";
   // Loose contains-match as a fallback (e.g. "Start Pos", "Driver Name"). Only
   // distinctive synonyms (4+ chars) participate — a 3-char token like "int"
   // would otherwise match inside unrelated headers ("Total Po·int·s"); short
@@ -269,8 +278,14 @@ export function buildRows({ rows }, mapping, entries, opts = {}) {
         || (qualifying ? (fastTime || raceTime) : "")
         || "",
       status: truthyStatus(get(row, "status")),
-      // A fastest-lap *time* column can't tell us who was fastest overall on
-      // its own; we mark the fastest of the field below.
+      // The driver's best single lap time as a clock string ("1:23.456"), kept
+      // as-is for the results grid's "Best Lap" column. This is separate from
+      // the `fastest_lap` boolean (who was quickest overall) computed below —
+      // on a race import both come from this same source column.
+      fastest_lap_time: qualifying ? "" : fastTime,
+      // Same value under a private key for the who-was-fastest calculation
+      // below; kept distinct so a qualifying import doesn't surface it as a
+      // race best-lap time.
       _fastest_lap_time: fastTime,
     };
     return { raw: row, rawName, match, values };

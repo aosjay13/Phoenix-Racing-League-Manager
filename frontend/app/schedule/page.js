@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useLeague } from "@/components/LeagueProvider";
 import { useAuth } from "@/components/AuthProvider";
 import { RaceCreateModal } from "@/components/RaceCreateModal";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { api } from "@/lib/api";
 
 // A driver cell that links to the profile when we can resolve one, else plain
@@ -29,6 +30,7 @@ export default function SchedulePage() {
   const router = useRouter();
   const [races, setRaces] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [toDelete, setToDelete] = useState(null); // race pending delete confirmation
 
   const loadRaces = () => {
     if (!seasonId) { setRaces(null); return; }
@@ -36,12 +38,13 @@ export default function SchedulePage() {
   };
   useEffect(loadRaces, [seasonId]);
 
-  async function remove(r) {
-    if (!confirm(`Delete "${r.name}" and all its results? This cannot be undone.`)) return;
-    try {
-      await api(`/api/races/${r.id}`, { method: "DELETE" });
-      loadRaces();
-    } catch (err) { alert(err.message); }
+  async function confirmDelete() {
+    // Deleting the event removes its race doc and cascades to every saved
+    // result (qualifying + all race/heat/consolation/feature sessions) in the
+    // DELETE route; stats/standings recompute from results on read, so they
+    // scrub automatically once the results are gone.
+    await api(`/api/races/${toDelete.id}`, { method: "DELETE" });
+    loadRaces();
   }
 
   if (!seasonId) {
@@ -71,6 +74,16 @@ export default function SchedulePage() {
           defaultRound={nextRound}
           onClose={() => setShowCreate(false)}
           onCreated={() => { setShowCreate(false); loadRaces(); }}
+        />
+      )}
+
+      {isAdmin && toDelete && (
+        <ConfirmDialog
+          title="Delete this event?"
+          message={`Are you sure you want to delete "${toDelete.name}"? This removes the event and all associated qualifying, heat, main, and race results — and the points and stats those results gave every driver. This cannot be undone.`}
+          confirmLabel="Delete event"
+          onConfirm={confirmDelete}
+          onClose={() => setToDelete(null)}
         />
       )}
 
@@ -124,7 +137,7 @@ export default function SchedulePage() {
                     {isAdmin && (
                       <td style={{ whiteSpace: "nowrap" }}>
                         <button className="icon-btn" title="Edit race" onClick={() => router.push(`/races/${r.id}/edit`)}>✎</button>
-                        <button className="icon-btn icon-btn-danger" title="Delete race" onClick={() => remove(r)}>🗑</button>
+                        <button className="icon-btn icon-btn-danger" title="Delete race" onClick={() => setToDelete(r)}>🗑</button>
                       </td>
                     )}
                   </tr>

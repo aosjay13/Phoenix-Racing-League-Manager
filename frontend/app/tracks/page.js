@@ -1,10 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
 import { TrackCreateModal } from "@/components/TrackCreateModal";
+import { DirectoryRow } from "@/components/DirectoryRow";
 
 // Canonical display order for the type sub-sections (matches TrackCreateModal).
 // Any type not listed here falls in after these, alphabetically; untyped tracks
@@ -97,21 +97,14 @@ export default function TracksPage() {
                 {!isCollapsed && (
                   <div className="list-rows" style={{ marginTop: 8 }}>
                     {rows.map(t => (
-                      <Link href={`/tracks/${t.id}`} key={t.id} className="list-row">
-                        {t.logo_url
-                          ? <img src={t.logo_url} alt="" className="avatar" style={{ borderRadius: 6 }} />
-                          : <span className="avatar avatar-fallback" style={{ borderRadius: 6 }}>🏁</span>}
-                        <span className="list-row-name">
-                          <strong>{t.name}</strong>
-                          <span>{t.location || "—"}</span>
-                        </span>
-                        <span className="list-row-meta">
-                          <span>
-                            <span className="list-row-meta-label">Length</span>
-                            <span className="list-row-meta-value">{t.length || "—"}</span>
-                          </span>
-                        </span>
-                      </Link>
+                      <DirectoryRow
+                        key={t.id}
+                        href={`/tracks/${t.id}`}
+                        avatar={{ url: t.logo_url, square: true, fallback: "🏁" }}
+                        title={t.name}
+                        subtitle={t.location || "—"}
+                        meta={[{ label: "Length", value: t.length || "—" }]}
+                      />
                     ))}
                   </div>
                 )}

@@ -109,6 +109,12 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
       interval: row.values.interval,
       race_time: row.values.race_time,
       qual_time: row.values.qual_time,
+      // The driver's best single lap time (clock string) — fills the grid's
+      // "Best Lap" column and is what a track record is derived from. Was
+      // previously dropped here, so SimRacerHub fastest-lap times never saved.
+      fastest_lap_time: row.values.fastest_lap_time,
+      // Car number read from the "Car Number" / "Car #" column, if any.
+      car_number: row.values.car_number,
       status: row.values.status,
       fastest_lap: row.values.fastest_lap,
     }));

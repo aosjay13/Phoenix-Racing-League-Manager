@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { DirectoryRow } from "@/components/DirectoryRow";
 
 export default function TeamsPage() {
   const [teams, setTeams] = useState(null);
@@ -30,21 +30,16 @@ export default function TeamsPage() {
       {teams.length === 0 ? (
         <div className="empty-state"><span className="empty-state-icon">🛡</span><p>No teams yet.</p></div>
       ) : (
-        <div className="quick-links" style={{ marginTop: 18 }}>
+        <div className="list-rows">
           {teams.map(t => (
-            <Link href={`/teams/${encodeURIComponent(t.name)}`} key={t.name}>
-              <div className="quick-card" style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-                {t.logo_url
-                  ? <img src={t.logo_url} alt="" className="avatar" style={{ borderRadius: 6 }} />
-                  : <span className="avatar avatar-fallback" style={t.color ? { background: t.color } : undefined}>{String(t.name || "?")[0]?.toUpperCase()}</span>}
-                <div>
-                  <strong>{t.name}</strong>
-                  <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.8rem" }}>
-                    {t.seasons} Season{t.seasons === 1 ? "" : "s"}
-                  </span>
-                </div>
-              </div>
-            </Link>
+            <DirectoryRow
+              key={t.name}
+              href={`/teams/${encodeURIComponent(t.name)}`}
+              avatar={{ url: t.logo_url, square: true, bg: t.color }}
+              title={t.name}
+              subtitle={`${t.seasons} Season${t.seasons === 1 ? "" : "s"}`}
+              meta={[{ label: "Seasons", value: t.seasons }]}
+            />
           ))}
         </div>
       )}

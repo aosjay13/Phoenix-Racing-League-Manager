@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { DirectoryRow } from "@/components/DirectoryRow";
 
 export default function DriversPage() {
   const [drivers, setDrivers] = useState(null);
@@ -50,23 +50,15 @@ export default function DriversPage() {
       ) : (
         <div className="list-rows">
           {drivers.map(d => (
-            <Link href={`/drivers/${d.id}`} key={d.id} className={`list-row${d.linked ? " linked" : ""}`}>
-              {d.photo_url
-                ? <img src={d.photo_url} alt="" className="avatar" />
-                : <span className="avatar avatar-fallback">{String(d.name || "?")[0]?.toUpperCase()}</span>}
-              <span className="list-row-name">
-                <strong>{d.name}</strong>
-                <span style={{ color: d.linked ? undefined : "var(--ink-2)" }}>
-                  {d.linked ? (d.country || "Linked account") : "Not linked"}
-                </span>
-              </span>
-              <span className="list-row-meta">
-                <span>
-                  <span className="list-row-meta-label">Account</span>
-                  <span className="list-row-meta-value">{d.linked ? "Linked" : "—"}</span>
-                </span>
-              </span>
-            </Link>
+            <DirectoryRow
+              key={d.id}
+              href={`/drivers/${d.id}`}
+              linked={d.linked}
+              avatar={{ url: d.photo_url }}
+              title={d.name}
+              subtitle={d.linked ? (d.country || "Linked account") : "Not linked"}
+              meta={[{ label: "Account", value: d.linked ? "Linked" : "—" }]}
+            />
           ))}
         </div>
       )}

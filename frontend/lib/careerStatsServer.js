@@ -23,7 +23,7 @@ export async function buildCareerProfile({ driverId = null, userId = null }) {
   const queries = [];
   if (driverId) queries.push(db().collection("entries").where("driver_id", "==", driverId).get());
   if (userId) queries.push(db().collection("entries").where("user_id", "==", userId).get());
-  if (!queries.length) return { all_games: aggregateCareerStats([], 0), by_game: [], seasons_raced: 0 };
+  if (!queries.length) return { all_games: aggregateCareerStats([], 0), by_game: [], by_track: [], seasons_raced: 0 };
 
   const snaps = await Promise.all(queries);
   // Dedupe by entry id — the same entry can match both queries.
@@ -41,6 +41,7 @@ export async function buildCareerProfile({ driverId = null, userId = null }) {
 
   const perGame = {};       // gameId -> results
   const titlesPerGame = {}; // gameId -> count
+  const perTrack = {};      // trackKey -> { track_id, track_name, results[] }
   const allResults = [];
   let totalTitles = 0;
   const templatesById = await fetchTemplatesById();
@@ -72,6 +73,23 @@ export async function buildCareerProfile({ driverId = null, userId = null }) {
     (perGame[gameId] ??= []).push(...mine);
     allResults.push(...mine);
 
+    // Bucket the driver's results by the venue each race was held at, so the
+    // profile can show per-track performance. Races are keyed by their linked
+    // `track_id` when present; legacy free-text races (no track_id) fall back to
+    // grouping by the resolved track NAME so their history isn't lost. Races
+    // with no venue recorded at all are skipped from the per-track view.
+    for (const r of mine) {
+      const race = racesById[r.race_id];
+      if (!race) continue;
+      const trackId = race.track_id || null;
+      const trackName = (race.track || "").trim();
+      if (!trackId && !trackName) continue;
+      const key = trackId ? `id:${trackId}` : `name:${trackName.toLowerCase()}`;
+      const bucket = (perTrack[key] ??= { track_id: trackId, track_name: trackName || "Unknown Track", results: [] });
+      if (trackName) bucket.track_name = trackName; // prefer a real name over a bare id
+      bucket.results.push(r);
+    }
+
     if (season.status === "completed" && mine.length) {
       const standings = calculateStandings(seasonResults, seasonEntries, [], config, templatesById);
       if (standings.rows[0] && myEntryIds.has(standings.rows[0].entry_id)) {
@@ -88,9 +106,33 @@ export async function buildCareerProfile({ driverId = null, userId = null }) {
     stats: aggregateCareerStats(results, titlesPerGame[gameId] || 0),
   }));
 
+  // Resolve current track names/logos for venues linked by id (a track may have
+  // been renamed since the race ran; the profile should show today's name).
+  const trackIds = [...new Set(Object.values(perTrack).map(t => t.track_id).filter(Boolean))];
+  const trackDocs = await Promise.all(trackIds.map(id => db().collection("tracks").doc(id).get()));
+  const trackInfo = {};
+  for (const doc of trackDocs) if (doc.exists) trackInfo[doc.id] = doc.data();
+
+  const byTrack = Object.values(perTrack)
+    .map(t => ({
+      track_id: t.track_id,
+      track_name: (t.track_id && trackInfo[t.track_id]?.name) || t.track_name,
+      track_logo_url: (t.track_id && trackInfo[t.track_id]?.logo_url) || null,
+      track_location: (t.track_id && trackInfo[t.track_id]?.location) || null,
+      // 0-title aggregation: championships aren't a per-venue concept.
+      stats: aggregateCareerStats(t.results, 0),
+    }))
+    // Only surface venues where the driver actually started a race (races that
+    // count toward stats) — a qualifying-only appearance produces 0 starts.
+    .filter(t => t.stats.starts > 0)
+    .sort((a, b) =>
+      b.stats.wins - a.stats.wins || b.stats.starts - a.stats.starts ||
+      String(a.track_name).localeCompare(String(b.track_name)));
+
   return {
     all_games: aggregateCareerStats(allResults, totalTitles),
     by_game: byGame,
+    by_track: byTrack,
     seasons_raced: seasonIds.length,
   };
 }

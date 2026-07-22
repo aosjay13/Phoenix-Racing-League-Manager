@@ -359,9 +359,14 @@ export function SessionEditor({
     for (const r of imported) if (entryById.has(r.entry_id)) byId.set(r.entry_id, r); // last wins on duplicates
     const num = (v, fallback) => (v === "" || v == null ? fallback : String(v));
     const placed = [...byId.values()].map(im => {
-      const row = withDriver(makeRow(im.finish_pos), entryById.get(im.entry_id));
+      const entry = entryById.get(im.entry_id);
+      const row = withDriver(makeRow(im.finish_pos), entry);
+      // Surface the imported car number when the matched roster entry doesn't
+      // already carry one, so "Car Number" / "Car #" from the CSV isn't lost.
+      const importedNum = im.car_number != null && String(im.car_number).trim() !== "" ? String(im.car_number).trim() : null;
       return {
         ...row,
+        driver_number: row.driver_number ?? importedNum,
         finish_pos: num(im.finish_pos, row.finish_pos),
         start_pos: im.start_pos != null ? String(im.start_pos) : row.start_pos,
         laps: num(im.laps, row.laps),
