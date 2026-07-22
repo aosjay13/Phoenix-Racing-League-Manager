@@ -115,7 +115,7 @@ export const FIELD_SYNONYMS = [
   ["interval", ["interval", "int", "gap", "behind", "diff", "delta"]],
   ["race_time", ["time", "totaltime", "racetime", "elapsed", "totalracetime", "finishtime"]],
   ["qual_time", ["qualtime", "qtime", "bestqual", "qualifyingtime", "bestqualtime"]],
-  ["fastest_lap_time", ["fastestlap", "fastlap", "bestlap", "fastest", "bestlaptime", "fl", "fastestlaptime"]],
+  ["fastest_lap_time", ["fastestlap", "fastlap", "bestlap", "fastest", "bestlaptime", "fl", "fastestlaptime", "fasttm", "besttm", "fasttime", "besttime", "fastesttime"]],
   ["status", ["status", "out", "reason", "outreason", "classified", "dnf"]],
   ["points", ["points", "pts", "champpoints"]],
 ];
@@ -129,12 +129,16 @@ export function headerToField(header) {
   for (const [field, syns] of FIELD_SYNONYMS) {
     if (syns.includes(n)) return field;
   }
-  // A lap-time column ("Fast Lap Time", "Fastest Lap Time", "Best Lap Time")
-  // must resolve to the fastest-lap field BEFORE the generic contains-match
-  // below — otherwise race_time's "time" synonym (which comes earlier in
-  // FIELD_SYNONYMS) steals any header that merely contains "time". This is the
-  // SimRacerHub / iRacing fastest-lap column that previously imported as blank.
-  if (n.includes("lap") && (n.includes("fast") || n.includes("best"))) return "fastest_lap_time";
+  // A lap-time column must resolve to the fastest-lap field BEFORE the generic
+  // contains-match below — otherwise race_time's "time" synonym (which comes
+  // earlier in FIELD_SYNONYMS) steals any header that merely contains "time".
+  // Covers the long forms ("Fast Lap Time", "Fastest Lap Time", "Best Lap
+  // Time") and SimRacerHub's short forms ("Fast Tm", "Best Tm", "Fast Time"):
+  // any header mentioning fast/best alongside lap/tm/time is this column. The
+  // exact-synonym pass above already claimed qual-time headers like "Best Qual
+  // Time", so they never reach here. This is the fastest-lap column that
+  // previously imported as blank.
+  if ((n.includes("fast") || n.includes("best")) && (n.includes("lap") || n.includes("tm") || n.includes("time"))) return "fastest_lap_time";
   // A car-number column ("Car Number", "Car #", "Car No") maps to car_number
   // before "car" could be swallowed by a looser match.
   if (n.startsWith("car") && (n.includes("number") || n.includes("no") || n === "car")) return "car_number";
