@@ -2,22 +2,10 @@
 
 import { useMemo, useRef, useState } from "react";
 import { parseTable, mapHeaders, buildRows, MAPPABLE_FIELDS } from "@/lib/resultsImport";
-import { importGt7Screenshots } from "@/lib/api";
 import { DriverCreateModal } from "@/components/DriverCreateModal";
 
 const SKIP = "__skip__";
 const CREATE = "__create__";
-
-// A file is an image if the browser tags it image/* OR the extension says so —
-// some OSes hand back an empty `type` for .webp (and occasionally other
-// formats), which would otherwise misroute a valid screenshot to the CSV path.
-const IMAGE_EXTS = ["png", "jpg", "jpeg", "webp", "gif"];
-function isImageFile(f) {
-  if (!f) return false;
-  if (f.type?.startsWith("image/")) return true;
-  const ext = String(f.name || "").split(".").pop()?.toLowerCase();
-  return IMAGE_EXTS.includes(ext);
-}
 
 const statusChip = {
   matched: { bg: "rgba(46,160,67,0.18)", fg: "#3fb950", label: "matched" },
@@ -38,11 +26,7 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
   const [extraEntries, setExtraEntries] = useState([]); // drivers created from this modal
   const [createFor, setCreateFor] = useState(null);     // { idx, name } while the create form is open
   const [dragActive, setDragActive] = useState(false);
-  const [ocrBusy, setOcrBusy] = useState(false);        // vision OCR request in flight
-  const [ocrError, setOcrError] = useState("");
-  const [ocrSource, setOcrSource] = useState(0);        // how many screenshots produced the current preview
   const fileRef = useRef(null);
-  const imageRef = useRef(null);
 
   // The roster this import can resolve to: the season's entries plus any driver
   // created from the review table without leaving the modal. Newly created
@@ -72,63 +56,21 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
     setParsed(t);
     setMapping(mapHeaders(t.headers, t.rows.slice(0, 8)));
     setOverrides({});
-    setOcrSource(0);
-  }
-
-  // Feed OCR-extracted GT7 rows into the exact same pipeline as a pasted table:
-  // build a tiny { headers, rows } grid whose columns the auto-mapper resolves
-  // to Finish / Driver / Best Lap, then let buildRows do fuzzy matching and the
-  // fastest-lap calculation just as it does for a CSV.
-  function loadOcrRows(rows, imageCount) {
-    const headers = ["Pos", "Driver", "Best Lap"];
-    const grid = rows.map(r => [String(r.position ?? ""), r.driver ?? "", r.best_lap ?? ""]);
-    const t = { headers, rows: grid, delimiter: "ocr" };
-    setParsed(t);
-    setMapping(mapHeaders(headers));
-    setOverrides({});
-    setText("");
-    setOcrSource(imageCount);
   }
 
   function readFile(file) {
     if (!file) return;
-    // An image can reach this path when someone picks a screenshot from the main
-    // dropzone (whose file input is filtered to CSV/TSV/TXT — but that filter is
-    // only a hint the OS lets users override). Reading it as text would spill the
-    // raw binary into the textarea as gibberish, so reroute it to OCR instead.
-    if (isImageFile(file)) { readImages([file]); return; }
     const reader = new FileReader();
     reader.onload = () => { const raw = String(reader.result || ""); setText(raw); runParse(raw); };
     reader.readAsText(file);
   }
 
-  // Run GT7 screenshots through the vision OCR route. Accepts multiple images so
-  // a full 16-car lobby (two screenshots) resolves in one pass.
-  async function readImages(files) {
-    const imgs = [...files].filter(isImageFile);
-    if (!imgs.length) return;
-    setOcrError("");
-    setOcrBusy(true);
-    try {
-      const rows = await importGt7Screenshots(imgs);
-      loadOcrRows(rows, imgs.length);
-    } catch (err) {
-      setOcrError(err.message || "Could not read the screenshots.");
-    } finally {
-      setOcrBusy(false);
-    }
-  }
-
   function onFile(e) { readFile(e.target.files?.[0]); }
-  function onImages(e) { readImages(e.target.files || []); }
   function onDrop(e) {
     e.preventDefault();
     setDragActive(false);
     const files = e.dataTransfer?.files;
-    if (!files?.length) return;
-    // A GT7 import is images; a CSV import is a single text file. Route by type.
-    if ([...files].some(isImageFile)) readImages(files);
-    else readFile(files[0]);
+    if (files?.length) readFile(files[0]);
   }
 
   // Create a brand-new driver for an unresolved row, then assign the row to it.
@@ -195,14 +137,13 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
       onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="form-card" style={{ maxWidth: 900, width: "100%", maxHeight: "88vh", overflowY: "auto" }} onMouseDown={e => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h3 style={{ margin: 0 }}>{ocrSource > 0 ? "GT7 Results Importer" : "Smart Import"} · {session}</h3>
+          <h3 style={{ margin: 0 }}>Smart Import · {session}</h3>
           <button className="btn btn-ghost" type="button" style={{ marginTop: 0, padding: "4px 10px" }} onClick={onClose}>✕</button>
         </div>
 
         <p style={{ margin: "6px 0 10px", fontSize: "0.82rem", color: "var(--ink-1)" }}>
-          Paste a results table (SimRacerHub, a spreadsheet, any game), upload a CSV (e.g. an iRacing export),
-          or drop <strong>Gran Turismo 7 screenshots</strong> — the two shots a 16-car lobby needs are read and combined
-          automatically. Columns and driver names are detected — review and adjust below, then Apply.
+          Paste a results table (SimRacerHub, a spreadsheet, any game) or upload a CSV (e.g. an iRacing export).
+          Columns and driver names are detected — review and adjust below, then Apply.
         </p>
 
         <div
@@ -217,46 +158,32 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
             border: `1.5px dashed ${dragActive ? "var(--accent-cyan, #58a6ff)" : "var(--border)"}`,
             background: dragActive ? "rgba(88,166,255,0.08)" : "var(--bg-elevated)",
             borderRadius: 10, padding: "14px 16px", textAlign: "center", cursor: "pointer",
-            marginBottom: 8, transition: "background 0.12s, border-color 0.12s",
+            marginBottom: 10, transition: "background 0.12s, border-color 0.12s",
           }}
         >
-          <div style={{ fontSize: "1.3rem", lineHeight: 1 }}>{ocrBusy ? "⏳" : "⬆"}</div>
+          <div style={{ fontSize: "1.3rem", lineHeight: 1 }}>⬆</div>
           <div style={{ fontSize: "0.85rem", color: "var(--ink-0)", marginTop: 4 }}>
-            {ocrBusy
-              ? <strong>Reading screenshots…</strong>
-              : <><strong>Drop a CSV or GT7 screenshots here</strong> or click to browse</>}
+            <strong>Drop a CSV here</strong> or click to browse
           </div>
           <div style={{ fontSize: "0.76rem", color: "var(--ink-2)", marginTop: 2 }}>
             SimRacerHub / iRacing CSV — or paste a table below
           </div>
-          <div style={{ marginTop: 8 }}>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              style={{ marginTop: 0, padding: "4px 10px", fontSize: "0.78rem" }}
-              disabled={ocrBusy}
-              onClick={e => { e.stopPropagation(); imageRef.current?.click(); }}
-            >
-              🖼 Browse GT7 screenshots…
-            </button>
-          </div>
           <input ref={fileRef} type="file" accept=".csv,.tsv,.txt,text/csv" style={{ display: "none" }} onChange={onFile} />
-          <input ref={imageRef} type="file" accept="image/*,.png,.jpg,.jpeg,.webp,.gif" multiple style={{ display: "none" }} onChange={onImages} />
         </div>
-        {ocrError && (
-          <p style={{ margin: "0 0 8px", fontSize: "0.8rem", color: "#f85149" }}>⚠ {ocrError}</p>
-        )}
 
+        <label style={{ display: "block", fontSize: "0.8rem", color: "var(--ink-1)", margin: "2px 0 6px" }}>
+          Or paste comma- or tab-separated results
+        </label>
         <textarea
-          rows={6}
+          rows={12}
           value={text}
           onChange={e => setText(e.target.value)}
           placeholder={"Fin,Start,Driver,Laps,Led,Inc\n1,3,Jane Doe,50,20,2\n2,1,John Smith,50,30,4"}
-          style={{ width: "100%", padding: 10, border: "1px solid var(--border)", borderRadius: 9, background: "var(--bg-elevated)", color: "var(--ink-0)", fontFamily: "monospace", fontSize: "0.82rem", resize: "vertical" }}
+          style={{ width: "100%", minHeight: 220, padding: 12, border: "1.5px solid var(--border)", borderRadius: 10, background: "var(--bg-elevated)", color: "var(--ink-0)", fontFamily: "monospace", fontSize: "0.92rem", lineHeight: 1.5, resize: "vertical" }}
         />
         <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
           <button type="button" className="btn btn-primary" style={{ marginTop: 0 }} disabled={!text.trim()} onClick={() => runParse(text)}>Parse</button>
-          {parsed && <button type="button" className="btn btn-ghost" style={{ marginTop: 0 }} onClick={() => { setText(""); setParsed(null); setMapping({}); setOverrides({}); setOcrSource(0); setOcrError(""); }}>Clear</button>}
+          {parsed && <button type="button" className="btn btn-ghost" style={{ marginTop: 0 }} onClick={() => { setText(""); setParsed(null); setMapping({}); setOverrides({}); }}>Clear</button>}
         </div>
 
         {parsed && (
@@ -279,11 +206,6 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
               ))}
             </div>
 
-            {ocrSource > 0 && (
-              <p style={{ margin: "8px 0 0", fontSize: "0.8rem", color: "var(--ink-2)" }}>
-                🖼 Read from {ocrSource} GT7 screenshot{ocrSource === 1 ? "" : "s"} — verify positions, names, and lap times below before applying.
-              </p>
-            )}
             {built.warnings.map((w, i) => (
               <p key={i} style={{ margin: "8px 0 0", fontSize: "0.8rem", color: "var(--accent-amber, #d29922)" }}>⚠ {w}</p>
             ))}
