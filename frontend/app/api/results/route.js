@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { withAdmin } from "@/lib/serverAuth";
+import { exchangeSkillRatings, isSrSession, reverseSkillRatings, srDeltasByEntry } from "@/lib/skillRatingServer";
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -65,9 +66,17 @@ export const POST = withAdmin(async (request, ctx, user) => {
   const col = db().collection("results");
   const existing = await col.where("race_id", "==", race_id).get();
   const batch = db().batch();
+  // Capture the SR each about-to-be-replaced result previously awarded, keyed by
+  // entry, so the ratings engine can reverse this session's prior contribution
+  // before re-exchanging — keeping SR idempotent across re-saves/corrections.
+  const priorByEntry = {};
   existing.docs
     .filter(d => matchesSession(d.data(), sessionType, savingSession, firstSession))
-    .forEach(d => batch.delete(d.ref));
+    .forEach(d => {
+      const data = d.data();
+      if (data.sr_delta != null) priorByEntry[data.entry_id] = (priorByEntry[data.entry_id] || 0) + Number(data.sr_delta);
+      batch.delete(d.ref);
+    });
 
   const saved = [];
   const now = new Date().toISOString();
@@ -113,6 +122,32 @@ export const POST = withAdmin(async (request, ctx, user) => {
     saved.push({ id: ref.id, ...doc });
   }
   await batch.commit();
+
+  // Skill Rating exchange for main-race sessions (standard Race / heat-format
+  // Feature). Computes the Strength of Field, updates every starter's global
+  // SR, stamps each result's sr_delta, and records the SoF on the race — while
+  // reversing any prior SR from a re-saved session. Preliminary sessions and
+  // qualifying never move SR, so they skip this entirely.
+  if (isSrSession(sessionType)) {
+    try {
+      const raceDoc = await db().collection("races").doc(race_id).get();
+      if (raceDoc.exists) {
+        const { deltasByEntry, eligible } = await exchangeSkillRatings({
+          race: { id: raceDoc.id, ...raceDoc.data() },
+          savedRows: saved,
+          session: savingSession,
+          sessionType,
+          priorByEntry,
+        });
+        for (const row of saved) row.sr_delta = eligible ? (deltasByEntry[row.entry_id] ?? 0) : null;
+      }
+    } catch (err) {
+      // SR is a derived stat — never fail the results save over it. The next
+      // save of this session recomputes cleanly from the reversal logic.
+      console.error("Skill Rating exchange failed", err);
+    }
+  }
+
   return NextResponse.json(saved, { status: 201 });
 });
 
@@ -134,5 +169,17 @@ export const DELETE = withAdmin(async (request) => {
   const batch = db().batch();
   doomed.forEach(d => batch.delete(d.ref));
   await batch.commit();
+
+  // Undo any SR these results awarded and clear the event's recorded SoF when
+  // the deleted session was the SR-bearing main race.
+  if (isSrSession(sessionType)) {
+    try {
+      await reverseSkillRatings(srDeltasByEntry(doomed.map(d => d.data())));
+      await db().collection("races").doc(raceId).update({ strength_of_field: null });
+    } catch (err) {
+      console.error("Skill Rating reversal failed", err);
+    }
+  }
+
   return NextResponse.json({ ok: true, deleted: doomed.length });
 });

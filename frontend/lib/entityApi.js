@@ -113,8 +113,14 @@ export const SPECS = {
   // Global driver pool — identities that exist independently of any season,
   // so an admin can create a driver first and pull them into a series/season
   // (or a race's results) later. See frontend/app/roster/page.js.
+  // `skillRating` is the driver's global, cross-game Elo-style Skill Rating.
+  // It defaults to the baseline (1500) on creation and is maintained by the
+  // stats engine after each main race — see lib/skillRating.js and
+  // lib/skillRatingServer.js. Kept on the global driver so it follows a racer
+  // across every series/game they compete in.
   drivers: { collection: "drivers", parentField: null, sortField: "name",
-             fields: { name: { required: true }, user_id: {}, notes: {} } },
+             fields: { name: { required: true }, user_id: {}, notes: {},
+                       skillRating: { number: true, default: 1500 } } },
   // `number` is the car number — stored as a STRING (max 3 chars) so racing
   // numbers with leading zeros ("01", "001", "0", "00", "000") survive intact
   // instead of being parsed to an integer that drops the zeros.
@@ -150,5 +156,9 @@ export const SPECS = {
                        // letting an admin exclude a session from official stats and/or championship
                        // points (see resolveSessionFlags in lib/standings.js for the defaults).
                        heat_format: {}, heats: {}, consolations: {}, feature_name: { default: "A-Main Feature" },
-                       session_points: {}, session_stats: {}, session_points_enabled: {} } },
+                       session_points: {}, session_stats: {}, session_points_enabled: {},
+                       // `strength_of_field` records the average Skill Rating of the field that
+                       // started this event's main race (Race, or the Feature for heat weekends).
+                       // Written by the stats engine on save; null when SR wasn't exchanged.
+                       strength_of_field: { number: true } } },
 };

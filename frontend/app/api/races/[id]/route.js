@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { makeDocRoutes, SPECS } from "@/lib/entityApi";
 import { db } from "@/lib/firebase";
 import { withAdmin } from "@/lib/serverAuth";
+import { reverseSkillRatings, srDeltasByEntry } from "@/lib/skillRatingServer";
 
 const routes = makeDocRoutes(SPECS.races);
 export const PATCH = routes.PATCH;
@@ -12,6 +13,15 @@ export const PATCH = routes.PATCH;
 export const DELETE = withAdmin(async (request, { params }) => {
   const resultsSnap = await db().collection("results").where("race_id", "==", params.id).get();
   const docs = resultsSnap.docs;
+
+  // Scrub the SR these results awarded before dropping them, so a deleted event
+  // gives every driver their skill rating back (mirrors how points/stats vanish).
+  try {
+    await reverseSkillRatings(srDeltasByEntry(docs.map(d => d.data())));
+  } catch (err) {
+    console.error("Skill Rating reversal failed", err);
+  }
+
   for (let i = 0; i < docs.length; i += 450) {
     const batch = db().batch();
     docs.slice(i, i + 450).forEach(d => batch.delete(d.ref));

@@ -22,6 +22,18 @@ function statusLabel(s) {
   return s === "finished" ? "Running" : (s || "").toUpperCase();
 }
 
+// Coloured +/- SR change a driver earned in this race.
+function SrDelta({ delta }) {
+  if (delta == null) return <span style={{ color: "var(--ink-2)" }}>—</span>;
+  if (delta === 0) return <span style={{ color: "var(--ink-2)" }}>±0</span>;
+  const up = delta > 0;
+  return (
+    <span style={{ color: up ? "var(--positive, #34d399)" : "var(--negative, #f87171)", fontWeight: 600 }}>
+      {up ? "+" : ""}{delta}
+    </span>
+  );
+}
+
 // Maps a session name (the currently viewed tab) back to the edit screen's
 // top-level tab key, which for heat-format events is one of
 // heats/consolation/feature rather than a single "results" tab.
@@ -81,6 +93,11 @@ export default function EventResultsPage() {
   // they never read as back-of-field finishers.
   const finishers = activeResults.filter(r => !r.provisional);
   const provisionals = activeResults.filter(r => r.provisional);
+  // The SR column/banner only appear for the session that actually exchanged
+  // Skill Rating (the main race / Feature) — detected by results carrying an
+  // sr_delta. Strength of Field is recorded on the event.
+  const showSr = finishers.some(r => r.sr_delta != null);
+  const sof = event.strength_of_field;
 
   return (
     <section>
@@ -187,6 +204,17 @@ export default function EventResultsPage() {
         </div>
       ) : activeRace && activeResults.length ? (
         <>
+        {showSr && sof != null && (
+          <div className="hero" style={{ marginTop: 16, marginBottom: 4, display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+            <span style={{ fontSize: "0.78rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-2)" }}>
+              Strength of Field
+            </span>
+            <span style={{ fontSize: "1.8rem", fontWeight: 700, color: "var(--accent-gold)" }}>{sof}</span>
+            <span style={{ fontSize: "0.8rem", color: "var(--ink-2)" }}>
+              average Skill Rating of the {finishers.length} starter{finishers.length === 1 ? "" : "s"}
+            </span>
+          </div>
+        )}
         {finishers.length > 0 && (
         <div className="table-wrap">
           <table className="stats-table">
@@ -194,6 +222,7 @@ export default function EventResultsPage() {
               <tr>
                 <th>Pos</th><th title="Starting position">Start</th><th style={{ textAlign: "left" }}>Driver</th><th style={{ textAlign: "left" }}>Team</th>
                 <th>Race Time</th><th>Int</th><th>Best Lap</th><th>Laps</th><th>Led</th><th>Inc</th><th>Status</th><th>Points</th>
+                {showSr && <th title="Skill Rating change from this race">SR ±</th>}
               </tr>
             </thead>
             <tbody>
@@ -218,6 +247,7 @@ export default function EventResultsPage() {
                   <td>{r.incidents ?? 0}</td>
                   <td>{statusLabel(r.status)}</td>
                   <td className="points-cell">{r.points}</td>
+                  {showSr && <td><SrDelta delta={r.sr_delta} /></td>}
                 </tr>
               ))}
             </tbody>

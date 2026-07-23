@@ -35,7 +35,7 @@ export default function DriverProfilePage() {
   if (error) return <div className="empty-state"><span className="empty-state-icon">🏎</span><p>{error}</p></div>;
   if (!data) return <div className="skeleton" style={{ height: 280 }} />;
 
-  const { profile, all_games, by_game, by_track = [], linked } = data;
+  const { profile, all_games, by_game, by_track = [], linked, skill_rating } = data;
   const stats = gameFilter === "all"
     ? all_games
     : by_game.find(g => g.game_id === gameFilter)?.stats ?? all_games;
@@ -54,6 +54,11 @@ export default function DriverProfilePage() {
             </h2>
           </div>
           {profile.country && <span className="page-badge">{profile.country}</span>}
+          {skill_rating != null && (
+            <Link href="/skill-ratings" className="page-badge" title="Global Skill Rating" style={{ marginLeft: profile.country ? 8 : 0 }}>
+              📈 Skill Rating {skill_rating}
+            </Link>
+          )}
           {!linked && (
             <span className="page-badge" style={{ background: "transparent", border: "1px solid var(--ink-2)", color: "var(--ink-2)", marginLeft: profile.country ? 8 : 0 }}>
               ⛓️‍💥 Not linked to an account
