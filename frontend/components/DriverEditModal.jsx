@@ -29,8 +29,25 @@ export function DriverEditModal({ driver, onClose, onSaved }) {
   function setAlias(i, patch) {
     setAliases(rows => rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   }
-  function addAlias() { setAliases(rows => [...rows, { label: "", value: "", game_id: "" }]); }
+  function addAlias() { setAliases(rows => [...rows, { label: "", value: "", game_id: "", is_display: false }]); }
   function removeAlias(i) { setAliases(rows => rows.filter((_, j) => j !== i)); }
+
+  // Pick which alias is the on-track display name for a given game. Marks row i
+  // as the display alias and clears the flag on every other alias mapped to the
+  // same game, so each game has exactly one display alias.
+  function setDisplayAlias(i) {
+    setAliases(rows => {
+      const gid = rows[i].game_id;
+      return rows.map((r, j) => (r.game_id === gid ? { ...r, is_display: j === i } : r));
+    });
+  }
+
+  // How many aliases are mapped to each game — used to show the "display" chooser
+  // only where there's an actual choice (2+ aliases sharing one game).
+  const gameCounts = aliases.reduce((m, a) => {
+    if (a.game_id) m[a.game_id] = (m[a.game_id] || 0) + 1;
+    return m;
+  }, {});
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -68,7 +85,8 @@ export function DriverEditModal({ driver, onClose, onSaved }) {
           <p style={{ margin: "0 0 8px", fontSize: "0.78rem", color: "var(--ink-2)" }}>
             Platform usernames this driver races under. The Smart Importer matches imported names against
             all of these, so results using any of them map back to this profile. Set a <strong>Game</strong>
-            to have that game's Standings and Results show the on-track name.
+            to have that game's Standings and Results show the on-track name. When more than one alias is
+            mapped to the same game, use <strong>Display</strong> to pick which one shows.
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {aliases.map((a, i) => (
@@ -87,13 +105,27 @@ export function DriverEditModal({ driver, onClose, onSaved }) {
                 />
                 <select
                   value={a.game_id || ""}
-                  onChange={e => setAlias(i, { game_id: e.target.value })}
+                  onChange={e => setAlias(i, { game_id: e.target.value, is_display: false })}
                   title="Game this name is used in"
                   style={{ flex: "0 0 26%", minWidth: 100 }}
                 >
                   <option value="">Any game</option>
                   {games.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                 </select>
+                {a.game_id && gameCounts[a.game_id] > 1 ? (
+                  <label
+                    title="Show this name on this game's Standings & Results"
+                    style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: "0.74rem", color: "var(--ink-2)", cursor: "pointer" }}
+                  >
+                    <input
+                      type="radio"
+                      name={`display-${a.game_id}`}
+                      checked={!!a.is_display}
+                      onChange={() => setDisplayAlias(i)}
+                    />
+                    Display
+                  </label>
+                ) : null}
                 <button type="button" className="btn btn-ghost" title="Remove field"
                   style={{ marginTop: 0, padding: "4px 10px", color: "var(--ink-2)" }}
                   onClick={() => removeAlias(i)}>✕</button>

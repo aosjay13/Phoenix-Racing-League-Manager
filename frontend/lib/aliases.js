@@ -24,9 +24,12 @@ export const DEFAULT_ALIAS_LABELS = [
   "iRacing ID#",
 ];
 
-// Coerce whatever is stored (or missing) into a clean [{label, value, game_id}]
-// array. `game_id` is preserved when present (the game an alias is used in);
-// empty string means "not tied to a game".
+// Coerce whatever is stored (or missing) into a clean
+// [{label, value, game_id, is_display}] array. `game_id` is preserved when
+// present (the game an alias is used in); empty string means "not tied to a
+// game". `is_display` marks, among several aliases mapped to the SAME game
+// (e.g. an iRacing Name and an iRacing ID#), which one is the on-track display
+// name for that game's tables.
 export function normalizeAliases(stored) {
   if (!Array.isArray(stored)) return [];
   return stored
@@ -35,6 +38,7 @@ export function normalizeAliases(stored) {
       label: String(a.label ?? "").trim(),
       value: String(a.value ?? "").trim(),
       game_id: String(a.game_id ?? "").trim(),
+      is_display: !!a.is_display,
     }))
     .filter(a => a.label);
 }
@@ -47,7 +51,7 @@ export function withDefaults(stored) {
   const byLabel = new Map(saved.map(a => [a.label.toLowerCase(), a]));
   const rows = DEFAULT_ALIAS_LABELS.map(label => {
     const hit = byLabel.get(label.toLowerCase());
-    return { label, value: hit?.value || "", game_id: hit?.game_id || "" };
+    return { label, value: hit?.value || "", game_id: hit?.game_id || "", is_display: !!hit?.is_display };
   });
   const defaultsLower = new Set(DEFAULT_ALIAS_LABELS.map(l => l.toLowerCase()));
   for (const a of saved) if (!defaultsLower.has(a.label.toLowerCase())) rows.push(a);
@@ -61,10 +65,12 @@ export function aliasValues(stored) {
 }
 
 // The username this driver races under in a specific game, or null. Used to
-// render the on-track name on game-scoped Standings/Results tables. Picks the
-// first alias whose game_id matches AND that carries an actual username.
+// render the on-track name on game-scoped Standings/Results tables. Among the
+// aliases mapped to this game that carry a username, prefer the one explicitly
+// marked as the display alias (is_display); otherwise fall back to the first.
 export function gameAlias(stored, gameId) {
   if (!gameId) return null;
-  const hit = normalizeAliases(stored).find(a => a.game_id === gameId && a.value);
-  return hit ? hit.value : null;
+  const matches = normalizeAliases(stored).filter(a => a.game_id === gameId && a.value);
+  if (!matches.length) return null;
+  return (matches.find(a => a.is_display) || matches[0]).value;
 }

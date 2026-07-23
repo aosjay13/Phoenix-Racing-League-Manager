@@ -180,26 +180,43 @@ export default function DriverProfilePage() {
         </div>
       )}
 
-      {aliases.length > 0 && (
+      {aliases.length > 0 && (() => {
+        // For each game with 2+ mapped aliases, work out which one is the
+        // on-track display name (the one flagged is_display, else the first) so
+        // we can mark it — matching gameAlias() on the server.
+        const byGame = {};
+        for (const a of aliases) if (a.game_id) (byGame[a.game_id] ??= []).push(a);
+        const displayFor = {};
+        for (const [gid, list] of Object.entries(byGame)) {
+          displayFor[gid] = (list.find(a => a.is_display) || list[0]);
+        }
+        return (
         <div style={{ marginTop: 22 }}>
           <div className="section-header">
             <h3 title="Platform usernames this driver races under">🎮 Aliases</h3>
           </div>
           <div className="form-card" style={{ marginTop: 0 }}>
             <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
-              {aliases.map((a, i) => (
+              {aliases.map((a, i) => {
+                const isDisplay = a.game_id && byGame[a.game_id].length > 1 && displayFor[a.game_id] === a;
+                return (
                 <li key={i} style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
                   <span style={{ color: "var(--ink-2)", fontSize: "0.82rem", minWidth: 120 }}>{a.label}</span>
                   <span style={{ color: "var(--ink-0, var(--ink-1))", fontWeight: 600 }}>{a.value}</span>
                   {a.game_name && (
                     <span className="page-badge" style={{ fontSize: "0.72rem" }}>{a.game_name}</span>
                   )}
+                  {isDisplay && (
+                    <span title={`Shown on ${a.game_name || "this game"}'s tables`} style={{ fontSize: "0.72rem", color: "var(--accent-gold)" }}>★ display</span>
+                  )}
                 </li>
-              ))}
+                );
+              })}
             </ul>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       <div className="tab-row" style={{ marginTop: 24 }}>
         <button className={`tab${view === "career" ? " active" : ""}`} onClick={() => setView("career")}>Career Stats</button>
