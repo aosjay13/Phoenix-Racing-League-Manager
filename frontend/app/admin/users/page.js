@@ -3,29 +3,36 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AdminGate } from "@/components/AdminGate";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useAuth } from "@/components/AuthProvider";
 import { USERS_SEEN_KEY, USERS_SEEN_EVENT } from "@/components/AppShell";
 import { api } from "@/lib/api";
 
-// Searchable driver-profile picker. Typing filters the global roster; picking a
-// row (or "Unlink") reports the chosen driver id (or null) up to the caller.
+// Searchable driver-profile picker rendered as a proper select: a trigger that
+// always shows the current link, and a roomy dropdown listing every driver with
+// its availability (unclaimed / linked here / linked to another account).
 function DriverLinkSelect({ drivers, valueId, valueName, disabled, onChange }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const boxRef = useRef(null);
+  const inputRef = useRef(null);
 
   useEffect(() => {
     function onDown(e) { if (boxRef.current && !boxRef.current.contains(e.target)) { setOpen(false); setText(""); } }
+    function onKey(e) { if (e.key === "Escape") { setOpen(false); setText(""); } }
     document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("keydown", onKey); };
   }, []);
 
+  useEffect(() => { if (open) inputRef.current?.focus(); }, [open]);
+
+  const list = drivers || [];
   const matches = useMemo(() => {
     const q = text.trim().toLowerCase();
-    const list = drivers || [];
     if (!q) return list;
     return list.filter(d => String(d.name || "").toLowerCase().includes(q));
-  }, [drivers, text]);
+  }, [list, text]);
 
   function pick(id, name) {
     setOpen(false);
@@ -34,55 +41,83 @@ function DriverLinkSelect({ drivers, valueId, valueName, disabled, onChange }) {
   }
 
   return (
-    <div ref={boxRef} style={{ position: "relative", minWidth: 220 }}>
-      <input
-        value={open ? text : (valueName || "")}
+    <div ref={boxRef} style={{ position: "relative", minWidth: 260 }}>
+      {/* Trigger — reads like a native <select>, always shows the current link. */}
+      <button
+        type="button"
         disabled={disabled}
-        placeholder={valueId ? valueName : "Search roster to link…"}
-        onChange={e => { setText(e.target.value); setOpen(true); }}
-        onFocus={() => { setOpen(true); setText(""); }}
-        autoComplete="off"
-        style={valueId ? { fontWeight: 600 } : undefined}
-      />
+        onClick={() => setOpen(o => !o)}
+        style={{
+          display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left",
+          padding: "8px 12px", borderRadius: 9, cursor: disabled ? "default" : "pointer",
+          background: "var(--bg-elevated)", border: `1px solid ${valueId ? "var(--border-accent)" : "var(--border)"}`,
+          color: valueId ? "var(--ink-0)" : "var(--ink-2)", opacity: disabled ? 0.6 : 1,
+        }}>
+        <span className="avatar avatar-sm avatar-fallback">{valueId ? "🏎" : "＋"}</span>
+        <span style={{ flex: 1, fontWeight: valueId ? 600 : 400 }}>
+          {valueId ? valueName : "No driver linked — click to link"}
+        </span>
+        <span style={{ color: "var(--ink-2)", fontSize: "0.7rem" }}>▾</span>
+      </button>
+
       {open && !disabled && (
         <div style={{
           position: "absolute", zIndex: 30, top: "calc(100% + 4px)", left: 0, right: 0,
-          maxHeight: 260, overflowY: "auto", background: "var(--bg-elevated)",
-          border: "1px solid var(--border)", borderRadius: 9, boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
+          background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 10,
+          boxShadow: "0 8px 24px rgba(0,0,0,0.35)", overflow: "hidden",
         }}>
-          {valueId && (
+          <div style={{ padding: 8, borderBottom: "1px solid var(--border)" }}>
+            <input
+              ref={inputRef}
+              value={text}
+              placeholder={`Search ${list.length} driver${list.length === 1 ? "" : "s"}…`}
+              onChange={e => setText(e.target.value)}
+              autoComplete="off"
+              style={{ width: "100%" }}
+            />
+          </div>
+          <div style={{ maxHeight: 320, overflowY: "auto" }}>
+            {/* Always-present "no driver" / unlink option. */}
             <button type="button" onClick={() => pick(null, null)}
               style={{
                 display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left",
-                padding: "8px 12px", background: "transparent", border: "none",
-                borderBottom: "1px solid var(--border)", color: "var(--accent-red, #e5484d)", cursor: "pointer",
+                padding: "9px 12px", background: !valueId ? "var(--accent-cyan-dim)" : "transparent",
+                border: "none", borderBottom: "1px solid var(--border)",
+                color: valueId ? "var(--accent-red, #e5484d)" : "var(--ink-1)", cursor: "pointer",
               }}>
-              <span className="avatar avatar-sm avatar-fallback">✕</span>
-              <span>Unlink current profile</span>
+              <span className="avatar avatar-sm avatar-fallback">{valueId ? "✕" : "—"}</span>
+              <span>{valueId ? "Unlink current profile" : "No driver linked"}</span>
             </button>
-          )}
-          {matches.length === 0 ? (
-            <div style={{ padding: "10px 12px", color: "var(--ink-2)", fontSize: "0.85rem" }}>
-              No matching driver in the roster.
-            </div>
-          ) : matches.map(d => (
-            <button key={d.id} type="button" onClick={() => pick(d.id, d.name)}
-              style={{
-                display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left",
-                padding: "8px 12px", background: d.id === valueId ? "var(--accent-cyan-dim)" : "transparent",
-                border: "none", color: "var(--ink-0)", cursor: "pointer",
-              }}>
-              <span className="avatar avatar-sm avatar-fallback">🏎</span>
-              <span style={{ flex: 1 }}>
-                <strong style={{ display: "block" }}>{d.name}</strong>
-                {d.user_id && d.user_id !== valueId && (
-                  <span style={{ fontSize: "0.72rem", color: "var(--accent-amber, #ffb224)" }}>
-                    already linked to another account — picking overrides it
+
+            {matches.length === 0 ? (
+              <div style={{ padding: "12px", color: "var(--ink-2)", fontSize: "0.85rem" }}>
+                No driver matches “{text}”.
+              </div>
+            ) : matches.map(d => {
+              const isCurrent = d.id === valueId;
+              const takenElsewhere = d.user_id && !isCurrent;
+              return (
+                <button key={d.id} type="button" onClick={() => pick(d.id, d.name)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left",
+                    padding: "9px 12px", background: isCurrent ? "var(--accent-cyan-dim)" : "transparent",
+                    border: "none", borderBottom: "1px solid var(--border)", color: "var(--ink-0)", cursor: "pointer",
+                  }}>
+                  <span className="avatar avatar-sm avatar-fallback">🏎</span>
+                  <span style={{ flex: 1 }}>
+                    <strong style={{ display: "block" }}>{d.name}</strong>
+                    <span style={{
+                      fontSize: "0.72rem",
+                      color: isCurrent ? "var(--accent-cyan)" : takenElsewhere ? "var(--accent-amber, #ffb224)" : "var(--ink-2)",
+                    }}>
+                      {isCurrent ? "✓ Linked to this account" : takenElsewhere ? "Linked to another account — picking overrides it" : "Available to link"}
+                    </span>
                   </span>
-                )}
-              </span>
-            </button>
-          ))}
+                  {isCurrent && <span style={{ color: "var(--accent-cyan)" }}>✓</span>}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
@@ -98,6 +133,7 @@ function UserAccountsInner() {
   const [reqBusy, setReqBusy] = useState({});   // request id -> true while resolving
   const [error, setError] = useState(null);
   const [toast, setToast] = useState(null);
+  const [deletingUser, setDeletingUser] = useState(null);   // account pending deletion
   // Timestamp of the admin's previous visit, captured before the effect below
   // stamps "now" — lets us flag the rows that signed up since then as NEW.
   const prevSeenRef = useRef(typeof window !== "undefined" ? (localStorage.getItem(USERS_SEEN_KEY) || "") : "");
@@ -162,6 +198,13 @@ function UserAccountsInner() {
     } finally {
       setReqBusy(b => ({ ...b, [req.id]: false }));
     }
+  }
+
+  async function deleteAccount(u) {
+    await api(`/api/admin/users/${u.uid}`, { method: "DELETE" });
+    await load();
+    window.dispatchEvent(new Event(USERS_SEEN_EVENT));
+    showToast("success", `Deleted ${u.display_name || u.email || "account"}.`);
   }
 
   function toggleAdmin(u) {
@@ -256,6 +299,7 @@ function UserAccountsInner() {
                     <th style={{ textAlign: "left" }}>Email</th>
                     <th style={{ textAlign: "left", minWidth: 240 }}>Linked Driver Profile</th>
                     <th style={{ textAlign: "center" }}>Admin</th>
+                    <th style={{ textAlign: "center" }}>Manage</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -304,6 +348,21 @@ function UserAccountsInner() {
                             </button>
                           )}
                         </td>
+                        <td style={{ textAlign: "center" }}>
+                          {u.env_admin || isMe ? (
+                            <span style={{ color: "var(--ink-2)", fontSize: "0.78rem" }} title={isMe ? "You can't delete your own account" : "Permanent admin — can't be deleted"}>—</span>
+                          ) : (
+                            <button
+                              type="button"
+                              className="btn btn-danger"
+                              style={{ marginTop: 0, padding: "6px 14px" }}
+                              disabled={isBusy}
+                              onClick={() => setDeletingUser(u)}
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
@@ -311,6 +370,16 @@ function UserAccountsInner() {
               </table>
           </div>
         </>
+      )}
+
+      {deletingUser && (
+        <ConfirmDialog
+          title="Delete Account"
+          message={`Permanently delete ${deletingUser.display_name || deletingUser.email || "this account"}? Their linked driver profile returns to the unclaimed pool (race results stay on record), and they'll be signed out and unable to sign back in. This can't be undone.`}
+          confirmLabel="Delete Account"
+          onConfirm={() => deleteAccount(deletingUser)}
+          onClose={() => setDeletingUser(null)}
+        />
       )}
     </section>
   );

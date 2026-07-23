@@ -9,19 +9,31 @@ import { DriverEditModal } from "@/components/DriverEditModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 export default function DriversPage() {
-  const { isAdmin } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [drivers, setDrivers] = useState(null);
   const [users, setUsers] = useState([]);
+  const [myDriverId, setMyDriverId] = useState(null);      // driver linked to me
+  const [pendingIds, setPendingIds] = useState([]);        // driver ids I've requested
+  const [claimBusy, setClaimBusy] = useState({});          // driver id -> true
+  const [toast, setToast] = useState(null);
   const [creating, setCreating] = useState(false); // new-driver modal open
   const [editing, setEditing] = useState(null);   // driver row being edited
   const [deleting, setDeleting] = useState(null); // driver row being deleted
+  const [unclaiming, setUnclaiming] = useState(false); // confirm unclaim dialog
+
+  function showToast(type, msg) {
+    setToast({ type, msg });
+    setTimeout(() => setToast(null), 3500);
+  }
 
   // The global driver pool is the full roster of everyone who has raced,
   // whether or not they've made an account. Join with the account directory so
   // linked drivers can show their profile photo and country.
   function load() {
-    return Promise.all([api("/api/drivers"), api("/api/users")])
-      .then(([pool, accts]) => {
+    const calls = [api("/api/drivers"), api("/api/users")];
+    if (user) calls.push(api("/api/claim-requests").catch(() => []));
+    return Promise.all(calls)
+      .then(([pool, accts, myReqs]) => {
         setUsers(accts);
         const byUid = Object.fromEntries(accts.map(u => [u.uid, u]));
         const rows = pool.map(d => {
@@ -34,15 +46,58 @@ export default function DriversPage() {
             photo_url: account?.photo_url || null,
             country: account?.country || null,
             linked: !!account,
+            mine: !!user && d.user_id === user.uid,
           };
         });
         rows.sort((a, b) => String(a.name).localeCompare(String(b.name)));
         setDrivers(rows);
+        setMyDriverId(user ? (pool.find(d => d.user_id === user.uid)?.id || null) : null);
+        setPendingIds((myReqs || []).filter(r => r.status === "pending").map(r => r.driver_id));
       })
       .catch(() => setDrivers([]));
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Once you've claimed a driver (linked, or a request is pending), the claim
+  // buttons on the other rows disappear — you get one driver identity per account.
+  const hasClaimed = !!myDriverId || pendingIds.length > 0;
+
+  async function claimDriver(d) {
+    setClaimBusy(b => ({ ...b, [d.id]: true }));
+    try {
+      await api("/api/claim-requests", { method: "POST", body: { driver_id: d.id } });
+      setPendingIds(ids => [...ids, d.id]);
+      showToast("success", `Claim request sent for ${d.name}. An admin will review it.`);
+    } catch (err) {
+      showToast("error", err.message);
+    } finally {
+      setClaimBusy(b => ({ ...b, [d.id]: false }));
+    }
+  }
+
+  // Rendered inside DirectoryRow for signed-in non-admins (admins keep Edit/Delete).
+  function claimActions(d) {
+    if (!user || isAdmin) return null;
+    if (d.mine) {
+      return <button type="button" className="btn btn-ghost" onClick={() => setUnclaiming(true)}>Unclaim</button>;
+    }
+    if (pendingIds.includes(d.id)) {
+      return (
+        <span className="page-badge" style={{ background: "rgba(255,178,36,0.14)", color: "var(--accent-amber, #ffb224)", border: "1px solid rgba(255,178,36,0.3)" }}>
+          ⏳ Requested
+        </span>
+      );
+    }
+    if (!hasClaimed && !d.linked) {
+      return (
+        <button type="button" className="btn btn-primary" disabled={!!claimBusy[d.id]} onClick={() => claimDriver(d)}>
+          {claimBusy[d.id] ? "…" : "Claim driver"}
+        </button>
+      );
+    }
+    return null;
+  }
 
   async function deleteDriver(driver) {
     await api(`/api/drivers/${driver.id}`, { method: "DELETE" });
@@ -79,6 +134,13 @@ export default function DriversPage() {
         Everyone who has raced in the league. Open a profile to see career stats across all games.
         {" "}{linkedCount} of {drivers.length} have linked a player account.
       </p>
+      {user && !isAdmin && !hasClaimed && (
+        <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.85rem" }}>
+          Is one of these you? Hit <strong>Claim driver</strong> to request it — an admin approves before it's linked to your account.
+        </p>
+      )}
+
+      {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
 
       {drivers.length === 0 ? (
         <div className="empty-state"><span className="empty-state-icon">🏎</span><p>No drivers yet.</p></div>
@@ -98,7 +160,7 @@ export default function DriversPage() {
                   <button type="button" className="btn btn-ghost" onClick={() => setEditing(d)}>Edit</button>
                   <button type="button" className="btn btn-danger" onClick={() => setDeleting(d)}>Delete</button>
                 </>
-              ) : null}
+              ) : claimActions(d)}
             />
           ))}
         </div>
@@ -125,6 +187,19 @@ export default function DriversPage() {
           confirmLabel="Delete Driver"
           onConfirm={() => deleteDriver(deleting)}
           onClose={() => setDeleting(null)}
+        />
+      )}
+      {unclaiming && (
+        <ConfirmDialog
+          title="Unclaim Driver"
+          message="Unlink your account from this driver profile? Your race stats stay on record, but the profile returns to the unclaimed pool and you can claim a different one."
+          confirmLabel="Unclaim"
+          onConfirm={async () => {
+            await api("/api/users/me/driver", { method: "DELETE" });
+            await load();
+            showToast("success", "You've unclaimed your driver profile.");
+          }}
+          onClose={() => setUnclaiming(false)}
         />
       )}
     </section>
