@@ -6,10 +6,16 @@ import { Modal } from "@/components/Modal";
 import { ImageUpload } from "@/components/ImageUpload";
 import { TrackSelect } from "@/components/TrackSelect";
 
-const blankRace = { name: "", track: "", track_id: "", date: "", round_number: "", track_logo_url: "", sessions: "Race", car: "" };
+const blankRace = {
+  name: "", track: "", track_id: "", date: "", round_number: "", track_logo_url: "", sessions: "Race", car: "",
+  total_laps: "", heat_format: false, heats: "", consolations: "", feature_name: "A-Main Feature",
+};
 
+function toArray(str) {
+  return String(str || "").split(",").map(s => s.trim()).filter(Boolean);
+}
 function sessionsToArray(str) {
-  const list = String(str || "").split(",").map(s => s.trim()).filter(Boolean);
+  const list = toArray(str);
   return list.length ? list : ["Race"];
 }
 
@@ -39,7 +45,17 @@ export function RaceCreateModal({ seasonId, defaultRound, onClose, onCreated }) 
     setBusy(true);
     setError(null);
     try {
-      const body = { ...form, sessions: sessionsToArray(form.sessions), season_id: seasonId };
+      const heats = toArray(form.heats);
+      const body = {
+        ...form,
+        sessions: sessionsToArray(form.sessions),
+        total_laps: form.total_laps === "" ? 0 : Number(form.total_laps),
+        heat_format: !!form.heat_format,
+        heats: form.heat_format ? (heats.length ? heats : ["Heat 1"]) : [],
+        consolations: form.heat_format ? toArray(form.consolations) : [],
+        feature_name: form.feature_name.trim() || "A-Main Feature",
+        season_id: seasonId,
+      };
       const race = await api("/api/races", { method: "POST", body });
       onCreated(race);
     } catch (err) {
@@ -62,10 +78,33 @@ export function RaceCreateModal({ seasonId, defaultRound, onClose, onCreated }) 
           <input type="number" min="1" required value={form.round_number} onChange={e => setForm(f => ({ ...f, round_number: e.target.value }))} /></div>
         <div className="field"><label>Date</label>
           <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} /></div>
-        <div className="field"><label>Races in this event — comma-separated (e.g. Race 1, Race 2, Sprint)</label>
-          <input value={form.sessions} placeholder="Race" onChange={e => setForm(f => ({ ...f, sessions: e.target.value }))} /></div>
+        <div className="field"><label>Total Race Laps</label>
+          <input type="number" min="0" value={form.total_laps} placeholder="e.g. 100" onChange={e => setForm(f => ({ ...f, total_laps: e.target.value }))} />
+          <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
+            Used to auto-count laps completed: lead-lap finishers get the full total, laps-down (e.g. 2L) and DNFs subtract from it.
+          </span></div>
         <div className="field"><label>Car Type</label>
           <input value={form.car} placeholder="Leave blank to use the season's car" onChange={e => setForm(f => ({ ...f, car: e.target.value }))} /></div>
+        <div className="field" style={{ display: "flex", alignItems: "center", gap: 8, flexDirection: "row" }}>
+          <input type="checkbox" id="heat_format" checked={form.heat_format}
+            onChange={e => setForm(f => ({ ...f, heat_format: e.target.checked }))}
+            style={{ width: 18, height: 18, accentColor: "var(--accent-cyan)" }} />
+          <label htmlFor="heat_format" style={{ margin: 0 }}>This event uses heat racing (Heats → Consolation → Feature)</label>
+        </div>
+
+        {form.heat_format ? (
+          <>
+            <div className="field"><label>Heats — comma-separated (e.g. Heat 1, Heat 2)</label>
+              <input value={form.heats} placeholder="Heat 1, Heat 2" onChange={e => setForm(f => ({ ...f, heats: e.target.value }))} /></div>
+            <div className="field"><label>Consolation races — comma-separated (e.g. C-Main, B-Main)</label>
+              <input value={form.consolations} placeholder="B-Main" onChange={e => setForm(f => ({ ...f, consolations: e.target.value }))} /></div>
+            <div className="field"><label>Feature name</label>
+              <input value={form.feature_name} placeholder="A-Main Feature" onChange={e => setForm(f => ({ ...f, feature_name: e.target.value }))} /></div>
+          </>
+        ) : (
+          <div className="field"><label>Races in this event — comma-separated (e.g. Race 1, Race 2, Sprint)</label>
+            <input value={form.sessions} placeholder="Race" onChange={e => setForm(f => ({ ...f, sessions: e.target.value }))} /></div>
+        )}
         <ImageUpload label="Track Logo" kind="track-logo" value={form.track_logo_url} onUploaded={url => setForm(f => ({ ...f, track_logo_url: url }))} />
         {error && <p style={{ color: "#e5484d", fontSize: "0.85rem" }}>{error}</p>}
         <button className="btn btn-primary" type="submit" disabled={busy}>{busy ? "Saving…" : "Add Race"}</button>

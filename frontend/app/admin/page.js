@@ -54,8 +54,11 @@ function ItemRow({ logo, name, onEdit, onDelete, editing, children }) {
   );
 }
 
+function toArray(str) {
+  return String(str || "").split(",").map(s => s.trim()).filter(Boolean);
+}
 function sessionsToArray(str) {
-  const list = String(str || "").split(",").map(s => s.trim()).filter(Boolean);
+  const list = toArray(str);
   return list.length ? list : ["Race"];
 }
 
@@ -177,7 +180,10 @@ function AdminInner() {
       loadTemplates();
     } catch (err) { showToast("error", err.message); }
   }
-  const blankRace = { name: "", track: "", track_id: "", date: "", round_number: "", track_logo_url: "", sessions: "Race", car: "" };
+  const blankRace = {
+    name: "", track: "", track_id: "", date: "", round_number: "", track_logo_url: "", sessions: "Race", car: "",
+    total_laps: "", heat_format: false, heats: "", consolations: "", feature_name: "A-Main Feature",
+  };
   const [raceForm, setRaceForm] = useState(blankRace);
 
   const blankTrack = { name: "", location: "", length: "", track_type: "", logo_url: "", notes: "" };
@@ -409,7 +415,16 @@ function AdminInner() {
         <Panel title="Races" step={4} muted={!seasonId} sub={seasonId ? `In ${season?.name}` : "Select a season above first"}>
           <form onSubmit={e => {
             e.preventDefault();
-            const body = { ...raceForm, sessions: sessionsToArray(raceForm.sessions) };
+            const heats = toArray(raceForm.heats);
+            const body = {
+              ...raceForm,
+              sessions: sessionsToArray(raceForm.sessions),
+              total_laps: raceForm.total_laps === "" ? 0 : Number(raceForm.total_laps),
+              heat_format: !!raceForm.heat_format,
+              heats: raceForm.heat_format ? (heats.length ? heats : ["Heat 1"]) : [],
+              consolations: raceForm.heat_format ? toArray(raceForm.consolations) : [],
+              feature_name: raceForm.feature_name.trim() || "A-Main Feature",
+            };
             if (!editIds.race) body.season_id = seasonId;
             save("/api/races", body, editIds.race,
               () => { setRaceForm(blankRace); setEditId("race", null); });
@@ -426,12 +441,38 @@ function AdminInner() {
               <input type="number" min="1" required disabled={!seasonId} value={raceForm.round_number} onChange={e => setRaceForm(f => ({ ...f, round_number: e.target.value }))} /></div>
             <div className="field"><label>Date</label>
               <input type="date" disabled={!seasonId} value={raceForm.date} onChange={e => setRaceForm(f => ({ ...f, date: e.target.value }))} /></div>
-            <div className="field"><label>Races in this event — comma-separated (e.g. Race 1, Race 2, Sprint)</label>
-              <input disabled={!seasonId} value={raceForm.sessions} placeholder="Race"
-                onChange={e => setRaceForm(f => ({ ...f, sessions: e.target.value }))} /></div>
+            <div className="field"><label>Total Race Laps</label>
+              <input type="number" min="0" disabled={!seasonId} value={raceForm.total_laps} placeholder="e.g. 100"
+                onChange={e => setRaceForm(f => ({ ...f, total_laps: e.target.value }))} />
+              <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
+                Used to auto-count laps completed: lead-lap finishers get the full total, laps-down (e.g. 2L) and DNFs subtract from it.
+              </span></div>
             <div className="field"><label>Car Type</label>
               <input disabled={!seasonId} value={raceForm.car} placeholder="Leave blank to use the season's car"
                 onChange={e => setRaceForm(f => ({ ...f, car: e.target.value }))} /></div>
+            <div className="field" style={{ display: "flex", alignItems: "center", gap: 8, flexDirection: "row" }}>
+              <input type="checkbox" id="race_heat_format" disabled={!seasonId} checked={raceForm.heat_format}
+                onChange={e => setRaceForm(f => ({ ...f, heat_format: e.target.checked }))}
+                style={{ width: 18, height: 18, accentColor: "var(--accent-cyan)" }} />
+              <label htmlFor="race_heat_format" style={{ margin: 0 }}>This event uses heat racing (Heats → Consolation → Feature)</label>
+            </div>
+            {raceForm.heat_format ? (
+              <>
+                <div className="field"><label>Heats — comma-separated (e.g. Heat 1, Heat 2)</label>
+                  <input disabled={!seasonId} value={raceForm.heats} placeholder="Heat 1, Heat 2"
+                    onChange={e => setRaceForm(f => ({ ...f, heats: e.target.value }))} /></div>
+                <div className="field"><label>Consolation races — comma-separated (e.g. C-Main, B-Main)</label>
+                  <input disabled={!seasonId} value={raceForm.consolations} placeholder="B-Main"
+                    onChange={e => setRaceForm(f => ({ ...f, consolations: e.target.value }))} /></div>
+                <div className="field"><label>Feature name</label>
+                  <input disabled={!seasonId} value={raceForm.feature_name} placeholder="A-Main Feature"
+                    onChange={e => setRaceForm(f => ({ ...f, feature_name: e.target.value }))} /></div>
+              </>
+            ) : (
+              <div className="field"><label>Races in this event — comma-separated (e.g. Race 1, Race 2, Sprint)</label>
+                <input disabled={!seasonId} value={raceForm.sessions} placeholder="Race"
+                  onChange={e => setRaceForm(f => ({ ...f, sessions: e.target.value }))} /></div>
+            )}
             <ImageUpload label="Track Logo" kind="track-logo" value={raceForm.track_logo_url} onUploaded={url => setRaceForm(f => ({ ...f, track_logo_url: url }))} />
             <button className="btn btn-primary" type="submit" disabled={!seasonId}>{editIds.race ? "Save Changes" : "Add Race"}</button>
             {editIds.race && (
@@ -452,6 +493,11 @@ function AdminInner() {
                   track_logo_url: r.track_logo_url || "",
                   sessions: Array.isArray(r.sessions) && r.sessions.length ? r.sessions.join(", ") : "Race",
                   car: r.car || "",
+                  total_laps: r.total_laps != null ? String(r.total_laps) : "",
+                  heat_format: !!r.heat_format,
+                  heats: Array.isArray(r.heats) ? r.heats.join(", ") : "",
+                  consolations: Array.isArray(r.consolations) ? r.consolations.join(", ") : "",
+                  feature_name: r.feature_name || "A-Main Feature",
                 });
               }}
               onDelete={() => remove(`/api/races/${r.id}`, `Delete race "${r.name}"?`)} />)}
