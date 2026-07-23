@@ -86,7 +86,7 @@ export default function DriverProfilePage() {
   if (error) return <div className="empty-state"><span className="empty-state-icon">🏎</span><p>{error}</p></div>;
   if (!data) return <div className="skeleton" style={{ height: 280 }} />;
 
-  const { profile, all_games, by_game, by_track = [], linked, skill_ratings_by_game = [] } = data;
+  const { profile, all_games, by_game, by_track = [], linked, skill_ratings_by_game = [], aliases = [] } = data;
   const stats = gameFilter === "all"
     ? all_games
     : by_game.find(g => g.game_id === gameFilter)?.stats ?? all_games;
@@ -176,6 +176,27 @@ export default function DriverProfilePage() {
                 </div>
               </article>
             ))}
+          </div>
+        </div>
+      )}
+
+      {aliases.length > 0 && (
+        <div style={{ marginTop: 22 }}>
+          <div className="section-header">
+            <h3 title="Platform usernames this driver races under">🎮 Aliases</h3>
+          </div>
+          <div className="form-card" style={{ marginTop: 0 }}>
+            <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+              {aliases.map((a, i) => (
+                <li key={i} style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+                  <span style={{ color: "var(--ink-2)", fontSize: "0.82rem", minWidth: 120 }}>{a.label}</span>
+                  <span style={{ color: "var(--ink-0, var(--ink-1))", fontWeight: 600 }}>{a.value}</span>
+                  {a.game_name && (
+                    <span className="page-badge" style={{ fontSize: "0.72rem" }}>{a.game_name}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
           </div>
         </div>
       )}

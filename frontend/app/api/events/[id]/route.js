@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { buildQualPosMap, configForTemplate, decorateRaceBonuses, isQualifying, pointsFor, resolveSeasonConfig } from "@/lib/standings";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
+import { gameAlias } from "@/lib/aliases";
 
 // Full detail for one event: a dedicated qualifying session plus every race
 // session (including heat/consolation/feature sessions for heat-format
@@ -27,6 +28,20 @@ export async function GET(request, { params }) {
   const teamsById = Object.fromEntries(teamsSnap.docs.map(d => [d.id, d.data()]));
   const all = decorateRaceBonuses(resultsSnap.docs.map(d => d.data()));
 
+  // Contextual name rendering: this event belongs to one game (season.game_id),
+  // so resolve each driver's alias for that game (their on-track name) and stamp
+  // it on every result row — null when none is mapped, so the client falls back
+  // to the primary profile name.
+  const gameId = season?.game_id || null;
+  const aliasByDriver = {};
+  if (gameId) {
+    const driverIds = [...new Set(all.map(r => entriesById[r.entry_id]?.driver_id).filter(Boolean))];
+    await Promise.all(driverIds.map(async id => {
+      const doc = await db().collection("drivers").doc(id).get();
+      if (doc.exists) aliasByDriver[id] = gameAlias(doc.data().aliases, gameId);
+    }));
+  }
+
   const joinEntry = r => {
     const entry = entriesById[r.entry_id] || {};
     return {
@@ -36,6 +51,7 @@ export async function GET(request, { params }) {
       driver_id: entry.driver_id ?? null,
       user_id: entry.user_id ?? null,
       team: teamsById[entry.team_id]?.name ?? null,
+      game_alias: entry.driver_id ? (aliasByDriver[entry.driver_id] ?? null) : null,
     };
   };
 

@@ -1,7 +1,12 @@
 // Driver aliases / connected accounts — the platform usernames one human racer
 // uses across games. Stored on the global driver doc (drivers/<id>.aliases) as
-// an ordered array of { label, value } pairs, so the set is fully extensible:
-// admins can edit values, add custom platforms, or remove fields entirely.
+// an ordered array of { label, value, game_id } objects, so the set is fully
+// extensible: admins can edit values, add custom platforms, remove fields, and
+// tie an alias to the specific game it's used in. `game_id` is optional (""/
+// null = not tied to any game); when set it lets the Standings/Results tables
+// for that game render the on-track name instead of the primary profile name.
+// (`label`/`value` are this app's field names for what the spec calls
+// platform/username; `game_id` is the mapped_game_id.)
 //
 // The importer (CSV paste today, any OCR path in future) matches an imported
 // name against a driver's primary name AND every alias value — so a GT7 export
@@ -19,12 +24,18 @@ export const DEFAULT_ALIAS_LABELS = [
   "iRacing ID#",
 ];
 
-// Coerce whatever is stored (or missing) into a clean [{label, value}] array.
+// Coerce whatever is stored (or missing) into a clean [{label, value, game_id}]
+// array. `game_id` is preserved when present (the game an alias is used in);
+// empty string means "not tied to a game".
 export function normalizeAliases(stored) {
   if (!Array.isArray(stored)) return [];
   return stored
     .filter(a => a && typeof a === "object")
-    .map(a => ({ label: String(a.label ?? "").trim(), value: String(a.value ?? "").trim() }))
+    .map(a => ({
+      label: String(a.label ?? "").trim(),
+      value: String(a.value ?? "").trim(),
+      game_id: String(a.game_id ?? "").trim(),
+    }))
     .filter(a => a.label);
 }
 
@@ -34,10 +45,10 @@ export function normalizeAliases(stored) {
 export function withDefaults(stored) {
   const saved = normalizeAliases(stored);
   const byLabel = new Map(saved.map(a => [a.label.toLowerCase(), a]));
-  const rows = DEFAULT_ALIAS_LABELS.map(label => ({
-    label,
-    value: byLabel.get(label.toLowerCase())?.value || "",
-  }));
+  const rows = DEFAULT_ALIAS_LABELS.map(label => {
+    const hit = byLabel.get(label.toLowerCase());
+    return { label, value: hit?.value || "", game_id: hit?.game_id || "" };
+  });
   const defaultsLower = new Set(DEFAULT_ALIAS_LABELS.map(l => l.toLowerCase()));
   for (const a of saved) if (!defaultsLower.has(a.label.toLowerCase())) rows.push(a);
   return rows;
@@ -47,4 +58,13 @@ export function withDefaults(stored) {
 // against alongside the driver's primary name.
 export function aliasValues(stored) {
   return normalizeAliases(stored).map(a => a.value).filter(Boolean);
+}
+
+// The username this driver races under in a specific game, or null. Used to
+// render the on-track name on game-scoped Standings/Results tables. Picks the
+// first alias whose game_id matches AND that carries an actual username.
+export function gameAlias(stored, gameId) {
+  if (!gameId) return null;
+  const hit = normalizeAliases(stored).find(a => a.game_id === gameId && a.value);
+  return hit ? hit.value : null;
 }

@@ -4,6 +4,7 @@ import { db } from "@/lib/firebase";
 import { buildCareerProfile } from "@/lib/careerStatsServer";
 import { computeGameSkillRatings } from "@/lib/skillRatingServer";
 import { SR_BASELINE } from "@/lib/skillRating";
+import { normalizeAliases } from "@/lib/aliases";
 
 const routes = makeDocRoutes(SPECS.drivers);
 export const PATCH = routes.PATCH;
@@ -54,6 +55,19 @@ export async function GET(request, { params }) {
     number: account?.number ?? null,
   };
 
+  // Publicly-displayed connected-account aliases (Discord/PSN/Xbox/…), each
+  // optionally mapped to a game. Decorate every mapped alias with its game name
+  // so the profile can label it without a second round trip. Only aliases that
+  // carry an actual username are shown.
+  let aliases = normalizeAliases(driver?.aliases).filter(a => a.value);
+  if (aliases.some(a => a.game_id)) {
+    const gamesSnap = await db().collection("games").get();
+    const gameNameById = Object.fromEntries(gamesSnap.docs.map(d => [d.id, d.data().name]));
+    aliases = aliases.map(a => ({ ...a, game_name: a.game_id ? (gameNameById[a.game_id] ?? null) : null }));
+  } else {
+    aliases = aliases.map(a => ({ ...a, game_name: null }));
+  }
+
   const career = await buildCareerProfile({ driverId, userId: linkedUserId });
 
   // Per-game Skill Ratings for the profile's "Skill Ratings" section: one entry
@@ -82,6 +96,7 @@ export async function GET(request, { params }) {
     uid: linkedUserId,
     linked: !!(linkedUserId && account),
     skill_ratings_by_game,
+    aliases,
     profile,
     ...career,
   });
