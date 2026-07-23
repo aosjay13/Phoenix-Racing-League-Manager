@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { makeDocRoutes, SPECS } from "@/lib/entityApi";
 import { db } from "@/lib/firebase";
 import { buildCareerProfile } from "@/lib/careerStatsServer";
-import { ratingForGame } from "@/lib/skillRating";
+import { computeGameSkillRatings } from "@/lib/skillRatingServer";
+import { SR_BASELINE } from "@/lib/skillRating";
 
 const routes = makeDocRoutes(SPECS.drivers);
 export const PATCH = routes.PATCH;
@@ -56,31 +57,32 @@ export async function GET(request, { params }) {
   const career = await buildCareerProfile({ driverId, userId: linkedUserId });
 
   // Per-game Skill Ratings for the profile's "Skill Ratings" section: one entry
-  // per game the driver has raced in (from career.by_game), each with the
-  // driver's current SR in that game and their most-recent trend. A game with a
-  // stored rating is "ranked"; one they've raced but that never moved SR shows
-  // the 1500 baseline as unranked. Sorted strongest-first.
-  const ratingsMap = (driver && driver.skillRatings && typeof driver.skillRatings === "object") ? driver.skillRatings : {};
-  const skill_ratings_by_game = (career.by_game || []).map(g => ({
-    game_id: g.game_id,
-    game_name: g.game_name,
-    game_logo_url: g.game_logo_url ?? null,
-    rating: ratingForGame(ratingsMap, g.game_id),
-    ranked: Object.prototype.hasOwnProperty.call(ratingsMap, g.game_id),
-    last_delta: (career.sr_trend_by_game && career.sr_trend_by_game[g.game_id]) ?? null,
-  })).sort((a, b) => b.rating - a.rating);
-
-  const { sr_trend_by_game, ...careerPublic } = career;
+  // per game the driver has raced in (from career.by_game). Rating and trend
+  // come from the authoritative chronological replay (computeGameSkillRatings),
+  // the same source the leaderboard uses — so the two always agree and neither
+  // depends on the order results were entered. A game the driver raced but that
+  // never moved their SR shows the 1500 baseline as unranked. Sorted strongest-
+  // first.
+  const games = career.by_game || [];
+  const replays = await Promise.all(games.map(g => computeGameSkillRatings(g.game_id)));
+  const skill_ratings_by_game = games.map((g, i) => {
+    const rec = driverId ? replays[i].ratings[driverId] : null;
+    return {
+      game_id: g.game_id,
+      game_name: g.game_name,
+      game_logo_url: g.game_logo_url ?? null,
+      rating: rec ? rec.rating : SR_BASELINE,
+      ranked: !!rec,
+      last_delta: rec ? rec.last_delta : null,
+    };
+  }).sort((a, b) => b.rating - a.rating);
 
   return NextResponse.json({
     driver_id: driverId,
     uid: linkedUserId,
     linked: !!(linkedUserId && account),
-    // Raw per-game map ({ game_id: rating }) kept for any consumer that needs a
-    // direct lookup; the profile UI uses skill_ratings_by_game below.
-    skill_ratings: ratingsMap,
     skill_ratings_by_game,
     profile,
-    ...careerPublic,
+    ...career,
   });
 }

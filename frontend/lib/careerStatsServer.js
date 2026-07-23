@@ -42,8 +42,6 @@ export async function buildCareerProfile({ driverId = null, userId = null }) {
   const perGame = {};       // gameId -> results
   const titlesPerGame = {}; // gameId -> count
   const perTrack = {};      // trackKey -> { track_id, track_name, results[] }
-  const srTrendByGame = {}; // gameId -> delta of the driver's most recent SR race
-  const srTrendKey = {};    // gameId -> ordering key of that race (internal)
   const allResults = [];
   let totalTitles = 0;
   const templatesById = await fetchTemplatesById();
@@ -74,20 +72,6 @@ export async function buildCareerProfile({ driverId = null, userId = null }) {
       }));
     (perGame[gameId] ??= []).push(...mine);
     allResults.push(...mine);
-
-    // Per-game SR trend: the sr_delta of this driver's most recent SR-bearing
-    // race in this game — (SR after) − (SR before). Only races they started
-    // carry a delta, ordered by race date, then round, then save time. Matches
-    // the leaderboard's trend so the profile and leaderboard agree.
-    for (const r of mine) {
-      if (r.sr_delta == null) continue;
-      const race = racesById[r.race_id] || {};
-      const key = [race.date || "", String(Number(race.round_number) || 0).padStart(6, "0"), r.created_at || ""].join("|");
-      if (srTrendKey[gameId] == null || key > srTrendKey[gameId]) {
-        srTrendKey[gameId] = key;
-        srTrendByGame[gameId] = Number(r.sr_delta);
-      }
-    }
 
     // Bucket the driver's results by the venue each race was held at, so the
     // profile can show per-track performance. Races are keyed by their linked
@@ -149,7 +133,6 @@ export async function buildCareerProfile({ driverId = null, userId = null }) {
     all_games: aggregateCareerStats(allResults, totalTitles),
     by_game: byGame,
     by_track: byTrack,
-    sr_trend_by_game: srTrendByGame,
     seasons_raced: seasonIds.length,
   };
 }

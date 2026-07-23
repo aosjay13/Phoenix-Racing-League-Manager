@@ -1,6 +1,6 @@
 import { db } from "@/lib/firebase";
 import { resolveSessionFlags } from "@/lib/standings";
-import { clampSr, computeSrDeltas, ratingForGame, strengthOfField } from "@/lib/skillRating";
+import { clampSr, computeSrDeltas, ratingForGame, strengthOfField, SR_BASELINE } from "@/lib/skillRating";
 
 // Session types whose results move Skill Rating: the standard Race, or the
 // Feature/A-Main of a heat-format weekend. Preliminary sessions (heats,
@@ -162,4 +162,112 @@ export async function reverseSkillRatings(priorByEntry, gameId) {
     batch.update(doc.ref, { [`skillRatings.${gameId}`]: restored });
   }
   await batch.commit();
+}
+
+// ── Authoritative read-time recompute ──────────────────────────────────────
+//
+// The exchange above maintains ratings incrementally as each session is saved,
+// which makes a driver's stored rating (and each result's sr_delta) depend on
+// the ORDER results were entered — and leaves stale deltas behind from the
+// pre-per-game migration. For DISPLAY (leaderboard + profile) we instead replay
+// a whole game's SR races in true chronological order from the 1500 baseline, so
+// every driver's current rating AND their most-recent-race trend are consistent,
+// order-independent, and always gated to this one game.
+//
+// Returns { ratings, seasonsByDriver }:
+//   ratings[driverId]        = { rating, races, last_delta }
+//     - rating     : current SR in this game (1500 baseline if never moved)
+//     - races      : SR races the driver started in this game
+//     - last_delta : (SR after their most recent SR race) − (SR before it),
+//                    i.e. the trend; null if they never started one
+//   seasonsByDriver[driverId] = Set(season_id) they raced an SR event in
+//     (lets a series/season-scoped leaderboard list the right drivers)
+export async function computeGameSkillRatings(gameId) {
+  const empty = { ratings: {}, seasonsByDriver: {} };
+  if (!gameId) return empty;
+
+  const seasonsSnap = await db().collection("seasons").where("game_id", "==", gameId).get();
+  const seasonIds = seasonsSnap.docs.map(d => d.id);
+  if (!seasonIds.length) return empty;
+
+  const resultDocs = [], entryDocs = [], raceDocs = [];
+  const per = await Promise.all(seasonIds.map(async sid => {
+    const [r, e, ra] = await Promise.all([
+      db().collection("results").where("season_id", "==", sid).get(),
+      db().collection("entries").where("season_id", "==", sid).get(),
+      db().collection("races").where("season_id", "==", sid).get(),
+    ]);
+    return { r: r.docs, e: e.docs, ra: ra.docs };
+  }));
+  for (const p of per) { resultDocs.push(...p.r); entryDocs.push(...p.e); raceDocs.push(...p.ra); }
+
+  const driverByEntry = {};
+  for (const e of entryDocs) { const id = e.data().driver_id; if (id) driverByEntry[e.id] = id; }
+  const raceById = {};
+  for (const ra of raceDocs) raceById[ra.id] = { id: ra.id, ...ra.data() };
+
+  // Group SR-bearing result rows into their sessions (a race can hold several,
+  // e.g. "Race 1"/"Race 2" or a Feature), skipping any session an admin has
+  // excluded from official stats — exactly the eligibility the live exchange uses.
+  const sessions = new Map();
+  for (const doc of resultDocs) {
+    const r = doc.data();
+    const sessionType = r.session_type || "race";
+    if (!isSrSession(sessionType)) continue;
+    const race = raceById[r.race_id];
+    if (!race) continue;
+    const sessionName = r.session || (Array.isArray(race.sessions) && race.sessions[0]) || "Race";
+    const key = `${r.race_id}|${sessionName}`;
+    let s = sessions.get(key);
+    if (s === undefined) {
+      const flags = resolveSessionFlags(
+        { race_id: race.id, session: sessionName, session_type: sessionType },
+        { [race.id]: race },
+      );
+      if (flags.counts_stats === false) { sessions.set(key, null); continue; }
+      const idx = Array.isArray(race.sessions) ? race.sessions.indexOf(sessionName) : -1;
+      const sessionIndex = sessionType === "feature" ? 900 : (idx >= 0 ? idx : 500);
+      s = {
+        rows: [],
+        // Chronology: race date, then round, then session order within the
+        // event, then earliest save time as a final tiebreak.
+        order: [race.date || "", String(Number(race.round_number) || 0).padStart(6, "0"), String(sessionIndex).padStart(4, "0")],
+        minCreated: r.created_at || "",
+      };
+      sessions.set(key, s);
+    }
+    if (s === null) continue; // excluded session
+    if (r.created_at && (!s.minCreated || r.created_at < s.minCreated)) s.minCreated = r.created_at;
+    s.rows.push(r);
+  }
+
+  const ordered = [...sessions.values()].filter(Boolean);
+  ordered.sort((a, b) => {
+    const ka = `${a.order.join("|")}|${a.minCreated}`;
+    const kb = `${b.order.join("|")}|${b.minCreated}`;
+    return ka < kb ? -1 : ka > kb ? 1 : 0;
+  });
+
+  const ratings = {};
+  const seasonsByDriver = {};
+  const rec = id => (ratings[id] ??= { rating: SR_BASELINE, races: 0, last_delta: null });
+
+  for (const s of ordered) {
+    const starters = s.rows
+      .filter(r => !r.provisional && (r.status || "finished") !== "dns")
+      .map(r => ({ driver_id: driverByEntry[r.entry_id], finish_pos: Number(r.finish_pos), season_id: r.season_id }))
+      .filter(r => r.driver_id);
+    if (!starters.length) continue;
+    // Score against every starter's rating as it stands BEFORE this session.
+    const field = starters.map(st => ({ driver_id: st.driver_id, finish_pos: st.finish_pos, rating: rec(st.driver_id).rating }));
+    for (const d of computeSrDeltas(field)) {
+      const dr = rec(d.driver_id);
+      dr.rating = clampSr(dr.rating + d.delta);
+      dr.races += 1;
+      dr.last_delta = d.delta;
+    }
+    for (const st of starters) (seasonsByDriver[st.driver_id] ??= new Set()).add(st.season_id);
+  }
+
+  return { ratings, seasonsByDriver };
 }
