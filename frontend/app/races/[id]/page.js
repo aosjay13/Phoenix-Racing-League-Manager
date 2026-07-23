@@ -8,12 +8,18 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { api } from "@/lib/api";
 
 function DriverCell({ r }) {
+  // On a game-specific event, prefer the driver's mapped alias (their on-track
+  // name for this game) as the primary label, keeping the profile name as a
+  // muted subtitle. Falls back to the profile name when no alias is mapped.
+  const alias = r.game_alias && r.game_alias !== r.driver_name ? r.game_alias : null;
+  const primary = alias || r.driver_name;
   return (
     <>
       {(r.driver_id || r.user_id)
-        ? <Link href={`/drivers/${r.driver_id || r.user_id}`} style={{ color: "var(--accent-cyan)" }}>{r.driver_name}</Link>
-        : r.driver_name}
+        ? <Link href={`/drivers/${r.driver_id || r.user_id}`} style={{ color: "var(--accent-cyan)" }}>{primary}</Link>
+        : primary}
       {r.driver_number != null && <span style={{ color: "var(--ink-2)", marginLeft: 6 }}>#{r.driver_number}</span>}
+      {alias && <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.74rem" }}>{r.driver_name}</span>}
     </>
   );
 }

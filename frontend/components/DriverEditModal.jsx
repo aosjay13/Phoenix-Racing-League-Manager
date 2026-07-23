@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { Modal } from "@/components/Modal";
 import { withDefaults, normalizeAliases } from "@/lib/aliases";
@@ -16,13 +16,20 @@ export function DriverEditModal({ driver, onClose, onSaved }) {
   // Seed the alias rows with the standard platforms (pre-filled from any saved
   // values), followed by whatever custom platforms were already stored.
   const [aliases, setAliases] = useState(() => withDefaults(driver.aliases));
+  const [games, setGames] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+
+  // Games power the per-alias "Game" dropdown: mapping an alias to a game lets
+  // that game's Standings/Results show the driver's on-track name.
+  useEffect(() => {
+    api("/api/games").then(setGames).catch(() => setGames([]));
+  }, []);
 
   function setAlias(i, patch) {
     setAliases(rows => rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   }
-  function addAlias() { setAliases(rows => [...rows, { label: "", value: "" }]); }
+  function addAlias() { setAliases(rows => [...rows, { label: "", value: "", game_id: "" }]); }
   function removeAlias(i) { setAliases(rows => rows.filter((_, j) => j !== i)); }
 
   async function handleSubmit(e) {
@@ -60,23 +67,33 @@ export function DriverEditModal({ driver, onClose, onSaved }) {
           <label style={{ display: "block" }}>Aliases / Connected Accounts</label>
           <p style={{ margin: "0 0 8px", fontSize: "0.78rem", color: "var(--ink-2)" }}>
             Platform usernames this driver races under. The Smart Importer matches imported names against
-            all of these, so results using any of them map back to this profile.
+            all of these, so results using any of them map back to this profile. Set a <strong>Game</strong>
+            to have that game's Standings and Results show the on-track name.
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {aliases.map((a, i) => (
-              <div key={i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                 <input
                   value={a.label}
                   onChange={e => setAlias(i, { label: e.target.value })}
                   placeholder="Platform"
-                  style={{ flex: "0 0 42%", minWidth: 0 }}
+                  style={{ flex: "0 0 30%", minWidth: 90 }}
                 />
                 <input
                   value={a.value}
                   onChange={e => setAlias(i, { value: e.target.value })}
                   placeholder="Username / ID"
-                  style={{ flex: 1, minWidth: 0 }}
+                  style={{ flex: 1, minWidth: 100 }}
                 />
+                <select
+                  value={a.game_id || ""}
+                  onChange={e => setAlias(i, { game_id: e.target.value })}
+                  title="Game this name is used in"
+                  style={{ flex: "0 0 26%", minWidth: 100 }}
+                >
+                  <option value="">Any game</option>
+                  {games.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
                 <button type="button" className="btn btn-ghost" title="Remove field"
                   style={{ marginTop: 0, padding: "4px 10px", color: "var(--ink-2)" }}
                   onClick={() => removeAlias(i)}>✕</button>
