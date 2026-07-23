@@ -92,6 +92,11 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
 
   function readFile(file) {
     if (!file) return;
+    // An image can reach this path when someone picks a screenshot from the main
+    // dropzone (whose file input is filtered to CSV/TSV/TXT — but that filter is
+    // only a hint the OS lets users override). Reading it as text would spill the
+    // raw binary into the textarea as gibberish, so reroute it to OCR instead.
+    if (isImageFile(file)) { readImages([file]); return; }
     const reader = new FileReader();
     reader.onload = () => { const raw = String(reader.result || ""); setText(raw); runParse(raw); };
     reader.readAsText(file);
