@@ -26,14 +26,20 @@ export const POST = withUser(async (request, ctx, user) => {
     return NextResponse.json({ error: "This profile is already claimed by another account." }, { status: 400 });
   }
 
-  // One open request per user + driver.
-  const dup = await db().collection("claim_requests")
+  // One driver profile per account: block if this user already holds a linked
+  // profile — they must unclaim it before requesting a different one.
+  const owned = await db().collection("drivers").where("user_id", "==", user.uid).limit(1).get();
+  if (!owned.empty) {
+    return NextResponse.json({ error: "You already have a driver profile linked to your account. Unclaim it before requesting another." }, { status: 400 });
+  }
+
+  // ...and at most one open request at a time (for any profile).
+  const anyPending = await db().collection("claim_requests")
     .where("uid", "==", user.uid)
-    .where("driver_id", "==", driverId)
     .where("status", "==", "pending")
     .limit(1).get();
-  if (!dup.empty) {
-    return NextResponse.json({ error: "You already have a pending request for this profile." }, { status: 409 });
+  if (!anyPending.empty) {
+    return NextResponse.json({ error: "You already have a pending claim request. You can only request one driver profile at a time." }, { status: 409 });
   }
 
   const userDoc = await db().collection("users").doc(user.uid).get();

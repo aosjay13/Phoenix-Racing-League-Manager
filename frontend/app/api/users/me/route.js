@@ -2,11 +2,18 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { withUser, isAdmin, isEnvAdmin } from "@/lib/serverAuth";
 
-// Called after sign-in: creates/refreshes the user doc and returns it.
+// Called after sign-in: creates/refreshes the user doc and returns it. Also
+// reports the single driver profile linked to this account (driver_id/name) —
+// each account may hold at most one, which the claim flow enforces.
 export const GET = withUser(async (request, ctx, user) => {
   const ref = db().collection("users").doc(user.uid);
   const doc = await ref.get();
   const admin = await isAdmin(user);
+
+  const poolSnap = await db().collection("drivers").where("user_id", "==", user.uid).limit(1).get();
+  const driver_id = poolSnap.empty ? null : poolSnap.docs[0].id;
+  const driver_name = poolSnap.empty ? null : (poolSnap.docs[0].data().name || null);
+
   if (!doc.exists) {
     const profile = {
       display_name: user.name || user.email?.split("@")[0] || "Driver",
@@ -19,10 +26,10 @@ export const GET = withUser(async (request, ctx, user) => {
       created_at: new Date().toISOString(),
     };
     await ref.set(profile);
-    return NextResponse.json({ uid: user.uid, ...profile, is_admin: admin, env_admin: isEnvAdmin(user.email) });
+    return NextResponse.json({ uid: user.uid, ...profile, is_admin: admin, env_admin: isEnvAdmin(user.email), driver_id, driver_name });
   }
   if (admin && doc.data().role !== "admin") await ref.update({ role: "admin" });
-  return NextResponse.json({ uid: user.uid, ...doc.data(), is_admin: admin || doc.data().role === "admin", env_admin: isEnvAdmin(user.email) });
+  return NextResponse.json({ uid: user.uid, ...doc.data(), is_admin: admin || doc.data().role === "admin", env_admin: isEnvAdmin(user.email), driver_id, driver_name });
 });
 
 const EDITABLE = ["display_name", "photo_url", "bio", "country", "number", "favorite_car", "socials"];

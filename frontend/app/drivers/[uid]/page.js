@@ -24,13 +24,14 @@ const TRACK_COLUMNS = [
 
 export default function DriverProfilePage() {
   const { uid } = useParams();
-  const { user } = useAuth();
+  const { user, profile: myProfile } = useAuth();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [gameFilter, setGameFilter] = useState("all");
   const [view, setView] = useState("career"); // "career" | "tracks"
   // Claim flow: "idle" (button), "pending" (already requested), "done" (just sent)
   const [claimState, setClaimState] = useState("idle");
+  const [otherPending, setOtherPending] = useState(false); // pending request for a different driver
   const [claimBusy, setClaimBusy] = useState(false);
   const [claimError, setClaimError] = useState(null);
 
@@ -38,15 +39,19 @@ export default function DriverProfilePage() {
     api(`/api/drivers/${uid}`).then(setData).catch(err => setError(err.message));
   }, [uid]);
 
-  // Reflect a pending claim request the current user may already have filed for
-  // this unclaimed driver profile, so we show "pending" instead of the button.
+  // Each account may hold only one driver profile. Detect a pending request for
+  // THIS driver (→ "pending"), or a pending request for a different one (→ block).
   const driverId = data?.driver_id;
   const claimedBy = data?.uid;
+  // A driver already linked to this account (from /api/users/me).
+  const hasOwnDriver = !!myProfile?.driver_id;
   useEffect(() => {
     if (!user || !driverId || claimedBy) return;
     api("/api/claim-requests")
       .then(rows => {
-        if (rows.some(r => r.driver_id === driverId && r.status === "pending")) setClaimState("pending");
+        const pending = rows.filter(r => r.status === "pending");
+        if (pending.some(r => r.driver_id === driverId)) setClaimState("pending");
+        else if (pending.length > 0) setOtherPending(true);
       })
       .catch(() => {});
   }, [user, driverId, claimedBy]);
@@ -116,6 +121,18 @@ export default function DriverProfilePage() {
                 <div className="toast toast-success" style={{ margin: 0 }}>
                   Request sent! An admin will review it before this profile is linked to your account.
                 </div>
+              ) : hasOwnDriver ? (
+                <p style={{ margin: 0, color: "var(--ink-2)", fontSize: "0.85rem", maxWidth: 560 }}>
+                  You've already claimed{" "}
+                  <Link href={`/drivers/${myProfile.driver_id}`} style={{ color: "var(--accent-cyan)", fontWeight: 600 }}>
+                    {myProfile.driver_name || "a driver profile"}
+                  </Link>. Each account can hold only one — unclaim it from the{" "}
+                  <Link href="/drivers" style={{ color: "var(--accent-cyan)" }}>Drivers</Link> list before claiming a different one.
+                </p>
+              ) : otherPending ? (
+                <p style={{ margin: 0, color: "var(--ink-2)", fontSize: "0.85rem", maxWidth: 560 }}>
+                  You already have a pending claim request for another profile. You can only request one driver profile at a time.
+                </p>
               ) : (
                 <>
                   <button className="btn btn-primary" style={{ marginTop: 0 }} disabled={claimBusy} onClick={requestClaim}>
