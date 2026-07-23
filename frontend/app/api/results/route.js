@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { withAdmin } from "@/lib/serverAuth";
-import { exchangeSkillRatings, isSrSession, reverseSkillRatings, srDeltasByEntry } from "@/lib/skillRatingServer";
+import { recalcGameSkillRatings, gameIdForSeason } from "@/lib/skillRatingServer";
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -17,15 +17,6 @@ export async function GET(request) {
 }
 
 const SESSION_TYPES = ["qualifying", "race", "heat", "consolation", "feature"];
-
-// The game a season belongs to — SR is gated per game, so the ratings engine
-// needs it to know which per-game slot to move. Null for a legacy season with
-// no game_id (SR is then skipped). Cached-free tiny read; called once per save.
-async function gameIdForSeason(seasonId) {
-  if (!seasonId) return null;
-  const doc = await db().collection("seasons").doc(seasonId).get();
-  return doc.exists ? (doc.data().game_id || null) : null;
-}
 
 // Session-list metadata used to resolve which stored docs belong to the
 // session being written: legacy docs may lack the session field, in which
@@ -75,17 +66,12 @@ export const POST = withAdmin(async (request, ctx, user) => {
   const col = db().collection("results");
   const existing = await col.where("race_id", "==", race_id).get();
   const batch = db().batch();
-  // Capture the SR each about-to-be-replaced result previously awarded, keyed by
-  // entry, so the ratings engine can reverse this session's prior contribution
-  // before re-exchanging — keeping SR idempotent across re-saves/corrections.
-  const priorByEntry = {};
+  // Replace this session's existing rows. SR is recomputed from scratch below
+  // (a full chronological replay of the game), so no per-session reversal is
+  // needed — corrections and re-saves are handled by the recalc.
   existing.docs
     .filter(d => matchesSession(d.data(), sessionType, savingSession, firstSession))
-    .forEach(d => {
-      const data = d.data();
-      if (data.sr_delta != null) priorByEntry[data.entry_id] = (priorByEntry[data.entry_id] || 0) + Number(data.sr_delta);
-      batch.delete(d.ref);
-    });
+    .forEach(d => batch.delete(d.ref));
 
   const saved = [];
   const now = new Date().toISOString();
@@ -132,31 +118,16 @@ export const POST = withAdmin(async (request, ctx, user) => {
   }
   await batch.commit();
 
-  // Skill Rating exchange for main-race sessions (standard Race / heat-format
-  // Feature). Computes the Strength of Field, updates every starter's global
-  // SR, stamps each result's sr_delta, and records the SoF on the race — while
-  // reversing any prior SR from a re-saved session. Preliminary sessions and
-  // qualifying never move SR, so they skip this entirely.
-  if (isSrSession(sessionType)) {
-    try {
-      const raceDoc = await db().collection("races").doc(race_id).get();
-      if (raceDoc.exists) {
-        const gameId = await gameIdForSeason(season_id);
-        const { deltasByEntry, eligible } = await exchangeSkillRatings({
-          race: { id: raceDoc.id, ...raceDoc.data() },
-          savedRows: saved,
-          session: savingSession,
-          sessionType,
-          gameId,
-          priorByEntry,
-        });
-        for (const row of saved) row.sr_delta = eligible ? (deltasByEntry[row.entry_id] ?? 0) : null;
-      }
-    } catch (err) {
-      // SR is a derived stat — never fail the results save over it. The next
-      // save of this session recomputes cleanly from the reversal logic.
-      console.error("Skill Rating exchange failed", err);
-    }
+  // Recompute this game's Skill Ratings from scratch, chronologically. This
+  // rebuilds the whole timeline from the 1500 baseline, so a race entered/edited
+  // out of order slots into its correct date position and ripples through every
+  // later race — updating current SR, each result's sr_delta, and every race's
+  // Strength of Field. SR is a derived stat, so a failure here never fails the
+  // save; the next recalc corrects it.
+  try {
+    await recalcGameSkillRatings(await gameIdForSeason(season_id));
+  } catch (err) {
+    console.error("Skill Rating recalc failed", err);
   }
 
   return NextResponse.json(saved, { status: 201 });
@@ -178,21 +149,19 @@ export const DELETE = withAdmin(async (request) => {
   const existing = await db().collection("results").where("race_id", "==", raceId).get();
   const doomed = existing.docs.filter(d => matchesSession(d.data(), sessionType, target, firstSession));
   // Grab a season_id off the deleted set (all share the race → one season) to
-  // resolve the game whose per-game SR must be scrubbed.
+  // resolve the game whose SR timeline must be recomputed.
   const seasonId = doomed.length ? doomed[0].data().season_id : null;
   const batch = db().batch();
   doomed.forEach(d => batch.delete(d.ref));
   await batch.commit();
 
-  // Undo any SR these results awarded and clear the event's recorded SoF when
-  // the deleted session was the SR-bearing main race.
-  if (isSrSession(sessionType)) {
-    try {
-      await reverseSkillRatings(srDeltasByEntry(doomed.map(d => d.data())), await gameIdForSeason(seasonId));
-      await db().collection("races").doc(raceId).update({ strength_of_field: null });
-    } catch (err) {
-      console.error("Skill Rating reversal failed", err);
-    }
+  // Recompute the game's SR chronologically now that these results are gone, so
+  // ratings/deltas/SoF for every remaining race stay sound (and any driver who
+  // no longer has an SR race resets to baseline).
+  try {
+    await recalcGameSkillRatings(await gameIdForSeason(seasonId));
+  } catch (err) {
+    console.error("Skill Rating recalc failed", err);
   }
 
   return NextResponse.json({ ok: true, deleted: doomed.length });

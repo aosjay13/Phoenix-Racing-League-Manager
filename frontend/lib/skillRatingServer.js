@@ -1,194 +1,64 @@
 import { db } from "@/lib/firebase";
 import { resolveSessionFlags } from "@/lib/standings";
-import { clampSr, computeSrDeltas, ratingForGame, strengthOfField, SR_BASELINE } from "@/lib/skillRating";
+import { clampSr, computeSrDeltas, strengthOfField, SR_BASELINE, ratingForGame } from "@/lib/skillRating";
 
-// Session types whose results move Skill Rating: the standard Race, or the
-// Feature/A-Main of a heat-format weekend. Preliminary sessions (heats,
-// consolations) and Qualifying never exchange SR — they mirror the sessions
-// that count toward stats by default (see defaultSessionFlags in standings.js).
+// ── Chronological, date-based Skill Rating engine ──────────────────────────
+//
+// SR is an Elo-style, per-game rating. This engine treats a game's SR history as
+// one timeline ordered by EVENT DATE (not the order results were entered), so
+// ratings are identical no matter when data is imported or corrected:
+//
+//   • replayGame(gameId)            — loads the game's SR races, orders them
+//                                     chronologically, and replays every Elo
+//                                     exchange from the 1500 baseline forward.
+//   • computeGameSkillRatings       — thin read wrapper (leaderboard / profile).
+//   • recalcGameSkillRatings        — replays AND persists the corrected current
+//                                     ratings, per-result sr_delta, and per-race
+//                                     strength_of_field. Called after any race
+//                                     result is saved, edited, or deleted, so a
+//                                     race slotted into the past "ripples"
+//                                     through every later race automatically.
+//
+// Because a recalc always rebuilds the whole timeline from baseline, inserting
+// an older-dated race recomputes the Strength of Field at its position and
+// re-runs every subsequent exchange — the current SR stays mathematically sound.
+
+// Session types that move SR: the standard Race, or the Feature/A-Main of a
+// heat-format weekend. Heats, consolations and qualifying never exchange SR.
 const SR_SESSION_TYPES = new Set(["race", "feature"]);
-
 export function isSrSession(sessionType) {
   return SR_SESSION_TYPES.has(sessionType);
 }
 
-// A starter is any saved row that actually took the green flag: not a
-// provisional (points-only, didn't race) and not a DNS.
+// The game a season belongs to — SR is gated per game. Null for a legacy season
+// with no game_id (SR is then skipped, since a rating has nowhere to live).
+export async function gameIdForSeason(seasonId) {
+  if (!seasonId) return null;
+  const doc = await db().collection("seasons").doc(seasonId).get();
+  return doc.exists ? (doc.data().game_id || null) : null;
+}
+
+// A starter is a row that actually took the green flag: not a provisional
+// (points-only) entry and not a DNS.
 function isStarter(row) {
   return !row.provisional && (row.status || "finished") !== "dns";
 }
 
-// Recompute Skill Ratings for one just-saved main-race session.
-//
-// This is idempotent per session and self-correcting on re-save. `priorByEntry`
-// carries the sr_delta each now-overwritten result doc previously awarded; we
-// first reverse those, restoring every affected driver to their pre-race
-// rating, then — only if the session still counts toward SR — compute fresh
-// deltas against those restored ratings and apply them. Saving identical
-// results twice is a no-op; correcting finishing order cleanly re-exchanges.
-//
-// `savedRows` are the freshly-written result docs ({ id, entry_id, finish_pos,
-// provisional, status }). All writes (driver ratings, per-result sr_delta, the
-// race's strength_of_field) happen in one batch. Returns { sof, deltasByEntry }.
-//
-// SR is gated per game: ratings live under drivers.skillRatings[gameId], so a
-// driver's GT7 rating and iRacing rating are independent. `gameId` is the game
-// this race belongs to (race → season → game_id). When it's missing (a legacy
-// season with no game_id), SR can't be gated, so the exchange is skipped.
-export async function exchangeSkillRatings({ race, savedRows, session, sessionType, gameId, priorByEntry = {} }) {
-  // Resolve the driver identity behind every entry involved — both the new
-  // starters and any entries whose prior deltas must be reversed (e.g. a driver
-  // dropped from a corrected result set).
-  const entryIds = new Set([...savedRows.map(r => r.entry_id), ...Object.keys(priorByEntry)]);
-  const entryDocs = await Promise.all(
-    [...entryIds].map(id => db().collection("entries").doc(id).get())
-  );
-  const driverIdByEntry = {};
-  for (const doc of entryDocs) {
-    if (doc.exists && doc.data().driver_id) driverIdByEntry[doc.id] = doc.data().driver_id;
-  }
-
-  // Reverse prior deltas per driver (an entry with no linked global driver never
-  // held SR, so it's simply skipped).
-  const priorByDriver = {};
-  for (const [entryId, delta] of Object.entries(priorByEntry)) {
-    const driverId = driverIdByEntry[entryId];
-    if (driverId) priorByDriver[driverId] = (priorByDriver[driverId] || 0) + Number(delta || 0);
-  }
-
-  // The starters that can actually exchange SR: took the green flag AND link to
-  // a global driver record (SR lives on the drivers doc).
-  const starters = savedRows
-    .filter(isStarter)
-    .map(r => ({ entry_id: r.entry_id, driver_id: driverIdByEntry[r.entry_id], finish_pos: Number(r.finish_pos) }))
-    .filter(r => r.driver_id);
-
-  // Load every driver doc we might touch (starters + reversal targets).
-  const driverIds = [...new Set([...starters.map(s => s.driver_id), ...Object.keys(priorByDriver)])];
-  const driverDocs = await Promise.all(
-    driverIds.map(id => db().collection("drivers").doc(id).get())
-  );
-  const currentRating = {};
-  const driverExists = {};
-  for (const doc of driverDocs) {
-    driverExists[doc.id] = doc.exists;
-    currentRating[doc.id] = doc.exists ? ratingForGame(doc.data().skillRatings, gameId) : ratingForGame(null, gameId);
-  }
-
-  // Rating after reversing this session's prior contribution — the true
-  // pre-race rating to score against.
-  const restored = {};
-  for (const id of driverIds) restored[id] = currentRating[id] - (priorByDriver[id] || 0);
-
-  // Does this session still count toward SR? Respects the "Count towards
-  // Official Stats" toggle (session_stats) exactly like every other stat.
-  const flags = resolveSessionFlags(
-    { race_id: race.id, session, session_type: sessionType },
-    { [race.id]: race }
-  );
-  // Without a game to gate under, SR can't be exchanged — per-game rating has
-  // nowhere to land. Treat it like any other non-SR session.
-  const eligible = !!gameId && isSrSession(sessionType) && flags.counts_stats !== false && starters.length >= 1;
-
-  const newRating = { ...restored };
-  const deltasByEntry = {};
-  let sof = null;
-
-  if (eligible) {
-    const field = starters.map(s => ({ ...s, rating: restored[s.driver_id] }));
-    sof = strengthOfField(field.map(f => f.rating));
-    for (const d of computeSrDeltas(field)) {
-      newRating[d.driver_id] = clampSr(restored[d.driver_id] + d.delta);
-      deltasByEntry[d.entry_id] = d.delta;
-    }
-  }
-
-  // Persist: driver ratings, each starter's per-race sr_delta, and the race's
-  // strength_of_field. When the session didn't exchange SR (toggled off stats,
-  // not a main race, no starters), sr_delta is stored as null — so those docs
-  // read as non-SR results everywhere — and the SoF is cleared.
-  const batch = db().batch();
-  for (const id of driverIds) {
-    if (!driverExists[id]) continue; // never resurrect a deleted driver
-    // Dot-path update writes just this game's slot in the skillRatings map,
-    // leaving the driver's ratings for other games untouched.
-    batch.update(db().collection("drivers").doc(id), { [`skillRatings.${gameId}`]: clampSr(newRating[id]) });
-  }
-  for (const row of savedRows) {
-    batch.update(db().collection("results").doc(row.id), {
-      sr_delta: eligible ? (deltasByEntry[row.entry_id] ?? 0) : null,
-    });
-  }
-  batch.update(db().collection("races").doc(race.id), { strength_of_field: sof });
-  await batch.commit();
-
-  return { sof, deltasByEntry, eligible };
-}
-
-// Sum the SR each result doc awarded, keyed by entry — the input to
-// reverseSkillRatings when results are being deleted rather than re-saved.
-export function srDeltasByEntry(resultsData) {
-  const out = {};
-  for (const r of resultsData) {
-    if (r.sr_delta != null) out[r.entry_id] = (out[r.entry_id] || 0) + Number(r.sr_delta);
-  }
-  return out;
-}
-
-// Give back the SR that a set of results awarded — used when results are
-// deleted (a single session or a whole event) so ratings scrub as cleanly as
-// points and stats do. `priorByEntry` maps entry_id -> total sr_delta to undo;
-// `gameId` is the game whose per-game rating slot the deltas came from. With no
-// game (legacy) there is nothing to reverse.
-export async function reverseSkillRatings(priorByEntry, gameId) {
-  const entryIds = Object.keys(priorByEntry);
-  if (!entryIds.length || !gameId) return;
-
-  const entryDocs = await Promise.all(entryIds.map(id => db().collection("entries").doc(id).get()));
-  const priorByDriver = {};
-  for (const doc of entryDocs) {
-    if (!doc.exists || !doc.data().driver_id) continue;
-    const driverId = doc.data().driver_id;
-    priorByDriver[driverId] = (priorByDriver[driverId] || 0) + Number(priorByEntry[doc.id] || 0);
-  }
-
-  const driverIds = Object.keys(priorByDriver);
-  if (!driverIds.length) return;
-  const driverDocs = await Promise.all(driverIds.map(id => db().collection("drivers").doc(id).get()));
-  const batch = db().batch();
-  for (const doc of driverDocs) {
-    if (!doc.exists) continue;
-    const restored = clampSr(ratingForGame(doc.data().skillRatings, gameId) - priorByDriver[doc.id]);
-    batch.update(doc.ref, { [`skillRatings.${gameId}`]: restored });
-  }
-  await batch.commit();
-}
-
-// ── Authoritative read-time recompute ──────────────────────────────────────
-//
-// The exchange above maintains ratings incrementally as each session is saved,
-// which makes a driver's stored rating (and each result's sr_delta) depend on
-// the ORDER results were entered — and leaves stale deltas behind from the
-// pre-per-game migration. For DISPLAY (leaderboard + profile) we instead replay
-// a whole game's SR races in true chronological order from the 1500 baseline, so
-// every driver's current rating AND their most-recent-race trend are consistent,
-// order-independent, and always gated to this one game.
-//
-// Returns { ratings, seasonsByDriver }:
-//   ratings[driverId]        = { rating, races, last_delta }
-//     - rating     : current SR in this game (1500 baseline if never moved)
-//     - races      : SR races the driver started in this game
-//     - last_delta : (SR after their most recent SR race) − (SR before it),
-//                    i.e. the trend; null if they never started one
-//   seasonsByDriver[driverId] = Set(season_id) they raced an SR event in
-//     (lets a series/season-scoped leaderboard list the right drivers)
-export async function computeGameSkillRatings(gameId) {
-  const empty = { ratings: {}, seasonsByDriver: {} };
-  if (!gameId) return empty;
+// Load a whole game's SR timeline and replay it chronologically from the 1500
+// baseline. Returns everything both the read and persist paths need:
+//   ratings[driverId]        = { rating, races, last_delta }  (current per-game)
+//   seasonsByDriver[driverId]= Set(season_id) they started an SR race in
+//   deltaByResultId[resultId]= the SR change that result's driver earned
+//   sofByRace[raceId]        = Strength of Field of that race's SR session
+//   resultMeta[]             = { id, sr_delta }  (current stored value, to diff)
+//   raceMeta[]               = { id, strength_of_field }  (current, to diff)
+async function replayGame(gameId) {
+  const out = { ratings: {}, seasonsByDriver: {}, deltaByResultId: {}, sofByRace: {}, resultMeta: [], raceMeta: [] };
+  if (!gameId) return out;
 
   const seasonsSnap = await db().collection("seasons").where("game_id", "==", gameId).get();
   const seasonIds = seasonsSnap.docs.map(d => d.id);
-  if (!seasonIds.length) return empty;
+  if (!seasonIds.length) return out;
 
   const resultDocs = [], entryDocs = [], raceDocs = [];
   const per = await Promise.all(seasonIds.map(async sid => {
@@ -204,14 +74,18 @@ export async function computeGameSkillRatings(gameId) {
   const driverByEntry = {};
   for (const e of entryDocs) { const id = e.data().driver_id; if (id) driverByEntry[e.id] = id; }
   const raceById = {};
-  for (const ra of raceDocs) raceById[ra.id] = { id: ra.id, ...ra.data() };
+  for (const ra of raceDocs) {
+    raceById[ra.id] = { id: ra.id, ...ra.data() };
+    out.raceMeta.push({ id: ra.id, strength_of_field: ra.data().strength_of_field ?? null });
+  }
 
-  // Group SR-bearing result rows into their sessions (a race can hold several,
-  // e.g. "Race 1"/"Race 2" or a Feature), skipping any session an admin has
-  // excluded from official stats — exactly the eligibility the live exchange uses.
+  // Group SR-bearing result rows into their sessions (a race can hold several —
+  // "Race 1"/"Race 2", or a Feature), skipping any session an admin excluded
+  // from official stats — exactly the eligibility the exchange used to apply.
   const sessions = new Map();
   for (const doc of resultDocs) {
     const r = doc.data();
+    out.resultMeta.push({ id: doc.id, sr_delta: r.sr_delta ?? null });
     const sessionType = r.session_type || "race";
     if (!isSrSession(sessionType)) continue;
     const race = raceById[r.race_id];
@@ -228,9 +102,10 @@ export async function computeGameSkillRatings(gameId) {
       const idx = Array.isArray(race.sessions) ? race.sessions.indexOf(sessionName) : -1;
       const sessionIndex = sessionType === "feature" ? 900 : (idx >= 0 ? idx : 500);
       s = {
+        raceId: race.id,
         rows: [],
-        // Chronology: race date, then round, then session order within the
-        // event, then earliest save time as a final tiebreak.
+        // Chronology: EVENT DATE first, then round number, then session order
+        // within the event, then earliest save time as a final tiebreak.
         order: [race.date || "", String(Number(race.round_number) || 0).padStart(6, "0"), String(sessionIndex).padStart(4, "0")],
         minCreated: r.created_at || "",
       };
@@ -238,36 +113,96 @@ export async function computeGameSkillRatings(gameId) {
     }
     if (s === null) continue; // excluded session
     if (r.created_at && (!s.minCreated || r.created_at < s.minCreated)) s.minCreated = r.created_at;
-    s.rows.push(r);
+    s.rows.push({ id: doc.id, entry_id: r.entry_id, finish_pos: Number(r.finish_pos), provisional: !!r.provisional, status: r.status || "finished", season_id: r.season_id });
   }
 
-  const ordered = [...sessions.values()].filter(Boolean);
-  ordered.sort((a, b) => {
+  const ordered = [...sessions.values()].filter(Boolean).sort((a, b) => {
     const ka = `${a.order.join("|")}|${a.minCreated}`;
     const kb = `${b.order.join("|")}|${b.minCreated}`;
     return ka < kb ? -1 : ka > kb ? 1 : 0;
   });
 
-  const ratings = {};
-  const seasonsByDriver = {};
-  const rec = id => (ratings[id] ??= { rating: SR_BASELINE, races: 0, last_delta: null });
+  const rec = id => (out.ratings[id] ??= { rating: SR_BASELINE, races: 0, last_delta: null });
 
   for (const s of ordered) {
     const starters = s.rows
-      .filter(r => !r.provisional && (r.status || "finished") !== "dns")
-      .map(r => ({ driver_id: driverByEntry[r.entry_id], finish_pos: Number(r.finish_pos), season_id: r.season_id }))
+      .filter(isStarter)
+      .map(r => ({ id: r.id, driver_id: driverByEntry[r.entry_id], finish_pos: r.finish_pos, season_id: r.season_id }))
       .filter(r => r.driver_id);
     if (!starters.length) continue;
-    // Score against every starter's rating as it stands BEFORE this session.
-    const field = starters.map(st => ({ driver_id: st.driver_id, finish_pos: st.finish_pos, rating: rec(st.driver_id).rating }));
+    // Score against every starter's rating as it stands BEFORE this session,
+    // guaranteeing each driver's first race in the game exchanges off 1500.
+    const field = starters.map(st => ({ id: st.id, driver_id: st.driver_id, finish_pos: st.finish_pos, rating: rec(st.driver_id).rating }));
+    out.sofByRace[s.raceId] = strengthOfField(field.map(f => f.rating));
     for (const d of computeSrDeltas(field)) {
       const dr = rec(d.driver_id);
       dr.rating = clampSr(dr.rating + d.delta);
       dr.races += 1;
-      dr.last_delta = d.delta;
+      dr.last_delta = d.delta;      // most recent chronological race → the trend
+      out.deltaByResultId[d.id] = d.delta;
     }
-    for (const st of starters) (seasonsByDriver[st.driver_id] ??= new Set()).add(st.season_id);
+    for (const st of starters) (out.seasonsByDriver[st.driver_id] ??= new Set()).add(st.season_id);
   }
 
+  return out;
+}
+
+// Read-only: current per-game ratings + trend for the leaderboard and profiles.
+export async function computeGameSkillRatings(gameId) {
+  if (!gameId) return { ratings: {}, seasonsByDriver: {} };
+  const { ratings, seasonsByDriver } = await replayGame(gameId);
   return { ratings, seasonsByDriver };
+}
+
+// Persist a fresh chronological replay for one game: writes each driver's
+// current SR (skillRatings[gameId]), each result's sr_delta, and each race's
+// strength_of_field — only where the value actually changed. This is the
+// retroactive "ripple": call it after any SR-affecting write and the whole
+// timeline is made consistent. Never throws to its caller's detriment beyond
+// its own scope — callers wrap it so a derived-stat failure can't fail a save.
+export async function recalcGameSkillRatings(gameId) {
+  if (!gameId) return;
+  const replay = await replayGame(gameId);
+  const { ratings, deltaByResultId, sofByRace, resultMeta, raceMeta } = replay;
+
+  const writes = [];
+
+  // Per-result SR delta: starters that exchanged get their delta; every other
+  // result (non-starters, qualifying, heats, excluded sessions) resolves to null.
+  for (const rm of resultMeta) {
+    const desired = deltaByResultId[rm.id] ?? null;
+    if ((rm.sr_delta ?? null) !== desired) {
+      writes.push({ ref: db().collection("results").doc(rm.id), data: { sr_delta: desired } });
+    }
+  }
+
+  // Per-race Strength of Field.
+  for (const rc of raceMeta) {
+    const desired = sofByRace[rc.id] ?? null;
+    if ((rc.strength_of_field ?? null) !== desired) {
+      writes.push({ ref: db().collection("races").doc(rc.id), data: { strength_of_field: desired } });
+    }
+  }
+
+  // Current per-game rating on each driver. Update participants whose value
+  // moved, and reset any driver still carrying a stale rating for a game they no
+  // longer race (e.g. after their last race in it was deleted) back to baseline.
+  const driversSnap = await db().collection("drivers").get();
+  for (const d of driversSnap.docs) {
+    const map = d.data().skillRatings;
+    const current = ratingForGame(map, gameId);
+    const hasKey = !!(map && typeof map === "object" && Object.prototype.hasOwnProperty.call(map, gameId));
+    const recRating = ratings[d.id]?.rating;
+    if (recRating != null) {
+      if (current !== recRating) writes.push({ ref: d.ref, data: { [`skillRatings.${gameId}`]: recRating } });
+    } else if (hasKey && current !== SR_BASELINE) {
+      writes.push({ ref: d.ref, data: { [`skillRatings.${gameId}`]: SR_BASELINE } });
+    }
+  }
+
+  for (let i = 0; i < writes.length; i += 450) {
+    const batch = db().batch();
+    for (const w of writes.slice(i, i + 450)) batch.update(w.ref, w.data);
+    await batch.commit();
+  }
 }

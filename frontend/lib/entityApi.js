@@ -7,7 +7,7 @@ import { withAdmin } from "@/lib/serverAuth";
 // (e.g. a car number) that must be kept as text — trimmed and length-capped so
 // leading-zero values like "01"/"001"/"000" are stored verbatim, never parsed
 // to an integer that would drop the zeros.
-function coerceField(opts, raw) {
+export function coerceField(opts, raw) {
   if (opts.maxLen != null) {
     const value = String(raw ?? "").trim();
     if (value.length > opts.maxLen) return { error: `must be at most ${opts.maxLen} characters` };
