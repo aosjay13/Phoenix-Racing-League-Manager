@@ -73,10 +73,13 @@ export default function DriverProfilePage() {
   if (error) return <div className="empty-state"><span className="empty-state-icon">🏎</span><p>{error}</p></div>;
   if (!data) return <div className="skeleton" style={{ height: 280 }} />;
 
-  const { profile, all_games, by_game, by_track = [], linked, skill_rating } = data;
+  const { profile, all_games, by_game, by_track = [], linked, skill_ratings = {} } = data;
   const stats = gameFilter === "all"
     ? all_games
     : by_game.find(g => g.game_id === gameFilter)?.stats ?? all_games;
+  // SR is per game. Show the rating for the game currently filtered to; with
+  // "All games" selected there's no single rating to show.
+  const skill_rating = gameFilter !== "all" ? (skill_ratings[gameFilter] ?? null) : null;
 
   return (
     <section>
@@ -93,7 +96,7 @@ export default function DriverProfilePage() {
           </div>
           {profile.country && <span className="page-badge">{profile.country}</span>}
           {skill_rating != null && (
-            <Link href="/skill-ratings" className="page-badge" title="Global Skill Rating" style={{ marginLeft: profile.country ? 8 : 0 }}>
+            <Link href="/skill-ratings" className="page-badge" title="Skill Rating in the selected game" style={{ marginLeft: profile.country ? 8 : 0 }}>
               📈 Skill Rating {skill_rating}
             </Link>
           )}

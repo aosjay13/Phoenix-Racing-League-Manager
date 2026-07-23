@@ -1,8 +1,10 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { parseTable, mapHeaders, buildRows, MAPPABLE_FIELDS } from "@/lib/resultsImport";
 import { DriverCreateModal } from "@/components/DriverCreateModal";
+import { aliasValues } from "@/lib/aliases";
+import { api } from "@/lib/api";
 
 const SKIP = "__skip__";
 const CREATE = "__create__";
@@ -26,7 +28,20 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
   const [extraEntries, setExtraEntries] = useState([]); // drivers created from this modal
   const [createFor, setCreateFor] = useState(null);     // { idx, name } while the create form is open
   const [dragActive, setDragActive] = useState(false);
+  const [aliasesByDriver, setAliasesByDriver] = useState({}); // driver_id -> [alias value strings]
   const fileRef = useRef(null);
+
+  // Pull the global driver pool once so we can match imported names not just
+  // against each entry's display name but every connected-account alias the
+  // linked driver has stored (PSN, Xbox, Discord, iRacing…). Keyed by driver_id,
+  // which every season entry carries.
+  useEffect(() => {
+    let alive = true;
+    api("/api/drivers")
+      .then(pool => { if (alive) setAliasesByDriver(Object.fromEntries(pool.map(d => [d.id, aliasValues(d.aliases)]))); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   // The roster this import can resolve to: the season's entries plus any driver
   // created from the review table without leaving the modal. Newly created
@@ -35,6 +50,13 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
   const sortedEntries = useMemo(
     () => [...allEntries].sort((a, b) => String(a.name).localeCompare(String(b.name))),
     [allEntries]
+  );
+
+  // Entries enriched with their driver's alias strings — the roster fuzzy
+  // matching runs against. The dropdown still uses sortedEntries for display.
+  const matchEntries = useMemo(
+    () => sortedEntries.map(e => ({ ...e, aliases: aliasesByDriver[e.driver_id] || [] })),
+    [sortedEntries, aliasesByDriver]
   );
 
   // Column count + labels for the mapping dropdowns.
@@ -47,8 +69,8 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
   // Re-derive rows whenever the mapping changes; matching happens inside.
   // Pass sessionType so a qualifying import routes the lap time into Qual Time.
   const built = useMemo(
-    () => (parsed ? buildRows(parsed, mapping, sortedEntries, { sessionType }) : { rows: [], warnings: [] }),
-    [parsed, mapping, sortedEntries, sessionType]
+    () => (parsed ? buildRows(parsed, mapping, matchEntries, { sessionType }) : { rows: [], warnings: [] }),
+    [parsed, mapping, matchEntries, sessionType]
   );
 
   function runParse(raw) {

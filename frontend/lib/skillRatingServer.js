@@ -1,6 +1,6 @@
 import { db } from "@/lib/firebase";
 import { resolveSessionFlags } from "@/lib/standings";
-import { clampSr, computeSrDeltas, ratingOf, strengthOfField } from "@/lib/skillRating";
+import { clampSr, computeSrDeltas, ratingForGame, strengthOfField } from "@/lib/skillRating";
 
 // Session types whose results move Skill Rating: the standard Race, or the
 // Feature/A-Main of a heat-format weekend. Preliminary sessions (heats,
@@ -30,7 +30,12 @@ function isStarter(row) {
 // `savedRows` are the freshly-written result docs ({ id, entry_id, finish_pos,
 // provisional, status }). All writes (driver ratings, per-result sr_delta, the
 // race's strength_of_field) happen in one batch. Returns { sof, deltasByEntry }.
-export async function exchangeSkillRatings({ race, savedRows, session, sessionType, priorByEntry = {} }) {
+//
+// SR is gated per game: ratings live under drivers.skillRatings[gameId], so a
+// driver's GT7 rating and iRacing rating are independent. `gameId` is the game
+// this race belongs to (race → season → game_id). When it's missing (a legacy
+// season with no game_id), SR can't be gated, so the exchange is skipped.
+export async function exchangeSkillRatings({ race, savedRows, session, sessionType, gameId, priorByEntry = {} }) {
   // Resolve the driver identity behind every entry involved — both the new
   // starters and any entries whose prior deltas must be reversed (e.g. a driver
   // dropped from a corrected result set).
@@ -67,7 +72,7 @@ export async function exchangeSkillRatings({ race, savedRows, session, sessionTy
   const driverExists = {};
   for (const doc of driverDocs) {
     driverExists[doc.id] = doc.exists;
-    currentRating[doc.id] = doc.exists ? ratingOf(doc.data().skillRating) : ratingOf(null);
+    currentRating[doc.id] = doc.exists ? ratingForGame(doc.data().skillRatings, gameId) : ratingForGame(null, gameId);
   }
 
   // Rating after reversing this session's prior contribution — the true
@@ -81,7 +86,9 @@ export async function exchangeSkillRatings({ race, savedRows, session, sessionTy
     { race_id: race.id, session, session_type: sessionType },
     { [race.id]: race }
   );
-  const eligible = isSrSession(sessionType) && flags.counts_stats !== false && starters.length >= 1;
+  // Without a game to gate under, SR can't be exchanged — per-game rating has
+  // nowhere to land. Treat it like any other non-SR session.
+  const eligible = !!gameId && isSrSession(sessionType) && flags.counts_stats !== false && starters.length >= 1;
 
   const newRating = { ...restored };
   const deltasByEntry = {};
@@ -103,7 +110,9 @@ export async function exchangeSkillRatings({ race, savedRows, session, sessionTy
   const batch = db().batch();
   for (const id of driverIds) {
     if (!driverExists[id]) continue; // never resurrect a deleted driver
-    batch.update(db().collection("drivers").doc(id), { skillRating: clampSr(newRating[id]) });
+    // Dot-path update writes just this game's slot in the skillRatings map,
+    // leaving the driver's ratings for other games untouched.
+    batch.update(db().collection("drivers").doc(id), { [`skillRatings.${gameId}`]: clampSr(newRating[id]) });
   }
   for (const row of savedRows) {
     batch.update(db().collection("results").doc(row.id), {
@@ -128,10 +137,12 @@ export function srDeltasByEntry(resultsData) {
 
 // Give back the SR that a set of results awarded — used when results are
 // deleted (a single session or a whole event) so ratings scrub as cleanly as
-// points and stats do. `priorByEntry` maps entry_id -> total sr_delta to undo.
-export async function reverseSkillRatings(priorByEntry) {
+// points and stats do. `priorByEntry` maps entry_id -> total sr_delta to undo;
+// `gameId` is the game whose per-game rating slot the deltas came from. With no
+// game (legacy) there is nothing to reverse.
+export async function reverseSkillRatings(priorByEntry, gameId) {
   const entryIds = Object.keys(priorByEntry);
-  if (!entryIds.length) return;
+  if (!entryIds.length || !gameId) return;
 
   const entryDocs = await Promise.all(entryIds.map(id => db().collection("entries").doc(id).get()));
   const priorByDriver = {};
@@ -147,7 +158,8 @@ export async function reverseSkillRatings(priorByEntry) {
   const batch = db().batch();
   for (const doc of driverDocs) {
     if (!doc.exists) continue;
-    batch.update(doc.ref, { skillRating: clampSr(ratingOf(doc.data().skillRating) - priorByDriver[doc.id]) });
+    const restored = clampSr(ratingForGame(doc.data().skillRatings, gameId) - priorByDriver[doc.id]);
+    batch.update(doc.ref, { [`skillRatings.${gameId}`]: restored });
   }
   await batch.commit();
 }

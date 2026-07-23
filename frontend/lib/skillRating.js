@@ -35,6 +35,15 @@ export function ratingOf(value) {
   return Number.isFinite(Number(value)) && value != null && value !== "" ? Number(value) : SR_BASELINE;
 }
 
+// A driver's rating in ONE game. SR is gated per game, stored as the map
+// drivers.skillRatings = { [game_id]: rating }. Falls back to the baseline for a
+// game the driver hasn't been rated in yet. `skillRatings` is the whole map off
+// the driver doc; `gameId` selects the game.
+export function ratingForGame(skillRatings, gameId) {
+  const map = skillRatings && typeof skillRatings === "object" ? skillRatings : {};
+  return gameId != null ? ratingOf(map[gameId]) : SR_BASELINE;
+}
+
 // Expected score of A against B — the probability A finishes ahead of B.
 export function expectedScore(ratingA, ratingB) {
   return 1 / (1 + Math.pow(10, (ratingB - ratingA) / SR_SCALE));

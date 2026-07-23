@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { makeDocRoutes, SPECS } from "@/lib/entityApi";
 import { db } from "@/lib/firebase";
 import { buildCareerProfile } from "@/lib/careerStatsServer";
-import { ratingOf } from "@/lib/skillRating";
 
 const routes = makeDocRoutes(SPECS.drivers);
 export const PATCH = routes.PATCH;
@@ -59,8 +58,10 @@ export async function GET(request, { params }) {
     driver_id: driverId,
     uid: linkedUserId,
     linked: !!(linkedUserId && account),
-    // Global, cross-game Skill Rating (baseline when the driver has no doc yet).
-    skill_rating: driver ? ratingOf(driver.skillRating) : null,
+    // Per-game Skill Ratings map ({ game_id: rating }). SR is gated per game, so
+    // the profile shows the rating for whichever game the viewer has filtered to
+    // (see the game filter on the profile page). Empty when never rated.
+    skill_ratings: (driver && driver.skillRatings && typeof driver.skillRatings === "object") ? driver.skillRatings : {},
     profile,
     ...career,
   });

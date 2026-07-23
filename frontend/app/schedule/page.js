@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLeague } from "@/components/LeagueProvider";
 import { useAuth } from "@/components/AuthProvider";
@@ -25,6 +25,128 @@ function fmtDate(d) {
 }
 
 export default function SchedulePage() {
+  const { seasonId } = useLeague();
+  // A concrete season shows that season's full event table (with admin tools);
+  // "All Games" / "All Series" show a master feed of recent + upcoming racing.
+  return seasonId ? <SeasonSchedule /> : <GlobalSchedule />;
+}
+
+// ── Master feed across seasons (no single season selected) ─────────────────
+
+function GlobalSchedule() {
+  const { gameId, seriesId, game, series } = useLeague();
+  const [rows, setRows] = useState(null);
+
+  useEffect(() => {
+    const qs = seriesId ? `series_id=${seriesId}` : gameId ? `game_id=${gameId}` : "";
+    setRows(null);
+    api(`/api/schedule${qs ? `?${qs}` : ""}`).then(setRows).catch(() => setRows([]));
+  }, [gameId, seriesId]);
+
+  const { upcoming, archive } = useMemo(() => {
+    const all = rows || [];
+    const dateVal = r => (r.date ? new Date(r.date).getTime() : null);
+    // Upcoming: events without saved results yet, soonest first (undated last).
+    const upcoming = all
+      .filter(r => !r.summary?.has_results)
+      .sort((a, b) => {
+        const av = dateVal(a), bv = dateVal(b);
+        if (av == null && bv == null) return 0;
+        if (av == null) return 1;
+        if (bv == null) return -1;
+        return av - bv;
+      })
+      .slice(0, 40);
+    // Archive: events with results, most recently run first.
+    const archive = all
+      .filter(r => r.summary?.has_results)
+      .sort((a, b) => (dateVal(b) ?? 0) - (dateVal(a) ?? 0))
+      .slice(0, 40);
+    return { upcoming, archive };
+  }, [rows]);
+
+  const scopeLabel = series?.name || game?.name || "All Games";
+
+  return (
+    <section>
+      <div className="page-title">
+        <h2>Schedule</h2>
+        <span className="page-badge">{scopeLabel}</span>
+      </div>
+      <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.9rem", maxWidth: 720 }}>
+        Racing across every series and season. Pick a specific Season above to manage its events; otherwise
+        here&apos;s what&apos;s coming up and what recently ran. Narrow with the Game / Series menus.
+      </p>
+
+      {rows == null ? (
+        <div className="skeleton" style={{ height: 240, marginTop: 16 }} />
+      ) : upcoming.length === 0 && archive.length === 0 ? (
+        <div className="empty-state"><span className="empty-state-icon">🗓</span><p>No races scheduled yet in this scope.</p></div>
+      ) : (
+        <>
+          <FeedSection title="Upcoming" icon="🟢" rows={upcoming} kind="upcoming" />
+          <FeedSection title="Archive · Recent Results" icon="🏁" rows={archive} kind="archive" />
+        </>
+      )}
+    </section>
+  );
+}
+
+function FeedSection({ title, icon, rows, kind }) {
+  if (!rows.length) return null;
+  const archive = kind === "archive";
+  return (
+    <div style={{ marginTop: 22 }}>
+      <h3 style={{ margin: "0 0 10px", display: "flex", alignItems: "center", gap: 8 }}>
+        <span>{icon}</span>{title}
+        <span className="page-badge" style={{ marginLeft: 4 }}>{rows.length}</span>
+      </h3>
+      <div className="table-wrap">
+        <table className="stats-table" style={{ width: "100%", minWidth: 720 }}>
+          <thead>
+            <tr>
+              <th style={{ whiteSpace: "nowrap" }}>Date</th>
+              <th style={{ textAlign: "left" }}>Event / Track</th>
+              <th style={{ textAlign: "left" }}>Series · Season</th>
+              <th style={{ textAlign: "left" }}>{archive ? "Winner" : "Car"}</th>
+              <th>{archive ? "Results" : "Status"}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(r => {
+              const s = r.summary || {};
+              return (
+                <tr key={r.id}>
+                  <td style={{ whiteSpace: "nowrap" }}>{fmtDate(r.date)}</td>
+                  <td style={{ textAlign: "left" }}>
+                    <Link href={`/races/${r.id}`} style={{ color: "var(--accent-cyan)", fontWeight: 600 }}>{r.name}</Link>
+                    {r.track && <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.78rem" }}>{r.track}</span>}
+                  </td>
+                  <td style={{ textAlign: "left", color: "var(--ink-1)", fontSize: "0.82rem" }}>
+                    {[r.series_name, r.season_name].filter(Boolean).join(" · ") || "—"}
+                    {r.game_name && <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.74rem" }}>{r.game_name}</span>}
+                  </td>
+                  <td style={{ textAlign: "left", fontWeight: archive && s.winner ? 600 : undefined }}>
+                    {archive ? <Person p={s.winner} /> : (s.car || <span style={{ color: "var(--ink-2)" }}>—</span>)}
+                  </td>
+                  <td>
+                    {archive
+                      ? <Link href={`/races/${r.id}`} title="View race results" style={{ fontSize: "1.1rem" }}>🏁</Link>
+                      : <span className="race-status status-upcoming" style={{ fontSize: "0.7rem" }}>UPCOMING</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ── One season's full event table (a concrete season is selected) ──────────
+
+function SeasonSchedule() {
   const { seasonId, season, refresh } = useLeague();
   const { isAdmin } = useAuth();
   const router = useRouter();
@@ -58,9 +180,6 @@ export default function SchedulePage() {
     loadRaces();
   }
 
-  if (!seasonId) {
-    return <div className="empty-state"><span className="empty-state-icon">🗓</span><p>Select a game, series and season above.</p></div>;
-  }
   if (!races) return <div className="skeleton" style={{ height: 240 }} />;
 
   const now = new Date();

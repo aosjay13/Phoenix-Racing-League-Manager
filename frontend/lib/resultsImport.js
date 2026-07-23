@@ -218,14 +218,31 @@ export function nameSimilarity(a, b) {
   return Math.max(ratio, tokenScore * 0.95);
 }
 
+// Best similarity of an imported name against ONE roster entry, considering the
+// entry's primary display name AND every stored alias / connected-account value
+// (Discord, PSN, Xbox, Steam, iRacing, …). This is what lets a GT7 export that
+// lists a PSN username resolve to the right Driver Profile. `e.aliases` is an
+// optional array of alias value strings the import UI attaches per entry.
+function entryScore(rawName, e) {
+  const candidates = [e.name ?? e.driver_name, ...(Array.isArray(e.aliases) ? e.aliases : [])].filter(Boolean);
+  let best = 0;
+  for (const c of candidates) {
+    const s = nameSimilarity(rawName, c);
+    if (s > best) best = s;
+  }
+  return best;
+}
+
 // Match one imported name against roster entries. Returns the best entry plus
 // ranked candidates and a status the UI acts on:
 //   matched   — confident (exact/normalized or ≥ strong threshold)
 //   suggested — a likely candidate the admin should confirm
 //   unmatched — nothing close; admin picks manually or skips the row
+// Scoring considers each entry's primary name and all of its aliases, so an
+// imported platform username still matches the driver's profile.
 export function matchDriver(rawName, entries, { strong = 0.9, weak = 0.55 } = {}) {
   const ranked = entries
-    .map(e => ({ entry_id: e.id ?? e.entry_id, name: e.name ?? e.driver_name, number: e.number ?? e.driver_number ?? null, score: nameSimilarity(rawName, e.name ?? e.driver_name) }))
+    .map(e => ({ entry_id: e.id ?? e.entry_id, name: e.name ?? e.driver_name, number: e.number ?? e.driver_number ?? null, score: entryScore(rawName, e) }))
     .sort((a, b) => b.score - a.score);
   const best = ranked[0];
   const candidates = ranked.slice(0, 5);

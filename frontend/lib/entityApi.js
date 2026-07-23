@@ -113,14 +113,17 @@ export const SPECS = {
   // Global driver pool — identities that exist independently of any season,
   // so an admin can create a driver first and pull them into a series/season
   // (or a race's results) later. See frontend/app/roster/page.js.
-  // `skillRating` is the driver's global, cross-game Elo-style Skill Rating.
-  // It defaults to the baseline (1500) on creation and is maintained by the
-  // stats engine after each main race — see lib/skillRating.js and
-  // lib/skillRatingServer.js. Kept on the global driver so it follows a racer
-  // across every series/game they compete in.
+  // `skillRatings` is a MAP of game_id -> Elo-style Skill Rating: SR is gated
+  // per game (skill in GT7 doesn't carry to iRacing), so each game a driver
+  // races in gets its own rating, seeded at the baseline (1500) and maintained
+  // by the stats engine after each main race — see lib/skillRating.js and
+  // lib/skillRatingServer.js. The legacy single `skillRating` number is kept for
+  // backward-compat reads but is no longer written. `aliases` is an ordered list
+  // of { label, value } connected-account identities (Discord/PSN/Xbox/… — see
+  // lib/aliases.js) the importer also matches imported names against.
   drivers: { collection: "drivers", parentField: null, sortField: "name",
              fields: { name: { required: true }, user_id: {}, notes: {},
-                       skillRating: { number: true, default: 1500 } } },
+                       skillRating: { number: true }, skillRatings: {}, aliases: {} } },
   // `number` is the car number — stored as a STRING (max 3 chars) so racing
   // numbers with leading zeros ("01", "001", "0", "00", "000") survive intact
   // instead of being parsed to an integer that drops the zeros.

@@ -18,6 +18,15 @@ export async function GET(request) {
 
 const SESSION_TYPES = ["qualifying", "race", "heat", "consolation", "feature"];
 
+// The game a season belongs to — SR is gated per game, so the ratings engine
+// needs it to know which per-game slot to move. Null for a legacy season with
+// no game_id (SR is then skipped). Cached-free tiny read; called once per save.
+async function gameIdForSeason(seasonId) {
+  if (!seasonId) return null;
+  const doc = await db().collection("seasons").doc(seasonId).get();
+  return doc.exists ? (doc.data().game_id || null) : null;
+}
+
 // Session-list metadata used to resolve which stored docs belong to the
 // session being written: legacy docs may lack the session field, in which
 // case they're treated as the event's first standard session.
@@ -132,11 +141,13 @@ export const POST = withAdmin(async (request, ctx, user) => {
     try {
       const raceDoc = await db().collection("races").doc(race_id).get();
       if (raceDoc.exists) {
+        const gameId = await gameIdForSeason(season_id);
         const { deltasByEntry, eligible } = await exchangeSkillRatings({
           race: { id: raceDoc.id, ...raceDoc.data() },
           savedRows: saved,
           session: savingSession,
           sessionType,
+          gameId,
           priorByEntry,
         });
         for (const row of saved) row.sr_delta = eligible ? (deltasByEntry[row.entry_id] ?? 0) : null;
@@ -166,6 +177,9 @@ export const DELETE = withAdmin(async (request) => {
   const target = session || firstSession;
   const existing = await db().collection("results").where("race_id", "==", raceId).get();
   const doomed = existing.docs.filter(d => matchesSession(d.data(), sessionType, target, firstSession));
+  // Grab a season_id off the deleted set (all share the race → one season) to
+  // resolve the game whose per-game SR must be scrubbed.
+  const seasonId = doomed.length ? doomed[0].data().season_id : null;
   const batch = db().batch();
   doomed.forEach(d => batch.delete(d.ref));
   await batch.commit();
@@ -174,7 +188,7 @@ export const DELETE = withAdmin(async (request) => {
   // the deleted session was the SR-bearing main race.
   if (isSrSession(sessionType)) {
     try {
-      await reverseSkillRatings(srDeltasByEntry(doomed.map(d => d.data())));
+      await reverseSkillRatings(srDeltasByEntry(doomed.map(d => d.data())), await gameIdForSeason(seasonId));
       await db().collection("races").doc(raceId).update({ strength_of_field: null });
     } catch (err) {
       console.error("Skill Rating reversal failed", err);

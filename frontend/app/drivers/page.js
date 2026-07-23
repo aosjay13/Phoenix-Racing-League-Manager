@@ -43,6 +43,7 @@ export default function DriversPage() {
             name: account?.display_name || d.name,
             pool_name: d.name,
             notes: d.notes || "",
+            aliases: d.aliases || [],
             photo_url: account?.photo_url || null,
             country: account?.country || null,
             linked: !!account,
@@ -109,7 +110,7 @@ export default function DriversPage() {
       .map(d => (d.id === updated.id
         // A linked driver keeps its account display name; an unlinked one takes
         // the new pool name.
-        ? { ...d, pool_name: updated.name, notes: updated.notes ?? d.notes, name: d.linked ? d.name : updated.name }
+        ? { ...d, pool_name: updated.name, notes: updated.notes ?? d.notes, aliases: updated.aliases ?? d.aliases, name: d.linked ? d.name : updated.name }
         : d))
       .sort((a, b) => String(a.name).localeCompare(String(b.name))));
     setEditing(null);
@@ -175,7 +176,7 @@ export default function DriversPage() {
       )}
       {editing && (
         <DriverEditModal
-          driver={{ id: editing.id, name: editing.pool_name, notes: editing.notes, linked: editing.linked }}
+          driver={{ id: editing.id, name: editing.pool_name, notes: editing.notes, aliases: editing.aliases, linked: editing.linked }}
           onClose={() => setEditing(null)}
           onSaved={handleSaved}
         />
