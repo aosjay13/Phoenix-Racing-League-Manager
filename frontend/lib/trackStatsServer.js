@@ -24,8 +24,14 @@ import { finalSessionName, summarizeRace } from "@/lib/raceSummaryServer";
 // venue's records/history reflect exactly the branch the user is viewing:
 // a season narrows to that season, a series to its seasons, a game to its
 // seasons, and nothing selected shows every race ever held here.
+//
+// `records_by_game` is the exception: since lap times aren't comparable across
+// games (a GT7 lap and an iRacing lap around the same circuit are different
+// records), the fastest lap is ALSO broken out per game. That breakdown ignores
+// the Game dropdown (a Series/Season still pins one game) so a track always
+// lists every game's own track record side by side.
 export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
-  const empty = { races_held: 0, seasons_raced: 0, record: null, drivers: [], winners: [] };
+  const empty = { races_held: 0, seasons_raced: 0, record: null, records_by_game: [], drivers: [], winners: [] };
   const wantedName = String(trackName || "").trim();
   const queries = [db().collection("races").where("track_id", "==", trackId).get()];
   if (wantedName) queries.push(db().collection("races").where("track", "==", wantedName).get());
@@ -51,6 +57,8 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
   const seasonsById = {};
   for (const doc of seasonDocs) if (doc.exists) seasonsById[doc.id] = { id: doc.id, ...doc.data() };
 
+  // Full scope (Game + Series + Season) — governs the leaderboard, past winners,
+  // headline record, and the races_held / seasons_raced counts.
   const inScope = season => {
     if (!season) return false;
     if (scope.seasonId) return season.id === scope.seasonId;
@@ -58,11 +66,24 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
     if (scope.gameId) return season.game_id === scope.gameId;
     return true;
   };
-  const races = allRaces.filter(r => inScope(seasonsById[r.season_id]));
-  if (!races.length) return empty;
+  // Series/Season scope only — the per-game record breakdown deliberately keeps
+  // every game so a track always shows all of them (a Series/Season already
+  // pins one game, so this only widens things when just a Game is selected).
+  const inScopeAllGames = season => {
+    if (!season) return false;
+    if (scope.seasonId) return season.id === scope.seasonId;
+    if (scope.seriesId) return season.series_id === scope.seriesId;
+    return true;
+  };
 
-  const raceIds = new Set(races.map(r => r.id));
+  const races = allRaces.filter(r => inScope(seasonsById[r.season_id]));       // full scope
+  const gameRaces = allRaces.filter(r => inScopeAllGames(seasonsById[r.season_id])); // per-game breakdown
+  if (!gameRaces.length) return empty;
+
+  const raceIds = new Set(races.map(r => r.id));                 // full-scope venue races
+  const venueRaceIds = new Set(gameRaces.map(r => r.id));        // all-games venue races
   const seasonIds = [...new Set(races.map(r => r.season_id).filter(Boolean))];
+  const loopSeasonIds = [...new Set(gameRaces.map(r => r.season_id).filter(Boolean))];
   const templatesById = await fetchTemplatesById();
 
   const keyFor = e =>
@@ -71,11 +92,39 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
   const drivers = {}; // driverKey -> { driver_name, driver_id, user_id, results[] }
   const winners = []; // one row per event won here
   let record = null;  // fastest single lap ever turned here (the track record)
+  const recordByGame = {}; // game_id -> fastest single lap turned here in THAT game
 
-  for (const seasonId of seasonIds) {
+  // Register a lap toward both the headline record (full scope only) and the
+  // per-game record (always). `gameId` is the game the season belongs to.
+  const considerLap = (r, entry, race, seasonId, seasonName, gameId, inFullScope) => {
+    const secs = isQualifying(r) ? parseTime(r.qual_time) : parseTime(r.fastest_lap_time);
+    if (secs == null) return;
+    const mk = () => ({
+      seconds: secs,
+      time: formatTime(secs),
+      driver_name: entry.name,
+      driver_id: entry.driver_id ?? null,
+      user_id: entry.user_id ?? null,
+      race_id: r.race_id,
+      race_name: race?.name ?? null,
+      session: r.session || (isQualifying(r) ? "Qualifying" : null),
+      from_qualifying: isQualifying(r),
+      season_id: seasonId,
+      season_name: seasonName,
+      date: race?.date || null,
+    });
+    if (inFullScope && (record == null || secs < record.seconds)) record = mk();
+    if (gameId) {
+      const cur = recordByGame[gameId];
+      if (cur == null || secs < cur.seconds) recordByGame[gameId] = mk();
+    }
+  };
+
+  for (const seasonId of loopSeasonIds) {
     const season = seasonsById[seasonId];
     if (!season) continue;
     const config = resolveSeasonConfig(season);
+    const gameId = season.game_id || null;
 
     const [entriesSnap, resultsSnap, racesSnap] = await Promise.all([
       db().collection("entries").where("season_id", "==", seasonId).get(),
@@ -88,12 +137,23 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
     const qualPosMap = buildQualPosMap(allResults);
     const qualTemplateByRace = buildQualTemplateMap(allResults);
 
-    // Keep only results from races held at THIS venue.
-    const results = allResults.filter(r => raceIds.has(r.race_id));
+    // Keep only results from races held at THIS venue (across all in-scope games).
+    const results = allResults.filter(r => venueRaceIds.has(r.race_id));
 
     for (const r of results) {
       const entry = entriesById[r.entry_id];
       if (!entry) continue;
+      const inFullScope = raceIds.has(r.race_id);
+      const race = racesById[r.race_id];
+
+      // Track record(s) — the fastest single lap turned here, across BOTH
+      // race-type sessions (lap in fastest_lap_time) and Qualifying (hot lap in
+      // qual_time). Recorded per game always, and folded into the headline
+      // record only when the race is in the full (game-scoped) selection.
+      considerLap(r, entry, race, seasonId, season.name, gameId, inFullScope);
+
+      // The leaderboard / career aggregation is the game-scoped view only.
+      if (!inFullScope) continue;
       const scored = {
         ...r,
         points: (isQualifying(r) || r.counts_points === false) ? 0 : pointsFor(
@@ -109,32 +169,9 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
       if (entry.driver_id) bucket.driver_id = entry.driver_id;
       if (entry.user_id) bucket.user_id = entry.user_id;
       bucket.results.push(scored);
-
-      // Track record = the fastest single lap turned here, across BOTH race-type
-      // sessions (whose lap lives in fastest_lap_time) and Qualifying (whose hot
-      // lap lives in qual_time) — a qualifying lap is still a real lap set at
-      // this venue, so it counts toward the venue record.
-      const secs = isQualifying(r) ? parseTime(r.qual_time) : parseTime(r.fastest_lap_time);
-      if (secs != null && (record == null || secs < record.seconds)) {
-        const race = racesById[r.race_id];
-        record = {
-          seconds: secs,
-          time: formatTime(secs),
-          driver_name: entry.name,
-          driver_id: entry.driver_id ?? null,
-          user_id: entry.user_id ?? null,
-          race_id: r.race_id,
-          race_name: race?.name ?? null,
-          session: r.session || (isQualifying(r) ? "Qualifying" : null),
-          from_qualifying: isQualifying(r),
-          season_id: seasonId,
-          season_name: season.name,
-          date: race?.date || null,
-        };
-      }
     }
 
-    // Winner of each event = P1 of its deciding session.
+    // Winner of each event = P1 of its deciding session (full scope only).
     for (const race of races) {
       if (race.season_id !== seasonId) continue;
       const finalName = finalSessionName(race);
@@ -165,8 +202,15 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
     }
   }
 
-  // Prefer canonical global-driver names for the leaderboard.
-  const driverIds = [...new Set(Object.values(drivers).map(d => d.driver_id).filter(Boolean))];
+  // Prefer canonical global-driver names everywhere a driver is shown — the
+  // leaderboard, the headline record, and each game's record. Collect ids from
+  // all of those so a record-holder excluded from the leaderboard (different
+  // game) still resolves.
+  const driverIds = [...new Set([
+    ...Object.values(drivers).map(d => d.driver_id),
+    record?.driver_id,
+    ...Object.values(recordByGame).map(r => r.driver_id),
+  ].filter(Boolean))];
   const canonicalName = {};
   if (driverIds.length) {
     const docs = await Promise.all(driverIds.map(id => db().collection("drivers").doc(id).get()));
@@ -181,6 +225,14 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
     for (const doc of docs) if (doc.exists) seriesName[doc.id] = doc.data().name;
   }
   for (const w of winners) w.series_name = (w.series_id && seriesName[w.series_id]) || null;
+
+  // Resolve game names for the per-game record breakdown.
+  const gameIds = [...new Set(Object.keys(recordByGame))];
+  const gameName = {};
+  if (gameIds.length) {
+    const docs = await Promise.all(gameIds.map(id => db().collection("games").doc(id).get()));
+    for (const doc of docs) if (doc.exists) gameName[doc.id] = doc.data().name;
+  }
 
   const driverRows = Object.values(drivers)
     .map(d => ({
@@ -202,5 +254,21 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
 
   if (record?.driver_id && canonicalName[record.driver_id]) record.driver_name = canonicalName[record.driver_id];
 
-  return { races_held: races.length, seasons_raced: seasonIds.length, record, drivers: driverRows, winners };
+  const records_by_game = Object.entries(recordByGame)
+    .map(([gid, rec]) => ({
+      ...rec,
+      driver_name: (rec.driver_id && canonicalName[rec.driver_id]) || rec.driver_name,
+      game_id: gid,
+      game_name: gameName[gid] || "Unknown Game",
+    }))
+    .sort((a, b) => String(a.game_name).localeCompare(String(b.game_name)));
+
+  return {
+    races_held: races.length,
+    seasons_raced: seasonIds.length,
+    record,
+    records_by_game,
+    drivers: driverRows,
+    winners,
+  };
 }
