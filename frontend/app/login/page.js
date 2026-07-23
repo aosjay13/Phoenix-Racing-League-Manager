@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  sendEmailVerification,
   updateProfile,
 } from "firebase/auth";
 import { clientAuth } from "@/lib/firebaseClient";
@@ -28,6 +29,10 @@ export default function LoginPage() {
       if (mode === "signup") {
         const cred = await createUserWithEmailAndPassword(clientAuth(), form.email, form.password);
         if (form.name) await updateProfile(cred.user, { displayName: form.name });
+        // Require email verification before the account can be used. Firebase
+        // delivers this email; the global VerifyGate blocks the app until then.
+        await sendEmailVerification(cred.user);
+        try { sessionStorage.setItem("pr_verif_sent", "1"); } catch {}
       } else {
         await signInWithEmailAndPassword(clientAuth(), form.email, form.password);
       }

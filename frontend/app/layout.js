@@ -1,6 +1,7 @@
 import "./globals.css";
 import { AppShell } from "../components/AppShell";
 import { AuthProvider } from "../components/AuthProvider";
+import { VerifyGate } from "../components/VerifyGate";
 import { LeagueProvider } from "../components/LeagueProvider";
 
 export const metadata = {
@@ -27,9 +28,11 @@ export default function RootLayout({ children }) {
     <html lang="en">
       <body>
         <AuthProvider>
-          <LeagueProvider>
-            <AppShell>{children}</AppShell>
-          </LeagueProvider>
+          <VerifyGate>
+            <LeagueProvider>
+              <AppShell>{children}</AppShell>
+            </LeagueProvider>
+          </VerifyGate>
         </AuthProvider>
       </body>
     </html>

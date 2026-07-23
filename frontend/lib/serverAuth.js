@@ -33,6 +33,13 @@ export async function isAdmin(user) {
   return doc.exists && doc.data().role === "admin";
 }
 
+// An account may use the app only once its email is verified. Permanent env-var
+// admins are exempt so the league owner can never lock themselves out (e.g. if
+// verification email delivery ever breaks).
+export function isVerified(user) {
+  return !!user && (user.email_verified === true || isEnvAdmin(user.email));
+}
+
 export function unauthorized() {
   return NextResponse.json({ error: "Sign in required" }, { status: 401 });
 }
@@ -41,21 +48,30 @@ export function forbidden() {
   return NextResponse.json({ error: "Admin access required" }, { status: 403 });
 }
 
+export function unverified() {
+  return NextResponse.json(
+    { error: "Verify your email address to continue.", code: "email-unverified" },
+    { status: 403 },
+  );
+}
+
 // Wraps a handler that requires an authenticated admin.
 export function withAdmin(handler) {
   return async (request, ctx) => {
     const user = await getRequestUser(request);
     if (!user) return unauthorized();
+    if (!isVerified(user)) return unverified();
     if (!(await isAdmin(user))) return forbidden();
     return handler(request, ctx, user);
   };
 }
 
-// Wraps a handler that requires any authenticated user.
+// Wraps a handler that requires any authenticated (and email-verified) user.
 export function withUser(handler) {
   return async (request, ctx) => {
     const user = await getRequestUser(request);
     if (!user) return unauthorized();
+    if (!isVerified(user)) return unverified();
     return handler(request, ctx, user);
   };
 }

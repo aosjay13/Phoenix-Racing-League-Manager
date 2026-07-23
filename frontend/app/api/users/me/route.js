@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
-import { withUser, isAdmin } from "@/lib/serverAuth";
+import { withUser, isAdmin, isEnvAdmin } from "@/lib/serverAuth";
 
 // Called after sign-in: creates/refreshes the user doc and returns it.
 export const GET = withUser(async (request, ctx, user) => {
@@ -19,10 +19,10 @@ export const GET = withUser(async (request, ctx, user) => {
       created_at: new Date().toISOString(),
     };
     await ref.set(profile);
-    return NextResponse.json({ uid: user.uid, ...profile, is_admin: admin });
+    return NextResponse.json({ uid: user.uid, ...profile, is_admin: admin, env_admin: isEnvAdmin(user.email) });
   }
   if (admin && doc.data().role !== "admin") await ref.update({ role: "admin" });
-  return NextResponse.json({ uid: user.uid, ...doc.data(), is_admin: admin || doc.data().role === "admin" });
+  return NextResponse.json({ uid: user.uid, ...doc.data(), is_admin: admin || doc.data().role === "admin", env_admin: isEnvAdmin(user.email) });
 });
 
 const EDITABLE = ["display_name", "photo_url", "bio", "country", "number", "favorite_car", "socials"];
