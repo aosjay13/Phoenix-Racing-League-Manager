@@ -24,6 +24,11 @@ export function TrackCreateModal({ onClose, onCreated, onSaved, initialName, tra
 
   async function handleSubmit(e) {
     e.preventDefault();
+    // This modal renders through a portal, but React synthetic events still
+    // bubble along the component tree — so without stopPropagation the submit
+    // reaches the enclosing race form (in RaceCreateModal), prematurely
+    // creating the race and kicking the admin back to the week scheduler.
+    e.stopPropagation();
     setBusy(true);
     setError(null);
     try {
