@@ -13,11 +13,17 @@ export async function getRequestUser(request) {
   }
 }
 
-function envAdminEmails() {
+export function envAdminEmails() {
   return (process.env.ADMIN_EMAILS || "")
     .split(",")
     .map(e => e.trim().toLowerCase())
     .filter(Boolean);
+}
+
+// Admins granted via the ADMIN_EMAILS env var are permanent — their role can't
+// be revoked from the dashboard, so the UI flags them as locked.
+export function isEnvAdmin(email) {
+  return !!email && envAdminEmails().includes(String(email).toLowerCase());
 }
 
 export async function isAdmin(user) {

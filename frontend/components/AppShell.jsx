@@ -18,14 +18,17 @@ const publicNav = [
 ];
 
 const adminNav = [
-  { href: "/race-entry", label: "Race Entry",     icon: "⏱" },
-  { href: "/roster",     label: "Roster & Teams", icon: "⊞" },
-  { href: "/admin",      label: "League Setup",   icon: "⚙" },
+  { href: "/race-entry",  label: "Race Entry",     icon: "⏱" },
+  { href: "/roster",      label: "Roster & Teams", icon: "⊞" },
+  { href: "/admin/users", label: "User Accounts",  icon: "👥" },
+  { href: "/admin",       label: "League Setup",   icon: "⚙", exact: true },
 ];
 
 function NavLinks({ items, pathname }) {
   return items.map((item) => {
-    const isActive = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+    const isActive = item.href === "/" || item.exact
+      ? pathname === item.href
+      : pathname.startsWith(item.href);
     return (
       <Link className={`nav-link${isActive ? " active" : ""}`} key={item.href} href={item.href}>
         <span className="nav-icon">{item.icon}</span>
