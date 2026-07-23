@@ -66,7 +66,7 @@ export async function GET(request) {
       skill_rating: ratingForGame(data.skillRatings, gameId),
       total_races: 0,
       last_delta: null,
-      _lastAt: null,
+      _lastKey: null,
     };
   }
 
@@ -92,22 +92,33 @@ export async function GET(request) {
 
   const driverByEntry = {};
   for (const e of entryDocs) { const id = e.data().driver_id; if (id) driverByEntry[e.id] = id; }
-  const raceDate = {};
-  for (const ra of raceDocs) raceDate[ra.id] = ra.data().date || null;
+  // Race ordering inputs — date first, then the season round number so races
+  // within a season (or undated races) still order chronologically.
+  const raceOrderKey = {};
+  for (const ra of raceDocs) {
+    const d = ra.data();
+    raceOrderKey[ra.id] = { date: d.date || "", round: Number(d.round_number) || 0 };
+  }
 
   const seen = new Set();
   for (const doc of resultDocs) {
     const r = doc.data();
-    if (r.sr_delta == null) continue; // only SR-bearing main-race results
+    // Only SR-bearing main-race results carry a delta, and only the driver who
+    // actually started gets one — so events a driver missed are never counted.
+    if (r.sr_delta == null) continue;
     const driverId = driverByEntry[r.entry_id];
     const row = drivers[driverId];
     if (!row) continue;
     row.total_races += 1;
     seen.add(driverId);
-    // Most-recent trend: by race date, breaking ties on the result's save time.
-    const at = `${raceDate[r.race_id] || ""}|${r.created_at || ""}`;
-    if (row._lastAt == null || at >= row._lastAt) {
-      row._lastAt = at;
+    // Trend = the delta of this driver's most recent race IN THIS GAME, i.e.
+    // (SR after that race) − (SR before it). Chronology: race date, then round
+    // number, then the result's save time as a final tiebreak. The scope is a
+    // single game, so this is inherently game-specific.
+    const ord = raceOrderKey[r.race_id] || { date: "", round: 0 };
+    const key = [ord.date, String(ord.round).padStart(6, "0"), r.created_at || ""].join("|");
+    if (row._lastKey == null || key > row._lastKey) {
+      row._lastKey = key;
       row.last_delta = Number(r.sr_delta);
     }
   }
@@ -120,7 +131,7 @@ export async function GET(request) {
     String(a.driver_name).localeCompare(String(b.driver_name))
   );
   rows = rows.map((r, i) => {
-    const { _lastAt, ...rest } = r;
+    const { _lastKey, ...rest } = r;
     return { rank: i + 1, ...rest };
   });
 

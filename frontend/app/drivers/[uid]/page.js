@@ -15,6 +15,19 @@ const STAT_LABELS = [
   ["provisionals", "Provisionals"], ["titles", "Titles"], ["points", "Points"],
 ];
 
+// Small coloured +/- chip for a driver's most recent SR change in a game.
+// Mirrors the Skill Ratings leaderboard's Trend indicator.
+function SrTrend({ delta }) {
+  if (delta == null) return null;
+  if (delta === 0) return <span style={{ fontSize: "0.72rem", color: "var(--ink-2)", fontWeight: 600 }}>±0</span>;
+  const up = delta > 0;
+  return (
+    <span style={{ fontSize: "0.72rem", fontWeight: 700, color: up ? "var(--positive, #34d399)" : "var(--negative, #f87171)" }}>
+      {up ? "▲" : "▼"} {up ? "+" : ""}{delta}
+    </span>
+  );
+}
+
 // Per-track table columns — the venue-specific slice of a driver's career.
 const TRACK_COLUMNS = [
   ["starts", "Starts"], ["wins", "Wins"], ["podiums", "Podiums"], ["top5", "Top 5s"],
@@ -73,13 +86,10 @@ export default function DriverProfilePage() {
   if (error) return <div className="empty-state"><span className="empty-state-icon">🏎</span><p>{error}</p></div>;
   if (!data) return <div className="skeleton" style={{ height: 280 }} />;
 
-  const { profile, all_games, by_game, by_track = [], linked, skill_ratings = {} } = data;
+  const { profile, all_games, by_game, by_track = [], linked, skill_ratings_by_game = [] } = data;
   const stats = gameFilter === "all"
     ? all_games
     : by_game.find(g => g.game_id === gameFilter)?.stats ?? all_games;
-  // SR is per game. Show the rating for the game currently filtered to; with
-  // "All games" selected there's no single rating to show.
-  const skill_rating = gameFilter !== "all" ? (skill_ratings[gameFilter] ?? null) : null;
 
   return (
     <section>
@@ -95,11 +105,6 @@ export default function DriverProfilePage() {
             </h2>
           </div>
           {profile.country && <span className="page-badge">{profile.country}</span>}
-          {skill_rating != null && (
-            <Link href="/skill-ratings" className="page-badge" title="Skill Rating in the selected game" style={{ marginLeft: profile.country ? 8 : 0 }}>
-              📈 Skill Rating {skill_rating}
-            </Link>
-          )}
           {!linked && (
             <span className="page-badge" style={{ background: "transparent", border: "1px solid var(--ink-2)", color: "var(--ink-2)", marginLeft: profile.country ? 8 : 0 }}>
               ⛓️‍💥 Not linked to an account
@@ -151,6 +156,29 @@ export default function DriverProfilePage() {
           )}
         </div>
       </div>
+
+      {skill_ratings_by_game.length > 0 && (
+        <div style={{ marginTop: 22 }}>
+          <div className="section-header">
+            <h3 title="Skill Ratings are tracked separately for each game">📈 Skill Ratings</h3>
+            <Link href="/skill-ratings" className="page-badge" style={{ textDecoration: "none" }}>Leaderboard →</Link>
+          </div>
+          <div className="metrics" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))" }}>
+            {skill_ratings_by_game.map(g => (
+              <article className="metric-card" key={g.game_id}>
+                <div className="metric-num" style={{ display: "flex", alignItems: "baseline", gap: 8, justifyContent: "center" }}>
+                  {g.rating}
+                  <SrTrend delta={g.last_delta} />
+                </div>
+                <div className="metric-label">
+                  {g.game_name}
+                  {!g.ranked && <span style={{ color: "var(--ink-2)" }}> · Unranked</span>}
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="tab-row" style={{ marginTop: 24 }}>
         <button className={`tab${view === "career" ? " active" : ""}`} onClick={() => setView("career")}>Career Stats</button>

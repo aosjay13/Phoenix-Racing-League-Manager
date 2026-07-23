@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { makeDocRoutes, SPECS } from "@/lib/entityApi";
 import { db } from "@/lib/firebase";
 import { buildCareerProfile } from "@/lib/careerStatsServer";
+import { ratingForGame } from "@/lib/skillRating";
 
 const routes = makeDocRoutes(SPECS.drivers);
 export const PATCH = routes.PATCH;
@@ -54,15 +55,32 @@ export async function GET(request, { params }) {
 
   const career = await buildCareerProfile({ driverId, userId: linkedUserId });
 
+  // Per-game Skill Ratings for the profile's "Skill Ratings" section: one entry
+  // per game the driver has raced in (from career.by_game), each with the
+  // driver's current SR in that game and their most-recent trend. A game with a
+  // stored rating is "ranked"; one they've raced but that never moved SR shows
+  // the 1500 baseline as unranked. Sorted strongest-first.
+  const ratingsMap = (driver && driver.skillRatings && typeof driver.skillRatings === "object") ? driver.skillRatings : {};
+  const skill_ratings_by_game = (career.by_game || []).map(g => ({
+    game_id: g.game_id,
+    game_name: g.game_name,
+    game_logo_url: g.game_logo_url ?? null,
+    rating: ratingForGame(ratingsMap, g.game_id),
+    ranked: Object.prototype.hasOwnProperty.call(ratingsMap, g.game_id),
+    last_delta: (career.sr_trend_by_game && career.sr_trend_by_game[g.game_id]) ?? null,
+  })).sort((a, b) => b.rating - a.rating);
+
+  const { sr_trend_by_game, ...careerPublic } = career;
+
   return NextResponse.json({
     driver_id: driverId,
     uid: linkedUserId,
     linked: !!(linkedUserId && account),
-    // Per-game Skill Ratings map ({ game_id: rating }). SR is gated per game, so
-    // the profile shows the rating for whichever game the viewer has filtered to
-    // (see the game filter on the profile page). Empty when never rated.
-    skill_ratings: (driver && driver.skillRatings && typeof driver.skillRatings === "object") ? driver.skillRatings : {},
+    // Raw per-game map ({ game_id: rating }) kept for any consumer that needs a
+    // direct lookup; the profile UI uses skill_ratings_by_game below.
+    skill_ratings: ratingsMap,
+    skill_ratings_by_game,
     profile,
-    ...career,
+    ...careerPublic,
   });
 }
