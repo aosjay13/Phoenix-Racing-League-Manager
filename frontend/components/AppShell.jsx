@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { useLeague } from "@/components/LeagueProvider";
 import { api } from "@/lib/api";
@@ -13,33 +13,36 @@ import { api } from "@/lib/api";
 export const USERS_SEEN_KEY = "pr_users_last_seen";
 export const USERS_SEEN_EVENT = "pr-users-seen";
 
-// Count of accounts created since the admin last viewed User Accounts. Drives the
-// red badge next to that nav item. Baseline is stamped to "now" on first ever
-// load so an admin isn't greeted by their entire existing roster as "new".
-function useNewAccountCount(isAdmin, pathname) {
+// Count of User Accounts items needing admin attention: accounts created since
+// the admin last opened the dashboard PLUS pending driver-claim requests. Drives
+// the red badge next to the nav item. The new-signup baseline is stamped to "now"
+// on first ever load so an admin isn't greeted by their whole existing roster.
+function useUserAccountsAlerts(isAdmin, pathname) {
   const [count, setCount] = useState(0);
-  const usersRef = useRef([]);
 
-  const recompute = useCallback(() => {
-    const seen = (typeof window !== "undefined" && localStorage.getItem(USERS_SEEN_KEY)) || "";
-    setCount(usersRef.current.filter(u => (u.created_at || "") > seen).length);
-  }, []);
-
-  useEffect(() => {
-    if (!isAdmin) { usersRef.current = []; setCount(0); return; }
-    let alive = true;
-    api("/api/admin/users").then(list => {
-      if (!alive) return;
-      usersRef.current = Array.isArray(list) ? list : [];
-      if (!localStorage.getItem(USERS_SEEN_KEY)) {
+  const load = useCallback(async () => {
+    if (!isAdmin) { setCount(0); return; }
+    try {
+      const [users, requests] = await Promise.all([
+        api("/api/admin/users"),
+        api("/api/admin/claim-requests"),
+      ]);
+      if (Array.isArray(users) && !localStorage.getItem(USERS_SEEN_KEY)) {
         localStorage.setItem(USERS_SEEN_KEY, new Date().toISOString());
       }
-      recompute();
-    }).catch(() => {});
-    function onSeen() { recompute(); }
+      const seen = localStorage.getItem(USERS_SEEN_KEY) || "";
+      const newAccounts = (Array.isArray(users) ? users : []).filter(u => (u.created_at || "") > seen).length;
+      const pending = Array.isArray(requests) ? requests.length : 0;
+      setCount(newAccounts + pending);
+    } catch { /* leave count unchanged on transient errors */ }
+  }, [isAdmin]);
+
+  useEffect(() => {
+    load();
+    function onSeen() { load(); }
     window.addEventListener(USERS_SEEN_EVENT, onSeen);
-    return () => { alive = false; window.removeEventListener(USERS_SEEN_EVENT, onSeen); };
-  }, [isAdmin, pathname, recompute]);
+    return () => window.removeEventListener(USERS_SEEN_EVENT, onSeen);
+  }, [load, pathname]);
 
   return count;
 }
@@ -74,7 +77,7 @@ function NavLinks({ items, pathname, badges }) {
         <span className="nav-icon">{item.icon}</span>
         {item.label}
         {badge > 0 && (
-          <span className="nav-badge" title={`${badge} new account${badge === 1 ? "" : "s"}`}>{badge}</span>
+          <span className="nav-badge" title={`${badge} item${badge === 1 ? "" : "s"} need${badge === 1 ? "s" : ""} your attention`}>{badge}</span>
         )}
       </Link>
     );
@@ -143,8 +146,8 @@ export function AppShell({ children }) {
   const pathname = usePathname();
   const { isAdmin } = useAuth();
   const league = useLeague();
-  const newAccounts = useNewAccountCount(isAdmin, pathname);
-  const adminBadges = { "/admin/users": newAccounts };
+  const userAccountsAlerts = useUserAccountsAlerts(isAdmin, pathname);
+  const adminBadges = { "/admin/users": userAccountsAlerts };
 
   return (
     <div className="shell">

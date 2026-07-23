@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { useAuth } from "@/components/AuthProvider";
 import { api } from "@/lib/api";
 import { formatStat } from "@/lib/standings";
 
@@ -23,14 +24,46 @@ const TRACK_COLUMNS = [
 
 export default function DriverProfilePage() {
   const { uid } = useParams();
+  const { user } = useAuth();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [gameFilter, setGameFilter] = useState("all");
   const [view, setView] = useState("career"); // "career" | "tracks"
+  // Claim flow: "idle" (button), "pending" (already requested), "done" (just sent)
+  const [claimState, setClaimState] = useState("idle");
+  const [claimBusy, setClaimBusy] = useState(false);
+  const [claimError, setClaimError] = useState(null);
 
   useEffect(() => {
     api(`/api/drivers/${uid}`).then(setData).catch(err => setError(err.message));
   }, [uid]);
+
+  // Reflect a pending claim request the current user may already have filed for
+  // this unclaimed driver profile, so we show "pending" instead of the button.
+  const driverId = data?.driver_id;
+  const claimedBy = data?.uid;
+  useEffect(() => {
+    if (!user || !driverId || claimedBy) return;
+    api("/api/claim-requests")
+      .then(rows => {
+        if (rows.some(r => r.driver_id === driverId && r.status === "pending")) setClaimState("pending");
+      })
+      .catch(() => {});
+  }, [user, driverId, claimedBy]);
+
+  async function requestClaim() {
+    setClaimBusy(true);
+    setClaimError(null);
+    try {
+      await api("/api/claim-requests", { method: "POST", body: { driver_id: driverId } });
+      setClaimState("done");
+    } catch (err) {
+      if (/pending request/i.test(err.message)) setClaimState("pending");
+      else setClaimError(err.message);
+    } finally {
+      setClaimBusy(false);
+    }
+  }
 
   if (error) return <div className="empty-state"><span className="empty-state-icon">🏎</span><p>{error}</p></div>;
   if (!data) return <div className="skeleton" style={{ height: 280 }} />;
@@ -69,6 +102,32 @@ export default function DriverProfilePage() {
             <p style={{ marginTop: 10, color: "var(--ink-2)", fontSize: "0.85rem", maxWidth: 560 }}>
               These stats are tracked from race results. No player account has claimed this driver yet, so there's no profile photo, bio, or country.
             </p>
+          )}
+
+          {/* Claim flow: a signed-in user can request that admins link this
+              unclaimed driver profile to their account. Admin approval required. */}
+          {user && driverId && !claimedBy && (
+            <div style={{ marginTop: 14 }}>
+              {claimState === "pending" ? (
+                <span className="page-badge" style={{ background: "rgba(255,178,36,0.14)", color: "var(--accent-amber, #ffb224)", border: "1px solid rgba(255,178,36,0.3)" }}>
+                  ⏳ Claim request pending admin approval
+                </span>
+              ) : claimState === "done" ? (
+                <div className="toast toast-success" style={{ margin: 0 }}>
+                  Request sent! An admin will review it before this profile is linked to your account.
+                </div>
+              ) : (
+                <>
+                  <button className="btn btn-primary" style={{ marginTop: 0 }} disabled={claimBusy} onClick={requestClaim}>
+                    {claimBusy ? "Sending…" : "🙋 This is me — request to claim this profile"}
+                  </button>
+                  <p style={{ marginTop: 8, color: "var(--ink-2)", fontSize: "0.8rem", maxWidth: 560 }}>
+                    An admin must approve your request before this driver is linked to your account.
+                  </p>
+                  {claimError && <div className="toast toast-error" style={{ marginTop: 8 }}>{claimError}</div>}
+                </>
+              )}
+            </div>
           )}
         </div>
       </div>

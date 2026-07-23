@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AdminGate } from "@/components/AdminGate";
 import { useAuth } from "@/components/AuthProvider";
@@ -92,7 +93,9 @@ function UserAccountsInner() {
   const { user: me } = useAuth();
   const [users, setUsers] = useState(null);
   const [drivers, setDrivers] = useState([]);
+  const [requests, setRequests] = useState([]);   // pending driver-claim requests
   const [busy, setBusy] = useState({});   // uid -> true while a write is in flight
+  const [reqBusy, setReqBusy] = useState({});   // request id -> true while resolving
   const [error, setError] = useState(null);
   const [toast, setToast] = useState(null);
   // Timestamp of the admin's previous visit, captured before the effect below
@@ -107,9 +110,14 @@ function UserAccountsInner() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [u, d] = await Promise.all([api("/api/admin/users"), api("/api/drivers")]);
+      const [u, d, r] = await Promise.all([
+        api("/api/admin/users"),
+        api("/api/drivers"),
+        api("/api/admin/claim-requests"),
+      ]);
       setUsers(u);
       setDrivers(d);
+      setRequests(r);
     } catch (err) {
       setError(err.message);
       setUsers([]);
@@ -138,6 +146,24 @@ function UserAccountsInner() {
     }
   }
 
+  async function resolveRequest(req, action) {
+    setReqBusy(b => ({ ...b, [req.id]: true }));
+    try {
+      await api(`/api/admin/claim-requests/${req.id}`, { method: "PATCH", body: { action } });
+      await load();
+      // Refresh the sidebar alert badge (pending count changed).
+      window.dispatchEvent(new Event(USERS_SEEN_EVENT));
+      showToast("success",
+        action === "approve"
+          ? `Linked ${req.user_name} → ${req.driver_name}.`
+          : `Denied ${req.user_name}'s request for ${req.driver_name}.`);
+    } catch (err) {
+      showToast("error", err.message);
+    } finally {
+      setReqBusy(b => ({ ...b, [req.id]: false }));
+    }
+  }
+
   function toggleAdmin(u) {
     const makeAdmin = u.role !== "admin";
     patchUser(u.uid, { role: makeAdmin ? "admin" : "player" },
@@ -159,6 +185,54 @@ function UserAccountsInner() {
         real account to the statistical <strong>Driver Profile</strong> it races as, so you always know who is who.
       </p>
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
+
+      {requests.length > 0 && (
+        <div className="form-card" style={{ marginTop: 16, borderColor: "var(--accent-amber, #ffb224)" }}>
+          <h3 style={{ marginTop: 0, display: "flex", alignItems: "center", gap: 8 }}>
+            Pending Profile Claims
+            <span className="nav-badge" style={{ position: "static" }}>{requests.length}</span>
+          </h3>
+          <p style={{ marginTop: 0, color: "var(--ink-1)", fontSize: "0.85rem", maxWidth: 720 }}>
+            Players asking to link a <strong>Driver Profile</strong> to their account. Approving writes the link;
+            approving one profile auto-denies any other requests for the same profile.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {requests.map(req => {
+              const rBusy = !!reqBusy[req.id];
+              return (
+                <div key={req.id} style={{
+                  display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+                  padding: "10px 12px", borderRadius: 10, background: "var(--card-hover)",
+                }}>
+                  {req.user_photo
+                    ? <img src={req.user_photo} alt="" className="avatar avatar-sm" />
+                    : <span className="avatar avatar-sm avatar-fallback">{String(req.user_name || "?")[0]?.toUpperCase()}</span>}
+                  <span style={{ flex: 1, minWidth: 220 }}>
+                    <strong>{req.user_name}</strong>
+                    {req.user_email && <span style={{ color: "var(--ink-2)", fontSize: "0.78rem" }}> · {req.user_email}</span>}
+                    <span style={{ display: "block", fontSize: "0.85rem", color: "var(--ink-1)" }}>
+                      wants to claim{" "}
+                      <Link href={`/drivers/${req.driver_id}`} style={{ color: "var(--accent-cyan)", fontWeight: 600 }}>
+                        {req.driver_name}
+                      </Link>
+                    </span>
+                  </span>
+                  <span style={{ display: "flex", gap: 8 }}>
+                    <button className="btn btn-primary" style={{ marginTop: 0, padding: "6px 14px" }}
+                      disabled={rBusy} onClick={() => resolveRequest(req, "approve")}>
+                      {rBusy ? "…" : "✓ Approve"}
+                    </button>
+                    <button className="btn btn-ghost" style={{ marginTop: 0, padding: "6px 14px" }}
+                      disabled={rBusy} onClick={() => resolveRequest(req, "deny")}>
+                      Deny
+                    </button>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {error && <div className="empty-state"><span className="empty-state-icon">⚠️</span><p>{error}</p></div>}
 
