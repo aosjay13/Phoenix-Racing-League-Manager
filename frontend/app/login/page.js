@@ -5,8 +5,6 @@ import { useRouter } from "next/navigation";
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  signInWithPopup,
-  GoogleAuthProvider,
   updateProfile,
 } from "firebase/auth";
 import { clientAuth } from "@/lib/firebaseClient";
@@ -33,19 +31,6 @@ export default function LoginPage() {
       } else {
         await signInWithEmailAndPassword(clientAuth(), form.email, form.password);
       }
-      router.push("/");
-    } catch (err) {
-      setError(friendly(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleGoogle() {
-    setBusy(true);
-    setError(null);
-    try {
-      await signInWithPopup(clientAuth(), new GoogleAuthProvider());
       router.push("/");
     } catch (err) {
       setError(friendly(err));
@@ -85,9 +70,6 @@ export default function LoginPage() {
           <button className="btn btn-primary" disabled={busy} type="submit">
             {busy ? "One moment…" : mode === "signup" ? "Create Account" : "Sign In"}
           </button>
-          <button className="btn btn-ghost" type="button" disabled={busy} onClick={handleGoogle} style={{ marginLeft: 8 }}>
-            Continue with Google
-          </button>
         </form>
 
         <p style={{ marginTop: 18, fontSize: "0.85rem", color: "var(--ink-1)" }}>
@@ -110,6 +92,5 @@ function friendly(err) {
   if (code.includes("invalid-credential") || code.includes("wrong-password")) return "Email or password is incorrect.";
   if (code.includes("email-already-in-use")) return "An account with that email already exists.";
   if (code.includes("weak-password")) return "Password must be at least 6 characters.";
-  if (code.includes("popup-closed")) return "Google sign-in was cancelled.";
   return err?.message || "Something went wrong. Try again.";
 }
