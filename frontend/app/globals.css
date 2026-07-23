@@ -161,6 +161,24 @@ a {
   background: var(--accent-cyan);
 }
 
+/* Red count badge for new sign-ups, sitting at the end of a nav link. */
+.nav-badge {
+  margin-left: auto;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--accent-red, #e5484d);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15);
+}
+
 /* ── Main content ───────────────────────────── */
 .main {
   padding: 32px;

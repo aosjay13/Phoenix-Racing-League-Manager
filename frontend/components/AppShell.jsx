@@ -2,8 +2,47 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { useLeague } from "@/components/LeagueProvider";
+import { api } from "@/lib/api";
+
+// localStorage key + custom event shared with the User Accounts page: it stamps
+// "everything up to now has been seen" when the admin opens the dashboard, which
+// clears the red new-signup badge in the sidebar.
+export const USERS_SEEN_KEY = "pr_users_last_seen";
+export const USERS_SEEN_EVENT = "pr-users-seen";
+
+// Count of accounts created since the admin last viewed User Accounts. Drives the
+// red badge next to that nav item. Baseline is stamped to "now" on first ever
+// load so an admin isn't greeted by their entire existing roster as "new".
+function useNewAccountCount(isAdmin, pathname) {
+  const [count, setCount] = useState(0);
+  const usersRef = useRef([]);
+
+  const recompute = useCallback(() => {
+    const seen = (typeof window !== "undefined" && localStorage.getItem(USERS_SEEN_KEY)) || "";
+    setCount(usersRef.current.filter(u => (u.created_at || "") > seen).length);
+  }, []);
+
+  useEffect(() => {
+    if (!isAdmin) { usersRef.current = []; setCount(0); return; }
+    let alive = true;
+    api("/api/admin/users").then(list => {
+      if (!alive) return;
+      usersRef.current = Array.isArray(list) ? list : [];
+      if (!localStorage.getItem(USERS_SEEN_KEY)) {
+        localStorage.setItem(USERS_SEEN_KEY, new Date().toISOString());
+      }
+      recompute();
+    }).catch(() => {});
+    function onSeen() { recompute(); }
+    window.addEventListener(USERS_SEEN_EVENT, onSeen);
+    return () => { alive = false; window.removeEventListener(USERS_SEEN_EVENT, onSeen); };
+  }, [isAdmin, pathname, recompute]);
+
+  return count;
+}
 
 const publicNav = [
   { href: "/",          label: "Dashboard", icon: "◈" },
@@ -24,15 +63,19 @@ const adminNav = [
   { href: "/admin",       label: "League Setup",   icon: "⚙", exact: true },
 ];
 
-function NavLinks({ items, pathname }) {
+function NavLinks({ items, pathname, badges }) {
   return items.map((item) => {
     const isActive = item.href === "/" || item.exact
       ? pathname === item.href
       : pathname.startsWith(item.href);
+    const badge = badges?.[item.href] || 0;
     return (
       <Link className={`nav-link${isActive ? " active" : ""}`} key={item.href} href={item.href}>
         <span className="nav-icon">{item.icon}</span>
         {item.label}
+        {badge > 0 && (
+          <span className="nav-badge" title={`${badge} new account${badge === 1 ? "" : "s"}`}>{badge}</span>
+        )}
       </Link>
     );
   });
@@ -100,6 +143,8 @@ export function AppShell({ children }) {
   const pathname = usePathname();
   const { isAdmin } = useAuth();
   const league = useLeague();
+  const newAccounts = useNewAccountCount(isAdmin, pathname);
+  const adminBadges = { "/admin/users": newAccounts };
 
   return (
     <div className="shell">
@@ -118,7 +163,7 @@ export function AppShell({ children }) {
         {isAdmin && (
           <>
             <span className="nav-section-label" style={{ marginTop: 16 }}>Admin</span>
-            <nav><NavLinks items={adminNav} pathname={pathname} /></nav>
+            <nav><NavLinks items={adminNav} pathname={pathname} badges={adminBadges} /></nav>
           </>
         )}
 

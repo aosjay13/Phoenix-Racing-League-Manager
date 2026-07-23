@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AdminGate } from "@/components/AdminGate";
 import { useAuth } from "@/components/AuthProvider";
+import { USERS_SEEN_KEY, USERS_SEEN_EVENT } from "@/components/AppShell";
 import { api } from "@/lib/api";
 
 // Searchable driver-profile picker. Typing filters the global roster; picking a
@@ -94,6 +95,9 @@ function UserAccountsInner() {
   const [busy, setBusy] = useState({});   // uid -> true while a write is in flight
   const [error, setError] = useState(null);
   const [toast, setToast] = useState(null);
+  // Timestamp of the admin's previous visit, captured before the effect below
+  // stamps "now" — lets us flag the rows that signed up since then as NEW.
+  const prevSeenRef = useRef(typeof window !== "undefined" ? (localStorage.getItem(USERS_SEEN_KEY) || "") : "");
 
   function showToast(type, msg) {
     setToast({ type, msg });
@@ -112,6 +116,14 @@ function UserAccountsInner() {
     }
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  // Opening this page acknowledges every account that exists right now, clearing
+  // the red "new signups" badge in the sidebar (see AppShell useNewAccountCount).
+  useEffect(() => {
+    if (users == null) return;
+    localStorage.setItem(USERS_SEEN_KEY, new Date().toISOString());
+    window.dispatchEvent(new Event(USERS_SEEN_EVENT));
+  }, [users]);
 
   async function patchUser(uid, body, successMsg) {
     setBusy(b => ({ ...b, [uid]: true }));
@@ -176,6 +188,7 @@ function UserAccountsInner() {
                   {users.map(u => {
                     const isBusy = !!busy[u.uid];
                     const isMe = me?.uid === u.uid;
+                    const isNew = (u.created_at || "") > prevSeenRef.current;
                     const name = u.display_name || u.email || "Unknown";
                     return (
                       <tr key={u.uid}>
@@ -187,6 +200,7 @@ function UserAccountsInner() {
                             <span>
                               <strong>{name}</strong>
                               {isMe && <span style={{ fontSize: "0.72rem", color: "var(--ink-2)" }}> (you)</span>}
+                              {isNew && !isMe && <span className="nav-badge" style={{ marginLeft: 8, position: "static" }}>NEW</span>}
                             </span>
                           </span>
                         </td>
