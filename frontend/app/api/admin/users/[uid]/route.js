@@ -1,13 +1,18 @@
 import { NextResponse } from "next/server";
 import { db, adminAuth } from "@/lib/firebase";
-import { withAdmin, isEnvAdmin } from "@/lib/serverAuth";
+import { withAdmin, getUserRole, isEnvAdmin } from "@/lib/serverAuth";
+import { normalizeRole, roleLevel, canManage, ROLE_LABELS } from "@/lib/roles";
 
-// Admin-only: grant/revoke a user's admin role and/or (re)link their statistical
-// driver profile. Both changes flow through withAdmin, so an authenticated admin
-// is verified before anything is written.
+// Admin-only: set a user's role within the staff hierarchy and/or (re)link their
+// statistical driver profile. Both changes flow through withAdmin, so the actor
+// is a verified staff member before anything is written.
 //
-//   body.role      → "admin" | "player"  (updates users/<uid>.role)
+//   body.role      → "owner" | "admin" | "moderator" | "statistician" | "player"
 //   body.driver_id → driver doc id, or "" / null to unlink
+//
+// Role changes are governed by the hierarchy (see lib/roles): the actor may only
+// edit accounts at or below their own level, and may only assign roles at or
+// below their own level. These checks run server-side and never trust the UI.
 //
 // The user↔driver link is stored on the driver document (drivers.user_id),
 // matching the rest of the app (career stats, roster, public profiles). Only one
@@ -25,17 +30,29 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
 
   // --- Role change ------------------------------------------------------
   if (body.role !== undefined) {
-    const role = body.role === "admin" ? "admin" : "player";
-    // Guard against self-lockout: an admin can't strip their own access.
-    if (uid === admin.uid && role !== "admin") {
-      return NextResponse.json({ error: "You can't remove your own admin access." }, { status: 400 });
+    const newRole = normalizeRole(body.role);
+    const actorRole = await getUserRole(admin);
+    const targetEnvAdmin = isEnvAdmin(userDoc.data().email);
+    const targetRole = targetEnvAdmin ? "owner" : normalizeRole(userDoc.data().role || "player");
+
+    // Guard against self-lockout: nobody can change their own role.
+    if (uid === admin.uid) {
+      return NextResponse.json({ error: "You can't change your own role." }, { status: 400 });
     }
-    // Env-var admins are permanent; the DB role can't override ADMIN_EMAILS.
-    if (isEnvAdmin(userDoc.data().email) && role !== "admin") {
-      return NextResponse.json({ error: "This account is a permanent admin (set via ADMIN_EMAILS)." }, { status: 400 });
+    // Env-var owners are permanent; the DB role can't override ADMIN_EMAILS.
+    if (targetEnvAdmin) {
+      return NextResponse.json({ error: "This account is a permanent Owner (set via ADMIN_EMAILS) and can't be changed." }, { status: 400 });
     }
-    await userRef.update({ role });
-    changed.role = role;
+    // Hierarchy: can't touch an account at or above your own level.
+    if (!canManage(actorRole, targetRole)) {
+      return NextResponse.json({ error: `You can't modify a ${ROLE_LABELS[targetRole]} — they rank at or above your role.` }, { status: 403 });
+    }
+    // Hierarchy: can't hand out a role higher than your own.
+    if (roleLevel(newRole) > roleLevel(actorRole)) {
+      return NextResponse.json({ error: `You can't assign the ${ROLE_LABELS[newRole]} role — it's above your own.` }, { status: 403 });
+    }
+    await userRef.update({ role: newRole });
+    changed.role = newRole;
   }
 
   // --- Driver profile link change --------------------------------------
@@ -72,7 +89,7 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
 export const DELETE = withAdmin(async (request, { params }, admin) => {
   const { uid } = params;
 
-  // Guard against self-deletion (lockout) and permanent env-var admins.
+  // Guard against self-deletion (lockout) and permanent env-var owners.
   if (uid === admin.uid) {
     return NextResponse.json({ error: "You can't delete your own account." }, { status: 400 });
   }
@@ -80,7 +97,13 @@ export const DELETE = withAdmin(async (request, { params }, admin) => {
   const userDoc = await userRef.get();
   const email = userDoc.exists ? userDoc.data().email : null;
   if (isEnvAdmin(email)) {
-    return NextResponse.json({ error: "This account is a permanent admin (set via ADMIN_EMAILS) and can't be deleted." }, { status: 400 });
+    return NextResponse.json({ error: "This account is a permanent Owner (set via ADMIN_EMAILS) and can't be deleted." }, { status: 400 });
+  }
+  // Hierarchy: you can only delete accounts at or below your own level.
+  const actorRole = await getUserRole(admin);
+  const targetRole = userDoc.exists ? normalizeRole(userDoc.data().role || "player") : "player";
+  if (!canManage(actorRole, targetRole)) {
+    return NextResponse.json({ error: `You can't delete a ${ROLE_LABELS[targetRole]} — they rank at or above your role.` }, { status: 403 });
   }
 
   const batch = db().batch();

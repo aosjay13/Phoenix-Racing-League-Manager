@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { withAdmin, isEnvAdmin } from "@/lib/serverAuth";
+import { normalizeRole, roleLevel } from "@/lib/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -25,13 +26,15 @@ export const GET = withAdmin(async () => {
     const data = doc.data();
     const linked = driverByUser[doc.id] || null;
     const envAdmin = isEnvAdmin(data.email);
+    // Env admins are permanent Owners even if their doc hasn't been synced yet.
+    const role = envAdmin ? "owner" : normalizeRole(data.role || "player");
     return {
       uid: doc.id,
       display_name: data.display_name || null,
       email: data.email || null,
       photo_url: data.photo_url || null,
-      // Env admins are effectively admin even if their doc hasn't been synced yet.
-      role: envAdmin ? "admin" : (data.role || "player"),
+      role,
+      role_level: roleLevel(role),
       env_admin: envAdmin,
       created_at: data.created_at || null,
       driver_id: linked?.id || null,

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { adminAuth, db } from "@/lib/firebase";
+import { normalizeRole, isStaffRole } from "@/lib/roles";
 
 export async function getRequestUser(request) {
   const header = request.headers.get("authorization") || "";
@@ -20,17 +21,28 @@ export function envAdminEmails() {
     .filter(Boolean);
 }
 
-// Admins granted via the ADMIN_EMAILS env var are permanent — their role can't
-// be revoked from the dashboard, so the UI flags them as locked.
+// Owners granted via the ADMIN_EMAILS env var are permanent — their role can't
+// be revoked or lowered from the dashboard, so the UI flags them as locked.
+// These accounts always resolve to the top "owner" role.
 export function isEnvAdmin(email) {
   return !!email && envAdminEmails().includes(String(email).toLowerCase());
 }
 
+// The effective staff role for a request user: env-var admins are always
+// "owner"; otherwise the role stored on their user doc (defaulting to "player").
+export async function getUserRole(user) {
+  if (!user) return null;
+  if (isEnvAdmin(user.email)) return "owner";
+  const doc = await db().collection("users").doc(user.uid).get();
+  return doc.exists ? normalizeRole(doc.data().role || "player") : "player";
+}
+
+// "Has league-admin access" — true for any of the four staff roles (owner,
+// admin, moderator, statistician). This is what gates the AdminGate / withAdmin
+// league routes, all of which share the same baseline powers.
 export async function isAdmin(user) {
   if (!user) return false;
-  if (user.email && envAdminEmails().includes(user.email.toLowerCase())) return true;
-  const doc = await db().collection("users").doc(user.uid).get();
-  return doc.exists && doc.data().role === "admin";
+  return isStaffRole(await getUserRole(user));
 }
 
 // An account may use the app only once its email is verified. Permanent env-var

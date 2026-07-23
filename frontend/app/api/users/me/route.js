@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
-import { withUser, isAdmin, isEnvAdmin } from "@/lib/serverAuth";
+import { withUser, getUserRole, isEnvAdmin } from "@/lib/serverAuth";
+import { isStaffRole, roleLevel } from "@/lib/roles";
 
 // Called after sign-in: creates/refreshes the user doc and returns it. Also
 // reports the single driver profile linked to this account (driver_id/name) —
@@ -8,7 +9,8 @@ import { withUser, isAdmin, isEnvAdmin } from "@/lib/serverAuth";
 export const GET = withUser(async (request, ctx, user) => {
   const ref = db().collection("users").doc(user.uid);
   const doc = await ref.get();
-  const admin = await isAdmin(user);
+  const role = await getUserRole(user);         // "owner" for env admins, else stored role
+  const envAdmin = isEnvAdmin(user.email);
 
   const poolSnap = await db().collection("drivers").where("user_id", "==", user.uid).limit(1).get();
   const driver_id = poolSnap.empty ? null : poolSnap.docs[0].id;
@@ -22,14 +24,15 @@ export const GET = withUser(async (request, ctx, user) => {
       bio: "",
       country: "",
       number: null,
-      role: admin ? "admin" : "player",
+      role,
       created_at: new Date().toISOString(),
     };
     await ref.set(profile);
-    return NextResponse.json({ uid: user.uid, ...profile, is_admin: admin, env_admin: isEnvAdmin(user.email), driver_id, driver_name });
+    return NextResponse.json({ uid: user.uid, ...profile, role, role_level: roleLevel(role), is_admin: isStaffRole(role), env_admin: envAdmin, driver_id, driver_name });
   }
-  if (admin && doc.data().role !== "admin") await ref.update({ role: "admin" });
-  return NextResponse.json({ uid: user.uid, ...doc.data(), is_admin: admin || doc.data().role === "admin", env_admin: isEnvAdmin(user.email), driver_id, driver_name });
+  // Keep permanent env-var owners' stored role in sync so listings agree.
+  if (envAdmin && doc.data().role !== "owner") await ref.update({ role: "owner" });
+  return NextResponse.json({ uid: user.uid, ...doc.data(), role, role_level: roleLevel(role), is_admin: isStaffRole(role), env_admin: envAdmin, driver_id, driver_name });
 });
 
 const EDITABLE = ["display_name", "photo_url", "bio", "country", "number", "favorite_car", "socials"];

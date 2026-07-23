@@ -7,6 +7,29 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useAuth } from "@/components/AuthProvider";
 import { USERS_SEEN_KEY, USERS_SEEN_EVENT } from "@/components/AppShell";
 import { api } from "@/lib/api";
+import { ROLE_LABELS, roleLevel, canManage, assignableRoles } from "@/lib/roles";
+
+// Small coloured pill showing a role, keyed by the role's rank so Owner reads
+// as the strongest. Used wherever a role can't (or shouldn't) be edited.
+const ROLE_PILL = {
+  owner: { bg: "var(--accent-amber, #ffb224)", fg: "#1a1205" },
+  admin: { bg: "var(--accent-cyan, #2ee6d6)", fg: "#04201d" },
+  moderator: { bg: "var(--border-accent, #3a5bd0)", fg: "#eaf0ff" },
+  statistician: { bg: "var(--card-hover, #2a2a33)", fg: "var(--ink-0)" },
+  player: { bg: "transparent", fg: "var(--ink-2)" },
+};
+function RoleBadge({ role, locked, title }) {
+  const c = ROLE_PILL[role] || ROLE_PILL.player;
+  return (
+    <span title={title} style={{
+      display: "inline-block", padding: "4px 12px", borderRadius: 999, minWidth: 96,
+      fontSize: "0.8rem", fontWeight: 600, background: c.bg, color: c.fg,
+      border: role === "player" ? "1px solid var(--border)" : "none",
+    }}>
+      {locked ? "🔒 " : ""}{ROLE_LABELS[role] || "Player"}
+    </span>
+  );
+}
 
 // Searchable driver-profile picker rendered as a proper select: a trigger that
 // always shows the current link, and a roomy dropdown listing every driver with
@@ -125,7 +148,7 @@ function DriverLinkSelect({ drivers, valueId, valueName, disabled, onChange }) {
 }
 
 function UserAccountsInner() {
-  const { user: me } = useAuth();
+  const { user: me, role: myRole, roleLevel: myLevel } = useAuth();
   const [users, setUsers] = useState(null);
   const [drivers, setDrivers] = useState([]);
   const [requests, setRequests] = useState([]);   // pending driver-claim requests
@@ -207,10 +230,10 @@ function UserAccountsInner() {
     showToast("success", `Deleted ${u.display_name || u.email || "account"}.`);
   }
 
-  function toggleAdmin(u) {
-    const makeAdmin = u.role !== "admin";
-    patchUser(u.uid, { role: makeAdmin ? "admin" : "player" },
-      makeAdmin ? `${u.display_name || "User"} is now an admin.` : `Admin access revoked for ${u.display_name || "user"}.`);
+  function changeRole(u, newRole) {
+    if (newRole === u.role) return;
+    patchUser(u.uid, { role: newRole },
+      `${u.display_name || "User"} is now ${ROLE_LABELS[newRole] || newRole}.`);
   }
 
   function linkDriver(u, driverId, driverName) {
@@ -218,14 +241,18 @@ function UserAccountsInner() {
       driverId ? `Linked ${u.display_name || "user"} → ${driverName}.` : `Unlinked ${u.display_name || "user"}.`);
   }
 
-  const adminCount = useMemo(() => (users || []).filter(u => u.role === "admin").length, [users]);
+  // Roles this admin is allowed to hand out (never above their own level).
+  const roleOptions = useMemo(() => assignableRoles(myRole), [myRole]);
+  const staffCount = useMemo(() => (users || []).filter(u => roleLevel(u.role) >= roleLevel("statistician")).length, [users]);
 
   return (
     <section>
       <div className="page-title"><h2>User Accounts</h2><span className="page-badge">Admin</span></div>
       <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.9rem", maxWidth: 720 }}>
-        Everyone who has signed in to the league. Grant or revoke <strong>admin</strong> access, and link each
-        real account to the statistical <strong>Driver Profile</strong> it races as, so you always know who is who.
+        Everyone who has signed in to the league. Assign each account a <strong>role</strong> —
+        Owner ▸ Admin ▸ Moderator ▸ Statistician all manage league data; Players don&apos;t —
+        and link each account to the statistical <strong>Driver Profile</strong> it races as, so you always know who is who.
+        You can only manage accounts ranked at or below your own role.
       </p>
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
 
@@ -289,7 +316,7 @@ function UserAccountsInner() {
       ) : (
         <>
           <p style={{ fontSize: "0.8rem", color: "var(--ink-2)", margin: "12px 0 8px" }}>
-            {users.length} account{users.length === 1 ? "" : "s"} · {adminCount} admin{adminCount === 1 ? "" : "s"}
+            {users.length} account{users.length === 1 ? "" : "s"} · {staffCount} staff
           </p>
           <div className="table-wrap">
               <table className="stats-table" style={{ width: "100%", minWidth: 820 }}>
@@ -298,7 +325,7 @@ function UserAccountsInner() {
                     <th style={{ textAlign: "left" }}>Account</th>
                     <th style={{ textAlign: "left" }}>Email</th>
                     <th style={{ textAlign: "left", minWidth: 240 }}>Linked Driver Profile</th>
-                    <th style={{ textAlign: "center" }}>Admin</th>
+                    <th style={{ textAlign: "center", minWidth: 150 }}>Role</th>
                     <th style={{ textAlign: "center" }}>Manage</th>
                   </tr>
                 </thead>
@@ -334,23 +361,33 @@ function UserAccountsInner() {
                         </td>
                         <td style={{ textAlign: "center" }}>
                           {u.env_admin ? (
-                            <span className="page-badge" title="Permanent admin set via ADMIN_EMAILS">🔒 Owner</span>
+                            <RoleBadge role="owner" locked title="Permanent Owner set via ADMIN_EMAILS" />
+                          ) : isMe ? (
+                            <RoleBadge role={u.role} title="You can't change your own role" />
+                          ) : !canManage(myRole, u.role) ? (
+                            // Target ranks at or above the viewer — read-only.
+                            <RoleBadge role={u.role} title={`${ROLE_LABELS[u.role]} ranks at or above your role — you can't change it`} />
                           ) : (
-                            <button
-                              type="button"
-                              className={`btn ${u.role === "admin" ? "btn-primary" : "btn-ghost"}`}
-                              style={{ marginTop: 0, padding: "6px 14px", minWidth: 96 }}
-                              disabled={isBusy || (isMe && u.role === "admin")}
-                              title={isMe && u.role === "admin" ? "You can't remove your own admin access" : "Toggle admin access"}
-                              onClick={() => toggleAdmin(u)}
+                            <select
+                              value={u.role}
+                              disabled={isBusy}
+                              onChange={e => changeRole(u, e.target.value)}
+                              style={{ minWidth: 140, padding: "6px 10px" }}
+                              title="Set this account's role"
                             >
-                              {u.role === "admin" ? "✓ Admin" : "Make Admin"}
-                            </button>
+                              {roleOptions.map(r => (
+                                <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                              ))}
+                            </select>
                           )}
                         </td>
                         <td style={{ textAlign: "center" }}>
-                          {u.env_admin || isMe ? (
-                            <span style={{ color: "var(--ink-2)", fontSize: "0.78rem" }} title={isMe ? "You can't delete your own account" : "Permanent admin — can't be deleted"}>—</span>
+                          {u.env_admin || isMe || !canManage(myRole, u.role) ? (
+                            <span style={{ color: "var(--ink-2)", fontSize: "0.78rem" }} title={
+                              isMe ? "You can't delete your own account"
+                                : u.env_admin ? "Permanent Owner — can't be deleted"
+                                : `${ROLE_LABELS[u.role]} ranks at or above your role — you can't delete it`
+                            }>—</span>
                           ) : (
                             <button
                               type="button"

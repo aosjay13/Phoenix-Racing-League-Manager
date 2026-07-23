@@ -4,8 +4,9 @@ import { createContext, useContext, useEffect, useState, useCallback } from "rea
 import { onAuthStateChanged, sendEmailVerification, signOut as fbSignOut } from "firebase/auth";
 import { clientAuth } from "@/lib/firebaseClient";
 import { api } from "@/lib/api";
+import { roleLevel as levelOf } from "@/lib/roles";
 
-const AuthContext = createContext({ user: null, profile: null, isAdmin: false, emailVerified: false, loading: true });
+const AuthContext = createContext({ user: null, profile: null, isAdmin: false, role: "player", roleLevel: 0, emailVerified: false, loading: true });
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -57,9 +58,13 @@ export function AuthProvider({ children }) {
 
   const signOut = useCallback(() => fbSignOut(clientAuth()), []);
 
+  const role = profile?.role || "player";
   return (
     <AuthContext.Provider value={{
-      user, profile, isAdmin: !!profile?.is_admin, emailVerified, loading,
+      user, profile,
+      isAdmin: !!profile?.is_admin,   // true for any staff role (owner→statistician)
+      role, roleLevel: profile?.role_level ?? levelOf(role),
+      emailVerified, loading,
       signOut, refreshProfile, refreshVerification, resendVerification,
     }}>
       {children}

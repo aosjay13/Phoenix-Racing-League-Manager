@@ -10,7 +10,7 @@ export function AdminGate({ children }) {
     return (
       <div className="empty-state">
         <span className="empty-state-icon">🔒</span>
-        <p>Sign in with an admin account to access this page.</p>
+        <p>Sign in with a league staff account to access this page.</p>
         <Link href="/login" className="btn btn-primary">Sign In</Link>
       </div>
     );
@@ -19,7 +19,7 @@ export function AdminGate({ children }) {
     return (
       <div className="empty-state">
         <span className="empty-state-icon">🔒</span>
-        <p>This page is for league admins only.</p>
+        <p>This page is for league staff only.</p>
       </div>
     );
   }
