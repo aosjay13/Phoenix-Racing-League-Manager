@@ -81,7 +81,7 @@ function GlobalSchedule() {
       {rows == null ? (
         <div className="skeleton" style={{ height: 240, marginTop: 16 }} />
       ) : upcoming.length === 0 && archive.length === 0 ? (
-        <div className="empty-state"><span className="empty-state-icon">🗓</span><p>No races scheduled yet in this scope.</p></div>
+        <div className="empty-state"><span className="empty-state-icon">📅</span><p>No races scheduled yet in this scope.</p></div>
       ) : (
         <>
           <FeedSection title="Upcoming" icon="🟢" rows={upcoming} kind="upcoming" />
@@ -241,7 +241,7 @@ function SeasonSchedule() {
       )}
 
       {races.length === 0 ? (
-        <div className="empty-state"><span className="empty-state-icon">🗓</span><p>No races scheduled yet.</p></div>
+        <div className="empty-state"><span className="empty-state-icon">📅</span><p>No races scheduled yet.</p></div>
       ) : (
         <div className="table-wrap">
           <table className="stats-table schedule-table">

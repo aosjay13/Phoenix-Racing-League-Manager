@@ -85,7 +85,7 @@ export default function DashboardPage() {
 
   const metrics = data ? (scope === "season" ? [
     { icon: "🏎️", num: data.driverCount, label: "Drivers Scored" },
-    { icon: "🗓️", num: data.totalRaces, label: "Scheduled Races" },
+    { icon: "📅", num: data.totalRaces, label: "Scheduled Races" },
     { icon: "✅", num: data.completed, label: "Completed Events" },
     { icon: "⏩", num: Math.max(0, data.totalRaces - data.completed), label: "Races Remaining" },
   ] : [
@@ -104,7 +104,7 @@ export default function DashboardPage() {
   const quickLinks = [
     { href: "/standings", icon: "🏆", label: "Standings", sub: "Driver & team points" },
     { href: "/stats", icon: "📊", label: "Stats", sub: "Career totals & records" },
-    { href: "/schedule", icon: "🗓", label: "Schedule", sub: "Season calendar" },
+    { href: "/schedule", icon: "📅", label: "Schedule", sub: "Season calendar" },
     { href: "/drivers", icon: "🏎", label: "Drivers", sub: "Player profiles" },
     ...(isAdmin ? [{ href: "/race-entry", icon: "⏱", label: "Enter Results", sub: "Submit finish positions" }] : []),
   ];
