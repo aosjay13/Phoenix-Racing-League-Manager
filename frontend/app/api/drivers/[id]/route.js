@@ -133,6 +133,7 @@ export async function GET(request, { params }) {
     linked: !!(linkedUserId && account),
     skill_ratings_by_game,
     aliases,
+    former_names: Array.isArray(driver?.merged_names) ? driver.merged_names : [],
     profile,
     ...career,
   });

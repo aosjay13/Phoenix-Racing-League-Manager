@@ -6,6 +6,7 @@ import { useSortable } from "@/components/useSortable";
 import { AdminGate } from "@/components/AdminGate";
 import { ImageUpload } from "@/components/ImageUpload";
 import { DriverForm } from "@/components/DriverForm";
+import { Modal } from "@/components/Modal";
 import { ensureDriverId } from "@/lib/driverPool";
 import { api } from "@/lib/api";
 
@@ -93,6 +94,9 @@ function RosterInner() {
   const [rowKey, setRowKey] = useState(null);       // key of the row being inline-edited
   const [rowForm, setRowForm] = useState(null);      // { name, number, team_id, user_id }
   const [seriesPanelKey, setSeriesPanelKey] = useState(null); // key of the row with the series panel open
+  const [mergeFrom, setMergeFrom] = useState(null);   // roster row being merged AWAY
+  const [mergeInto, setMergeInto] = useState("");     // survivor row key
+  const [mergeBusy, setMergeBusy] = useState(false);
 
   const [addForm, setAddForm] = useState({ name: "", number: "", team_id: "", user_id: "" });
   const [pullKey, setPullKey] = useState("");        // gameRoster key chosen via "Pull Existing Driver"
@@ -178,6 +182,28 @@ function RosterInner() {
       cancelRowEdit();
       await load();
     } catch (err) { showToast("error", err.message); }
+  }
+
+  // Merge one roster driver into another (e.g. a mistyped/renamed duplicate).
+  // Resolves both rows to their global driver identity, then re-points the
+  // loser's entries onto the survivor and records the old name as a "former
+  // name" on the survivor's profile. All race results move across intact.
+  async function doMerge() {
+    if (!mergeFrom || !mergeInto) return;
+    const intoRow = rows.find(r => r.key === mergeInto);
+    if (!intoRow) return;
+    setMergeBusy(true);
+    try {
+      const [fromId, intoId] = await Promise.all([
+        ensureDriverId({ driverId: mergeFrom.driver_id, name: mergeFrom.name, user_id: mergeFrom.user_id }),
+        ensureDriverId({ driverId: intoRow.driver_id, name: intoRow.name, user_id: intoRow.user_id }),
+      ]);
+      const res = await api("/api/admin/drivers/merge", { method: "POST", body: { from_id: fromId, into_id: intoId } });
+      setMergeFrom(null); setMergeInto("");
+      await load();
+      showToast("success", `Merged “${mergeFrom.name}” into “${intoRow.name}” (${res.entries_moved} entr${res.entries_moved === 1 ? "y" : "ies"} moved).`);
+    } catch (err) { showToast("error", err.message); }
+    finally { setMergeBusy(false); }
   }
 
   async function deleteDriver(row) {
@@ -579,6 +605,11 @@ function RosterInner() {
                                 onClick={() => setSeriesPanelKey(panelOpen ? null : d.key)}>
                                 {panelOpen ? "Hide Series" : "Series"}
                               </button>
+                              {rows.length > 1 && (
+                                <button className="btn btn-ghost" style={{ marginTop: 0, padding: "4px 10px", marginLeft: 6 }}
+                                  title="Merge this driver into another (for duplicates / renamed drivers)"
+                                  onClick={() => { setMergeFrom(d); setMergeInto(""); }}>Merge</button>
+                              )}
                               {d.entry_id && (
                                 <button className="btn btn-danger" style={{ marginTop: 0, padding: "4px 10px", marginLeft: 6 }} onClick={() => deleteDriver(d)}>✕</button>
                               )}
@@ -620,6 +651,30 @@ function RosterInner() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {mergeFrom && (
+        <Modal title={`Merge “${mergeFrom.name}”`} onClose={mergeBusy ? () => {} : () => { setMergeFrom(null); setMergeInto(""); }}>
+          <p style={{ marginTop: 0, color: "var(--ink-1)", fontSize: "0.9rem" }}>
+            Pick the driver to <strong>keep</strong>. Every race entry from <strong>{mergeFrom.name}</strong> moves onto
+            them, and <strong>{mergeFrom.name}</strong> is kept as a former name on their profile. All results stay on
+            record — nothing is lost.
+          </p>
+          <div className="field">
+            <label>Keep this driver</label>
+            <select value={mergeInto} onChange={e => setMergeInto(e.target.value)}>
+              <option value="">Select the driver to keep…</option>
+              {rows.filter(r => r.key !== mergeFrom.key).map(r => (
+                <option key={r.key} value={r.key}>{r.name}</option>
+              ))}
+            </select>
+          </div>
+          <button className="btn btn-primary" type="button" disabled={mergeBusy || !mergeInto} onClick={doMerge}>
+            {mergeBusy ? "Merging…" : "Merge Drivers"}
+          </button>
+          <button className="btn btn-ghost" type="button" style={{ marginLeft: 8 }} disabled={mergeBusy}
+            onClick={() => { setMergeFrom(null); setMergeInto(""); }}>Cancel</button>
+        </Modal>
       )}
     </section>
   );
