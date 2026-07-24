@@ -1,14 +1,50 @@
 import { NextResponse } from "next/server";
-import { makeDocRoutes, SPECS } from "@/lib/entityApi";
+import { makeDocRoutes, SPECS, coerceField } from "@/lib/entityApi";
 import { db } from "@/lib/firebase";
+import { withAdmin } from "@/lib/serverAuth";
+import { syncEntryNamesForDriver } from "@/lib/driverSync";
 import { buildCareerProfile } from "@/lib/careerStatsServer";
 import { computeGameSkillRatings } from "@/lib/skillRatingServer";
 import { SR_BASELINE } from "@/lib/skillRating";
 import { normalizeAliases } from "@/lib/aliases";
 
 const routes = makeDocRoutes(SPECS.drivers);
-export const PATCH = routes.PATCH;
 export const DELETE = routes.DELETE;
+
+// PATCH a pool driver. Mirrors the generic doc-update, then — when the name (or
+// the linked account, which supplies the display name) changes — cascades the
+// current name onto every roster entry that resolves to this driver, so the
+// rename shows up everywhere old results are displayed. Only the denormalized
+// entry.name is touched; no results/stats/profiles are mutated (zero data loss).
+export const PATCH = withAdmin(async (request, { params }) => {
+  const body = await request.json();
+  const updates = {};
+  for (const [name, opts] of Object.entries(SPECS.drivers.fields)) {
+    if (body[name] !== undefined) {
+      const coerced = coerceField(opts, body[name]);
+      if (coerced.error) return NextResponse.json({ error: `${name} ${coerced.error}` }, { status: 400 });
+      updates[name] = coerced.value;
+    }
+  }
+  if (!Object.keys(updates).length) {
+    return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
+  }
+  const ref = db().collection("drivers").doc(params.id);
+  const doc = await ref.get();
+  if (!doc.exists) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  await ref.update(updates);
+
+  let entries_synced;
+  if (updates.name !== undefined || updates.user_id !== undefined) {
+    // Name sync is a display convenience — never fail the edit over it.
+    try {
+      entries_synced = await syncEntryNamesForDriver(params.id, { ...doc.data(), ...updates });
+    } catch (err) {
+      console.error("Driver name sync failed", err);
+    }
+  }
+  return NextResponse.json({ id: params.id, ...doc.data(), ...updates, ...(entries_synced != null ? { entries_synced } : {}) });
+});
 
 // Public profile + career stats for any driver — linked to an account or not.
 // `id` is a global driver-pool id, but for backward compatibility with links

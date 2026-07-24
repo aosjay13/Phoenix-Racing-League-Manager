@@ -161,12 +161,11 @@ function RosterInner() {
       const body = { name: rowForm.name, team_id: rowForm.team_id, user_id: rowForm.user_id };
       if (rowForm.number !== "") body.number = rowForm.number;
       await api(`/api/entries/${row.entry_id}`, { method: "PATCH", body });
-      // Keep the global driver profile in sync with the primary name edit.
-      // Standings reads the entry name directly, but Stats (and aggregated
-      // roster scopes) display the canonical drivers/{id}.name — without this
-      // the two screens diverge after a rename. The per-series alias editor
-      // (SeriesMembershipRow) deliberately does NOT do this, so intentional
-      // per-series aliases still work.
+      // Push the primary name edit up to the global driver profile. The driver
+      // PATCH then cascades that name onto this driver's entries across every
+      // series/season (see lib/driverSync), so Standings, race results, the
+      // results editor and Stats all show the current name — no more divergence
+      // after a rename.
       const driverId = row.driver_id
         || (await ensureDriverId({ name: rowForm.name, user_id: rowForm.user_id }));
       if (driverId && rowForm.name?.trim()) {

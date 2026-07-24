@@ -20,10 +20,25 @@ export default function DriversPage() {
   const [editing, setEditing] = useState(null);   // driver row being edited
   const [deleting, setDeleting] = useState(null); // driver row being deleted
   const [unclaiming, setUnclaiming] = useState(false); // confirm unclaim dialog
+  const [syncing, setSyncing] = useState(false);       // name-backfill in progress
 
   function showToast(type, msg) {
     setToast({ type, msg });
     setTimeout(() => setToast(null), 3500);
+  }
+
+  // Heal any historical desync in one pass: pushes every driver's current
+  // profile name onto their old roster entries. Renames already cascade
+  // automatically going forward; this is for data that predates that.
+  async function syncNames() {
+    setSyncing(true);
+    try {
+      const res = await api("/api/admin/drivers/sync-names", { method: "POST" });
+      showToast("success", res.entries_synced
+        ? `Synced ${res.entries_synced} entr${res.entries_synced === 1 ? "y" : "ies"} across ${res.drivers_touched} driver${res.drivers_touched === 1 ? "" : "s"}.`
+        : "All driver names are already in sync.");
+    } catch (err) { showToast("error", err.message); }
+    finally { setSyncing(false); }
   }
 
   // The global driver pool is the full roster of everyone who has raced,
@@ -126,9 +141,16 @@ export default function DriversPage() {
         <h2>Drivers</h2>
         <span className="page-badge">{drivers.length} Drivers</span>
         {isAdmin && (
-          <button className="btn btn-primary" style={{ marginTop: 0, marginLeft: "auto" }} onClick={() => setCreating(true)}>
-            ＋ New Driver
-          </button>
+          <>
+            <button className="btn btn-ghost" style={{ marginTop: 0, marginLeft: "auto" }} disabled={syncing}
+              title="Push every driver's current profile name onto their old race entries (fixes any stale names in results/standings)."
+              onClick={syncNames}>
+              {syncing ? "Syncing…" : "↻ Sync names"}
+            </button>
+            <button className="btn btn-primary" style={{ marginTop: 0 }} onClick={() => setCreating(true)}>
+              ＋ New Driver
+            </button>
+          </>
         )}
       </div>
       <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.9rem" }}>
