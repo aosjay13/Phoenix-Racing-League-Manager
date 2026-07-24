@@ -196,8 +196,10 @@ export function AppShell({ children }) {
 
       <div className="main-col">
         <header className="topbar">
-          <LeagueSwitcher />
-          <ContextSelectors />
+          <div className="topbar-scope">
+            <LeagueSwitcher />
+            <ContextSelectors />
+          </div>
           <UserChip />
         </header>
         <main className="main">{children}</main>

@@ -981,9 +981,14 @@ tbody tr:hover {
 
 .context-bar { display: flex; gap: 12px; flex-wrap: wrap; }
 
+/* Keep the League switcher and the game/series/season selectors together as one
+   left-aligned scope cluster, so they don't get spread apart (and wrapped to a
+   second row) by the topbar's space-between. */
+.topbar-scope { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; min-width: 0; }
+
 /* The global League switcher sits ahead of the game/series/season selectors and
    is set apart with an accent + divider so it reads as the top-level scope. */
-.league-switcher { padding-right: 16px; margin-right: 4px; border-right: 1px solid var(--border); }
+.league-switcher { padding-right: 12px; border-right: 1px solid var(--border); }
 .league-switcher label { color: var(--accent-cyan); }
 .league-switcher select { font-weight: 600; }
 
