@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useLeague } from "@/components/LeagueProvider";
 import { useAuth } from "@/components/AuthProvider";
 import { api } from "@/lib/api";
+import { formatRaceDate, isPastRaceDate, raceDateSortKey, toDateOnly } from "@/lib/raceDate";
 
 export default function DashboardPage() {
   const { gameId, seriesId, seasonId, season, series, game, games, loading } = useLeague();
@@ -27,15 +28,16 @@ export default function DashboardPage() {
         api(`/api/races?season_id=${seasonId}`),
       ]).then(([standings, races]) => {
         if (!live) return;
-        const today = new Date();
-        const completed = races.filter(r => r.date && new Date(r.date) < today).length;
+        // Calendar-date comparisons only — a race dated today is still upcoming,
+        // and no timezone offset can shift it into yesterday.
+        const dated = races.filter(r => toDateOnly(r.date));
         setData({
           leader: standings.drivers[0] ?? null,
           driverCount: new Set(standings.drivers.map(d => d.entry_id)).size,
           totalRaces: races.length,
-          completed,
-          nextRace: races.filter(r => r.date && new Date(r.date) >= today)
-            .sort((a, b) => new Date(a.date) - new Date(b.date))[0] ?? null,
+          completed: dated.filter(r => isPastRaceDate(r.date)).length,
+          nextRace: dated.filter(r => !isPastRaceDate(r.date))
+            .sort((a, b) => raceDateSortKey(a.date) - raceDateSortKey(b.date))[0] ?? null,
         });
       }).catch(() => setData(null));
     } else {
@@ -126,7 +128,7 @@ export default function DashboardPage() {
         <p style={{ marginTop: 10, color: "var(--ink-1)", fontSize: "0.92rem", maxWidth: 620 }}>
           {contextLine}
           {data?.nextRace
-            ? `Next up: ${data.nextRace.name} (${data.nextRace.track || "TBA"}) on ${new Date(data.nextRace.date).toLocaleDateString()}.`
+            ? `Next up: ${data.nextRace.name} (${data.nextRace.track || "TBA"}) on ${formatRaceDate(data.nextRace.date, "numeric")}.`
             : "Live overview of your racing league."}
         </p>
         <div className="metrics">

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { formatStat } from "@/lib/standings";
+import { formatRaceDate } from "@/lib/raceDate";
 import { useLeague } from "@/components/LeagueProvider";
 
 // Links a pole/winner name to their driver profile when resolvable, else plain
@@ -225,7 +226,7 @@ export default function TrackProfilePage() {
                           </td>
                           <td style={{ textAlign: "left" }}>{w.series_name || "—"}</td>
                           <td style={{ textAlign: "left" }}>{w.season_name}</td>
-                          <td style={{ whiteSpace: "nowrap" }}>{w.date || "—"}</td>
+                          <td style={{ whiteSpace: "nowrap" }}>{formatRaceDate(w.date, "short", "—")}</td>
                           <td style={{ whiteSpace: "nowrap" }}>
                             {w.laps ? `${w.laps} Laps` : "—"}
                             {w.laps_extended && (

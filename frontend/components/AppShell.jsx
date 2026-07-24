@@ -104,7 +104,12 @@ function LeagueSwitcher() {
 function ContextSelectors() {
   const league = useLeague();
   if (!league || league.loading) return null;
-  const { games, seriesList, seasons, gameId, seriesId, seasonId, setGameId, setSeriesId, setSeasonId } = league;
+  const {
+    games, seriesList, seasons, classes,
+    gameId, seriesId, seasonId, classId,
+    setGameId, setSeriesId, setSeasonId, setClassId,
+    combinedChampionship,
+  } = league;
 
   return (
     <div className="context-bar">
@@ -129,6 +134,19 @@ function ContextSelectors() {
           {seasons.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
       </div>
+      {/* Class — the fourth tier, shown only for a season that actually runs
+          multiple classes. "All Classes" is the combined, whole-field
+          championship; it's withheld when the season's admin turned the overall
+          championship off, since there is no combined title to show. */}
+      {classes.length > 0 && (
+        <div className="context-select">
+          <label>Class</label>
+          <select value={classId} onChange={e => setClassId(e.target.value)}>
+            {combinedChampionship && <option value="">All Classes</option>}
+            {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </div>
+      )}
     </div>
   );
 }

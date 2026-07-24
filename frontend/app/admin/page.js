@@ -8,6 +8,7 @@ import { ImageUpload } from "@/components/ImageUpload";
 import { TrackSelect } from "@/components/TrackSelect";
 import { api } from "@/lib/api";
 import { BONUS_TYPES } from "@/lib/standings";
+import { TRACK_TYPES } from "@/lib/trackTypes";
 import { BUILTIN_TEMPLATES, listToTableOrZero, tableToList } from "@/lib/pointsTemplates";
 
 function Panel({ title, sub, step, muted, children }) {
@@ -71,11 +72,14 @@ function AdminInner() {
 
   const [gameForm, setGameForm] = useState({ name: "", logo_url: "" });
   const [seriesForm, setSeriesForm] = useState({ name: "", logo_url: "" });
-  const [editIds, setEditIds] = useState({ game: null, series: null, season: null, race: null, track: null, template: null });
+  const [editIds, setEditIds] = useState({ game: null, series: null, season: null, class: null, race: null, track: null, template: null });
   const setEditId = (type, id) => setEditIds(ids => ({ ...ids, [type]: id }));
   const blankSeason = {
     name: "", drop_weeks: "0", logo_url: "", car: "",
     race_points: "", qual_points: "",
+    // New seasons track a combined (overall) championship by default; an admin
+    // running class-only championships turns it off.
+    combined_championship: true,
     bonuses: Object.fromEntries(BONUS_TYPES.map(([k]) => [k, "0"])),
   };
   const [seasonForm, setSeasonForm] = useState(blankSeason);
@@ -202,6 +206,18 @@ function AdminInner() {
   };
   const [raceForm, setRaceForm] = useState(blankRace);
 
+  // Classes divide the selected season's field into separately-scored groups
+  // ("Pro"/"Amateur", GT3/LMP2). Empty list = a single-class season, which is
+  // exactly how the app behaved before classes existed.
+  const blankClass = { name: "", color: "", description: "", sort_order: "" };
+  const [classForm, setClassForm] = useState(blankClass);
+  const [classes, setClasses] = useState([]);
+  const loadClasses = useCallback(() => {
+    if (!seasonId) { setClasses([]); return; }
+    api(`/api/classes?season_id=${seasonId}`).then(setClasses).catch(() => setClasses([]));
+  }, [seasonId]);
+  useEffect(loadClasses, [loadClasses]);
+
   const blankTrack = { name: "", location: "", length: "", track_type: "", logo_url: "", notes: "" };
   const [trackForm, setTrackForm] = useState(blankTrack);
   const [tracks, setTracks] = useState([]);
@@ -246,8 +262,9 @@ function AdminInner() {
       <div className="page-title"><h2>League Setup</h2><span className="page-badge">Admin</span></div>
       <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.9rem", maxWidth: 680 }}>
         Your league is a hierarchy — a <strong>Game</strong> holds <strong>Series</strong>, a series holds
-        <strong> Seasons</strong>, and a season holds <strong>Races</strong>. Pick what you&apos;re working in with
-        the dropdowns at the top of the page; the banner below always shows your current spot.
+        <strong> Seasons</strong>, and a season holds its <strong>Classes</strong> and <strong>Races</strong>.
+        Pick what you&apos;re working in with the dropdowns at the top of the page; the banner below always
+        shows your current spot.
       </p>
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
 
@@ -261,6 +278,8 @@ function AdminInner() {
         <Crumb icon="🏆" label="Series" value={series?.name} logo={series?.logo_url} active={!!seriesId && !seasonId} />
         <span className="setup-context-sep">▸</span>
         <Crumb icon="📅" label="Season" value={season?.name} logo={season?.logo_url} active={!!seasonId} />
+        <span className="setup-context-sep">▸</span>
+        <Crumb icon="🎽" label="Classes" value={seasonId ? (classes.length ? classes.map(c => c.name).join(", ") : "Single class") : ""} />
         <span className="setup-context-sep">▸</span>
         <Crumb icon="🏁" label="Races" value={seasonId ? `${races.length} scheduled` : ""} />
       </div>
@@ -339,6 +358,22 @@ function AdminInner() {
               <input disabled={!seriesId} value={seasonForm.car} onChange={e => setSeasonForm(f => ({ ...f, car: e.target.value }))} placeholder="e.g. NASCAR Next Gen, GT3" />
               <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>The car this season races. Each race defaults to this — override it per race below.</span></div>
             <ImageUpload label="Season Logo" kind="season-logo" value={seasonForm.logo_url} onUploaded={url => setSeasonForm(f => ({ ...f, logo_url: url }))} />
+
+            <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
+              <input type="checkbox" id="season_combined_championship" disabled={!seriesId}
+                checked={seasonForm.combined_championship}
+                onChange={e => setSeasonForm(f => ({ ...f, combined_championship: e.target.checked }))}
+                style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+              <label htmlFor="season_combined_championship" style={{ margin: 0 }}>
+                Enable Overall Championship
+                <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
+                  For a season split into classes: also score ONE combined championship across the whole
+                  field, on top of each class&rsquo;s own. Turn it off for class-only championships — the
+                  Class menu then opens on a class instead of a combined table. No effect on a season
+                  without classes.
+                </span>
+              </label>
+            </div>
 
             <button type="button" className="btn btn-ghost" style={{ marginTop: 14 }} onClick={() => setShowPoints(v => !v)}>
               {showPoints ? "▾" : "▸"} Points &amp; Bonuses
@@ -421,6 +456,7 @@ function AdminInner() {
                     drop_weeks: String(s.drop_weeks ?? 0),
                     logo_url: s.logo_url || "",
                     car: s.car || "",
+                    combined_championship: s.combined_championship !== false,
                     race_points: tableToList(s.race_points ?? s.points_scale),
                     qual_points: tableToList(s.qual_points),
                     bonuses: Object.fromEntries(BONUS_TYPES.map(([k]) => {
@@ -446,7 +482,74 @@ function AdminInner() {
           </div>
         </Panel>
 
-        <Panel title="Races" step={4} muted={!seasonId} sub={seasonId ? `In ${season?.name}` : "Select a season above first"}>
+        <Panel title="Classes" step={4} muted={!seasonId}
+          sub={seasonId ? `In ${season?.name} — optional; leave empty for a single-class season` : "Select a season above first"}>
+          <p style={{ marginTop: 0, color: "var(--ink-1)", fontSize: "0.85rem" }}>
+            Split this season&rsquo;s field into separately-scored groups — <strong>Pro</strong> and{" "}
+            <strong>Amateur</strong>, or <strong>GT3</strong> and <strong>LMP2</strong>. Each class runs its own
+            championship (points, wins, averages), and a <strong>Class</strong> menu appears next to
+            Game / Series / Season on Standings, Stats and Records. Assign drivers to a class on the{" "}
+            <strong>Roster</strong> page or right in the results grid.
+          </p>
+          <form onSubmit={e => {
+            e.preventDefault();
+            const body = {
+              name: classForm.name,
+              color: classForm.color,
+              description: classForm.description,
+              sort_order: classForm.sort_order === "" ? classes.length : Number(classForm.sort_order),
+            };
+            if (!editIds.class) body.season_id = seasonId;
+            save("/api/classes", body, editIds.class, () => { setClassForm(blankClass); setEditId("class", null); });
+            setTimeout(loadClasses, 400);
+          }}>
+            <div className="field"><label>Class Name</label>
+              <input required disabled={!seasonId} value={classForm.name} placeholder="e.g. Pro, Amateur, GT3, LMP2"
+                onChange={e => setClassForm(f => ({ ...f, name: e.target.value }))} /></div>
+            <div className="field"><label>Display Order</label>
+              <input type="number" disabled={!seasonId} value={classForm.sort_order} placeholder={`${classes.length}`}
+                onChange={e => setClassForm(f => ({ ...f, sort_order: e.target.value }))} />
+              <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
+                Lowest first in the Class menu — put your headline class at 0.
+              </span></div>
+            <div className="field"><label>Description</label>
+              <input disabled={!seasonId} value={classForm.description} placeholder="Optional — e.g. Top split, invite only"
+                onChange={e => setClassForm(f => ({ ...f, description: e.target.value }))} /></div>
+            <button className="btn btn-primary" type="submit" disabled={!seasonId}>{editIds.class ? "Save Changes" : "Add Class"}</button>
+            {editIds.class && (
+              <button className="btn btn-ghost" type="button" style={{ marginLeft: 8 }}
+                onClick={() => { setEditId("class", null); setClassForm(blankClass); }}>Cancel</button>
+            )}
+          </form>
+          <div style={{ marginTop: 16 }}>
+            {seasonId && classes.length === 0 && (
+              <p style={{ fontSize: "0.82rem", color: "var(--ink-2)", margin: 0 }}>
+                No classes yet — {season?.name ?? "this season"} scores as one combined field.
+              </p>
+            )}
+            {classes.map(c => (
+              <ItemRow key={c.id} name={c.name} editing={editIds.class === c.id}
+                onEdit={() => {
+                  setEditId("class", c.id);
+                  setClassForm({
+                    name: c.name || "", color: c.color || "", description: c.description || "",
+                    sort_order: c.sort_order != null ? String(c.sort_order) : "",
+                  });
+                }}
+                onDelete={async () => {
+                  if (!confirm(`Delete class "${c.name}"? Its drivers keep every point and stat they've scored — they just become unclassified.`)) return;
+                  try {
+                    await api(`/api/classes/${c.id}`, { method: "DELETE" });
+                    if (editIds.class === c.id) { setClassForm(blankClass); setEditId("class", null); }
+                    loadClasses();
+                    refresh();
+                  } catch (err) { showToast("error", err.message); }
+                }} />
+            ))}
+          </div>
+        </Panel>
+
+        <Panel title="Races" step={5} muted={!seasonId} sub={seasonId ? `In ${season?.name}` : "Select a season above first"}>
           <form onSubmit={e => {
             e.preventDefault();
             const heats = toArray(raceForm.heats);
@@ -565,7 +668,13 @@ function AdminInner() {
               <div className="field"><label>Type</label>
                 <select value={trackForm.track_type} onChange={e => setTrackForm(f => ({ ...f, track_type: e.target.value }))}>
                   <option value="">—</option>
-                  {["Oval", "Superspeedway", "Short Track", "Road Course", "Street Circuit", "Dirt", "Rallycross", "Kart"].map(t => <option key={t} value={t}>{t}</option>)}
+                  {TRACK_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  {/* Keep a retired value visible while editing a track that still
+                      carries it, so saving doesn't silently blank the type before
+                      the migration has run. */}
+                  {trackForm.track_type && !TRACK_TYPES.includes(trackForm.track_type) && (
+                    <option value={trackForm.track_type}>{trackForm.track_type} (legacy)</option>
+                  )}
                 </select></div>
             </div>
             <div className="field"><label>Notes</label>

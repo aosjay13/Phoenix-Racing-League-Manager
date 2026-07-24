@@ -24,9 +24,14 @@ export function LeagueProvider({ children }) {
   const [games, setGames] = useState([]);
   const [seriesList, setSeriesList] = useState([]);
   const [seasons, setSeasons] = useState([]);
+  // The fourth tier: the selected season's classes ("Pro"/"Amateur", GT3/LMP2…).
+  // Empty for a season that doesn't run classes, in which case the Class
+  // dropdown hides itself entirely.
+  const [classes, setClasses] = useState([]);
   const [gameId, setGameId] = useState(null);
   const [seriesId, setSeriesId] = useState(null);
   const [seasonId, setSeasonId] = useState(null);
+  const [classId, setClassId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [version, setVersion] = useState(0);
 
@@ -62,8 +67,8 @@ export function LeagueProvider({ children }) {
     setActiveLeagueId(id);
     try { localStorage.removeItem(STORAGE_KEY); } catch {}
     setLeagueId(id);
-    setGames([]); setSeriesList([]); setSeasons([]);
-    setGameId(null); setSeriesId(null); setSeasonId(null);
+    setGames([]); setSeriesList([]); setSeasons([]); setClasses([]);
+    setGameId(null); setSeriesId(null); setSeasonId(null); setClassId(null);
     setLoading(true);
     setVersion(v => v + 1);
   }, []);
@@ -119,21 +124,50 @@ export function LeagueProvider({ children }) {
       .catch(() => setSeasons([]));
   }, [seriesId, version]);
 
+  // Classes hang off the selected season. A season with no classes clears the
+  // selection so every page falls back to its whole-field view. When the season
+  // has classes but its admin turned OFF the combined (overall) championship,
+  // there IS no legitimate "All Classes" championship, so the selection lands on
+  // the first class instead of the combined view.
+  const season = seasons.find(s => s.id === seasonId) || null;
+  useEffect(() => {
+    if (seasonId === null) return;
+    if (!seasonId) { setClasses([]); setClassId(""); return; }
+    const saved = loadSaved();
+    api(`/api/classes?season_id=${seasonId}`)
+      .then(list => {
+        setClasses(list);
+        setClassId(prev => {
+          const current = prev === null ? saved.classId : prev;
+          if (list.find(c => c.id === current)) return current;
+          if (!list.length) return "";
+          const combined = season?.combined_championship !== false;
+          return combined ? "" : list[0].id;
+        });
+      })
+      .catch(() => { setClasses([]); setClassId(""); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seasonId, season?.combined_championship, version]);
+
   useEffect(() => {
     if (gameId === null) return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ gameId, seriesId, seasonId }));
-  }, [gameId, seriesId, seasonId]);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ gameId, seriesId, seasonId, classId }));
+  }, [gameId, seriesId, seasonId, classId]);
 
   const value = {
     leagues, leagueId: leagueId ?? "",
     league: leagues.find(l => l.id === leagueId) || null,
     switchLeague, reloadLeagues,
-    games, seriesList, seasons,
-    gameId: gameId ?? "", seriesId: seriesId ?? "", seasonId: seasonId ?? "",
-    setGameId, setSeriesId, setSeasonId,
+    games, seriesList, seasons, classes,
+    gameId: gameId ?? "", seriesId: seriesId ?? "", seasonId: seasonId ?? "", classId: classId ?? "",
+    setGameId, setSeriesId, setSeasonId, setClassId,
     game: games.find(g => g.id === gameId) || null,
     series: seriesList.find(s => s.id === seriesId) || null,
-    season: seasons.find(s => s.id === seasonId) || null,
+    season,
+    raceClass: classes.find(c => c.id === classId) || null,
+    // A season only crowns one overall champion across its classes when the
+    // admin left the combined championship on (the default).
+    combinedChampionship: season?.combined_championship !== false,
     loading,
     refresh,
   };

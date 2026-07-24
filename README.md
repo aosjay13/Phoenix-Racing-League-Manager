@@ -6,15 +6,16 @@
 Multi-game racing league manager built to replace the league spreadsheet. Anyone can sign up
 for a driver account; league admins build out the full hierarchy with custom names and logos:
 
-**League** (e.g. Prodigy Racing Association) → **Game** (e.g. iRacing) → **Series** (e.g. Asphalt Assault Series) → **Season** (Season 1, 2, 3…) → **Race** (Race 1, 2, 3…)
+**League** (e.g. Prodigy Racing Association) → **Game** (e.g. iRacing) → **Series** (e.g. Asphalt Assault Series) → **Season** (Season 1, 2, 3…) → **Class** (Pro, Amateur, GT3, LMP2… — optional) → **Race** (Race 1, 2, 3…)
 
 A **League** is the top-level, fully-isolated environment: every game, series, season, race,
 driver, team, track, and result belongs to exactly one league. A **League Switcher** in the top
 bar swaps the active league, re-rendering the whole app for that league's data. Only the **Owner**
 can create new (empty) leagues; the active league is renamed under **League Setup → League Settings**.
 
-A **Game/Series/Season** selector sits at the top of every page — pick "All" at any level to
-widen a view (e.g. league-wide stats), or drill down to one exact season.
+A **Game/Series/Season/Class** selector sits at the top of every page — pick "All" at any level to
+widen a view (e.g. league-wide stats), or drill down to one exact season or class. The **Class**
+menu only appears for a season that actually runs classes.
 
 ## Features
 
@@ -23,6 +24,12 @@ widen a view (e.g. league-wide stats), or drill down to one exact season.
   stats auto-aggregated across all games with a per-game breakdown
 - 🏆 **Live standings** — driver *and* team championships with a configurable points scale,
   bonus points, and drop weeks per season
+- 🎽 **Multi-class championships** — split a season into classes (Pro/Amateur, GT3/LMP2); each
+  scores its own isolated championship, with an optional combined overall title across the field
+- 🖼 **Social graphic exporter** — league name + logo branding and per-column stat toggles, so
+  the downloaded PNG/JPG shows exactly the columns you want
+- ⬆ **Bulk roster import** — roll a whole roster into a new season in one click, from the series
+  or a cloned past season, with duplicates skipped automatically
 - ⏱ **Fast race entry** — one grid per race, pre-filled with the roster; supports multiple
   sessions per race (e.g. Qualifying + Race), scored independently; re-submitting a race
   overwrites cleanly for corrections
@@ -62,8 +69,12 @@ The app runs at `http://localhost:3000`.
    results.
 5. **Standings** — driver and team championship tables for the selected season, with
    points, gaps to the leader, and per-category stats. Click any column header to sort.
-6. **Stats** — use the Game/Series/Season menus to scope driver stats to a season, a whole
-   series, a whole game, or the entire league. Pick "All" at any level to widen the scope.
+6. **Stats** — use the Game/Series/Season/Class menus to scope driver stats to a class, a
+   season, a whole series, a whole game, or the entire league. Pick "All" at any level to
+   widen the scope.
+7. **Records** — the record holder in each category for the current scope, plus **Avg Drivers
+   per Race**: the average field size across every completed race in scope. Empty and upcoming
+   events are ignored, and a heat weekend counts its Feature field once rather than each heat.
 
 ### For league admins
 
@@ -74,15 +85,28 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
    - **Series** — name + logo under a game (e.g. "Asphalt Assault Series").
    - **Season** — name (e.g. "Season 3") under a series; set drop weeks, the points scale
      (or pick a built-in template), qualifying points, and bonus points (most laps led,
-     fastest lap, etc.).
+     fastest lap, etc.). **Enable Overall Championship** decides whether a multi-class season
+     also crowns one champion across the whole field on top of the per-class titles.
+   - **Classes** *(optional)* — split the season's field into separately-scored groups
+     ("Pro"/"Amateur", "GT3"/"LMP2"). Leave it empty for an ordinary single-class season —
+     nothing changes. With classes set up, a **Class** menu joins the Game/Series/Season
+     dropdowns and scopes Standings, Stats and Records to one class at a time. Assign drivers
+     to a class on the Roster page or from the Class column in the results grid; deleting a
+     class only unassigns its drivers, never their points or stats.
    - **Races** — name, track (+ track logo), round number, date, and session list (e.g.
      `Qualifying, Race` for a weekend with a scored qualifying session and a main race).
 2. **Roster & Teams** (`/roster`) — select a **Series** in the top dropdowns to manage that
    series' roster:
    - **Teams** — create teams with logos.
-   - **Drivers** — add a driver, assign their team, car number, and (optionally) link them
-     to a registered player account so their results count toward that account's profile
+   - **Drivers** — add a driver, assign their team, class, car number, and (optionally) link
+     them to a registered player account so their results count toward that account's profile
      stats.
+   - **Import Roster** — the season-rollover shortcut. Bulk-add every driver in the series, or
+     clone a specific past season's roster, in one write. Drivers already on the season's
+     roster are skipped rather than duplicated (matched by global driver id, then linked
+     account, then name), so it's safe to run twice or to top up a half-built roster. Team and
+     class don't carry over — both are per-season records — so imported drivers land
+     unassigned.
    - **Car numbers by series** — a driver can run a different number in each series they're
      part of; when editing a driver, set/update their number per series in one place.
    - With **no series selected**, the Roster shows the combined driver list across every
@@ -136,10 +160,33 @@ scoped to the active league (sent as an `X-League-Id` header; see `lib/serverAut
 `getRequestLeagueId`/`scopeByLeague`). `users` and `claim_requests` are **not** league-scoped —
 accounts and their roles span leagues.
 
-`games (league_id)` → `series (game_id)` → `seasons (series_id, game_id, drop_weeks, points_scale)` →
-`races (season_id, sessions[])` and `entries (season_id, team_id, user_id, number)` /
-`teams (season_id)` → `results (race_id, season_id, entry_id)`. `users` holds player
-profiles; linking a roster entry to a user account is what feeds their public career stats.
+`games (league_id)` → `series (game_id)` → `seasons (series_id, game_id, drop_weeks, points_scale,
+combined_championship)` → `races (season_id, sessions[])`, `classes (season_id, name, sort_order)`
+and `entries (season_id, team_id, class_id, user_id, number)` / `teams (season_id)` →
+`results (race_id, season_id, entry_id, class_id)`. `users` holds player profiles; linking a
+roster entry to a user account is what feeds their public career stats.
+
+**Classes** are the optional fourth tier. A class belongs to one season; a roster entry points at
+one via `class_id`, and each saved result records the class the driver ran in *at the time*, so
+re-classing a driver mid-season never rewrites the class championships they already scored in. The
+stats engine resolves a result's class as "the class stamped on the result, else the driver's
+current entry class" — which is also why results saved before a season had classes still fall into
+the right class once drivers are assigned. Passing `class_id` to `/api/standings` or `/api/stats`
+re-scores the whole table over just that class (its own points, ranks, gaps and averages) rather
+than filtering rows out of the combined table.
+
+**Race dates are calendar dates, not timestamps.** A race `date` is stored as a bare `YYYY-MM-DD`
+string with no time component, and every display/comparison goes through `lib/raceDate.js`. Handing
+that string to `new Date()` parses it as *UTC midnight*, which renders a day early in any western
+timezone (July 20 showing as July 19) — so the helpers parse to local midnight and compare dates as
+strings instead. There are no time-of-day inputs in the scheduler; the date an admin picks is the
+date everyone sees, in every timezone.
+
+**Track types** come from the shared list in `lib/trackTypes.js`. The generic `Dirt` type was
+replaced by `Dirt Oval` and `Dirt Road Course`; `POST /api/admin/tracks/migrate-types` converts any
+remaining `Dirt` venues to `Dirt Oval`, surfaced as an admin-only button on **Tracks** that appears
+only while there's something left to convert. It updates the `track_type` field alone — every other
+track property and all race history is preserved — and is idempotent, so re-running is a no-op.
 
 **Containment migration:** existing data created before the multi-league layer is safely
 partitioned by an Owner-only, idempotent, additive-only backfill (`POST /api/admin/leagues/migrate`,

@@ -64,6 +64,14 @@ export const POST = withAdmin(async (request, ctx, user) => {
   const savingSession = session || firstSession;
   const leagueId = getRequestLeagueId(request);
 
+  // Record the class each driver ran in on the result itself, so a class
+  // championship stays historically correct even if the driver is later moved
+  // to another class (or the roster entry is re-used). An explicit class on the
+  // row wins (the results grid's Class dropdown); otherwise it's taken from the
+  // driver's current roster entry. Blank = unclassified.
+  const entriesSnap = await db().collection("entries").where("season_id", "==", season_id).get();
+  const classByEntry = Object.fromEntries(entriesSnap.docs.map(d => [d.id, d.data().class_id || ""]));
+
   const col = db().collection("results");
   const existing = await col.where("race_id", "==", race_id).get();
   const batch = db().batch();
@@ -85,6 +93,7 @@ export const POST = withAdmin(async (request, ctx, user) => {
       session: savingSession,
       session_type: sessionType,
       entry_id: row.entry_id,
+      class_id: (row.class_id != null && row.class_id !== "") ? row.class_id : (classByEntry[row.entry_id] || ""),
       finish_pos: Number(row.finish_pos),
       start_pos: row.start_pos === "" || row.start_pos == null ? null : Number(row.start_pos),
       qual_time: row.qual_time || null,

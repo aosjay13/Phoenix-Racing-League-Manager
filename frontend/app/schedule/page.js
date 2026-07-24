@@ -8,6 +8,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { RaceCreateModal } from "@/components/RaceCreateModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { api } from "@/lib/api";
+import { formatRaceDate, isPastRaceDate, raceDateSortKey } from "@/lib/raceDate";
 
 // A driver cell that links to the profile when we can resolve one, else plain
 // text. Falls back to an em-dash for events with no recorded pole/winner yet.
@@ -19,10 +20,9 @@ function Person({ p }) {
     : <span>{p.name}</span>;
 }
 
-function fmtDate(d) {
-  if (!d) return "TBA";
-  return new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-}
+// A race date is a bare calendar date, rendered exactly as the admin picked it
+// in every timezone — see lib/raceDate.js.
+const fmtDate = d => formatRaceDate(d, "short");
 
 export default function SchedulePage() {
   const { seasonId } = useLeague();
@@ -45,22 +45,15 @@ function GlobalSchedule() {
 
   const { upcoming, archive } = useMemo(() => {
     const all = rows || [];
-    const dateVal = r => (r.date ? new Date(r.date).getTime() : null);
     // Upcoming: events without saved results yet, soonest first (undated last).
     const upcoming = all
       .filter(r => !r.summary?.has_results)
-      .sort((a, b) => {
-        const av = dateVal(a), bv = dateVal(b);
-        if (av == null && bv == null) return 0;
-        if (av == null) return 1;
-        if (bv == null) return -1;
-        return av - bv;
-      })
+      .sort((a, b) => raceDateSortKey(a.date, Infinity) - raceDateSortKey(b.date, Infinity))
       .slice(0, 40);
-    // Archive: events with results, most recently run first.
+    // Archive: events with results, most recently run first (undated last).
     const archive = all
       .filter(r => r.summary?.has_results)
-      .sort((a, b) => (dateVal(b) ?? 0) - (dateVal(a) ?? 0))
+      .sort((a, b) => raceDateSortKey(b.date, -Infinity) - raceDateSortKey(a.date, -Infinity))
       .slice(0, 40);
     return { upcoming, archive };
   }, [rows]);
@@ -182,7 +175,6 @@ function SeasonSchedule() {
 
   if (!races) return <div className="skeleton" style={{ height: 240 }} />;
 
-  const now = new Date();
   const ordered = [...races].sort((a, b) => (Number(a.round_number) || 0) - (Number(b.round_number) || 0));
   const nextRound = races.reduce((m, r) => Math.max(m, Number(r.round_number) || 0), 0) + 1;
 
@@ -262,7 +254,7 @@ function SeasonSchedule() {
             <tbody>
               {ordered.map(r => {
                 const s = r.summary || {};
-                const done = r.date && new Date(r.date) < now;
+                const done = isPastRaceDate(r.date);
                 return (
                   <tr key={r.id}>
                     <td style={{ fontVariantNumeric: "tabular-nums" }}>{r.round_number ?? "—"}</td>

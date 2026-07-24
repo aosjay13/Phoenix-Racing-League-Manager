@@ -11,7 +11,7 @@ import { NONE_TEMPLATE } from "@/lib/pointsTemplates";
 import { pointsFor, configForTemplate, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
 import { parseTime, formatTime, formatGap, parseLapsDown, deriveLaps } from "@/lib/raceTime";
 
-const RESULT_FIELDS = ["finish_pos", "start_pos", "qual_time", "race_time", "interval", "fastest_lap_time", "laps", "laps_led", "incidents", "fastest_lap", "halfway_leader", "hard_charger", "provisional", "points_adjustment", "manual_points", "status"];
+const RESULT_FIELDS = ["finish_pos", "start_pos", "qual_time", "race_time", "interval", "fastest_lap_time", "laps", "laps_led", "incidents", "fastest_lap", "halfway_leader", "hard_charger", "provisional", "points_adjustment", "manual_points", "status", "class_id"];
 const BOOL_FIELDS = new Set(["fastest_lap", "halfway_leader", "hard_charger", "provisional"]);
 
 // Each grid row is a *finishing position* — it may or may not yet have a
@@ -43,6 +43,10 @@ function makeRow(position) {
     points_adjustment: "0",
     manual_points: "",
     status: "finished",
+    // Which class this driver ran in. Seeded from their roster entry when a
+    // driver is assigned, and saved onto the result so the class championships
+    // stay historically correct if they're re-classed later.
+    class_id: "",
   };
 }
 
@@ -73,6 +77,7 @@ function assignEntry(row, entry, totalLaps) {
     entry_id: entry.id ?? entry.entry_id,
     driver_name: entry.name ?? entry.driver_name ?? "",
     driver_number: entry.number ?? entry.driver_number ?? null,
+    class_id: entry.class_id ?? row.class_id ?? "",
   };
   const d = deriveLaps(out, totalLaps);
   if (d != null) out.laps = String(d);
@@ -96,6 +101,12 @@ function buildRows(entries, existing, totalLaps, qualPos = {}, sessionType = "ra
       if (sessionType !== "qualifying" && qualPos[row.entry_id] != null) row.start_pos = String(qualPos[row.entry_id]);
       for (const f of RESULT_FIELDS) {
         if (r[f] == null) continue;
+        // A saved result's class wins — that's the class the driver actually
+        // raced in — but a BLANK one falls through to the class assignEntry
+        // seeded from their roster entry, so results saved before the season had
+        // classes pick up the driver's class instead of showing unclassified.
+        // Mirrors classOfResult() on the server.
+        if (f === "class_id" && r[f] === "") continue;
         row[f] = BOOL_FIELDS.has(f) ? !!r[f] : String(r[f]);
       }
       return row;
@@ -135,7 +146,7 @@ export function SessionEditor({
   season, templates = [], sessionPoints = {}, onSessionPointsChange, onTemplatesChanged,
   sessionStats = {}, onSessionStatsChange, sessionPointsEnabled = {}, onSessionPointsEnabledChange,
   canAddSession = false, onAddSession, onRemoveSession, onRenameSession,
-  initialSession, onEntriesChanged, seriesName,
+  initialSession, onEntriesChanged, seriesName, classes = [],
 }) {
   const names = sessionNames.length ? sessionNames : [LABELS[sessionType] || "Session"];
   const namesKey = names.join("|");
@@ -577,6 +588,9 @@ export function SessionEditor({
 
   const existingNames = new Set(rows.map(r => r.driver_name).filter(Boolean).map(n => n.trim().toLowerCase()));
   const pointsLabel = sessionType === "qualifying" ? "Quali Pts" : "Points";
+  // The Class column only exists for a season that runs classes; a single-class
+  // season keeps the grid exactly as it was.
+  const hasClasses = classes.length > 0;
 
   const rowCommon = (row, idx) => ({
     available: availableFor(row),
@@ -680,10 +694,11 @@ export function SessionEditor({
       ) : sessionType === "qualifying" ? (
         <div style={{ overflowX: "auto" }}>
           <p style={{ margin: "0 0 8px", color: "var(--ink-2)", fontSize: "0.78rem" }}>Drag ⠿ to reorder.</p>
-          <div className="qual-grid">
-            {["", "Pos", "Driver", "Qual Time", pointsLabel, ""].map((h, i) => <span className="grid-header" key={h || i}>{h}</span>)}
+          <div className={`qual-grid${hasClasses ? " has-class" : ""}`}>
+            {["", "Pos", "Driver", ...(hasClasses ? ["Class"] : []), "Qual Time", pointsLabel, ""].map((h, i) => <span className="grid-header" key={h || i}>{h}</span>)}
             {rows.map((row, idx) => (
               <QualRow key={row.slot_id} row={row} idx={idx} updateRow={updateRow} autoFocus={row.entry_id === justAddedId} points={rowPoints(row)}
+                classes={classes} hasClasses={hasClasses}
                 dragging={dragIndex === idx} dragOver={overIndex === idx && dragIndex !== idx}
                 onDragStart={() => handleDragStart(idx)} onDragOver={e => handleDragOver(idx, e)} onDrop={() => handleDrop(idx)} onDragEnd={handleDragEnd}
                 {...rowCommon(row, idx)} />
@@ -693,14 +708,15 @@ export function SessionEditor({
       ) : (
         <div style={{ overflowX: "auto" }}>
           <p style={{ margin: "0 0 8px", color: "var(--ink-2)", fontSize: "0.78rem" }}>Drag ⠿ to reorder — finishing positions renumber automatically.</p>
-          <div className="result-grid result-grid-wide">
-            {["", "Fin", "Start", "Driver", "Race Time", "Int", "Best Lap", "Laps", "Led", "Inc", "FL", "½", "HC", "Adj", "Status", pointsLabel, ""].map((h, i) => (
+          <div className={`result-grid result-grid-wide${hasClasses ? " has-class" : ""}`}>
+            {["", "Fin", "Start", "Driver", ...(hasClasses ? ["Class"] : []), "Race Time", "Int", "Best Lap", "Laps", "Led", "Inc", "FL", "½", "HC", "Adj", "Status", pointsLabel, ""].map((h, i) => (
               <span className="grid-header" key={h || i}>{h}</span>
             ))}
             {rows.map((row, idx) => (
               <RowInputs key={row.slot_id} row={row} idx={idx} updateRow={updateRow}
                 updateRaceTime={updateRaceTime} updateInterval={updateInterval} updateStatus={updateStatus}
                 autoFocus={row.entry_id === justAddedId} points={rowPoints(row)}
+                classes={classes} hasClasses={hasClasses}
                 dragging={dragIndex === idx} dragOver={overIndex === idx && dragIndex !== idx}
                 onDragStart={() => handleDragStart(idx)} onDragOver={e => handleDragOver(idx, e)} onDrop={() => handleDrop(idx)} onDragEnd={handleDragEnd}
                 {...rowCommon(row, idx)} />
@@ -1053,7 +1069,21 @@ function RemoveButton({ row, onRemove }) {
   );
 }
 
-function RowInputs({ row, idx, updateRow, updateRaceTime, updateInterval, updateStatus, autoFocus, points, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, available, onAssign, onClear, onRequestCreate, onPasteColumn }) {
+// The per-row Class picker. Defaults to whatever class the driver is on in the
+// roster (seeded by assignEntry); changing it here scopes THIS result to another
+// class without touching the roster — useful when a driver runs up a class for
+// one round.
+function ClassCell({ row, idx, classes, updateRow }) {
+  return (
+    <select value={row.class_id ?? ""} disabled={!row.entry_id} title="Class this driver ran in"
+      onChange={e => updateRow(idx, "class_id", e.target.value)}>
+      <option value="">—</option>
+      {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+    </select>
+  );
+}
+
+function RowInputs({ row, idx, updateRow, updateRaceTime, updateInterval, updateStatus, autoFocus, points, classes = [], hasClasses, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, available, onAssign, onClear, onRequestCreate, onPasteColumn }) {
   const hasDriver = !!row.entry_id;
   const isLeader = Number(row.finish_pos) === 1;
   // Shared per-cell wiring: column/row tags, Enter-to-next-row, and column
@@ -1075,6 +1105,7 @@ function RowInputs({ row, idx, updateRow, updateRaceTime, updateInterval, update
       <input type="number" min="1" title="Starting position (defaults from Qualifying)" placeholder="—" disabled={!hasDriver}
         value={row.start_pos} {...gridProps("start_pos")} onChange={e => updateRow(idx, "start_pos", e.target.value)} />
       <DriverCell row={row} idx={idx} dragging={dragging} available={available} onAssign={onAssign} onClear={onClear} onRequestCreate={onRequestCreate} onPasteColumn={onPasteColumn} />
+      {hasClasses && <ClassCell row={row} idx={idx} classes={classes} updateRow={updateRow} />}
       <input placeholder={isLeader ? "1:23.456" : "1:24.567"} value={row.race_time} disabled={!hasDriver}
         {...gridProps("race_time")} onChange={e => updateRaceTime(idx, e.target.value)} />
       <input placeholder={isLeader ? "leader" : "+2.345 / 1L"} value={isLeader ? "" : row.interval} disabled={!hasDriver || isLeader}
@@ -1103,7 +1134,7 @@ function RowInputs({ row, idx, updateRow, updateRaceTime, updateInterval, update
   );
 }
 
-function QualRow({ row, idx, updateRow, autoFocus, points, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, available, onAssign, onClear, onRequestCreate, onPasteColumn }) {
+function QualRow({ row, idx, updateRow, autoFocus, points, classes = [], hasClasses, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, available, onAssign, onClear, onRequestCreate, onPasteColumn }) {
   const hasDriver = !!row.entry_id;
   const gridProps = field => ({
     "data-grid-field": field, "data-grid-idx": idx,
@@ -1115,6 +1146,7 @@ function QualRow({ row, idx, updateRow, autoFocus, points, dragging, dragOver, o
       <DragHandle dragging={dragging} dragOver={dragOver} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={onDragEnd} />
       <input type="number" min="1" value={row.finish_pos} {...gridProps("finish_pos")} onChange={e => updateRow(idx, "finish_pos", e.target.value)} autoFocus={hasDriver && autoFocus} />
       <DriverCell row={row} idx={idx} dragging={dragging} available={available} onAssign={onAssign} onClear={onClear} onRequestCreate={onRequestCreate} onPasteColumn={onPasteColumn} />
+      {hasClasses && <ClassCell row={row} idx={idx} classes={classes} updateRow={updateRow} />}
       <input placeholder="01:43.863" value={row.qual_time} disabled={!hasDriver}
         {...gridProps("qual_time")} onChange={e => updateRow(idx, "qual_time", e.target.value)} />
       <div className="points-cell" style={{ textAlign: "center", fontWeight: 600 }}>{points}</div>

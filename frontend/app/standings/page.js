@@ -102,7 +102,7 @@ function formatCell(r, key) {
 }
 
 export default function StandingsPage() {
-  const { seasonId, season, game, series } = useLeague();
+  const { seasonId, season, game, series, league, classId, raceClass, classes, combinedChampionship } = useLeague();
   const { isAdmin } = useAuth();
   const [tab, setTab] = useState("drivers");
   const [data, setData] = useState(null);
@@ -112,10 +112,14 @@ export default function StandingsPage() {
   const [error, setError] = useState(null);
   const [sharing, setSharing] = useState(false);
 
+  // The Class dropdown in the top bar scopes the whole table: a class shows that
+  // class's own isolated championship (its own points, ranks, and gaps), while
+  // "All Classes" is the combined whole-field championship.
   const load = useCallback(() => {
     if (!seasonId) { setData(null); return; }
-    api(`/api/standings?season_id=${seasonId}`).then(setData).catch(() => setData(null));
-  }, [seasonId]);
+    const qs = `season_id=${seasonId}${classId ? `&class_id=${classId}` : ""}`;
+    api(`/api/standings?${qs}`).then(setData).catch(() => setData(null));
+  }, [seasonId, classId]);
 
   useEffect(load, [load]);
 
@@ -156,11 +160,20 @@ export default function StandingsPage() {
   const rows = data?.[tab] ?? [];
   const shareCols = tab === "teams" ? SHARE_TEAM_COLS : SHARE_DRIVER_COLS;
   const shareTable = toGraphicTable(shareCols, rows, { nameKey: tab === "teams" ? "team" : "driver_name" });
+  const className = raceClass?.name ?? null;
+  const heading = `Standings · ${season?.name ?? ""}${className ? ` · ${className}` : ""}`;
+  // In the combined view, surface which class each driver runs in; inside a
+  // single class the column would be the same value on every row.
+  const driverCols = classes.length > 0 && !classId
+    ? [...DRIVER_COLS.slice(0, 4), ["class_name", "Class", false, true], ...DRIVER_COLS.slice(4)]
+    : DRIVER_COLS;
 
   return (
     <section>
       <div className="page-title">
-        <h2>Standings · {season?.name ?? ""}</h2>
+        <h2>{heading}</h2>
+        {className && <span className="page-badge">{className} Championship</span>}
+        {!className && classes.length > 0 && <span className="page-badge">Overall · All Classes</span>}
         {data?.drop_weeks > 0 && <span className="page-badge">{data.drop_weeks} Drop Week{data.drop_weeks > 1 ? "s" : ""} Applied</span>}
         {rows.length > 0 && (
           <button className="btn btn-ghost" style={{ marginTop: 0, padding: "6px 12px", fontSize: "0.82rem" }} onClick={() => setSharing(true)}>
@@ -172,15 +185,25 @@ export default function StandingsPage() {
         open={sharing}
         onClose={() => setSharing(false)}
         kind="Standings"
-        defaultTitle={`${season?.name ?? "Championship"} Standings`}
-        subtitle={[series?.name, tab === "teams" ? "Team Championship" : "Driver Championship"].filter(Boolean).join(" · ")}
+        defaultTitle={`${season?.name ?? "Championship"}${className ? ` ${className}` : ""} Standings`}
+        subtitle={[series?.name, className, tab === "teams" ? "Team Championship" : "Driver Championship"].filter(Boolean).join(" · ")}
         columns={shareTable.columns}
         rows={shareTable.rows}
-        logos={leagueLogos({ game, series, season })}
+        logos={leagueLogos({ league, game, series, season })}
+        leagueName={league?.name ?? ""}
+        leagueLogoUrl={league?.logo_url ?? ""}
       />
       <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.85rem" }}>
         BL = points behind leader, BN = points behind next position (championship order). Click any column to sort.
+        {classes.length > 0 && (className
+          ? ` Showing the ${className} class championship only — switch classes with the Class menu above.`
+          : " Showing every class combined — pick a Class above for that class's own championship.")}
       </p>
+      {classes.length > 0 && !className && !combinedChampionship && (
+        <p style={{ marginTop: 4, color: "var(--ink-2)", fontSize: "0.82rem" }}>
+          This season doesn&rsquo;t run an overall championship — the combined table below is for reference only.
+        </p>
+      )}
 
       <div className="tab-row">
         <button className={`tab${tab === "drivers" ? " active" : ""}`} onClick={() => setTab("drivers")}>Drivers</button>
@@ -196,7 +219,7 @@ export default function StandingsPage() {
         </div>
       ) : tab === "drivers" ? (
         <SortableTable
-          cols={DRIVER_COLS}
+          cols={driverCols}
           rows={rows}
           defaultKey="rank"
           nameKey="driver_name"

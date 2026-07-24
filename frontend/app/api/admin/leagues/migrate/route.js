@@ -13,7 +13,7 @@ const DEFAULT_LEAGUE_NAME = "Prodigy Racing Association";
 // are deliberately excluded — those belong to people (accounts span leagues),
 // not to a single league.
 const SCOPED_COLLECTIONS = [
-  "games", "series", "seasons", "races", "entries", "teams",
+  "games", "series", "seasons", "classes", "races", "entries", "teams",
   "results", "drivers", "tracks", "points_templates",
 ];
 

@@ -35,9 +35,12 @@ export function TrackSelect({ tracks, valueId, valueName, onChange, onTrackCreat
     const q = text.trim().toLowerCase();
     const list = tracks || [];
     if (!q) return list;
+    // Type is searchable too, so the race scheduler can narrow to a surface by
+    // typing it ("dirt oval", "road course") without a separate filter control.
     return list.filter(t =>
       String(t.name || "").toLowerCase().includes(q) ||
-      String(t.location || "").toLowerCase().includes(q));
+      String(t.location || "").toLowerCase().includes(q) ||
+      String(t.track_type || "").toLowerCase().includes(q));
   }, [tracks, text]);
 
   const exactExists = useMemo(() => {

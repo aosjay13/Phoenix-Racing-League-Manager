@@ -4,8 +4,8 @@ import { useState } from "react";
 import { api } from "@/lib/api";
 import { Modal } from "@/components/Modal";
 import { ImageUpload } from "@/components/ImageUpload";
+import { TRACK_TYPES } from "@/lib/trackTypes";
 
-const TRACK_TYPES = ["Oval", "Superspeedway", "Short Track", "Road Course", "Street Circuit", "Dirt", "Rallycross", "Kart"];
 const blankTrack = { name: "", location: "", length: "", track_type: "", logo_url: "", notes: "" };
 
 // Standalone track dialog — the same fields the League Setup Tracks panel
@@ -59,6 +59,12 @@ export function TrackCreateModal({ onClose, onCreated, onSaved, initialName, tra
             <select value={form.track_type} onChange={e => setForm(f => ({ ...f, track_type: e.target.value }))}>
               <option value="">—</option>
               {TRACK_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              {/* A track still on a retired type (the old "Dirt") keeps it
+                  selectable until the migration runs, so an unrelated edit can't
+                  silently blank it. */}
+              {form.track_type && !TRACK_TYPES.includes(form.track_type) && (
+                <option value={form.track_type}>{form.track_type} (legacy)</option>
+              )}
             </select></div>
         </div>
         <div className="field"><label>Notes</label>

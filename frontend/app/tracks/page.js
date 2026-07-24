@@ -6,11 +6,14 @@ import { useAuth } from "@/components/AuthProvider";
 import { TrackCreateModal } from "@/components/TrackCreateModal";
 import { DirectoryRow } from "@/components/DirectoryRow";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { TRACK_TYPES, isLegacyTrackType } from "@/lib/trackTypes";
 
-// Canonical display order for the type sub-sections (matches TrackCreateModal).
-// Any type not listed here falls in after these, alphabetically; untyped tracks
+// Canonical display order for the type sub-sections — the shared vocabulary, so
+// adding a type in lib/trackTypes.js updates the form, this filter, and these
+// sections at once. Any type not listed there (including retired values still on
+// un-migrated tracks) falls in after them, alphabetically; untyped tracks
 // collect under "Unclassified" at the end.
-const TYPE_ORDER = ["Oval", "Superspeedway", "Short Track", "Road Course", "Street Circuit", "Dirt", "Rallycross", "Kart"];
+const TYPE_ORDER = TRACK_TYPES;
 const UNTYPED = "Unclassified";
 
 export default function TracksPage() {
@@ -20,6 +23,9 @@ export default function TracksPage() {
   const [editing, setEditing] = useState(null);   // track being edited
   const [deleting, setDeleting] = useState(null); // track being deleted
   const [collapsed, setCollapsed] = useState({}); // type -> true when hidden
+  const [typeFilter, setTypeFilter] = useState(""); // "" = every type
+  const [migrating, setMigrating] = useState(false);
+  const [migrateNote, setMigrateNote] = useState(null);
 
   useEffect(() => {
     // The global tracks pool is every venue in the database. Open a profile to
@@ -31,6 +37,34 @@ export default function TracksPage() {
       })
       .catch(() => setTracks([]));
   }, []);
+
+  // Venues still carrying a retired type value (the old catch-all "Dirt"). They
+  // display normally; the banner below just offers the one-time conversion.
+  const legacyTracks = (tracks || []).filter(t => isLegacyTrackType(t.track_type));
+
+  // One-time type migration: "Dirt" → "Dirt Oval". The route only rewrites the
+  // track_type field, so names, locations, lengths, logos and notes are all
+  // preserved, and it's safe to re-run.
+  async function runTypeMigration() {
+    setMigrating(true);
+    setMigrateNote(null);
+    try {
+      const res = await api("/api/admin/tracks/migrate-types", { method: "POST" });
+      const fresh = await api("/api/tracks");
+      fresh.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+      setTracks(fresh);
+      setMigrateNote({
+        type: "success",
+        msg: res.updated
+          ? `Updated ${res.updated} track${res.updated === 1 ? "" : "s"} to the new dirt types. All other track data was left untouched.`
+          : "Nothing to migrate — every track already uses a current type.",
+      });
+    } catch (err) {
+      setMigrateNote({ type: "error", msg: err.message });
+    } finally {
+      setMigrating(false);
+    }
+  }
 
   // Drop a newly-created track into the grid without a round-trip, keeping the
   // list alphabetized.
@@ -57,7 +91,10 @@ export default function TracksPage() {
   // TYPE_ORDER), any other custom types alphabetically, then Unclassified last.
   const groups = useMemo(() => {
     const byType = new Map();
-    for (const t of tracks || []) {
+    const visible = typeFilter
+      ? (tracks || []).filter(t => (t.track_type || UNTYPED) === typeFilter)
+      : (tracks || []);
+    for (const t of visible) {
       const key = t.track_type || UNTYPED;
       if (!byType.has(key)) byType.set(key, []);
       byType.get(key).push(t);
@@ -71,9 +108,27 @@ export default function TracksPage() {
       const [ga, sa] = rank(a), [gb, sb] = rank(b);
       return ga !== gb ? ga - gb : (typeof sa === "number" ? sa - sb : String(sa).localeCompare(String(sb)));
     });
+  }, [tracks, typeFilter]);
+
+  // Filter options: the canonical types plus whatever types the data actually
+  // holds (so an un-migrated "Dirt" venue is still reachable), each with a count.
+  const filterOptions = useMemo(() => {
+    const counts = new Map();
+    for (const t of tracks || []) {
+      const key = t.track_type || UNTYPED;
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    const ordered = [...TYPE_ORDER.filter(t => counts.has(t))];
+    for (const key of counts.keys()) {
+      if (key !== UNTYPED && !ordered.includes(key)) ordered.push(key);
+    }
+    if (counts.has(UNTYPED)) ordered.push(UNTYPED);
+    return ordered.map(key => ({ key, count: counts.get(key) }));
   }, [tracks]);
 
   if (!tracks) return <div className="skeleton" style={{ height: 240 }} />;
+
+  const shownCount = groups.reduce((n, [, rows]) => n + rows.length, 0);
 
   return (
     <section>
@@ -90,10 +145,48 @@ export default function TracksPage() {
         Every venue in the league. Open a profile to see who wins here, past race winners, and venue records.
       </p>
 
+      {tracks.length > 0 && (
+        <div className="field" style={{ maxWidth: 280, marginTop: 12 }}>
+          <label>Track Type</label>
+          <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
+            <option value="">All types ({tracks.length})</option>
+            {filterOptions.map(o => <option key={o.key} value={o.key}>{o.key} ({o.count})</option>)}
+          </select>
+        </div>
+      )}
+
+      {/* One-time dirt-type migration, admin only and only while there's
+          something left to migrate. */}
+      {isAdmin && legacyTracks.length > 0 && (
+        <div className="form-card" style={{ maxWidth: "100%", marginTop: 12 }}>
+          <h3 style={{ marginTop: 0 }}>Update legacy dirt track types</h3>
+          <p style={{ color: "var(--ink-1)", fontSize: "0.88rem" }}>
+            The generic <strong>Dirt</strong> type has been replaced by <strong>Dirt Oval</strong> and{" "}
+            <strong>Dirt Road Course</strong>. {legacyTracks.length} track{legacyTracks.length === 1 ? "" : "s"}{" "}
+            ({legacyTracks.map(t => t.name).join(", ")}) still use the old value. Running this converts them to{" "}
+            <strong>Dirt Oval</strong> — only the type field changes, so every layout, location, length, logo,
+            note and race record is preserved. Re-classify any road-course venues afterwards with Edit.
+          </p>
+          {migrateNote && <div className={`toast toast-${migrateNote.type}`}>{migrateNote.msg}</div>}
+          <button className="btn btn-primary" disabled={migrating} onClick={runTypeMigration}>
+            {migrating ? "Updating…" : `Convert ${legacyTracks.length} track${legacyTracks.length === 1 ? "" : "s"} to Dirt Oval`}
+          </button>
+        </div>
+      )}
+      {isAdmin && migrateNote && legacyTracks.length === 0 && (
+        <div className={`toast toast-${migrateNote.type}`} style={{ marginTop: 12 }}>{migrateNote.msg}</div>
+      )}
+
       {tracks.length === 0 ? (
         <div className="empty-state">
           <span className="empty-state-icon">🏁</span>
           <p>No tracks yet.{isAdmin ? " Use “＋ Add Track” above to create one." : " Add them in League Setup → Tracks."}</p>
+        </div>
+      ) : shownCount === 0 ? (
+        <div className="empty-state">
+          <span className="empty-state-icon">🏁</span>
+          <p>No {typeFilter} tracks yet.</p>
+          <button className="btn btn-ghost" onClick={() => setTypeFilter("")}>Show all types</button>
         </div>
       ) : (
         <div style={{ marginTop: 18, display: "flex", flexDirection: "column", gap: 18 }}>

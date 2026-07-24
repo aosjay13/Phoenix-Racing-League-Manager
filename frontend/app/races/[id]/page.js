@@ -8,6 +8,7 @@ import { useLeague } from "@/components/LeagueProvider";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ShareGraphicModal } from "@/components/ShareGraphicModal";
 import { leagueLogos, driverDisplayName } from "@/lib/shareGraphic";
+import { formatRaceDate } from "@/lib/raceDate";
 import { api } from "@/lib/api";
 
 function DriverCell({ r }) {
@@ -58,7 +59,7 @@ export default function EventResultsPage() {
   const { id } = useParams();
   const router = useRouter();
   const { isAdmin } = useAuth();
-  const { game, series, season: leagueSeason } = useLeague();
+  const { game, series, season: leagueSeason, league: activeLeague } = useLeague();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [tab, setTab] = useState(null); // "qual" or session name
@@ -114,9 +115,24 @@ export default function EventResultsPage() {
   const sharingQual = tab === "__qual";
   const sessionLabel = sharingQual ? "Qualifying" : (tab || "Results");
   const shareSource = sharingQual ? qualifying : finishers;
+  // `key` identifies each column to the exporter's "Displayed Stats"
+  // checkboxes; Pos and Driver are locked on since a row is unreadable without
+  // them.
   const shareColumns = sharingQual
-    ? [{ label: "Pos", align: "center" }, { label: "Driver", align: "left" }, { label: "Team", align: "left" }, { label: "Qual Time", align: "center" }, { label: "Pts", align: "center" }]
-    : [{ label: "Pos", align: "center" }, { label: "Driver", align: "left" }, { label: "Team", align: "left" }, { label: "Best Lap", align: "center" }, { label: "Pts", align: "center" }];
+    ? [
+        { key: "pos", label: "Pos", align: "center", locked: true },
+        { key: "driver", label: "Driver", align: "left", locked: true },
+        { key: "team", label: "Team", align: "left" },
+        { key: "qual_time", label: "Qual Time", align: "center" },
+        { key: "points", label: "Pts", align: "center" },
+      ]
+    : [
+        { key: "pos", label: "Pos", align: "center", locked: true },
+        { key: "driver", label: "Driver", align: "left", locked: true },
+        { key: "team", label: "Team", align: "left" },
+        { key: "best_lap", label: "Best Lap", align: "center" },
+        { key: "points", label: "Pts", align: "center" },
+      ];
   const shareRows = shareSource.map(r => {
     const pos = sharingQual ? r.position : r.finish_pos;
     return {
@@ -130,9 +146,9 @@ export default function EventResultsPage() {
   // context; dedupe by url so the same image isn't listed twice.
   const shareLogos = [
     event.track_logo_url && { label: `${event.track || "Track"} (Track)`, url: event.track_logo_url },
-    ...leagueLogos({ game, series, season: leagueSeason }),
+    ...leagueLogos({ league: activeLeague, game, series, season: leagueSeason }),
   ].filter(Boolean).filter((l, i, a) => a.findIndex(x => x.url === l.url) === i);
-  const eventDate = event.date ? new Date(event.date).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }) : null;
+  const eventDate = event.date ? formatRaceDate(event.date, "long", null) : null;
 
   return (
     <section>
@@ -145,6 +161,8 @@ export default function EventResultsPage() {
         columns={shareColumns}
         rows={shareRows}
         logos={shareLogos}
+        leagueName={activeLeague?.name ?? ""}
+        leagueLogoUrl={activeLeague?.logo_url ?? ""}
       />
       <div className="hero" style={{ display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap" }}>
         {event.track_logo_url
@@ -156,7 +174,7 @@ export default function EventResultsPage() {
           </div>
           <p style={{ margin: "4px 0 0", color: "var(--ink-1)", fontSize: "0.9rem" }}>
             {event.track ? `${event.track} · ` : ""}
-            {event.date ? new Date(event.date).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" }) : "Date TBA"}
+            {formatRaceDate(event.date, "full", "Date TBA")}
             {season ? ` · ${season.name}` : ""}
           </p>
           <p style={{ margin: "6px 0 0", display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>

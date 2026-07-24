@@ -7,6 +7,7 @@ import { AdminGate } from "@/components/AdminGate";
 import { ImageUpload } from "@/components/ImageUpload";
 import { DriverForm } from "@/components/DriverForm";
 import { Modal } from "@/components/Modal";
+import { RosterImportModal } from "@/components/RosterImportModal";
 import { ensureDriverId } from "@/lib/driverPool";
 import { api } from "@/lib/api";
 
@@ -83,6 +84,8 @@ function RosterInner() {
   const [loadError, setLoadError] = useState(null);
   const [gameRoster, setGameRoster] = useState([]); // scope=game rows, feeds the series-membership panel
   const [teams, setTeams] = useState([]);
+  const [classes, setClasses] = useState([]);       // the edit season's classes, if it runs any
+  const [importing, setImporting] = useState(false); // bulk-import modal open
   const [users, setUsers] = useState([]);
   const [driverPool, setDriverPool] = useState([]); // global drivers, independent of any season/series
   const [toast, setToast] = useState(null);
@@ -98,7 +101,7 @@ function RosterInner() {
   const [mergeInto, setMergeInto] = useState("");     // survivor row key
   const [mergeBusy, setMergeBusy] = useState(false);
 
-  const [addForm, setAddForm] = useState({ name: "", number: "", team_id: "", user_id: "" });
+  const [addForm, setAddForm] = useState({ name: "", number: "", team_id: "", user_id: "", class_id: "" });
   const [pullKey, setPullKey] = useState("");        // gameRoster key chosen via "Pull Existing Driver"
 
   const [teamForm, setTeamForm] = useState({ name: "", color: "", logo_url: "" });
@@ -124,10 +127,15 @@ function RosterInner() {
       setGameRoster([]);
     }
     if (seriesId && r.edit_season_id) {
-      const t = await api(`/api/teams?season_id=${r.edit_season_id}`);
+      const [t, c] = await Promise.all([
+        api(`/api/teams?season_id=${r.edit_season_id}`),
+        api(`/api/classes?season_id=${r.edit_season_id}`),
+      ]);
       setTeams(t);
+      setClasses(c);
     } else {
       setTeams([]);
+      setClasses([]);
     }
   }, [scope.params, gameId, seriesId]);
 
@@ -155,14 +163,17 @@ function RosterInner() {
   function startRowEdit(row) {
     setRowKey(row.key);
     setSeriesPanelKey(null);
-    setRowForm({ name: row.name, number: row.number ?? "", team_id: row.team_id ?? "", user_id: row.user_id ?? "" });
+    setRowForm({
+      name: row.name, number: row.number ?? "", team_id: row.team_id ?? "",
+      user_id: row.user_id ?? "", class_id: row.class_id ?? "",
+    });
   }
   function cancelRowEdit() { setRowKey(null); setRowForm(null); }
 
   async function saveRow(row) {
     if (!rowForm) return;
     try {
-      const body = { name: rowForm.name, team_id: rowForm.team_id, user_id: rowForm.user_id };
+      const body = { name: rowForm.name, team_id: rowForm.team_id, user_id: rowForm.user_id, class_id: rowForm.class_id ?? "" };
       if (rowForm.number !== "") body.number = rowForm.number;
       await api(`/api/entries/${row.entry_id}`, { method: "PATCH", body });
       // Push the primary name edit up to the global driver profile. The driver
@@ -274,7 +285,7 @@ function RosterInner() {
 
   function resetAddForm() {
     setPullKey("");
-    setAddForm({ name: "", number: "", team_id: "", user_id: "" });
+    setAddForm({ name: "", number: "", team_id: "", user_id: "", class_id: "" });
   }
 
   async function addDriver(e) {
@@ -283,7 +294,7 @@ function RosterInner() {
     try {
       const pulled = pullKey ? gameRoster.find(r => r.key === pullKey) : null;
       const driverId = await ensureDriverId({ driverId: pulled?.driver_id, name: addForm.name, user_id: addForm.user_id });
-      const body = { name: addForm.name, team_id: addForm.team_id, user_id: addForm.user_id, driver_id: driverId };
+      const body = { name: addForm.name, team_id: addForm.team_id, user_id: addForm.user_id, driver_id: driverId, class_id: addForm.class_id || "" };
       if (addForm.number !== "") body.number = addForm.number;
       await api("/api/entries", { method: "POST", body: { ...body, season_id: editSeasonId } });
       showToast("success", "Driver added to roster.");
@@ -359,7 +370,18 @@ function RosterInner() {
   const rows = roster?.rows ?? [];
   const showNumber = !!roster?.show_number;
   const showActions = canManage && editMode;
-  const colSpan = (showNumber ? 1 : 0) + 3 + (showActions ? 1 : 0);
+  // The Class column only exists for a season that runs classes.
+  const showClass = classes.length > 0;
+  const colSpan = (showNumber ? 1 : 0) + (showClass ? 1 : 0) + 3 + (showActions ? 1 : 0);
+
+  // Result of the most recent bulk import — feeds the success toast.
+  function handleImported(res) {
+    setImporting(false);
+    const skipped = res.skipped ? ` ${res.skipped} already on the roster ${res.skipped === 1 ? "was" : "were"} skipped.` : "";
+    if (res.imported === 0) showToast("success", `No new drivers to import.${skipped}`);
+    else showToast("success", `Successfully imported ${res.imported} driver${res.imported === 1 ? "" : "s"}.${skipped}`);
+    load().catch(err => showToast("error", err.message));
+  }
 
   const { sorted, clickSort, arrow } = useSortable(rows, showNumber ? "number" : "name", ["number", "name"]);
 
@@ -369,6 +391,13 @@ function RosterInner() {
         <h2>{scope.title}</h2>
         <span style={{ display: "flex", gap: 10, alignItems: "center" }}>
           {roster && <span className="page-badge">{rows.length} Drivers · {roster.seasons_counted} Season{roster.seasons_counted === 1 ? "" : "s"}</span>}
+          {canManage && (
+            <button className="btn btn-ghost" style={{ marginTop: 0 }}
+              title="Bulk-add drivers from this series or a past season — duplicates are skipped"
+              onClick={() => setImporting(true)}>
+              ⬆ Import Roster
+            </button>
+          )}
           {canManage && (
             <button className="btn btn-primary" style={{ marginTop: 0 }}
               onClick={() => { setEditMode(m => !m); cancelRowEdit(); setSeriesPanelKey(null); }}>
@@ -486,6 +515,7 @@ function RosterInner() {
                 onChange={setAddForm}
                 teams={teams}
                 users={users}
+                classes={classes}
                 numberLabel={`Car Number · ${series?.name ?? "this series"}`}
               />
               <button className="btn btn-primary" type="submit">Add Driver</button>
@@ -547,6 +577,7 @@ function RosterInner() {
               <tr>
                 {showNumber && <th className="sortable" onClick={() => clickSort("number")}>#{arrow("number")}</th>}
                 <th className="sortable" onClick={() => clickSort("name", true)}>Driver{arrow("name")}</th>
+                {showClass && <th>Class</th>}
                 <th>Team</th>
                 <th>Linked Account</th>
                 {showActions && <th></th>}
@@ -571,6 +602,18 @@ function RosterInner() {
                           ? <input value={rowForm.name} onChange={e => setRowForm(f => ({ ...f, name: e.target.value }))} />
                           : d.name}
                       </td>
+                      {showClass && (
+                        <td className="team-cell">
+                          {editing
+                            ? (
+                              <select value={rowForm.class_id ?? ""} onChange={e => setRowForm(f => ({ ...f, class_id: e.target.value }))}>
+                                <option value="">Unclassified</option>
+                                {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                              </select>
+                            )
+                            : (d.class_name ? <span className="badge">{d.class_name}</span> : "—")}
+                        </td>
+                      )}
                       <td className="team-cell">
                         {editing
                           ? (
@@ -651,6 +694,17 @@ function RosterInner() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {importing && canManage && (
+        <RosterImportModal
+          seasonId={editSeasonId}
+          seriesId={seriesId}
+          seasonName={league.seasons.find(s => s.id === editSeasonId)?.name ?? "this season"}
+          seriesName={series?.name}
+          onClose={() => setImporting(false)}
+          onImported={handleImported}
+        />
       )}
 
       {mergeFrom && (

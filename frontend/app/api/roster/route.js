@@ -60,11 +60,13 @@ export async function GET(request) {
   for (const season of seasons) {
     editSeasonId = season.id;
     const seriesId = season.series_id || "unknown";
-    const [entriesSnap, teamsSnap] = await Promise.all([
+    const [entriesSnap, teamsSnap, classesSnap] = await Promise.all([
       db().collection("entries").where("season_id", "==", season.id).get(),
       db().collection("teams").where("season_id", "==", season.id).get(),
+      db().collection("classes").where("season_id", "==", season.id).get(),
     ]);
     const teamName = Object.fromEntries(teamsSnap.docs.map(d => [d.id, d.data().name]));
+    const className = Object.fromEntries(classesSnap.docs.map(d => [d.id, d.data().name]));
 
     for (const doc of entriesSnap.docs) {
       const entry = { id: doc.id, ...doc.data() };
@@ -82,6 +84,8 @@ export async function GET(request) {
         numbers: new Set(),
         team_id: null,
         team_name: null,
+        class_id: null,
+        class_name: null,
         entry_id: null,
         season_id: null,
         series_entries: {},
@@ -93,6 +97,10 @@ export async function GET(request) {
       bucket.user_id = entry.user_id ?? bucket.user_id;
       bucket.team_id = entry.team_id ?? bucket.team_id;
       bucket.team_name = entry.team_id ? teamName[entry.team_id] ?? bucket.team_name : bucket.team_name;
+      // Class is per-season, so the latest season in scope wins — matching how
+      // team/number resolve.
+      bucket.class_id = entry.class_id || null;
+      bucket.class_name = entry.class_id ? className[entry.class_id] ?? null : null;
       bucket.entry_id = entry.id;
       bucket.season_id = season.id;
       if (entry.number != null) {
@@ -134,6 +142,8 @@ export async function GET(request) {
     number: showNumber ? d.number : null,
     team_id: d.team_id,
     team_name: d.team_name,
+    class_id: d.class_id,
+    class_name: d.class_name,
     entry_id: d.entry_id,
     season_id: d.season_id,
     series_entries: d.series_entries,
