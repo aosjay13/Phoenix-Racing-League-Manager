@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
+import { getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
 import { decorateSessionFlags } from "@/lib/standings";
 import { summarizeRace } from "@/lib/raceSummaryServer";
 
@@ -23,7 +24,7 @@ export async function GET(request) {
   const seasonId = searchParams.get("season_id");
 
   if (seasonId) return oneSeason(seasonId);
-  return globalFeed(searchParams.get("game_id"), searchParams.get("series_id"));
+  return globalFeed(searchParams.get("game_id"), searchParams.get("series_id"), getRequestLeagueId(request));
 }
 
 async function oneSeason(seasonId) {
@@ -47,11 +48,14 @@ async function oneSeason(seasonId) {
 // Master feed across every season (optionally scoped to a game or a series).
 // Reads the collections whole — same shape as the league-wide Skill Ratings /
 // stats endpoints — then joins races to their season/series/game for context.
-async function globalFeed(gameId, seriesId) {
+async function globalFeed(gameId, seriesId, leagueId) {
+  // Only the seasons read needs the league filter: races join through their
+  // season, so an out-of-league race resolves to no in-scope season and is
+  // dropped below. Games/series here are just name-lookup maps.
   const [gamesSnap, seriesSnap, seasonsSnap, racesSnap, entriesSnap, resultsSnap] = await Promise.all([
     db().collection("games").get(),
     db().collection("series").get(),
-    db().collection("seasons").get(),
+    scopeByLeague(db().collection("seasons"), leagueId).get(),
     db().collection("races").get(),
     db().collection("entries").get(),
     db().collection("results").get(),

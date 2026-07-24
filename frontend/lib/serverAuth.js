@@ -2,6 +2,27 @@ import { NextResponse } from "next/server";
 import { adminAuth, db } from "@/lib/firebase";
 import { normalizeRole, isStaffRole } from "@/lib/roles";
 
+// The active league for a request. The client stamps it as an `X-League-Id`
+// header (see lib/api.js), with a `league_id` query-param fallback for direct
+// links. Empty string means "no league selected" — e.g. before the containment
+// migration has run — in which case reads fall back to the whole (unscoped)
+// collection so nothing looks lost. See scopeByLeague below.
+export function getRequestLeagueId(request) {
+  const header = request.headers.get("x-league-id");
+  if (header) return header.trim();
+  try {
+    return new URL(request.url).searchParams.get("league_id") || "";
+  } catch {
+    return "";
+  }
+}
+
+// Constrain a Firestore collection query to one league. A falsy leagueId leaves
+// the query untouched (legacy/unscoped) so pre-migration data still shows.
+export function scopeByLeague(query, leagueId) {
+  return leagueId ? query.where("league_id", "==", leagueId) : query;
+}
+
 export async function getRequestUser(request) {
   const header = request.headers.get("authorization") || "";
   const match = header.match(/^Bearer (.+)$/);
@@ -74,6 +95,24 @@ export function withAdmin(handler) {
     if (!user) return unauthorized();
     if (!isVerified(user)) return unverified();
     if (!(await isAdmin(user))) return forbidden();
+    return handler(request, ctx, user);
+  };
+}
+
+// Wraps a handler that requires the top-level Owner role. Owner is the only
+// role permitted to create/rename/delete leagues and run the containment
+// migration; Admins, Moderators, and Statisticians are rejected here even
+// though they clear withAdmin. Env-var (ADMIN_EMAILS) accounts are always
+// Owner and verification-exempt, so the league owner can never lock themselves
+// out of league management.
+export function withOwner(handler) {
+  return async (request, ctx) => {
+    const user = await getRequestUser(request);
+    if (!user) return unauthorized();
+    if (!isVerified(user)) return unverified();
+    if ((await getUserRole(user)) !== "owner") {
+      return NextResponse.json({ error: "Owner access required" }, { status: 403 });
+    }
     return handler(request, ctx, user);
   };
 }

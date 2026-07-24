@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useLeague } from "@/components/LeagueProvider";
 import { AdminGate } from "@/components/AdminGate";
+import { LeagueSettings } from "@/components/LeagueSettings";
 import { ImageUpload } from "@/components/ImageUpload";
 import { TrackSelect } from "@/components/TrackSelect";
 import { api } from "@/lib/api";
@@ -234,6 +235,9 @@ function AdminInner() {
         the dropdowns at the top of the page; the banner below always shows your current spot.
       </p>
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
+
+      {/* Multi-league: settings for the active league + Owner-only create/migrate. */}
+      <LeagueSettings />
 
       {/* Always-visible "you are here" breadcrumb, driven by the top dropdowns. */}
       <div className="setup-context">

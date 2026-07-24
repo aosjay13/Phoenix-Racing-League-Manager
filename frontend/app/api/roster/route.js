@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
+import { getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,10 @@ export async function GET(request) {
     } else if (scope !== "league") {
       return NextResponse.json({ error: "invalid scope" }, { status: 400 });
     }
+    // league scope reads every season, so it must be constrained; game/series
+    // are already narrowed by a league-scoped id but we still stamp the filter
+    // for defense in depth.
+    q = scopeByLeague(q, getRequestLeagueId(request));
     const snap = await q.get();
     seasons = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   }

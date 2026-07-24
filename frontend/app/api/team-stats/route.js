@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
+import { getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
 import {
   aggregateCareerStats,
   buildQualPosMap,
@@ -27,7 +28,9 @@ export async function GET(request) {
   if (!wanted) return NextResponse.json({ error: "name required" }, { status: 400 });
 
   const templatesById = await fetchTemplatesById();
-  const seasonsSnap = await db().collection("seasons").get();
+  // Scope to the active league so a team name shared across leagues doesn't
+  // merge their results into one profile.
+  const seasonsSnap = await scopeByLeague(db().collection("seasons"), getRequestLeagueId(request)).get();
   const seasons = seasonsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
   const all = [];                 // every scored result for the team

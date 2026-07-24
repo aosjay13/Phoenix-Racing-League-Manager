@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
-import { withAdmin } from "@/lib/serverAuth";
+import { withAdmin, getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
 
 // Coerce/validate one field value against its spec. Returns { value } or
 // { error }. `number: true` parses to a Number; `maxLen` marks a string field
@@ -29,6 +29,9 @@ export function makeCollectionRoutes({ collection, parentField, fields, sortFiel
       }
       query = query.where(parentField, "==", parent);
     }
+    // Scope every hierarchy/pool collection to the active league (equality-only
+    // filters need no composite index; sorting is done in-memory below).
+    query = scopeByLeague(query, getRequestLeagueId(request));
     const snap = await query.get();
     const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     docs.sort((a, b) => {
@@ -42,6 +45,11 @@ export function makeCollectionRoutes({ collection, parentField, fields, sortFiel
   const POST = withAdmin(async (request, ctx, user) => {
     const body = await request.json();
     const doc = { created_at: new Date().toISOString(), created_by: user.uid };
+    // Stamp the active league so new rows are partitioned like migrated ones.
+    // Absent header (pre-migration) leaves it unset; a later migration run
+    // backfills it.
+    const leagueId = getRequestLeagueId(request);
+    if (leagueId) doc.league_id = leagueId;
     if (parentField) {
       if (!body[parentField]) {
         return NextResponse.json({ error: `${parentField} required` }, { status: 400 });
