@@ -157,6 +157,8 @@ function UserAccountsInner() {
   const [error, setError] = useState(null);
   const [toast, setToast] = useState(null);
   const [deletingUser, setDeletingUser] = useState(null);   // account pending deletion
+  const [editingName, setEditingName] = useState(null);     // uid whose name is being edited
+  const [nameDraft, setNameDraft] = useState("");
   // Timestamp of the admin's previous visit, captured before the effect below
   // stamps "now" — lets us flag the rows that signed up since then as NEW.
   const prevSeenRef = useRef(typeof window !== "undefined" ? (localStorage.getItem(USERS_SEEN_KEY) || "") : "");
@@ -234,6 +236,15 @@ function UserAccountsInner() {
     if (newRole === u.role) return;
     patchUser(u.uid, { role: newRole },
       `${u.display_name || "User"} is now ${ROLE_LABELS[newRole] || newRole}.`);
+  }
+
+  function startEditName(u) { setEditingName(u.uid); setNameDraft(u.display_name || ""); }
+  function cancelEditName() { setEditingName(null); setNameDraft(""); }
+  async function saveName(u) {
+    const dn = nameDraft.trim();
+    if (!dn || dn === (u.display_name || "")) { cancelEditName(); return; }
+    await patchUser(u.uid, { display_name: dn }, `Renamed to “${dn}”.`);
+    cancelEditName();
   }
 
   function linkDriver(u, driverId, driverName) {
@@ -342,11 +353,27 @@ function UserAccountsInner() {
                             {u.photo_url
                               ? <img src={u.photo_url} alt="" className="avatar avatar-sm" />
                               : <span className="avatar avatar-sm avatar-fallback">{String(name)[0]?.toUpperCase()}</span>}
-                            <span>
-                              <strong>{name}</strong>
-                              {isMe && <span style={{ fontSize: "0.72rem", color: "var(--ink-2)" }}> (you)</span>}
-                              {isNew && !isMe && <span className="nav-badge" style={{ marginLeft: 8, position: "static" }}>NEW</span>}
-                            </span>
+                            {editingName === u.uid ? (
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                                <input autoFocus value={nameDraft} disabled={isBusy}
+                                  onChange={e => setNameDraft(e.target.value)}
+                                  onKeyDown={e => { if (e.key === "Enter") saveName(u); if (e.key === "Escape") cancelEditName(); }}
+                                  style={{ width: 160, padding: "4px 8px" }} placeholder="Display name" />
+                                <button type="button" className="btn btn-primary" style={{ marginTop: 0, padding: "4px 10px" }} disabled={isBusy} onClick={() => saveName(u)}>Save</button>
+                                <button type="button" className="btn btn-ghost" style={{ marginTop: 0, padding: "4px 8px" }} disabled={isBusy} onClick={cancelEditName}>✕</button>
+                              </span>
+                            ) : (
+                              <span>
+                                <strong>{name}</strong>
+                                {(isMe || canManage(myRole, u.role)) && (
+                                  <button type="button" className="btn btn-ghost" title="Edit display name"
+                                    style={{ marginTop: 0, padding: "0 6px", color: "var(--ink-2)" }}
+                                    disabled={isBusy} onClick={() => startEditName(u)}>✎</button>
+                                )}
+                                {isMe && <span style={{ fontSize: "0.72rem", color: "var(--ink-2)" }}> (you)</span>}
+                                {isNew && !isMe && <span className="nav-badge" style={{ marginLeft: 8, position: "static" }}>NEW</span>}
+                              </span>
+                            )}
                           </span>
                         </td>
                         <td style={{ textAlign: "left", whiteSpace: "normal", color: "var(--ink-1)" }}>{u.email || <span style={{ color: "var(--ink-2)" }}>—</span>}</td>
