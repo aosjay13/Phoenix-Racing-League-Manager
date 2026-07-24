@@ -10,6 +10,7 @@ import {
   pointsFor,
   resolveSeasonConfig,
 } from "@/lib/standings";
+import { raceDateSortKey } from "@/lib/raceDate";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
 import { parseTime, formatTime } from "@/lib/raceTime";
 import { finalSessionName, summarizeRace } from "@/lib/raceSummaryServer";
@@ -246,11 +247,9 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
       b.wins - a.wins || b.podiums - a.podiums || (a.avg_finish ?? 99) - (b.avg_finish ?? 99) ||
       String(a.driver_name).localeCompare(String(b.driver_name)));
 
-  winners.sort((a, b) => {
-    const ad = a.date ? new Date(a.date).getTime() : 0;
-    const bd = b.date ? new Date(b.date).getTime() : 0;
-    return bd - ad;
-  });
+  // Most recent first. Race dates are bare calendar dates, so they're compared
+  // as such (never through `new Date()`) — see lib/raceDate.js.
+  winners.sort((a, b) => raceDateSortKey(b.date, -Infinity) - raceDateSortKey(a.date, -Infinity));
 
   if (record?.driver_id && canonicalName[record.driver_id]) record.driver_name = canonicalName[record.driver_id];
 

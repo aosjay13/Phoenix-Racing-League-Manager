@@ -1253,6 +1253,13 @@ tbody tr:hover {
   align-items: center;
 }
 
+/* Multi-class seasons get an extra Class column right after Driver, so a
+   driver's class can be set (or corrected) as results are entered. */
+.result-grid-wide.has-class {
+  grid-template-columns: 22px 66px 66px minmax(150px, 1fr) 108px 96px 84px 92px 72px 72px 70px 34px 34px 34px 74px 96px 64px 34px;
+  min-width: 1360px;
+}
+
 /* ── Stats table ─────────────────────────────── */
 .stats-table th,
 .stats-table td {
@@ -1397,6 +1404,27 @@ tbody tr:hover {
   align-items: center;
   min-width: 520px;
   margin-bottom: 16px;
+}
+
+.qual-grid.has-class {
+  grid-template-columns: 22px 70px minmax(160px, 1fr) 108px 140px 80px 34px;
+  min-width: 640px;
+}
+
+.qual-grid select {
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  color: var(--ink-0);
+  font-size: 0.9rem;
+  width: 100%;
+}
+
+.qual-grid select:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: transparent;
 }
 
 .qual-grid input {

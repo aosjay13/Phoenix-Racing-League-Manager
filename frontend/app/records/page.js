@@ -64,22 +64,68 @@ function holdersFor(rows, key, lowerIsBetter) {
   return { value: best, holders: eligible.filter(r => r[key] === best) };
 }
 
+// Average Field Size for the current scope. Unlike every other category on this
+// page this isn't a driver record — nobody "holds" it — so it renders as a
+// single contextual figure ("Season 4 Average: 15.2") with the sample it was
+// drawn from. Only races with finalized results feed it (see the field_size
+// block in /api/stats), so upcoming and empty events never drag it down.
+function FieldSizeCard({ fieldSize, scopeLabel, loading }) {
+  if (loading) return <div className="skeleton" style={{ height: 96, marginTop: 18 }} />;
+  const avg = fieldSize?.avg_drivers_per_race ?? null;
+  const races = fieldSize?.races_counted ?? 0;
+  return (
+    <article className="metric-card" style={{ alignItems: "flex-start", textAlign: "left", padding: "16px 18px", marginTop: 18 }}>
+      <div className="metric-label" style={{ marginBottom: 6 }}>Avg Drivers per Race</div>
+      {avg == null ? (
+        <>
+          <div style={{ color: "var(--ink-2)" }}>—</div>
+          <div style={{ marginTop: 4, fontSize: "0.85rem", color: "var(--ink-2)" }}>
+            No completed races with results in this scope yet.
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="metric-num" style={{ fontSize: "1.9rem" }}>{avg.toFixed(2)}</div>
+          <div style={{ marginTop: 4, fontSize: "0.9rem", lineHeight: 1.45 }}>
+            <strong>{scopeLabel} Average: {avg.toFixed(1)}</strong>
+            <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.82rem" }}>
+              {fieldSize.total_drivers} entr{fieldSize.total_drivers === 1 ? "y" : "ies"} across {races} completed
+              race{races === 1 ? "" : "s"}
+              {fieldSize.smallest_field != null && ` · smallest ${fieldSize.smallest_field}, largest ${fieldSize.largest_field}`}
+            </span>
+          </div>
+        </>
+      )}
+    </article>
+  );
+}
+
 export default function RecordsPage() {
   const league = useLeague();
-  const { gameId, seriesId, seasonId, game, series, season, loading } = league ?? {};
+  const { gameId, seriesId, seasonId, classId, game, series, season, raceClass, loading } = league ?? {};
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [tab, setTab] = useState("drivers"); // "drivers" | "teams"
 
   // Scope + title mirror the /stats page exactly, driven by the shared
-  // Game / Series / Season dropdowns in the top bar.
+  // Game / Series / Season / Class dropdowns in the top bar.
+  const className = raceClass?.name ?? null;
+  const classParam = classId ? `&class_id=${classId}` : "";
   const active = seasonId
-    ? { params: `scope=season&season_id=${seasonId}`, title: `${series?.name ?? ""} ${season?.name ?? "Season"} Records`.trim() }
+    ? { params: `scope=season&season_id=${seasonId}${classParam}`, title: `${series?.name ?? ""} ${season?.name ?? "Season"}${className ? ` ${className}` : ""} Records`.trim() }
     : seriesId
-      ? { params: `scope=series&series_id=${seriesId}`, title: `${series?.name ?? "Series"} Records` }
+      ? { params: `scope=series&series_id=${seriesId}${classParam}`, title: `${series?.name ?? "Series"} Records` }
       : gameId
-        ? { params: `scope=game&game_id=${gameId}`, title: `${game?.name ?? "Game"} Records` }
-        : { params: "scope=league", title: "League All-Time Records" };
+        ? { params: `scope=game&game_id=${gameId}${classParam}`, title: `${game?.name ?? "Game"} Records` }
+        : { params: `scope=league${classParam}`, title: "League All-Time Records" };
+
+  // Label for the Average Field Size card — names the exact scope the number
+  // was measured over, e.g. "Season 4 Average" / "iRacing Average".
+  const scopeLabel = seasonId
+    ? `${season?.name ?? "Season"}${className ? ` ${className}` : ""}`
+    : seriesId ? (series?.name ?? "Series")
+      : gameId ? (game?.name ?? "Game")
+        : "League";
 
   useEffect(() => {
     if (loading) return;
@@ -110,9 +156,13 @@ export default function RecordsPage() {
         )}
       </div>
       <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.88rem" }}>
-        The record holder in each category for the current scope. Use the Game / Series / Season menus
+        The record holder in each category for the current scope. Use the Game / Series / Season / Class menus
         above to change scope (pick &quot;All&quot; to widen it).
       </p>
+
+      {/* Average Field Size — an event stat, not a driver record, so it just
+          reports the number for whatever the dropdowns currently select. */}
+      <FieldSizeCard fieldSize={data?.field_size} scopeLabel={scopeLabel} loading={!data && !error} />
 
       <div className="tab-row">
         <button className={`tab${tab === "drivers" ? " active" : ""}`} onClick={() => setTab("drivers")}>Drivers</button>

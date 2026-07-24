@@ -9,7 +9,7 @@ import { normalizedBuiltinTemplates } from "@/lib/pointsTemplates";
 import { api } from "@/lib/api";
 
 function RaceEntryInner() {
-  const { seasonId, season, series } = useLeague();
+  const { seasonId, season, series, classes } = useLeague();
   const [races, setRaces] = useState([]);
   const [entries, setEntries] = useState([]);
   const [raceId, setRaceId] = useState("");
@@ -105,6 +105,7 @@ function RaceEntryInner() {
           <SessionEditor
             key={selectedRace.id}
             race={selectedRace} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={series?.name}
+            classes={classes}
             sessionType="race" sessionNames={stdSessions}
             season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
             canAddSession onAddSession={addStdSession} onRemoveSession={removeStdSession} onRenameSession={renameStdSession}

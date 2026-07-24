@@ -10,17 +10,22 @@ import { DriverForm } from "@/components/DriverForm";
 // "+ Create new driver" option — same fields as the Roster page's Add Driver
 // card, so a car number is always captured for this season's series, not
 // just a bare name.
-export function DriverCreateModal({ seasonId, seriesName, initialName, onClose, onCreated }) {
-  const [form, setForm] = useState({ name: initialName || "", number: "", team_id: "", user_id: "" });
+export function DriverCreateModal({ seasonId, seriesName, initialName, defaultClassId = "", onClose, onCreated }) {
+  const [form, setForm] = useState({ name: initialName || "", number: "", team_id: "", user_id: "", class_id: defaultClassId });
   const [teams, setTeams] = useState([]);
   const [users, setUsers] = useState([]);
+  const [classes, setClasses] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     let live = true;
-    Promise.all([api(`/api/teams?season_id=${seasonId}`), api("/api/users")])
-      .then(([t, u]) => { if (live) { setTeams(t); setUsers(u); } })
+    Promise.all([
+      api(`/api/teams?season_id=${seasonId}`),
+      api("/api/users"),
+      api(`/api/classes?season_id=${seasonId}`).catch(() => []),
+    ])
+      .then(([t, u, c]) => { if (live) { setTeams(t); setUsers(u); setClasses(c); } })
       .catch(() => {});
     return () => { live = false; };
   }, [seasonId]);
@@ -33,7 +38,7 @@ export function DriverCreateModal({ seasonId, seriesName, initialName, onClose, 
       // Registers (or reuses) the identity in the global pool, so it's tied
       // to one driver_id and reusable from Roster or another race.
       const driverId = await ensureDriverId({ name: form.name, user_id: form.user_id });
-      const body = { name: form.name, team_id: form.team_id, user_id: form.user_id, driver_id: driverId, season_id: seasonId };
+      const body = { name: form.name, team_id: form.team_id, user_id: form.user_id, driver_id: driverId, season_id: seasonId, class_id: form.class_id || "" };
       if (form.number !== "") body.number = form.number;
       const entry = await api("/api/entries", { method: "POST", body });
       onCreated(entry);
@@ -51,6 +56,7 @@ export function DriverCreateModal({ seasonId, seriesName, initialName, onClose, 
           onChange={setForm}
           teams={teams}
           users={users}
+          classes={classes}
           numberLabel={`Car Number${seriesName ? ` · ${seriesName}` : ""}`}
         />
         {error && <p style={{ color: "#e5484d", fontSize: "0.85rem" }}>{error}</p>}

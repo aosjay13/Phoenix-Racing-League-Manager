@@ -164,6 +164,10 @@ function UnifiedEditInner() {
   const [seasonId, setSeasonId] = useState(null);
   const [seriesName, setSeriesName] = useState("");
   const [entries, setEntries] = useState([]);
+  // This screen is reached by race id, so its season can differ from whatever
+  // the top-bar dropdowns have selected — read the classes off THIS race's
+  // season rather than the league context.
+  const [classes, setClasses] = useState([]);
   const [templates, setTemplates] = useState(normalizedBuiltinTemplates());
   const [error, setError] = useState(null);
 
@@ -176,8 +180,11 @@ function UnifiedEditInner() {
         setRace({ id: ev.event.id, ...ev.event });
         setSeason(ev.season || null);
         setSeasonId(ev.event.season_id);
-        const e = await api(`/api/entries?season_id=${ev.event.season_id}`);
-        if (!cancelled) setEntries(e);
+        const [e, c] = await Promise.all([
+          api(`/api/entries?season_id=${ev.event.season_id}`),
+          api(`/api/classes?season_id=${ev.event.season_id}`).catch(() => []),
+        ]);
+        if (!cancelled) { setEntries(e); setClasses(c); }
         const saved = await api("/api/points-templates");
         if (!cancelled) setTemplates([...normalizedBuiltinTemplates(), ...saved]);
         if (ev.season?.game_id && ev.season?.series_id) {
@@ -337,7 +344,7 @@ function UnifiedEditInner() {
       {tab === "qualifying" && (
         <div className="form-card" style={{ maxWidth: "100%" }}>
           <SessionEditor
-            race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName}
+            race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName} classes={classes}
             sessionType="qualifying" sessionNames={["Qualifying"]}
             season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
           />
@@ -361,7 +368,7 @@ function UnifiedEditInner() {
       {tab === "heats" && (
         <div className="form-card" style={{ maxWidth: "100%" }}>
           <SessionEditor
-            race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName}
+            race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName} classes={classes}
             sessionType="heat" sessionNames={heats}
             season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
             sessionStats={sessionStats} onSessionStatsChange={saveSessionStats}
@@ -376,7 +383,7 @@ function UnifiedEditInner() {
         <div className="form-card" style={{ maxWidth: "100%" }}>
           {consolations.length ? (
             <SessionEditor
-              race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName}
+              race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName} classes={classes}
               sessionType="consolation" sessionNames={consolations}
               season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
               sessionStats={sessionStats} onSessionStatsChange={saveSessionStats}
@@ -398,7 +405,7 @@ function UnifiedEditInner() {
       {tab === "feature" && (
         <div className="form-card" style={{ maxWidth: "100%" }}>
           <SessionEditor
-            race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName}
+            race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName} classes={classes}
             sessionType="feature" sessionNames={[featureName]}
             season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
             sessionStats={sessionStats} onSessionStatsChange={saveSessionStats}

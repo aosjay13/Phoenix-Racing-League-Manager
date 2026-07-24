@@ -63,7 +63,7 @@ const teamHref = name => `/teams/${encodeURIComponent(name)}`;
 
 export default function StatsPage() {
   const league = useLeague();
-  const { gameId, seriesId, seasonId, game, series, season, loading } = league ?? {};
+  const { gameId, seriesId, seasonId, classId, game, series, season, raceClass, classes, league: activeLeague, loading } = league ?? {};
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [tab, setTab] = useState("drivers"); // "drivers" | "teams"
@@ -75,14 +75,17 @@ export default function StatsPage() {
   const { sorted: rows, clickSort, arrow } = useSortable(activeRows, tab === "teams" ? "points" : "wins", lowIsBetter);
 
   // Scope comes straight from the top dropdowns: the deepest concrete
-  // selection wins; "All …" choices widen the aggregation.
+  // selection wins; "All …" choices widen the aggregation. A selected Class
+  // narrows the field further, so every stat below is that class's own.
+  const className = raceClass?.name ?? null;
+  const classParam = classId ? `&class_id=${classId}` : "";
   const active = seasonId
-    ? { params: `scope=season&season_id=${seasonId}`, title: `${series?.name ?? ""} ${season?.name ?? "Season"} Stats`.trim() }
+    ? { params: `scope=season&season_id=${seasonId}${classParam}`, title: `${series?.name ?? ""} ${season?.name ?? "Season"}${className ? ` ${className}` : ""} Stats`.trim() }
     : seriesId
-      ? { params: `scope=series&series_id=${seriesId}`, title: `${series?.name ?? "Series"} Overall Stats` }
+      ? { params: `scope=series&series_id=${seriesId}${classParam}`, title: `${series?.name ?? "Series"} Overall Stats` }
       : gameId
-        ? { params: `scope=game&game_id=${gameId}`, title: `${game?.name ?? "Game"} Overall Stats` }
-        : { params: "scope=league", title: "League Overall Stats" };
+        ? { params: `scope=game&game_id=${gameId}${classParam}`, title: `${game?.name ?? "Game"} Overall Stats` }
+        : { params: `scope=league${classParam}`, title: "League Overall Stats" };
 
   useEffect(() => {
     if (loading) return;
@@ -132,16 +135,19 @@ export default function StatsPage() {
             onClose={() => setSharing(false)}
             kind="Stats"
             defaultTitle={active.title}
-            subtitle={tab === "teams" ? "Team Stats" : "Driver Stats"}
+            subtitle={[className, tab === "teams" ? "Team Stats" : "Driver Stats"].filter(Boolean).join(" · ")}
             columns={st.columns}
             rows={st.rows}
-            logos={leagueLogos({ game, series, season })}
+            logos={leagueLogos({ league: activeLeague, game, series, season })}
+            leagueName={activeLeague?.name ?? ""}
+            leagueLogoUrl={activeLeague?.logo_url ?? ""}
           />
         );
       })()}
       <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.88rem" }}>
-        Use the Game / Series / Season menus above to change scope (pick &quot;All&quot; to widen it).
-        Click any column to sort; gold cells mark the category leader.
+        Use the Game / Series / Season{classes?.length ? " / Class" : ""} menus above to change scope
+        (pick &quot;All&quot; to widen it). Click any column to sort; gold cells mark the category leader.
+        {className && ` Showing ${className} drivers only.`}
       </p>
 
       <div className="tab-row">

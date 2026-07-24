@@ -1,13 +1,20 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { withAdmin, getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
+import { toDateOnly } from "@/lib/raceDate";
 
 // Coerce/validate one field value against its spec. Returns { value } or
 // { error }. `number: true` parses to a Number; `maxLen` marks a string field
 // (e.g. a car number) that must be kept as text — trimmed and length-capped so
 // leading-zero values like "01"/"001"/"000" are stored verbatim, never parsed
-// to an integer that would drop the zeros.
+// to an integer that would drop the zeros. `dateOnly: true` strips any time
+// component so a schedule date is stored as a bare YYYY-MM-DD calendar date
+// (see lib/raceDate.js — a date with a time in it is what makes a race display
+// a day early in western timezones). `bool: true` stores a real boolean, so an
+// explicit `false` is preserved rather than read back as "unset".
 export function coerceField(opts, raw) {
+  if (opts.dateOnly) return { value: toDateOnly(raw) };
+  if (opts.bool) return { value: !!raw };
   if (opts.maxLen != null) {
     const value = String(raw ?? "").trim();
     if (value.length > opts.maxLen) return { error: `must be at most ${opts.maxLen} characters` };
@@ -113,9 +120,26 @@ export const SPECS = {
              // `car` is the free-text car/model this season races (e.g. "NASCAR
              // Next Gen", "GT3"). It's the season-wide default; a race can
              // override it with its own `car` (see SPECS.races).
+             // `combined_championship` decides whether a multi-class season also
+             // tracks ONE overall championship across the whole field, on top of
+             // each class's own championship. On (the default) the "All Classes"
+             // view aggregates every driver's points/stats; off, the season is
+             // class championships only and the standings/stats pages open on a
+             // class instead of an overall table. Ignored when the season has no
+             // classes — a single-class season is always "combined".
              fields: { name: { required: true }, game_id: {}, logo_url: {}, status: { default: "active" },
                        drop_weeks: { number: true, default: 0 }, points_scale: {}, car: {},
-                       race_points: {}, qual_points: {}, bonus_points: {} } },
+                       race_points: {}, qual_points: {}, bonus_points: {},
+                       combined_championship: { bool: true, default: true } } },
+  // Classes divide a season's field into separately-scored groups ("Pro" /
+  // "Amateur", "GT3" / "LMP2"). A class belongs to exactly one season; a roster
+  // entry points at one with `class_id`, and each saved result carries the class
+  // the driver ran in (see /api/results). `sort_order` fixes the display order of
+  // the class dropdown (lowest first), so "Pro" can sit above "Amateur"
+  // regardless of which was created first.
+  classes: { collection: "classes", parentField: "season_id", sortField: "sort_order",
+             fields: { name: { required: true }, color: {}, description: {},
+                       sort_order: { number: true, default: 0 } } },
   teams:   { collection: "teams", parentField: "season_id", sortField: "name",
              fields: { name: { required: true }, logo_url: {}, color: {} } },
   // Global driver pool — identities that exist independently of any season,
@@ -138,15 +162,19 @@ export const SPECS = {
   // `number` is the car number — stored as a STRING (max 3 chars) so racing
   // numbers with leading zeros ("01", "001", "0", "00", "000") survive intact
   // instead of being parsed to an integer that drops the zeros.
+  // `class_id` is the season class this driver races in (see SPECS.classes);
+  // blank/absent means unclassified, which still counts toward the season's
+  // overall championship but toward no class championship.
   entries: { collection: "entries", parentField: "season_id", sortField: "name",
              fields: { name: { required: true }, number: { maxLen: 3 }, team_id: {}, user_id: {},
-                       driver_id: {}, points_adjustment: { number: true }, adjustment_note: {} } },
+                       driver_id: {}, class_id: {}, points_adjustment: { number: true }, adjustment_note: {} } },
   pointsTemplates: { collection: "points_templates", parentField: null, sortField: "name",
              fields: { name: { required: true }, race_points: {}, qual_points: {}, bonus_points: {} } },
   // Global venue pool — tracks exist independently of any season and are pulled
   // into a race event by reference (races.track_id). `length` and `track_type`
-  // are free text ("2.5 mi", "Oval"/"Road Course"/"Dirt"/…) so the stats engine
-  // never has to parse them. See frontend/app/tracks/page.js and
+  // are free text ("2.5 mi", "Oval"/"Road Course"/"Dirt Oval"/…) so the stats
+  // engine never has to parse them; the pickers offer the canonical list in
+  // lib/trackTypes.js. See frontend/app/tracks/page.js and
   // frontend/lib/trackStatsServer.js.
   tracks:  { collection: "tracks", parentField: null, sortField: "name",
              fields: { name: { required: true }, location: {}, length: {}, track_type: {},
@@ -158,7 +186,10 @@ export const SPECS = {
              // free-text races with no track_id still display.
              // `car` overrides the season's default car for this one event
              // (blank = inherit the season's car).
-             fields: { name: { required: true }, track: {}, track_id: {}, track_logo_url: {}, date: {},
+             // `date` is a bare YYYY-MM-DD calendar date with NO time component
+             // — the day the admin picked, stored and rendered verbatim in every
+             // timezone (see lib/raceDate.js).
+             fields: { name: { required: true }, track: {}, track_id: {}, track_logo_url: {}, date: { dateOnly: true },
                        round_number: { number: true, required: true }, sessions: {},
                        total_laps: { number: true }, car: {},
                        // Heat-racing weekend structure: when heat_format is on, `heats` and
