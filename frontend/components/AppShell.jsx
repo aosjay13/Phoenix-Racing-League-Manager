@@ -84,6 +84,23 @@ function NavLinks({ items, pathname, badges }) {
   });
 }
 
+// Global League Switcher: swaps the active league, which re-renders the whole
+// app for that league's games/series/seasons/drivers/stats. Hidden until at
+// least one league exists (i.e. after the containment migration has run).
+function LeagueSwitcher() {
+  const league = useLeague();
+  if (!league || !league.leagues?.length) return null;
+  const { leagues, leagueId, switchLeague } = league;
+  return (
+    <div className="context-select league-switcher" title="Active league">
+      <label>League</label>
+      <select value={leagueId} onChange={e => switchLeague(e.target.value)}>
+        {leagues.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+      </select>
+    </div>
+  );
+}
+
 function ContextSelectors() {
   const league = useLeague();
   if (!league || league.loading) return null;
@@ -155,8 +172,8 @@ export function AppShell({ children }) {
         <Link href="/" className="sidebar-logo">
           <img src="/logo-mark.png" alt="Phoenix's Racing League Manager" className="sidebar-logo-img" />
           <div>
-            <h1>{league?.series?.name || "Phoenix's Racing"}</h1>
-            <p className="sidebar-tagline">{league?.season?.name || "League Manager"}</p>
+            <h1>{league?.league?.name || league?.series?.name || "Phoenix's Racing"}</h1>
+            <p className="sidebar-tagline">{league?.series?.name || league?.season?.name || "League Manager"}</p>
           </div>
         </Link>
 
@@ -179,6 +196,7 @@ export function AppShell({ children }) {
 
       <div className="main-col">
         <header className="topbar">
+          <LeagueSwitcher />
           <ContextSelectors />
           <UserChip />
         </header>

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
-import { withAdmin } from "@/lib/serverAuth";
+import { withAdmin, getRequestLeagueId } from "@/lib/serverAuth";
 import { recalcGameSkillRatings, gameIdForSeason } from "@/lib/skillRatingServer";
 
 export async function GET(request) {
@@ -62,6 +62,7 @@ export const POST = withAdmin(async (request, ctx, user) => {
 
   const { firstSession } = await sessionContext(race_id);
   const savingSession = session || firstSession;
+  const leagueId = getRequestLeagueId(request);
 
   const col = db().collection("results");
   const existing = await col.where("race_id", "==", race_id).get();
@@ -80,6 +81,7 @@ export const POST = withAdmin(async (request, ctx, user) => {
     const doc = {
       race_id,
       season_id,
+      ...(leagueId ? { league_id: leagueId } : {}),
       session: savingSession,
       session_type: sessionType,
       entry_id: row.entry_id,

@@ -1,12 +1,18 @@
 "use client";
 
 import { clientAuth } from "@/lib/firebaseClient";
+import { getActiveLeagueId } from "@/lib/leagueClient";
 
-// Fetch wrapper that attaches the Firebase ID token when signed in.
+// Fetch wrapper that attaches the Firebase ID token when signed in, plus the
+// active league id so every read/write is scoped to the selected league. The
+// header is omitted when no league is active (e.g. before the containment
+// migration), in which case the server falls back to unscoped data.
 export async function api(path, { method = "GET", body } = {}) {
   const headers = { "Content-Type": "application/json" };
   const user = clientAuth().currentUser;
   if (user) headers.Authorization = `Bearer ${await user.getIdToken()}`;
+  const leagueId = getActiveLeagueId();
+  if (leagueId) headers["X-League-Id"] = leagueId;
   const res = await fetch(path, {
     method,
     headers,

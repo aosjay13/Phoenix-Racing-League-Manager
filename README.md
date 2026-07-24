@@ -5,7 +5,12 @@
 Multi-game racing league manager built to replace the league spreadsheet. Anyone can sign up
 for a driver account; league admins build out the full hierarchy with custom names and logos:
 
-**Game** (e.g. iRacing) → **Series** (e.g. Asphalt Assault Series) → **Season** (Season 1, 2, 3…) → **Race** (Race 1, 2, 3…)
+**League** (e.g. Prodigy Racing Association) → **Game** (e.g. iRacing) → **Series** (e.g. Asphalt Assault Series) → **Season** (Season 1, 2, 3…) → **Race** (Race 1, 2, 3…)
+
+A **League** is the top-level, fully-isolated environment: every game, series, season, race,
+driver, team, track, and result belongs to exactly one league. A **League Switcher** in the top
+bar swaps the active league, re-rendering the whole app for that league's data. Only the **Owner**
+can create new (empty) leagues; the active league is renamed under **League Setup → League Settings**.
 
 A **Game/Series/Season** selector sits at the top of every page — pick "All" at any level to
 widen a view (e.g. league-wide stats), or drill down to one exact season.
@@ -123,10 +128,23 @@ backend/            ← Legacy Python backend (unused; superseded by Next.js API
 
 ## Data model (Firestore collections)
 
-`games` → `series (game_id)` → `seasons (series_id, game_id, drop_weeks, points_scale)` →
+`leagues (name, owner_id, logo_url, created_at)` is the top-level partition. Every
+hierarchy/pool collection — `games`, `series`, `seasons`, `races`, `entries`, `teams`,
+`results`, `drivers`, `tracks`, `points_templates` — carries a `league_id` and is read/written
+scoped to the active league (sent as an `X-League-Id` header; see `lib/serverAuth.js`
+`getRequestLeagueId`/`scopeByLeague`). `users` and `claim_requests` are **not** league-scoped —
+accounts and their roles span leagues.
+
+`games (league_id)` → `series (game_id)` → `seasons (series_id, game_id, drop_weeks, points_scale)` →
 `races (season_id, sessions[])` and `entries (season_id, team_id, user_id, number)` /
 `teams (season_id)` → `results (race_id, season_id, entry_id)`. `users` holds player
 profiles; linking a roster entry to a user account is what feeds their public career stats.
+
+**Containment migration:** existing data created before the multi-league layer is safely
+partitioned by an Owner-only, idempotent, additive-only backfill (`POST /api/admin/leagues/migrate`,
+surfaced as a button in **League Setup → League Settings**). It creates the first default league
+and stamps `league_id` onto every existing record that lacks one — never deleting or overwriting
+anything, and safe to re-run.
 
 A driver's car `number` lives on their per-season `entry`, so it's naturally scoped to a
 series (every season belongs to exactly one series) — a driver can carry a different number

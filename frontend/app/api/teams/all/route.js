@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
+import { getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
 
 export const dynamic = "force-dynamic";
 
@@ -10,8 +11,8 @@ export const dynamic = "force-dynamic";
 // `ids` lists every backing team doc for the name so the directory can edit
 // (rename/re-logo across all seasons) or delete the whole team at once —
 // including "phantom" teams that have no drivers/results but still have a doc.
-export async function GET() {
-  const snap = await db().collection("teams").get();
+export async function GET(request) {
+  const snap = await scopeByLeague(db().collection("teams"), getRequestLeagueId(request)).get();
 
   const byName = {};
   for (const doc of snap.docs) {

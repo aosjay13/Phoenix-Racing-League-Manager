@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
+import { getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
 import {
   aggregateCareerStats,
   buildQualPosMap,
@@ -47,6 +48,10 @@ export async function GET(request) {
     return NextResponse.json({ error: "invalid scope" }, { status: 400 });
   }
 
+  // League-wide / game / series scopes read many seasons — constrain them to
+  // the active league so stats never bleed across leagues. (scope=season is a
+  // single doc, already league-correct via its id, and returns above.)
+  seasonsQuery = scopeByLeague(seasonsQuery, getRequestLeagueId(request));
   const snap = await seasonsQuery.get();
   const seasons = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   return NextResponse.json(await buildStats(seasons));

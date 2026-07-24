@@ -981,6 +981,12 @@ tbody tr:hover {
 
 .context-bar { display: flex; gap: 12px; flex-wrap: wrap; }
 
+/* The global League switcher sits ahead of the game/series/season selectors and
+   is set apart with an accent + divider so it reads as the top-level scope. */
+.league-switcher { padding-right: 16px; margin-right: 4px; border-right: 1px solid var(--border); }
+.league-switcher label { color: var(--accent-cyan); }
+.league-switcher select { font-weight: 600; }
+
 .context-select { display: flex; flex-direction: column; gap: 2px; }
 
 .context-select label {
