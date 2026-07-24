@@ -809,7 +809,21 @@ function Check({ value, onChange, title, disabled }) {
 // roster (drivers not already placed) as you type; Enter/click locks a driver
 // in, or opens inline creation for a brand-new one. The dropdown renders in a
 // portal so it's never clipped by the grid's horizontal scroll container.
-function DriverCombobox({ available, onAssign, onRequestCreate }) {
+// Enter-to-advance: focus the same column's input one row down, so an admin can
+// type a value, hit Enter, and drop straight into the row below (names, then
+// times) without reaching for the mouse. Skips disabled cells (e.g. an empty
+// row's time field) and only ever moves downward. `field` matches the
+// data-grid-field tag on each navigable input; `idx` is the source row.
+function focusNextGridInput(grid, field, idx) {
+  if (!grid) return;
+  const next = Array.from(grid.querySelectorAll(`[data-grid-field="${field}"]`))
+    .map(el => ({ el, i: Number(el.getAttribute("data-grid-idx")) }))
+    .filter(c => Number.isFinite(c.i) && c.i > idx && !c.el.disabled)
+    .sort((a, b) => a.i - b.i)[0]?.el;
+  if (next) { next.focus(); if (typeof next.select === "function") next.select(); }
+}
+
+function DriverCombobox({ available, onAssign, onRequestCreate, gridIdx }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -849,13 +863,25 @@ function DriverCombobox({ available, onAssign, onRequestCreate }) {
   function onKeyDown(e) {
     if (e.key === "ArrowDown") { e.preventDefault(); setOpen(true); setActive(a => Math.min(a + 1, options.length - 1)); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setActive(a => Math.max(a - 1, 0)); }
-    else if (e.key === "Enter") { e.preventDefault(); choose(options[active]); }
+    else if (e.key === "Enter") {
+      e.preventDefault();
+      const opt = options[active];
+      // Advance to the next row's name field only when we actually locked in a
+      // driver (not when Enter opens the "create new driver" flow, which pops a
+      // modal that should keep focus).
+      const grid = gridIdx != null ? e.currentTarget.closest(".result-grid, .qual-grid") : null;
+      choose(opt);
+      if (opt?.type === "entry" && grid) {
+        setTimeout(() => focusNextGridInput(grid, "driver", gridIdx), 0);
+      }
+    }
     else if (e.key === "Escape") { setOpen(false); }
   }
 
   return (
     <div style={{ position: "relative", width: "100%" }}>
       <input ref={inputRef} value={query} placeholder="Search driver…"
+        data-grid-field={gridIdx != null ? "driver" : undefined} data-grid-idx={gridIdx}
         onChange={e => { setQuery(e.target.value); setOpen(true); }}
         onFocus={() => { setOpen(true); place(); }}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
@@ -898,9 +924,9 @@ function DriverCombobox({ available, onAssign, onRequestCreate }) {
 
 // The driver cell: a searchable dropdown while empty, or the locked-in driver
 // with a clear button once filled.
-function DriverCell({ row, dragging, available, onAssign, onClear, onRequestCreate }) {
+function DriverCell({ row, idx, dragging, available, onAssign, onClear, onRequestCreate }) {
   if (!row.entry_id) {
-    return <DriverCombobox available={available} onAssign={onAssign} onRequestCreate={onRequestCreate} />;
+    return <DriverCombobox available={available} onAssign={onAssign} onRequestCreate={onRequestCreate} gridIdx={idx} />;
   }
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.92rem", whiteSpace: "nowrap", opacity: dragging ? 0.35 : 1 }}>
@@ -968,8 +994,11 @@ function RowInputs({ row, idx, updateRow, updateRaceTime, updateInterval, update
       <input type="number" min="1" value={row.finish_pos} onChange={e => updateRow(idx, "finish_pos", e.target.value)} autoFocus={hasDriver && autoFocus} />
       <input type="number" min="1" title="Starting position (defaults from Qualifying)" placeholder="—" disabled={!hasDriver}
         value={row.start_pos} onChange={e => updateRow(idx, "start_pos", e.target.value)} />
-      <DriverCell row={row} dragging={dragging} available={available} onAssign={onAssign} onClear={onClear} onRequestCreate={onRequestCreate} />
-      <input placeholder={isLeader ? "1:23.456" : "1:24.567"} value={row.race_time} disabled={!hasDriver} onChange={e => updateRaceTime(idx, e.target.value)} />
+      <DriverCell row={row} idx={idx} dragging={dragging} available={available} onAssign={onAssign} onClear={onClear} onRequestCreate={onRequestCreate} />
+      <input placeholder={isLeader ? "1:23.456" : "1:24.567"} value={row.race_time} disabled={!hasDriver}
+        data-grid-field="race_time" data-grid-idx={idx}
+        onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); focusNextGridInput(e.currentTarget.closest(".result-grid, .qual-grid"), "race_time", idx); } }}
+        onChange={e => updateRaceTime(idx, e.target.value)} />
       <input placeholder={isLeader ? "leader" : "+2.345 / 1L"} value={isLeader ? "" : row.interval} disabled={!hasDriver || isLeader}
         onChange={e => updateInterval(idx, e.target.value)} />
       <input title="Driver's best lap time (e.g. 1:23.456) — the fastest of these across every race here is the track record"
@@ -1002,8 +1031,11 @@ function QualRow({ row, idx, updateRow, autoFocus, points, dragging, dragOver, o
     <>
       <DragHandle dragging={dragging} dragOver={dragOver} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={onDragEnd} />
       <input type="number" min="1" value={row.finish_pos} onChange={e => updateRow(idx, "finish_pos", e.target.value)} autoFocus={hasDriver && autoFocus} />
-      <DriverCell row={row} dragging={dragging} available={available} onAssign={onAssign} onClear={onClear} onRequestCreate={onRequestCreate} />
-      <input placeholder="01:43.863" value={row.qual_time} disabled={!hasDriver} onChange={e => updateRow(idx, "qual_time", e.target.value)} />
+      <DriverCell row={row} idx={idx} dragging={dragging} available={available} onAssign={onAssign} onClear={onClear} onRequestCreate={onRequestCreate} />
+      <input placeholder="01:43.863" value={row.qual_time} disabled={!hasDriver}
+        data-grid-field="qual_time" data-grid-idx={idx}
+        onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); focusNextGridInput(e.currentTarget.closest(".result-grid, .qual-grid"), "qual_time", idx); } }}
+        onChange={e => updateRow(idx, "qual_time", e.target.value)} />
       <div className="points-cell" style={{ textAlign: "center", fontWeight: 600 }}>{points}</div>
       <RemoveButton row={row} onRemove={onRemove} />
     </>
