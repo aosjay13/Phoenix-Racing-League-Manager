@@ -86,7 +86,7 @@ export default function DriverProfilePage() {
   if (error) return <div className="empty-state"><span className="empty-state-icon">🏎</span><p>{error}</p></div>;
   if (!data) return <div className="skeleton" style={{ height: 280 }} />;
 
-  const { profile, all_games, by_game, by_track = [], linked, skill_ratings_by_game = [], aliases = [] } = data;
+  const { profile, all_games, by_game, by_track = [], linked, skill_ratings_by_game = [], aliases = [], former_names = [] } = data;
   const stats = gameFilter === "all"
     ? all_games
     : by_game.find(g => g.game_id === gameFilter)?.stats ?? all_games;
@@ -111,6 +111,11 @@ export default function DriverProfilePage() {
             </span>
           )}
           {profile.bio && <p style={{ marginTop: 10, color: "var(--ink-1)", fontSize: "0.92rem", maxWidth: 560 }}>{profile.bio}</p>}
+          {former_names.length > 0 && (
+            <p style={{ marginTop: 8, color: "var(--ink-2)", fontSize: "0.82rem" }}>
+              Also known as: {former_names.join(", ")}
+            </p>
+          )}
           {!linked && (
             <p style={{ marginTop: 10, color: "var(--ink-2)", fontSize: "0.85rem", maxWidth: 560 }}>
               These stats are tracked from race results. No player account has claimed this driver yet, so there's no profile photo, bio, or country.

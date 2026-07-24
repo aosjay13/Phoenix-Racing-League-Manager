@@ -131,7 +131,10 @@ export const SPECS = {
   // lib/aliases.js) the importer also matches imported names against.
   drivers: { collection: "drivers", parentField: null, sortField: "name",
              fields: { name: { required: true }, user_id: {}, notes: {},
-                       skillRating: { number: true }, skillRatings: {}, aliases: {} } },
+                       skillRating: { number: true }, skillRatings: {}, aliases: {},
+                       // Names this driver was previously known as — appended when
+                       // another driver is merged into them (see /api/admin/drivers/merge).
+                       merged_names: {} } },
   // `number` is the car number — stored as a STRING (max 3 chars) so racing
   // numbers with leading zeros ("01", "001", "0", "00", "000") survive intact
   // instead of being parsed to an integer that drops the zeros.

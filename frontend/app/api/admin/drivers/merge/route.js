@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { withAdmin } from "@/lib/serverAuth";
-import { syncEntryNamesForDriver } from "@/lib/driverSync";
+import { syncEntryNamesForDriver, canonicalNameForDriver } from "@/lib/driverSync";
 import { recalcGameSkillRatings, gameIdForSeason } from "@/lib/skillRatingServer";
 
 export const dynamic = "force-dynamic";
@@ -27,17 +27,31 @@ export const POST = withAdmin(async (request) => {
   }
 
   // Re-point the loser's entries onto the survivor, remembering which seasons
-  // (hence games) were affected so Skill Ratings can be replayed.
+  // (hence games) were affected so Skill Ratings can be replayed. Collect the
+  // names this person raced under so they can be kept as "former names".
   const entriesSnap = await db().collection("entries").where("driver_id", "==", from_id).get();
   const seasonIds = new Set();
+  const nameSet = new Set();
+  const addName = n => { const t = String(n || "").trim(); if (t) nameSet.add(t); };
+  addName(fromDoc.data().name);
+  (fromDoc.data().merged_names || []).forEach(addName);       // carry transitive history
   for (let i = 0; i < entriesSnap.docs.length; i += 450) {
     const batch = db().batch();
     for (const d of entriesSnap.docs.slice(i, i + 450)) {
       batch.update(d.ref, { driver_id: into_id });
       if (d.data().season_id) seasonIds.add(d.data().season_id);
+      addName(d.data().name);
     }
     await batch.commit();
   }
+
+  // Keep the merged-away names on the surviving driver's profile (deduped,
+  // never listing the survivor's own current/canonical name).
+  const survivorName = (await canonicalNameForDriver(into_id, intoDoc.data()) || "").toLowerCase();
+  const survivorPool = String(intoDoc.data().name || "").toLowerCase();
+  const merged_names = [...new Set([...(intoDoc.data().merged_names || []), ...nameSet])]
+    .filter(n => { const l = n.toLowerCase(); return l !== survivorName && l !== survivorPool; });
+  try { await db().collection("drivers").doc(into_id).update({ merged_names }); } catch (err) { console.error("merge names record failed", err); }
 
   // Name the moved entries after the survivor, then drop the duplicate doc.
   try { await syncEntryNamesForDriver(into_id, intoDoc.data()); } catch (err) { console.error("merge name sync failed", err); }
@@ -52,5 +66,5 @@ export const POST = withAdmin(async (request) => {
     for (const g of games) await recalcGameSkillRatings(g);
   } catch (err) { console.error("merge SR recalc failed", err); }
 
-  return NextResponse.json({ ok: true, entries_moved: entriesSnap.size });
+  return NextResponse.json({ ok: true, entries_moved: entriesSnap.size, merged_names });
 });
