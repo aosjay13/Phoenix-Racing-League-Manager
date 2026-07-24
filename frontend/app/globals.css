@@ -441,6 +441,12 @@ a {
   padding-right: 132px;
 }
 
+/* Rows carrying a third action button (e.g. Drivers' Edit / Merge / Delete)
+   reserve extra space so the buttons never overlap the row's meta text. */
+.list-row-wrap.wide .list-row {
+  padding-right: 210px;
+}
+
 .list-row-actions {
   position: absolute;
   top: 50%;
