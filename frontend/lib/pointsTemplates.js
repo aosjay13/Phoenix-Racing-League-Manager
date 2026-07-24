@@ -8,6 +8,15 @@ export function listToTable(str) {
   return Object.fromEntries(nums.map((n, i) => [i + 1, n]));
 }
 
+// Like listToTable, but a blank/empty entry resolves to an explicit all-zeros
+// table ({ 1: 0 }, which the standings engine extends to every position via
+// `?? 0`) instead of null. Storing this on save makes "leave it blank" mean
+// exactly 0 points — never a silent fall-through to a default scale, which is
+// what made blank points score unexpectedly. Mirrors NONE_TEMPLATE's shape.
+export function listToTableOrZero(str) {
+  return listToTable(str) || { 1: 0 };
+}
+
 // { 1: 40, 2: 35 } (or JSON string) → "40, 35"
 export function tableToList(table) {
   if (!table) return "";
