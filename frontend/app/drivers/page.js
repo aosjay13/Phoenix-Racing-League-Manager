@@ -198,6 +198,7 @@ export default function DriversPage() {
               title={d.name}
               subtitle={d.linked ? (d.country || "Linked account") : "Not linked"}
               meta={[{ label: "Account", value: d.linked ? "Linked" : "—" }]}
+              actionsWide={isAdmin}
               actions={isAdmin ? (
                 <>
                   <button type="button" className="btn btn-ghost" onClick={() => setEditing(d)}>Edit</button>

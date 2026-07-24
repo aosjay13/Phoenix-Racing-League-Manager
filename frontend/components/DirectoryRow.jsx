@@ -16,7 +16,7 @@ import Link from "next/link";
 //   linked  — adds the gold "linked account" emphasis (Drivers directory)
 //   actions — optional node (e.g. admin Edit/Delete buttons) rendered as a
 //             sibling *outside* the link so clicking it never navigates the row.
-export function DirectoryRow({ href, avatar = {}, title, subtitle, meta = [], linked = false, actions = null }) {
+export function DirectoryRow({ href, avatar = {}, title, subtitle, meta = [], linked = false, actions = null, actionsWide = false }) {
   const link = (
     <Link href={href} className={`list-row${linked ? " linked" : ""}`}>
       {avatar.url
@@ -43,7 +43,7 @@ export function DirectoryRow({ href, avatar = {}, title, subtitle, meta = [], li
 
   if (!actions) return link;
   return (
-    <div className="list-row-wrap">
+    <div className={`list-row-wrap${actionsWide ? " wide" : ""}`}>
       {link}
       <div className="list-row-actions">{actions}</div>
     </div>

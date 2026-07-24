@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db, adminAuth } from "@/lib/firebase";
 import { withAdmin, getUserRole, isEnvAdmin } from "@/lib/serverAuth";
 import { normalizeRole, roleLevel, canManage, ROLE_LABELS } from "@/lib/roles";
+import { syncEntryNamesForDriver } from "@/lib/driverSync";
 
 // Admin-only: set a user's role within the staff hierarchy and/or (re)link their
 // statistical driver profile. Both changes flow through withAdmin, so the actor
@@ -27,6 +28,29 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
   if (!userDoc.exists) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
   const changed = {};
+
+  // --- Display name change ---------------------------------------------
+  // For a driver linked to an account, the account's display_name is the name
+  // shown everywhere (the pool-driver name is only a fallback), so this is how
+  // an admin corrects a linked driver's name. The change cascades onto that
+  // driver's roster entries so results, standings, and the race-entry pickers
+  // all follow — only the denormalized name string is touched (zero data loss).
+  if (body.display_name !== undefined) {
+    const dn = String(body.display_name).trim();
+    if (!dn) return NextResponse.json({ error: "Display name can't be empty." }, { status: 400 });
+    const actorRole = await getUserRole(admin);
+    const targetRole = isEnvAdmin(userDoc.data().email) ? "owner" : normalizeRole(userDoc.data().role || "player");
+    // Same hierarchy guard as role edits, except you may always rename yourself.
+    if (uid !== admin.uid && !canManage(actorRole, targetRole)) {
+      return NextResponse.json({ error: `You can't edit a ${ROLE_LABELS[targetRole]} — they rank at or above your role.` }, { status: 403 });
+    }
+    await userRef.update({ display_name: dn });
+    changed.display_name = dn;
+    const linked = await db().collection("drivers").where("user_id", "==", uid).limit(1).get();
+    if (!linked.empty) {
+      try { await syncEntryNamesForDriver(linked.docs[0].id); } catch (err) { console.error("display_name cascade failed", err); }
+    }
+  }
 
   // --- Role change ------------------------------------------------------
   if (body.role !== undefined) {
