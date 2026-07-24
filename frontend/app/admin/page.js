@@ -8,7 +8,7 @@ import { ImageUpload } from "@/components/ImageUpload";
 import { TrackSelect } from "@/components/TrackSelect";
 import { api } from "@/lib/api";
 import { BONUS_TYPES } from "@/lib/standings";
-import { BUILTIN_TEMPLATES, listToTable, tableToList } from "@/lib/pointsTemplates";
+import { BUILTIN_TEMPLATES, listToTableOrZero, tableToList } from "@/lib/pointsTemplates";
 
 function Panel({ title, sub, step, muted, children }) {
   return (
@@ -82,6 +82,7 @@ function AdminInner() {
   const [showPoints, setShowPoints] = useState(false);
   const [templates, setTemplates] = useState([]);
   const [templateId, setTemplateId] = useState("");
+  const [qualTemplateId, setQualTemplateId] = useState("");
   const [templateName, setTemplateName] = useState("");
   const blankTemplate = {
     name: "", race_points: "", qual_points: "",
@@ -113,8 +114,8 @@ function AdminInner() {
     if (!templateForm.name.trim()) return showToast("error", "Give the template a name first.");
     const body = {
       name: templateForm.name.trim(),
-      race_points: listToTable(templateForm.race_points),
-      qual_points: listToTable(templateForm.qual_points),
+      race_points: listToTableOrZero(templateForm.race_points),
+      qual_points: listToTableOrZero(templateForm.qual_points),
       bonus_points: Object.fromEntries(Object.entries(templateForm.bonuses).map(([k, v]) => [k, Number(v || 0)])),
     };
     try {
@@ -139,6 +140,7 @@ function AdminInner() {
 
   function applyTemplate(id) {
     setTemplateId(id);
+    setQualTemplateId("");   // a full-template load also sets qualifying points
     const builtin = BUILTIN_TEMPLATES.find(x => x.id === id);
     const saved = templates.find(x => x.id === id);
     if (!builtin && !saved) return;
@@ -154,6 +156,19 @@ function AdminInner() {
     }));
   }
 
+  // Load ONLY the Qualifying Points from a template, leaving Race Points and
+  // bonuses as they are — so qualifying can run its own scale independent of the
+  // race points template.
+  function applyQualTemplate(id) {
+    setQualTemplateId(id);
+    if (!id) return;
+    const builtin = BUILTIN_TEMPLATES.find(x => x.id === id);
+    const saved = templates.find(x => x.id === id);
+    if (!builtin && !saved) return;
+    const qual = builtin ? builtin.qual : tableToList(saved.qual_points);
+    setSeasonForm(f => ({ ...f, qual_points: qual || "" }));
+  }
+
   async function saveTemplate() {
     if (!templateName.trim()) return showToast("error", "Give the template a name first.");
     try {
@@ -161,8 +176,8 @@ function AdminInner() {
         method: "POST",
         body: {
           name: templateName.trim(),
-          race_points: listToTable(seasonForm.race_points),
-          qual_points: listToTable(seasonForm.qual_points),
+          race_points: listToTableOrZero(seasonForm.race_points),
+          qual_points: listToTableOrZero(seasonForm.qual_points),
           bonus_points: Object.fromEntries(Object.entries(seasonForm.bonuses).map(([k, v]) => [k, Number(v || 0)])),
         },
       });
@@ -304,17 +319,17 @@ function AdminInner() {
             const { bonuses, ...rest } = seasonForm;
             const body = {
               ...rest,
-              race_points: listToTable(seasonForm.race_points),
-              qual_points: listToTable(seasonForm.qual_points),
+              // Blank points now save as an explicit 0 (never a default scale),
+              // so leaving a box empty scores 0 instead of going haywire.
+              race_points: listToTableOrZero(seasonForm.race_points),
+              qual_points: listToTableOrZero(seasonForm.qual_points),
               bonus_points: Object.fromEntries(Object.entries(bonuses).map(([k, v]) => [k, Number(v || 0)])),
             };
             if (!editIds.season) {
               body.series_id = seriesId;
               body.game_id = gameId;
             }
-            if (!body.race_points) delete body.race_points;
-            if (!body.qual_points) delete body.qual_points;
-            save("/api/seasons", body, editIds.season, () => { setSeasonForm(blankSeason); setEditId("season", null); });
+            save("/api/seasons", body, editIds.season, () => { setSeasonForm(blankSeason); setEditId("season", null); setTemplateId(""); setQualTemplateId(""); });
           }}>
             <div className="field"><label>Season Name</label>
               <input required disabled={!seriesId} value={seasonForm.name} onChange={e => setSeasonForm(f => ({ ...f, name: e.target.value }))} placeholder="Season 3" /></div>
@@ -331,7 +346,7 @@ function AdminInner() {
             {showPoints && (
               <>
                 <div className="field">
-                  <label>Load Template</label>
+                  <label>Load Template (race + qualifying + bonuses)</label>
                   <div style={{ display: "flex", gap: 8 }}>
                     <select value={templateId} onChange={e => applyTemplate(e.target.value)} style={{ flex: 1 }}>
                       <option value="">Custom / start blank…</option>
@@ -349,11 +364,26 @@ function AdminInner() {
                     )}
                   </div>
                 </div>
-                <div className="field"><label>Race Points — comma-separated, 1st place first (blank = IMSA-style default)</label>
+                <div className="field"><label>Race Points — comma-separated, 1st place first (blank = 0 points)</label>
                   <textarea rows={3} value={seasonForm.race_points}
                     placeholder="350, 320, 300, 280, 260, 250, 240, …"
                     onChange={e => setSeasonForm(f => ({ ...f, race_points: e.target.value }))} /></div>
-                <div className="field"><label>Qualifying Points — comma-separated, pole first (blank = 35/32/30… default)</label>
+                <div className="field">
+                  <label>Load Qualifying Points Template</label>
+                  <select value={qualTemplateId} onChange={e => applyQualTemplate(e.target.value)}>
+                    <option value="">Custom / keep current…</option>
+                    <optgroup label="Standard">
+                      {BUILTIN_TEMPLATES.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </optgroup>
+                    {templates.length > 0 && (
+                      <optgroup label="My Templates">
+                        {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                      </optgroup>
+                    )}
+                  </select>
+                  <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>Fills only the qualifying scale below from the chosen template, so qualifying can score on its own template.</span>
+                </div>
+                <div className="field"><label>Qualifying Points — comma-separated, pole first (blank = 0 points)</label>
                   <textarea rows={2} value={seasonForm.qual_points}
                     placeholder="35, 32, 30, 28, 26, 25, …"
                     onChange={e => setSeasonForm(f => ({ ...f, qual_points: e.target.value }))} /></div>
@@ -570,11 +600,11 @@ function AdminInner() {
             <div className="field"><label>Template Name</label>
               <input required value={templateForm.name} placeholder="e.g. PRA Standard, Sprint Cup, Heat Race"
                 onChange={e => setTemplateForm(f => ({ ...f, name: e.target.value }))} /></div>
-            <div className="field"><label>Race Points — comma-separated, 1st place first</label>
+            <div className="field"><label>Race Points — comma-separated, 1st place first (blank = 0 points)</label>
               <textarea rows={3} value={templateForm.race_points}
                 placeholder="350, 320, 300, 280, 260, 250, 240, …"
                 onChange={e => setTemplateForm(f => ({ ...f, race_points: e.target.value }))} /></div>
-            <div className="field"><label>Qualifying Points — comma-separated, pole first</label>
+            <div className="field"><label>Qualifying Points — comma-separated, pole first (blank = 0 points)</label>
               <textarea rows={2} value={templateForm.qual_points}
                 placeholder="35, 32, 30, 28, 26, 25, …"
                 onChange={e => setTemplateForm(f => ({ ...f, qual_points: e.target.value }))} /></div>

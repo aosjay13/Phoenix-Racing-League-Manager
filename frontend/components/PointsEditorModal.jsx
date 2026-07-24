@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Modal } from "@/components/Modal";
 import { api } from "@/lib/api";
 import { BONUS_TYPES, resolveSeasonConfig } from "@/lib/standings";
-import { listToTable, tableToList } from "@/lib/pointsTemplates";
+import { listToTableOrZero, tableToList } from "@/lib/pointsTemplates";
 
 const isBuiltin = id => String(id).startsWith("builtin-");
 
@@ -61,9 +61,11 @@ export function PointsEditorModal({ session, sessionType, value, templates, seas
     setDirty(true);
   }
 
+  // Blank points save as an explicit 0 rather than falling back to a default
+  // scale, so an empty box scores 0 for this session.
   const templateBody = () => ({
-    race_points: listToTable(fields.race),
-    qual_points: listToTable(fields.qual),
+    race_points: listToTableOrZero(fields.race),
+    qual_points: listToTableOrZero(fields.qual),
     bonus_points: Object.fromEntries(Object.entries(fields.bonuses).map(([k, v]) => [k, Number(v || 0)])),
   });
 
@@ -118,11 +120,11 @@ export function PointsEditorModal({ session, sessionType, value, templates, seas
           <p style={{ margin: "0 0 4px", color: "var(--ink-1)", fontSize: "0.8rem" }}>
             {selection === "" ? "Viewing the season default. Edit below and save as a template to customize this session." : "Edit below, then update the template or save your changes as a new one."}
           </p>
-          <div className="field"><label>Race Points — comma-separated, 1st place first</label>
+          <div className="field"><label>Race Points — comma-separated, 1st place first (blank = 0 points)</label>
             <textarea rows={3} value={fields.race} style={monoBox}
               placeholder="350, 320, 300, 280, 260, …"
               onChange={e => edit({ race: e.target.value })} /></div>
-          <div className="field"><label>Qualifying Points — comma-separated, pole first{forQualifying ? "" : " (folded into race scores)"}</label>
+          <div className="field"><label>Qualifying Points — comma-separated, pole first (blank = 0 points){forQualifying ? "" : " · folded into race scores"}</label>
             <textarea rows={2} value={fields.qual} style={monoBox}
               placeholder="35, 32, 30, 28, 26, …"
               onChange={e => edit({ qual: e.target.value })} /></div>
