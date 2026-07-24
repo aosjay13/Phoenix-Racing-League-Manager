@@ -7,6 +7,7 @@ import { DirectoryRow } from "@/components/DirectoryRow";
 import { DriverPoolCreateModal } from "@/components/DriverPoolCreateModal";
 import { DriverEditModal } from "@/components/DriverEditModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { Modal } from "@/components/Modal";
 
 export default function DriversPage() {
   const { user, isAdmin } = useAuth();
@@ -21,6 +22,9 @@ export default function DriversPage() {
   const [deleting, setDeleting] = useState(null); // driver row being deleted
   const [unclaiming, setUnclaiming] = useState(false); // confirm unclaim dialog
   const [syncing, setSyncing] = useState(false);       // name-backfill in progress
+  const [merging, setMerging] = useState(null);        // duplicate driver being merged away
+  const [mergeInto, setMergeInto] = useState("");      // survivor driver id
+  const [mergeBusy, setMergeBusy] = useState(false);
 
   function showToast(type, msg) {
     setToast({ type, msg });
@@ -120,6 +124,22 @@ export default function DriversPage() {
     setDrivers(prev => (prev || []).filter(d => d.id !== driver.id));
   }
 
+  // Merge a duplicate (e.g. a mistyped name) into the correct driver: their
+  // race entries move over and the duplicate is removed, so the old name stops
+  // appearing everywhere — results stay intact under the surviving driver.
+  async function mergeDrivers() {
+    if (!merging || !mergeInto) return;
+    setMergeBusy(true);
+    try {
+      const res = await api("/api/admin/drivers/merge", { method: "POST", body: { from_id: merging.id, into_id: mergeInto } });
+      const target = (drivers || []).find(d => d.id === mergeInto);
+      setMerging(null); setMergeInto("");
+      await load();
+      showToast("success", `Merged “${merging.name}” into “${target?.name ?? "driver"}” (${res.entries_moved} entr${res.entries_moved === 1 ? "y" : "ies"} moved).`);
+    } catch (err) { showToast("error", err.message); }
+    finally { setMergeBusy(false); }
+  }
+
   function handleSaved(updated) {
     setDrivers(prev => (prev || [])
       .map(d => (d.id === updated.id
@@ -181,6 +201,7 @@ export default function DriversPage() {
               actions={isAdmin ? (
                 <>
                   <button type="button" className="btn btn-ghost" onClick={() => setEditing(d)}>Edit</button>
+                  <button type="button" className="btn btn-ghost" title="Merge this duplicate into another driver" onClick={() => { setMerging(d); setMergeInto(""); }}>Merge</button>
                   <button type="button" className="btn btn-danger" onClick={() => setDeleting(d)}>Delete</button>
                 </>
               ) : claimActions(d)}
@@ -211,6 +232,28 @@ export default function DriversPage() {
           onConfirm={() => deleteDriver(deleting)}
           onClose={() => setDeleting(null)}
         />
+      )}
+      {merging && (
+        <Modal title={`Merge “${merging.name}”`} onClose={mergeBusy ? () => {} : () => { setMerging(null); setMergeInto(""); }}>
+          <p style={{ marginTop: 0, color: "var(--ink-1)", fontSize: "0.9rem" }}>
+            Move every race entry from <strong>{merging.name}</strong> onto the correct driver, then remove
+            this duplicate. All results stay on record under the surviving driver — nothing is lost.
+          </p>
+          <div className="field">
+            <label>Merge into</label>
+            <select value={mergeInto} onChange={e => setMergeInto(e.target.value)}>
+              <option value="">Select the correct driver…</option>
+              {(drivers || []).filter(d => d.id !== merging.id).map(d => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          </div>
+          <button className="btn btn-primary" type="button" disabled={mergeBusy || !mergeInto} onClick={mergeDrivers}>
+            {mergeBusy ? "Merging…" : "Merge Drivers"}
+          </button>
+          <button className="btn btn-ghost" type="button" style={{ marginLeft: 8 }} disabled={mergeBusy}
+            onClick={() => { setMerging(null); setMergeInto(""); }}>Cancel</button>
+        </Modal>
       )}
       {unclaiming && (
         <ConfirmDialog
