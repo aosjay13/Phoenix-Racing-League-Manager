@@ -4,7 +4,10 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
+import { useLeague } from "@/components/LeagueProvider";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ShareGraphicModal } from "@/components/ShareGraphicModal";
+import { leagueLogos, driverDisplayName } from "@/lib/shareGraphic";
 import { api } from "@/lib/api";
 
 function DriverCell({ r }) {
@@ -55,10 +58,12 @@ export default function EventResultsPage() {
   const { id } = useParams();
   const router = useRouter();
   const { isAdmin } = useAuth();
+  const { game, series, season: leagueSeason } = useLeague();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [tab, setTab] = useState(null); // "qual" or session name
   const [confirmKind, setConfirmKind] = useState(null); // "event" | "session" | null
+  const [sharing, setSharing] = useState(false);
 
   const load = () =>
     api(`/api/events/${id}`)
@@ -105,8 +110,42 @@ export default function EventResultsPage() {
   const showSr = finishers.some(r => r.sr_delta != null);
   const sof = event.strength_of_field;
 
+  // Shareable graphic for the currently-viewed session (Qualifying or a race).
+  const sharingQual = tab === "__qual";
+  const sessionLabel = sharingQual ? "Qualifying" : (tab || "Results");
+  const shareSource = sharingQual ? qualifying : finishers;
+  const shareColumns = sharingQual
+    ? [{ label: "Pos", align: "center" }, { label: "Driver", align: "left" }, { label: "Team", align: "left" }, { label: "Qual Time", align: "center" }, { label: "Pts", align: "center" }]
+    : [{ label: "Pos", align: "center" }, { label: "Driver", align: "left" }, { label: "Team", align: "left" }, { label: "Best Lap", align: "center" }, { label: "Pts", align: "center" }];
+  const shareRows = shareSource.map(r => {
+    const pos = sharingQual ? r.position : r.finish_pos;
+    return {
+      rank: pos > 0 && pos <= 3 ? pos : undefined,
+      cells: sharingQual
+        ? [pos, driverDisplayName(r), r.team ?? "—", r.qual_time || "—", r.qual_points]
+        : [pos, driverDisplayName(r), r.team ?? "—", r.fastest_lap_time || "—", r.points],
+    };
+  });
+  // Offer the event's track logo alongside any logos from the selected league
+  // context; dedupe by url so the same image isn't listed twice.
+  const shareLogos = [
+    event.track_logo_url && { label: `${event.track || "Track"} (Track)`, url: event.track_logo_url },
+    ...leagueLogos({ game, series, season: leagueSeason }),
+  ].filter(Boolean).filter((l, i, a) => a.findIndex(x => x.url === l.url) === i);
+  const eventDate = event.date ? new Date(event.date).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }) : null;
+
   return (
     <section>
+      <ShareGraphicModal
+        open={sharing}
+        onClose={() => setSharing(false)}
+        kind={`${event.name} ${sessionLabel}`}
+        defaultTitle={`${event.name} — ${sessionLabel}`}
+        subtitle={[event.track, eventDate, season?.name].filter(Boolean).join(" · ")}
+        columns={shareColumns}
+        rows={shareRows}
+        logos={shareLogos}
+      />
       <div className="hero" style={{ display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap" }}>
         {event.track_logo_url
           ? <img src={event.track_logo_url} alt="" className="avatar avatar-xl" style={{ borderRadius: 14 }} />
@@ -120,8 +159,18 @@ export default function EventResultsPage() {
             {event.date ? new Date(event.date).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" }) : "Date TBA"}
             {season ? ` · ${season.name}` : ""}
           </p>
-          <p style={{ margin: "6px 0 0", display: "flex", gap: 14, alignItems: "center" }}>
+          <p style={{ margin: "6px 0 0", display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
             <Link href="/schedule" style={{ color: "var(--accent-cyan)", fontSize: "0.85rem" }}>← Back to Schedule</Link>
+            {shareRows.length > 0 && (
+              <button
+                type="button"
+                className="btn btn-ghost"
+                style={{ marginTop: 0, padding: "6px 12px", fontSize: "0.82rem" }}
+                onClick={() => setSharing(true)}
+              >
+                🖼 Share Graphic
+              </button>
+            )}
             {isAdmin && (
               <>
                 <Link

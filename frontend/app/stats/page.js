@@ -4,8 +4,21 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useLeague } from "@/components/LeagueProvider";
 import { useSortable } from "@/components/useSortable";
+import { ShareGraphicModal } from "@/components/ShareGraphicModal";
+import { leagueLogos, toGraphicTable } from "@/lib/shareGraphic";
 import { api } from "@/lib/api";
 import { formatStat } from "@/lib/standings";
+
+// Curated columns for the shareable graphic — a readable subset of the full
+// stats table. Position (#) comes from the current on-screen sort order.
+const SHARE_DRIVER_COLS = [
+  ["rank", "#"], ["driver_name", "Driver"], ["starts", "Starts"], ["wins", "Wins"],
+  ["podiums", "Podiums"], ["top5", "Top 5s"], ["poles", "Poles"], ["avg_finish", "Avg Fin"],
+];
+const SHARE_TEAM_COLS = [
+  ["rank", "#"], ["team_name", "Team"], ["points", "Pts"], ["wins", "Wins"],
+  ["podiums", "Podiums"], ["poles", "Poles"],
+];
 
 // [key, header, lowerIsBetter, fullName] — fullName becomes a hover tooltip.
 const COLUMNS = [
@@ -54,6 +67,7 @@ export default function StatsPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [tab, setTab] = useState("drivers"); // "drivers" | "teams"
+  const [sharing, setSharing] = useState(false);
 
   const columns = tab === "teams" ? TEAM_COLUMNS : COLUMNS;
   const activeRows = tab === "teams" ? data?.team_rows : data?.rows;
@@ -103,7 +117,28 @@ export default function StatsPage() {
             {" · "}{data.seasons_counted} Season{data.seasons_counted === 1 ? "" : "s"}
           </span>
         )}
+        {rows.length > 0 && (
+          <button className="btn btn-ghost" style={{ marginTop: 0, padding: "6px 12px", fontSize: "0.82rem" }} onClick={() => setSharing(true)}>
+            🖼 Share Graphic
+          </button>
+        )}
       </div>
+      {(() => {
+        const cols = tab === "teams" ? SHARE_TEAM_COLS : SHARE_DRIVER_COLS;
+        const st = toGraphicTable(cols, rows, { nameKey: tab === "teams" ? "team_name" : "driver_name" });
+        return (
+          <ShareGraphicModal
+            open={sharing}
+            onClose={() => setSharing(false)}
+            kind="Stats"
+            defaultTitle={active.title}
+            subtitle={tab === "teams" ? "Team Stats" : "Driver Stats"}
+            columns={st.columns}
+            rows={st.rows}
+            logos={leagueLogos({ game, series, season })}
+          />
+        );
+      })()}
       <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.88rem" }}>
         Use the Game / Series / Season menus above to change scope (pick &quot;All&quot; to widen it).
         Click any column to sort; gold cells mark the category leader.

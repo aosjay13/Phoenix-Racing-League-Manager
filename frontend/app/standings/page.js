@@ -5,8 +5,21 @@ import { useCallback, useEffect, useState } from "react";
 import { useLeague } from "@/components/LeagueProvider";
 import { useAuth } from "@/components/AuthProvider";
 import { useSortable } from "@/components/useSortable";
+import { ShareGraphicModal } from "@/components/ShareGraphicModal";
+import { leagueLogos, toGraphicTable } from "@/lib/shareGraphic";
 import { api } from "@/lib/api";
 import { formatStat } from "@/lib/standings";
+
+// Curated, feed-friendly column sets for the shareable graphic (the full table
+// has too many columns to read cleanly at social-media sizes).
+const SHARE_DRIVER_COLS = [
+  ["rank", "Pos"], ["driver_name", "Driver"], ["adjusted_points", "Pts"],
+  ["wins", "Wins"], ["podiums", "Podiums"], ["poles", "Poles"],
+];
+const SHARE_TEAM_COLS = [
+  ["rank", "Pos"], ["team", "Team"], ["points", "Pts"],
+  ["wins", "Wins"], ["podiums", "Podiums"], ["poles", "Poles"],
+];
 
 // [key, label, lowIsBetter?, isText?]
 const DRIVER_COLS = [
@@ -89,7 +102,7 @@ function formatCell(r, key) {
 }
 
 export default function StandingsPage() {
-  const { seasonId, season } = useLeague();
+  const { seasonId, season, game, series } = useLeague();
   const { isAdmin } = useAuth();
   const [tab, setTab] = useState("drivers");
   const [data, setData] = useState(null);
@@ -97,6 +110,7 @@ export default function StandingsPage() {
   const [adjForm, setAdjForm] = useState({ points_adjustment: "0", adjustment_note: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [sharing, setSharing] = useState(false);
 
   const load = useCallback(() => {
     if (!seasonId) { setData(null); return; }
@@ -140,13 +154,30 @@ export default function StandingsPage() {
   }
 
   const rows = data?.[tab] ?? [];
+  const shareCols = tab === "teams" ? SHARE_TEAM_COLS : SHARE_DRIVER_COLS;
+  const shareTable = toGraphicTable(shareCols, rows, { nameKey: tab === "teams" ? "team" : "driver_name" });
 
   return (
     <section>
       <div className="page-title">
         <h2>Standings · {season?.name ?? ""}</h2>
         {data?.drop_weeks > 0 && <span className="page-badge">{data.drop_weeks} Drop Week{data.drop_weeks > 1 ? "s" : ""} Applied</span>}
+        {rows.length > 0 && (
+          <button className="btn btn-ghost" style={{ marginTop: 0, padding: "6px 12px", fontSize: "0.82rem" }} onClick={() => setSharing(true)}>
+            🖼 Share Graphic
+          </button>
+        )}
       </div>
+      <ShareGraphicModal
+        open={sharing}
+        onClose={() => setSharing(false)}
+        kind="Standings"
+        defaultTitle={`${season?.name ?? "Championship"} Standings`}
+        subtitle={[series?.name, tab === "teams" ? "Team Championship" : "Driver Championship"].filter(Boolean).join(" · ")}
+        columns={shareTable.columns}
+        rows={shareTable.rows}
+        logos={leagueLogos({ game, series, season })}
+      />
       <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.85rem" }}>
         BL = points behind leader, BN = points behind next position (championship order). Click any column to sort.
       </p>

@@ -40,7 +40,7 @@ function GameRecords({ records }) {
               {(rec.driver_id || rec.user_id)
                 ? <Link href={`/drivers/${rec.driver_id || rec.user_id}`} style={{ color: "var(--accent-cyan)" }}>{rec.driver_name}</Link>
                 : rec.driver_name}
-              {rec.from_qualifying ? " · Qualifying" : ""}
+              {rec.session ? ` · ${rec.session}` : ""}
               {rec.season_name ? ` · ${rec.season_name}` : ""}
             </div>
           </article>
@@ -149,7 +149,7 @@ export default function TrackProfilePage() {
                         ? <Link href={`/drivers/${record.driver_id || record.user_id}`} style={{ color: "var(--accent-cyan)" }}>{record.driver_name}</Link>
                         : record.driver_name}
                       {record.race_name ? ` · ${record.race_name}` : ""}
-                      {record.from_qualifying ? " · Qualifying" : ""}
+                      {record.session ? ` · ${record.session}` : ""}
                       {record.season_name ? ` · ${record.season_name}` : ""}
                     </div>
                   </div>
