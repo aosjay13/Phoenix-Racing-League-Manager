@@ -206,6 +206,38 @@ export function SessionEditor({
     setRows(prev => prev.map((r, i) => (i === idx ? { ...r, [field]: value } : r)));
   }
 
+  // Column paste ("fill-down"): drop a copied column of values into a grid
+  // column starting at `startIdx`. The Driver column resolves each pasted name
+  // to a roster entry (exact name first, then a contains-match), never reusing a
+  // driver already placed; unmatched names are skipped. Every other column just
+  // sets the raw value on the rows that have a driver. Only fills existing rows
+  // — it never invents new finishing positions.
+  function pasteColumn(field, startIdx, values) {
+    if (field === "driver") {
+      setRows(prev => {
+        const norm = s => String(s ?? "").trim().toLowerCase();
+        const used = new Set(prev.map(r => r.entry_id).filter(Boolean));
+        const next = [...prev];
+        for (let k = 0; k < values.length; k++) {
+          const i = startIdx + k;
+          if (i >= next.length) break;
+          const name = norm(values[k]);
+          if (!name) continue;                       // blank line — leave the row as-is
+          if (next[i].entry_id) used.delete(next[i].entry_id);   // free this row's own driver
+          const pick = entries.find(e => !used.has(e.id ?? e.entry_id) && norm(e.name ?? e.driver_name) === name)
+            || entries.find(e => !used.has(e.id ?? e.entry_id) && norm(e.name ?? e.driver_name).includes(name));
+          if (pick) { used.add(pick.id ?? pick.entry_id); next[i] = withDriver(next[i], pick); }
+        }
+        return next;
+      });
+      return;
+    }
+    setRows(prev => prev.map((r, i) => {
+      if (i < startIdx || i >= startIdx + values.length || !r.entry_id) return r;
+      return { ...r, [field]: String(values[i - startIdx] ?? "").trim() };
+    }));
+  }
+
   const totalLaps = Number(race?.total_laps) || null;
 
   // Assigns/creates a driver into a specific slot, seeding Start from the
@@ -552,6 +584,7 @@ export function SessionEditor({
     onClear: () => clearSlot(idx),
     onRequestCreate: name => setCreateFor({ slotId: row.slot_id, name }),
     onRemove: () => (row.entry_id ? removeEntry(row) : removeSlot(idx)),
+    onPasteColumn: pasteColumn,
   });
 
   return (
@@ -635,6 +668,9 @@ export function SessionEditor({
         {sessionType === "qualifying"
           ? "Position 1 is the pole. Each slot starts empty — click it, type a name, and pick the driver from the dropdown (or create a new one inline). This is the only place starting position is recorded — Average Start and Poles are calculated from Qualifying results only."
           : <>Each finishing position starts empty — click a slot, type a driver's name, and pick them from the dropdown (or create a new driver inline). Drag ⠿ to reorder; positions renumber automatically. Enter <strong>Race Time</strong> for the leader, then either a Race Time or an <strong>Int</strong> (gap behind leader, e.g. <code>+2.345</code>) for everyone else — each fills in the other. Use <code>1L</code>, <code>2L</code>… in Int for laps down.{totalLaps ? ` Laps auto-count off the ${totalLaps}-lap distance (laps down and DNF lap subtract from it).` : " Set Total Race Laps on the Race Info tab so laps auto-count."}</>}
+      </p>
+      <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.78rem" }}>
+        ⌨ Press <strong>Enter</strong> in any cell to jump to the same column one row down. Or <strong>paste a whole column</strong> at once — copy a column of names or times (e.g. from a spreadsheet) and paste into the top cell to fill straight down.
       </p>
 
       {!entries.length ? (
@@ -823,7 +859,42 @@ function focusNextGridInput(grid, field, idx) {
   if (next) { next.focus(); if (typeof next.select === "function") next.select(); }
 }
 
-function DriverCombobox({ available, onAssign, onRequestCreate, gridIdx }) {
+// Shared Enter handler for every navigable grid cell: reads the column/row off
+// the element's own data-grid tags and drops focus into the same column one row
+// down. Wired onto each input so names, times, laps, etc. all advance the same
+// way.
+function gridEnterAdvance(e) {
+  if (e.key !== "Enter") return;
+  const el = e.currentTarget;
+  const field = el.getAttribute("data-grid-field");
+  const idx = Number(el.getAttribute("data-grid-idx"));
+  if (!field || !Number.isFinite(idx)) return;
+  e.preventDefault();
+  focusNextGridInput(el.closest(".result-grid, .qual-grid"), field, idx);
+}
+
+// Split a clipboard payload into a column of values. A spreadsheet column copy
+// arrives as newline-separated cells (often with a trailing newline); tabs are
+// treated as newlines too so a single-column selection copied "sideways" still
+// fills down. Returns >1 entry only for a genuine multi-row paste.
+function parseColumnClipboard(text) {
+  if (!text) return [];
+  const parts = text.replace(/\r\n?/g, "\n").split(/[\n\t]/);
+  while (parts.length && parts[parts.length - 1] === "") parts.pop();
+  return parts;
+}
+
+// Paste handler for a grid cell: a multi-value clipboard fills the column
+// downward from this row (via onPasteColumn); a single value pastes normally.
+function handleColumnPaste(e, field, idx, onPasteColumn) {
+  if (!onPasteColumn) return;
+  const values = parseColumnClipboard(e.clipboardData?.getData("text") ?? "");
+  if (values.length <= 1) return;   // ordinary single-cell paste — let it through
+  e.preventDefault();
+  onPasteColumn(field, idx, values);
+}
+
+function DriverCombobox({ available, onAssign, onRequestCreate, gridIdx, onPasteColumn }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -885,6 +956,7 @@ function DriverCombobox({ available, onAssign, onRequestCreate, gridIdx }) {
         onChange={e => { setQuery(e.target.value); setOpen(true); }}
         onFocus={() => { setOpen(true); place(); }}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onPaste={gridIdx != null ? (e => handleColumnPaste(e, "driver", gridIdx, onPasteColumn)) : undefined}
         onKeyDown={onKeyDown} />
       {open && rect && options.length > 0 && typeof document !== "undefined" && createPortal(
         <div style={{
@@ -924,9 +996,9 @@ function DriverCombobox({ available, onAssign, onRequestCreate, gridIdx }) {
 
 // The driver cell: a searchable dropdown while empty, or the locked-in driver
 // with a clear button once filled.
-function DriverCell({ row, idx, dragging, available, onAssign, onClear, onRequestCreate }) {
+function DriverCell({ row, idx, dragging, available, onAssign, onClear, onRequestCreate, onPasteColumn }) {
   if (!row.entry_id) {
-    return <DriverCombobox available={available} onAssign={onAssign} onRequestCreate={onRequestCreate} gridIdx={idx} />;
+    return <DriverCombobox available={available} onAssign={onAssign} onRequestCreate={onRequestCreate} gridIdx={idx} onPasteColumn={onPasteColumn} />;
   }
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.92rem", whiteSpace: "nowrap", opacity: dragging ? 0.35 : 1 }}>
@@ -981,29 +1053,35 @@ function RemoveButton({ row, onRemove }) {
   );
 }
 
-function RowInputs({ row, idx, updateRow, updateRaceTime, updateInterval, updateStatus, autoFocus, points, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, available, onAssign, onClear, onRequestCreate }) {
+function RowInputs({ row, idx, updateRow, updateRaceTime, updateInterval, updateStatus, autoFocus, points, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, available, onAssign, onClear, onRequestCreate, onPasteColumn }) {
   const hasDriver = !!row.entry_id;
   const isLeader = Number(row.finish_pos) === 1;
+  // Shared per-cell wiring: column/row tags, Enter-to-next-row, and column
+  // paste (fill-down). Spread onto every editable input.
+  const gridProps = field => ({
+    "data-grid-field": field, "data-grid-idx": idx,
+    onKeyDown: gridEnterAdvance,
+    onPaste: e => handleColumnPaste(e, field, idx, onPasteColumn),
+  });
   const num = (field, min = 0, focus = false) => (
     <input type="number" min={min} value={row[field]} disabled={!hasDriver}
+      {...gridProps(field)}
       onChange={e => updateRow(idx, field, e.target.value)} autoFocus={focus} />
   );
   return (
     <>
       <DragHandle dragging={dragging} dragOver={dragOver} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={onDragEnd} />
-      <input type="number" min="1" value={row.finish_pos} onChange={e => updateRow(idx, "finish_pos", e.target.value)} autoFocus={hasDriver && autoFocus} />
+      <input type="number" min="1" value={row.finish_pos} {...gridProps("finish_pos")} onChange={e => updateRow(idx, "finish_pos", e.target.value)} autoFocus={hasDriver && autoFocus} />
       <input type="number" min="1" title="Starting position (defaults from Qualifying)" placeholder="—" disabled={!hasDriver}
-        value={row.start_pos} onChange={e => updateRow(idx, "start_pos", e.target.value)} />
-      <DriverCell row={row} idx={idx} dragging={dragging} available={available} onAssign={onAssign} onClear={onClear} onRequestCreate={onRequestCreate} />
+        value={row.start_pos} {...gridProps("start_pos")} onChange={e => updateRow(idx, "start_pos", e.target.value)} />
+      <DriverCell row={row} idx={idx} dragging={dragging} available={available} onAssign={onAssign} onClear={onClear} onRequestCreate={onRequestCreate} onPasteColumn={onPasteColumn} />
       <input placeholder={isLeader ? "1:23.456" : "1:24.567"} value={row.race_time} disabled={!hasDriver}
-        data-grid-field="race_time" data-grid-idx={idx}
-        onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); focusNextGridInput(e.currentTarget.closest(".result-grid, .qual-grid"), "race_time", idx); } }}
-        onChange={e => updateRaceTime(idx, e.target.value)} />
+        {...gridProps("race_time")} onChange={e => updateRaceTime(idx, e.target.value)} />
       <input placeholder={isLeader ? "leader" : "+2.345 / 1L"} value={isLeader ? "" : row.interval} disabled={!hasDriver || isLeader}
-        onChange={e => updateInterval(idx, e.target.value)} />
+        {...gridProps("interval")} onChange={e => updateInterval(idx, e.target.value)} />
       <input title="Driver's best lap time (e.g. 1:23.456) — the fastest of these across every race here is the track record"
         placeholder="1:23.456" value={row.fastest_lap_time} disabled={!hasDriver}
-        onChange={e => updateRow(idx, "fastest_lap_time", e.target.value)} />
+        {...gridProps("fastest_lap_time")} onChange={e => updateRow(idx, "fastest_lap_time", e.target.value)} />
       {num("laps")}
       {num("laps_led")}
       {num("incidents")}
@@ -1012,7 +1090,7 @@ function RowInputs({ row, idx, updateRow, updateRaceTime, updateInterval, update
       <Check title="Hard charger" value={row.hard_charger} disabled={!hasDriver} onChange={v => updateRow(idx, "hard_charger", v)} />
       <input type="number" title="Points adjustment — penalty (−) or bonus (+). Applied on top of scored points without changing the finishing position."
         placeholder="0" value={row.points_adjustment} disabled={!hasDriver}
-        onChange={e => updateRow(idx, "points_adjustment", e.target.value)} style={{ textAlign: "center" }} />
+        {...gridProps("points_adjustment")} onChange={e => updateRow(idx, "points_adjustment", e.target.value)} style={{ textAlign: "center" }} />
       <select value={row.status} disabled={!hasDriver} onChange={e => updateStatus(idx, e.target.value)}>
         <option value="finished">Running</option>
         <option value="dnf">DNF</option>
@@ -1025,17 +1103,20 @@ function RowInputs({ row, idx, updateRow, updateRaceTime, updateInterval, update
   );
 }
 
-function QualRow({ row, idx, updateRow, autoFocus, points, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, available, onAssign, onClear, onRequestCreate }) {
+function QualRow({ row, idx, updateRow, autoFocus, points, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, available, onAssign, onClear, onRequestCreate, onPasteColumn }) {
   const hasDriver = !!row.entry_id;
+  const gridProps = field => ({
+    "data-grid-field": field, "data-grid-idx": idx,
+    onKeyDown: gridEnterAdvance,
+    onPaste: e => handleColumnPaste(e, field, idx, onPasteColumn),
+  });
   return (
     <>
       <DragHandle dragging={dragging} dragOver={dragOver} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={onDragEnd} />
-      <input type="number" min="1" value={row.finish_pos} onChange={e => updateRow(idx, "finish_pos", e.target.value)} autoFocus={hasDriver && autoFocus} />
-      <DriverCell row={row} idx={idx} dragging={dragging} available={available} onAssign={onAssign} onClear={onClear} onRequestCreate={onRequestCreate} />
+      <input type="number" min="1" value={row.finish_pos} {...gridProps("finish_pos")} onChange={e => updateRow(idx, "finish_pos", e.target.value)} autoFocus={hasDriver && autoFocus} />
+      <DriverCell row={row} idx={idx} dragging={dragging} available={available} onAssign={onAssign} onClear={onClear} onRequestCreate={onRequestCreate} onPasteColumn={onPasteColumn} />
       <input placeholder="01:43.863" value={row.qual_time} disabled={!hasDriver}
-        data-grid-field="qual_time" data-grid-idx={idx}
-        onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); focusNextGridInput(e.currentTarget.closest(".result-grid, .qual-grid"), "qual_time", idx); } }}
-        onChange={e => updateRow(idx, "qual_time", e.target.value)} />
+        {...gridProps("qual_time")} onChange={e => updateRow(idx, "qual_time", e.target.value)} />
       <div className="points-cell" style={{ textAlign: "center", fontWeight: 600 }}>{points}</div>
       <RemoveButton row={row} onRemove={onRemove} />
     </>
