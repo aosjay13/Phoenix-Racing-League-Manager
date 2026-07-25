@@ -124,11 +124,11 @@ export function LeagueProvider({ children }) {
       .catch(() => setSeasons([]));
   }, [seriesId, version]);
 
-  // Classes hang off the selected season. A season with no classes clears the
-  // selection so every page falls back to its whole-field view. When the season
-  // has classes but its admin turned OFF the combined (overall) championship,
-  // there IS no legitimate "All Classes" championship, so the selection lands on
-  // the first class instead of the combined view.
+  // Classes hang off the selected season. The selection always starts on
+  // "All Classes" ("") — the combined, whole-field view — and only holds a
+  // specific class while that class exists in the selected season, so switching
+  // to a season (or a league) that doesn't define it falls back to All Classes
+  // rather than filtering against an id that means nothing here.
   const season = seasons.find(s => s.id === seasonId) || null;
   useEffect(() => {
     if (seasonId === null) return;
@@ -139,15 +139,12 @@ export function LeagueProvider({ children }) {
         setClasses(list);
         setClassId(prev => {
           const current = prev === null ? saved.classId : prev;
-          if (list.find(c => c.id === current)) return current;
-          if (!list.length) return "";
-          const combined = season?.combined_championship !== false;
-          return combined ? "" : list[0].id;
+          return list.find(c => c.id === current) ? current : "";
         });
       })
       .catch(() => { setClasses([]); setClassId(""); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seasonId, season?.combined_championship, version]);
+  }, [seasonId, version]);
 
   useEffect(() => {
     if (gameId === null) return;

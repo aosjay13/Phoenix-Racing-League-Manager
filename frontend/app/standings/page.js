@@ -173,7 +173,9 @@ export default function StandingsPage() {
       <div className="page-title">
         <h2>{heading}</h2>
         {className && <span className="page-badge">{className} Championship</span>}
-        {!className && classes.length > 0 && <span className="page-badge">Overall · All Classes</span>}
+        {!className && classes.length > 0 && (
+          <span className="page-badge">{combinedChampionship ? "Overall · All Classes" : "All Classes · Unofficial"}</span>
+        )}
         {data?.drop_weeks > 0 && <span className="page-badge">{data.drop_weeks} Drop Week{data.drop_weeks > 1 ? "s" : ""} Applied</span>}
         {rows.length > 0 && (
           <button className="btn btn-ghost" style={{ marginTop: 0, padding: "6px 12px", fontSize: "0.82rem" }} onClick={() => setSharing(true)}>

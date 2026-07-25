@@ -15,7 +15,8 @@ can create new (empty) leagues; the active league is renamed under **League Setu
 
 A **Game/Series/Season/Class** selector sits at the top of every page — pick "All" at any level to
 widen a view (e.g. league-wide stats), or drill down to one exact season or class. The **Class**
-menu only appears for a season that actually runs classes.
+menu lists "All Classes" (the combined, whole-field view) followed by the classes defined in the
+selected season; a season that doesn't run classes simply stays on "All Classes".
 
 ## Features
 
@@ -89,10 +90,10 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      also crowns one champion across the whole field on top of the per-class titles.
    - **Classes** *(optional)* — split the season's field into separately-scored groups
      ("Pro"/"Amateur", "GT3"/"LMP2"). Leave it empty for an ordinary single-class season —
-     nothing changes. With classes set up, a **Class** menu joins the Game/Series/Season
-     dropdowns and scopes Standings, Stats and Records to one class at a time. Assign drivers
-     to a class on the Roster page or from the Class column in the results grid; deleting a
-     class only unassigns its drivers, never their points or stats.
+     nothing changes. Classes created here fill the **Class** menu in the top bar, which scopes
+     Standings, Stats and Records to one class at a time. Assign drivers to a class on the
+     Roster page or from the Class column in the results grid; deleting a class only unassigns
+     its drivers, never their points or stats.
    - **Races** — name, track (+ track logo), round number, date, and session list (e.g.
      `Qualifying, Race` for a weekend with a scored qualifying session and a main race).
 2. **Roster & Teams** (`/roster`) — select a **Series** in the top dropdowns to manage that
