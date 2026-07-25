@@ -59,11 +59,10 @@ export function TrackCreateModal({ onClose, onCreated, onSaved, initialName, tra
             <select value={form.track_type} onChange={e => setForm(f => ({ ...f, track_type: e.target.value }))}>
               <option value="">—</option>
               {TRACK_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-              {/* A track still on a retired type (the old "Dirt") keeps it
-                  selectable until the migration runs, so an unrelated edit can't
-                  silently blank it. */}
+              {/* A track saved with a type outside the canonical list keeps it
+                  selectable, so an unrelated edit can't silently blank it. */}
               {form.track_type && !TRACK_TYPES.includes(form.track_type) && (
-                <option value={form.track_type}>{form.track_type} (legacy)</option>
+                <option value={form.track_type}>{form.track_type} (custom)</option>
               )}
             </select></div>
         </div>
