@@ -108,7 +108,6 @@ function ContextSelectors() {
     games, seriesList, seasons, classes,
     gameId, seriesId, seasonId, classId,
     setGameId, setSeriesId, setSeasonId, setClassId,
-    combinedChampionship,
   } = league;
 
   return (
@@ -134,19 +133,19 @@ function ContextSelectors() {
           {seasons.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
       </div>
-      {/* Class — the fourth tier, shown only for a season that actually runs
-          multiple classes. "All Classes" is the combined, whole-field
-          championship; it's withheld when the season's admin turned the overall
-          championship off, since there is no combined title to show. */}
-      {classes.length > 0 && (
-        <div className="context-select">
-          <label>Class</label>
-          <select value={classId} onChange={e => setClassId(e.target.value)}>
-            {combinedChampionship && <option value="">All Classes</option>}
-            {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        </div>
-      )}
+      {/* Class — the fourth tier. Always present beside Season, so the scope
+          controls never shift around: "All Classes" is the combined,
+          whole-field view and is always the first option, followed by the
+          classes defined in the selected season. A season with no classes (or
+          no season picked yet) simply sits on "All Classes" with nothing else
+          to choose. */}
+      <div className="context-select">
+        <label>Class</label>
+        <select value={classId} onChange={e => setClassId(e.target.value)} disabled={!classes.length}>
+          <option value="">All Classes</option>
+          {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      </div>
     </div>
   );
 }

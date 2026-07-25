@@ -367,10 +367,10 @@ function AdminInner() {
               <label htmlFor="season_combined_championship" style={{ margin: 0 }}>
                 Enable Overall Championship
                 <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
-                  For a season split into classes: also score ONE combined championship across the whole
-                  field, on top of each class&rsquo;s own. Turn it off for class-only championships — the
-                  Class menu then opens on a class instead of a combined table. No effect on a season
-                  without classes.
+                  For a season split into classes: also crown ONE overall champion across the whole
+                  field, on top of each class&rsquo;s own championship. Turn it off for class-only
+                  championships — the combined &ldquo;All Classes&rdquo; table stays viewable, just
+                  flagged as unofficial. No effect on a season without classes.
                 </span>
               </label>
             </div>
