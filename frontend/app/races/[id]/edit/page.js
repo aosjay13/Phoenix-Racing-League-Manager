@@ -13,9 +13,10 @@ import { api } from "@/lib/api";
 const BLANK_INFO = {
   name: "", track: "", track_id: "", date: "", round_number: "", track_logo_url: "", sessions: "Race",
   total_laps: "", car: "", heat_format: false, heats: "", consolations: "", feature_name: "A-Main Feature",
+  class_id: "",
 };
 
-function RaceInfoTab({ race, onSaved }) {
+function RaceInfoTab({ race, season, classes = [], onSaved }) {
   const router = useRouter();
   const [form, setForm] = useState(BLANK_INFO);
   const [tracks, setTracks] = useState([]);
@@ -40,8 +41,12 @@ function RaceInfoTab({ race, onSaved }) {
       heats: Array.isArray(race.heats) ? race.heats.join(", ") : "",
       consolations: Array.isArray(race.consolations) ? race.consolations.join(", ") : "",
       feature_name: race.feature_name || "A-Main Feature",
+      class_id: race.class_id || "",
     });
   }, [race]);
+
+  // The Class field exists only for a season running per-class calendars.
+  const showClass = !!season?.per_class_schedules && classes.length > 0;
 
   function set(field) {
     return e => setForm(f => ({ ...f, [field]: e.target.value }));
@@ -72,6 +77,9 @@ function RaceInfoTab({ race, onSaved }) {
         heats: form.heat_format ? (heats.length ? heats : ["Heat 1"]) : [],
         consolations: form.heat_format ? consolations : [],
         feature_name: form.feature_name.trim() || "A-Main Feature",
+        // Only writable while the season runs per-class schedules; otherwise the
+        // event stays shared by every class.
+        class_id: showClass ? form.class_id : "",
       };
       const updated = await api(`/api/races/${race.id}`, { method: "PATCH", body });
       onSaved?.(updated);
@@ -108,6 +116,18 @@ function RaceInfoTab({ race, onSaved }) {
           <input type="number" min="1" required value={form.round_number} onChange={set("round_number")} /></div>
         <div className="field"><label>Date</label>
           <input type="date" value={form.date} onChange={set("date")} /></div>
+        {showClass && (
+          <div className="field"><label>Class</label>
+            <select value={form.class_id} onChange={set("class_id")}>
+              <option value="">All Classes (shared)</option>
+              {classes.map(c => <option key={c.id} value={c.id}>{c.name} only</option>)}
+            </select>
+            <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
+              Shared events run for every class. Pick a class to put this round on that class&rsquo;s
+              calendar alone.
+            </span>
+          </div>
+        )}
         <div className="field"><label>Total Race Laps</label>
           <input type="number" min="0" value={form.total_laps} onChange={set("total_laps")} placeholder="e.g. 100" />
           <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
@@ -338,7 +358,8 @@ function UnifiedEditInner() {
       </div>
 
       {tab === "info" && (
-        <RaceInfoTab race={race} onSaved={updated => setRace(r => ({ ...r, ...updated }))} />
+        <RaceInfoTab race={race} season={season} classes={classes}
+          onSaved={updated => setRace(r => ({ ...r, ...updated }))} />
       )}
 
       {tab === "qualifying" && (

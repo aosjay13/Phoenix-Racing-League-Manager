@@ -1,35 +1,20 @@
 // Server-side helpers for the Class tier (Game ▸ Series ▸ Season ▸ Class).
 //
-// A class is a separately-scored group inside one season ("Pro"/"Amateur",
-// "GT3"/"LMP2"). A roster entry carries the class it races in (`entries.class_id`)
-// and every saved result records the class the driver ran in at the time
-// (`results.class_id`), so re-classing a driver mid-season doesn't silently
-// rewrite the class championships they already scored in.
+// The filtering rules themselves live in lib/classFilter.js, which is
+// dependency-free so client components apply exactly the same logic. This module
+// adds the Firestore reads and re-exports the rules so API routes have one
+// import.
 
 import { db } from "@/lib/firebase";
 
-// The class a result counts toward: the class stamped on the result when it was
-// saved, else the driver's current roster class. Results written before classes
-// existed have neither, and count only toward the overall championship.
-export function classOfResult(result, entriesById = {}) {
-  const stamped = result.class_id;
-  if (stamped) return stamped;
-  return entriesById[result.entry_id]?.class_id || null;
-}
-
-// Narrow a season's entries to one class. A falsy classId means "All Classes"
-// and leaves the list untouched.
-export function filterEntriesByClass(entries, classId) {
-  if (!classId) return entries;
-  return entries.filter(e => (e.class_id || null) === classId);
-}
-
-// Narrow a season's results to one class, judged by classOfResult so a result
-// saved before the driver was classified still resolves through their entry.
-export function filterResultsByClass(results, classId, entriesById = {}) {
-  if (!classId) return results;
-  return results.filter(r => classOfResult(r, entriesById) === classId);
-}
+export {
+  classOfResult,
+  filterEntriesByClass,
+  filterResultsByClass,
+  raceInClass,
+  filterRacesByClass,
+  entriesEligibleForRace,
+} from "@/lib/classFilter";
 
 // Every class in a season, ordered the way the dropdowns show them.
 export async function fetchSeasonClasses(seasonId) {

@@ -9,6 +9,9 @@ import { TrackSelect } from "@/components/TrackSelect";
 const blankRace = {
   name: "", track: "", track_id: "", date: "", round_number: "", track_logo_url: "", sessions: "Race", car: "",
   total_laps: "", heat_format: false, heats: "", consolations: "", feature_name: "A-Main Feature",
+  // Blank = shared by every class; only settable for a season running per-class
+  // schedules.
+  class_id: "",
 };
 
 function toArray(str) {
@@ -21,13 +24,23 @@ function sessionsToArray(str) {
 
 // Quick "add a race to the schedule" dialog. Same fields the Admin page's Race
 // panel captures, so a race created here is identical to one built in setup.
-export function RaceCreateModal({ seasonId, defaultRound, onClose, onCreated }) {
-  const [form, setForm] = useState({ ...blankRace, round_number: defaultRound ? String(defaultRound) : "" });
+// `classes` / `perClassSchedules` come from the season: with per-class schedules
+// on, the dialog offers a Class field so the round can be put on one class's
+// calendar instead of everyone's. `defaultClassId` pre-selects the class the
+// admin is currently viewing.
+export function RaceCreateModal({ seasonId, defaultRound, classes = [], perClassSchedules = false, defaultClassId = "", onClose, onCreated }) {
+  const [form, setForm] = useState({
+    ...blankRace,
+    round_number: defaultRound ? String(defaultRound) : "",
+    class_id: perClassSchedules ? defaultClassId : "",
+  });
   const [tracks, setTracks] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => { api("/api/tracks").then(setTracks).catch(() => setTracks([])); }, []);
+
+  const showClass = perClassSchedules && classes.length > 0;
 
   // Picking a track from the pool pins its id + name; a fresh track logo fills
   // in only when the race doesn't already carry one.
@@ -54,6 +67,9 @@ export function RaceCreateModal({ seasonId, defaultRound, onClose, onCreated }) 
         heats: form.heat_format ? (heats.length ? heats : ["Heat 1"]) : [],
         consolations: form.heat_format ? toArray(form.consolations) : [],
         feature_name: form.feature_name.trim() || "A-Main Feature",
+        // Never pin a race to a class unless the season actually runs per-class
+        // schedules, so the field can't be set from stale state.
+        class_id: showClass ? form.class_id : "",
         season_id: seasonId,
       };
       const race = await api("/api/races", { method: "POST", body });
@@ -78,6 +94,17 @@ export function RaceCreateModal({ seasonId, defaultRound, onClose, onCreated }) 
           <input type="number" min="1" required value={form.round_number} onChange={e => setForm(f => ({ ...f, round_number: e.target.value }))} /></div>
         <div className="field"><label>Date</label>
           <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} /></div>
+        {showClass && (
+          <div className="field"><label>Class</label>
+            <select value={form.class_id} onChange={e => setForm(f => ({ ...f, class_id: e.target.value }))}>
+              <option value="">All Classes (shared)</option>
+              {classes.map(c => <option key={c.id} value={c.id}>{c.name} only</option>)}
+            </select>
+            <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
+              Shared events run for every class. Pick a class to put this round on that class&rsquo;s
+              calendar alone.
+            </span></div>
+        )}
         <div className="field"><label>Total Race Laps</label>
           <input type="number" min="0" value={form.total_laps} placeholder="e.g. 100" onChange={e => setForm(f => ({ ...f, total_laps: e.target.value }))} />
           <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>

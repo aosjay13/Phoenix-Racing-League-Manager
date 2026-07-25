@@ -140,7 +140,7 @@ function FeedSection({ title, icon, rows, kind }) {
 // ── One season's full event table (a concrete season is selected) ──────────
 
 function SeasonSchedule() {
-  const { seasonId, season, refresh } = useLeague();
+  const { seasonId, season, classId, classes, raceClass, refresh } = useLeague();
   const { isAdmin } = useAuth();
   const router = useRouter();
   const [races, setRaces] = useState(null);
@@ -158,11 +158,14 @@ function SeasonSchedule() {
     refresh();
   }
 
+  // With a class selected, the calendar narrows to that class's schedule — the
+  // rounds pinned to it plus every shared round.
   const loadRaces = () => {
     if (!seasonId) { setRaces(null); return; }
-    api(`/api/schedule?season_id=${seasonId}`).then(setRaces).catch(() => setRaces([]));
+    const qs = `season_id=${seasonId}${classId ? `&class_id=${classId}` : ""}`;
+    api(`/api/schedule?${qs}`).then(setRaces).catch(() => setRaces([]));
   };
-  useEffect(loadRaces, [seasonId]);
+  useEffect(loadRaces, [seasonId, classId]);
 
   async function confirmDelete() {
     // Deleting the event removes its race doc and cascades to every saved
@@ -177,12 +180,22 @@ function SeasonSchedule() {
 
   const ordered = [...races].sort((a, b) => (Number(a.round_number) || 0) - (Number(b.round_number) || 0));
   const nextRound = races.reduce((m, r) => Math.max(m, Number(r.round_number) || 0), 0) + 1;
+  const perClassSchedules = !!season?.per_class_schedules;
+  // The Class column is only meaningful on a season running per-class calendars,
+  // and only while looking at the whole season — inside one class every visible
+  // round is either that class's or shared.
+  const showClassCol = perClassSchedules && classes.length > 0 && !classId;
 
   return (
     <section>
       <div className="page-title">
-        <h2>Schedule · {season?.name ?? ""}</h2>
+        <h2>Schedule · {season?.name ?? ""}{raceClass ? ` · ${raceClass.name}` : ""}</h2>
         <span className="page-badge">{races.length} Event{races.length === 1 ? "" : "s"}</span>
+        {perClassSchedules && raceClass && (
+          <span className="page-badge" title={`${raceClass.name} rounds plus every shared round`}>
+            {raceClass.name} Calendar
+          </span>
+        )}
         {isAdmin && (
           <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
             <button
@@ -217,6 +230,9 @@ function SeasonSchedule() {
         <RaceCreateModal
           seasonId={seasonId}
           defaultRound={nextRound}
+          classes={classes}
+          perClassSchedules={perClassSchedules}
+          defaultClassId={classId}
           onClose={() => setShowCreate(false)}
           onCreated={() => { setShowCreate(false); loadRaces(); }}
         />
@@ -242,6 +258,7 @@ function SeasonSchedule() {
                 <th>Race</th>
                 <th>Race Date</th>
                 <th className="sticky-col" style={{ textAlign: "left" }}>Event / Track</th>
+                {showClassCol && <th style={{ textAlign: "left" }}>Class</th>}
                 <th>Race Length</th>
                 <th style={{ textAlign: "left" }}>Car</th>
                 <th style={{ textAlign: "left" }}>Pole</th>
@@ -263,6 +280,13 @@ function SeasonSchedule() {
                       <Link href={`/races/${r.id}`} style={{ color: "var(--accent-cyan)", fontWeight: 600 }}>{r.name}</Link>
                       {r.track && <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.78rem" }}>{r.track}</span>}
                     </td>
+                    {showClassCol && (
+                      <td style={{ textAlign: "left" }}>
+                        {r.class_name
+                          ? <span className="badge">{r.class_name}</span>
+                          : <span style={{ color: "var(--ink-2)", fontSize: "0.8rem" }}>All Classes</span>}
+                      </td>
+                    )}
                     <td style={{ whiteSpace: "nowrap" }}>
                       {s.laps ? `${s.laps} Laps` : "—"}
                       {s.laps_extended && (

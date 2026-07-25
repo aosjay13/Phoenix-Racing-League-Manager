@@ -123,14 +123,21 @@ export const SPECS = {
              // `combined_championship` decides whether a multi-class season also
              // tracks ONE overall championship across the whole field, on top of
              // each class's own championship. On (the default) the "All Classes"
-             // view aggregates every driver's points/stats; off, the season is
-             // class championships only and the standings/stats pages open on a
-             // class instead of an overall table. Ignored when the season has no
-             // classes — a single-class season is always "combined".
+             // view is the official combined table; off, the season is class
+             // championships only and that combined view is labelled unofficial.
+             // Ignored when the season has no classes.
+             //
+             // `per_class_schedules` opens up the schedule to classes: off (the
+             // default) every class shares ONE season schedule, exactly as before
+             // classes existed. On, a race can be pinned to a single class via
+             // races.class_id, so each class can run its own calendar — races left
+             // unpinned stay shared by every class, which is what makes a mixed
+             // schedule (a shared opener, then class-specific rounds) possible.
              fields: { name: { required: true }, game_id: {}, logo_url: {}, status: { default: "active" },
                        drop_weeks: { number: true, default: 0 }, points_scale: {}, car: {},
                        race_points: {}, qual_points: {}, bonus_points: {},
-                       combined_championship: { bool: true, default: true } } },
+                       combined_championship: { bool: true, default: true },
+                       per_class_schedules: { bool: true, default: false } } },
   // Classes divide a season's field into separately-scored groups ("Pro" /
   // "Amateur", "GT3" / "LMP2"). A class belongs to exactly one season; a roster
   // entry points at one with `class_id`, and each saved result carries the class
@@ -189,7 +196,12 @@ export const SPECS = {
              // `date` is a bare YYYY-MM-DD calendar date with NO time component
              // — the day the admin picked, stored and rendered verbatim in every
              // timezone (see lib/raceDate.js).
+             // `class_id` pins the event to ONE class of its season, so that class
+             // can run its own calendar; blank (the default, and the only value
+             // used while the season's per_class_schedules toggle is off) means the
+             // event is shared by every class. See raceInClass in lib/classServer.
              fields: { name: { required: true }, track: {}, track_id: {}, track_logo_url: {}, date: { dateOnly: true },
+                       class_id: {},
                        round_number: { number: true, required: true }, sessions: {},
                        total_laps: { number: true }, car: {},
                        // Heat-racing weekend structure: when heat_format is on, `heats` and
