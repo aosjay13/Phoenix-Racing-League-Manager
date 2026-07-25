@@ -183,11 +183,10 @@ timezone (July 20 showing as July 19) — so the helpers parse to local midnight
 strings instead. There are no time-of-day inputs in the scheduler; the date an admin picks is the
 date everyone sees, in every timezone.
 
-**Track types** come from the shared list in `lib/trackTypes.js`. The generic `Dirt` type was
-replaced by `Dirt Oval` and `Dirt Road Course`; `POST /api/admin/tracks/migrate-types` converts any
-remaining `Dirt` venues to `Dirt Oval`, surfaced as an admin-only button on **Tracks** that appears
-only while there's something left to convert. It updates the `track_type` field alone — every other
-track property and all race history is preserved — and is idempotent, so re-running is a no-op.
+**Track types** come from the shared list in `lib/trackTypes.js`, which drives the creation/edit
+forms, the Tracks directory's type filter, and its section grouping. Dirt racing is split by surface
+into `Dirt Oval` and `Dirt Road Course`. A track saved with a value outside the list still displays
+and stays selectable while editing, so nothing has to be in the list to survive.
 
 **Containment migration:** existing data created before the multi-league layer is safely
 partitioned by an Owner-only, idempotent, additive-only backfill (`POST /api/admin/leagues/migrate`,

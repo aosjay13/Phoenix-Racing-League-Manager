@@ -669,11 +669,11 @@ function AdminInner() {
                 <select value={trackForm.track_type} onChange={e => setTrackForm(f => ({ ...f, track_type: e.target.value }))}>
                   <option value="">—</option>
                   {TRACK_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                  {/* Keep a retired value visible while editing a track that still
-                      carries it, so saving doesn't silently blank the type before
-                      the migration has run. */}
+                  {/* Keep a value outside the canonical list visible while editing
+                      a track that carries it, so saving doesn't silently blank the
+                      type. */}
                   {trackForm.track_type && !TRACK_TYPES.includes(trackForm.track_type) && (
-                    <option value={trackForm.track_type}>{trackForm.track_type} (legacy)</option>
+                    <option value={trackForm.track_type}>{trackForm.track_type} (custom)</option>
                   )}
                 </select></div>
             </div>
