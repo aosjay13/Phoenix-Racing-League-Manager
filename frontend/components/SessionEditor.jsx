@@ -8,6 +8,7 @@ import { DriverCreateModal } from "@/components/DriverCreateModal";
 import { PointsEditorModal } from "@/components/PointsEditorModal";
 import { ImportResultsModal } from "@/components/ImportResultsModal";
 import { NONE_TEMPLATE } from "@/lib/pointsTemplates";
+import { entriesEligibleForRace } from "@/lib/classFilter";
 import { pointsFor, configForTemplate, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
 import { parseTime, formatTime, formatGap, parseLapsDown, deriveLaps } from "@/lib/raceTime";
 
@@ -276,15 +277,21 @@ export function SessionEditor({
 
   const assignedIds = useMemo(() => new Set(rows.map(r => r.entry_id).filter(Boolean)), [rows]);
   const provAssignedIds = useMemo(() => new Set(provRows.map(r => r.entry_id).filter(Boolean)), [provRows]);
+  // Drivers this event can draw on. An event pinned to a class offers that
+  // class (plus unclassified drivers); a shared event offers the whole roster.
+  // Only the PICKER is narrowed — `entries` stays whole everywhere else, so a
+  // result already saved for a driver outside the class still loads and renders
+  // rather than vanishing from the grid.
+  const candidates = useMemo(() => entriesEligibleForRace(entries, race), [entries, race]);
   // Roster drivers not already placed in another slot (plus this slot's own
   // driver, so a filled row can be re-searched without hiding itself).
-  const availableFor = row => entries.filter(e => {
+  const availableFor = row => candidates.filter(e => {
     const id = e.id ?? e.entry_id;
     return id === row.entry_id || !assignedIds.has(id);
   });
   // For a provisional slot: roster drivers not already in the finishing grid or
   // another provisional slot.
-  const availableForProv = row => entries.filter(e => {
+  const availableForProv = row => candidates.filter(e => {
     const id = e.id ?? e.entry_id;
     return id === row.entry_id || (!assignedIds.has(id) && !provAssignedIds.has(id));
   });

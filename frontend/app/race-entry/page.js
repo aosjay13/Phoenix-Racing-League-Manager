@@ -6,10 +6,11 @@ import { useLeague } from "@/components/LeagueProvider";
 import { AdminGate } from "@/components/AdminGate";
 import { SessionEditor } from "@/components/SessionEditor";
 import { normalizedBuiltinTemplates } from "@/lib/pointsTemplates";
+import { filterRacesByClass } from "@/lib/classFilter";
 import { api } from "@/lib/api";
 
 function RaceEntryInner() {
-  const { seasonId, season, series, classes } = useLeague();
+  const { seasonId, season, series, classes, classId, raceClass } = useLeague();
   const [races, setRaces] = useState([]);
   const [entries, setEntries] = useState([]);
   const [raceId, setRaceId] = useState("");
@@ -47,6 +48,10 @@ function RaceEntryInner() {
     return <div className="empty-state"><span className="empty-state-icon">⏱</span><p>Select a game, series and season above.</p></div>;
   }
 
+  // With a class selected, the event list narrows to that class's calendar —
+  // its own rounds plus every shared one — mirroring the Schedule page.
+  const visibleRaces = filterRacesByClass(races, classId);
+  const classNameById = Object.fromEntries(classes.map(c => [c.id, c.name]));
   const selectedRace = races.find(r => r.id === raceId);
   const sessionPoints = selectedRace?.session_points || {};
 
@@ -78,7 +83,7 @@ function RaceEntryInner() {
   return (
     <section>
       <div className="page-title">
-        <h2>Race Entry · {season?.name ?? ""}</h2>
+        <h2>Race Entry · {season?.name ?? ""}{raceClass ? ` · ${raceClass.name}` : ""}</h2>
         <span className="page-badge">{entries.length} Drivers</span>
       </div>
       <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.85rem" }}>
@@ -92,7 +97,12 @@ function RaceEntryInner() {
           <label>Event</label>
           <select value={raceId} onChange={e => setRaceId(e.target.value)}>
             <option value="">Select an event…</option>
-            {races.map(r => <option key={r.id} value={r.id}>R{r.round_number} · {r.name}{r.track ? ` — ${r.track}` : ""}</option>)}
+            {visibleRaces.map(r => (
+              <option key={r.id} value={r.id}>
+                R{r.round_number} · {r.name}{r.track ? ` — ${r.track}` : ""}
+                {r.class_id && classNameById[r.class_id] ? ` (${classNameById[r.class_id]} only)` : ""}
+              </option>
+            ))}
           </select>
         </div>
 

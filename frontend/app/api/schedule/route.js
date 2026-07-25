@@ -3,6 +3,7 @@ import { db } from "@/lib/firebase";
 import { getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
 import { decorateSessionFlags } from "@/lib/standings";
 import { summarizeRace } from "@/lib/raceSummaryServer";
+import { fetchSeasonClasses, filterRacesByClass } from "@/lib/classServer";
 
 export const dynamic = "force-dynamic";
 
@@ -23,25 +24,38 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const seasonId = searchParams.get("season_id");
 
-  if (seasonId) return oneSeason(seasonId);
+  if (seasonId) return oneSeason(seasonId, searchParams.get("class_id") || "");
   return globalFeed(searchParams.get("game_id"), searchParams.get("series_id"), getRequestLeagueId(request));
 }
 
-async function oneSeason(seasonId) {
-  const [seasonDoc, racesSnap, entriesSnap, resultsSnap] = await Promise.all([
+// One season's calendar. `classId` narrows it to that class's schedule: the
+// events pinned to the class plus every shared (unpinned) event. "All Classes"
+// returns the whole calendar. Each row carries `class_name` so a mixed schedule
+// shows at a glance which events are class-specific.
+async function oneSeason(seasonId, classId = "") {
+  const [seasonDoc, racesSnap, entriesSnap, resultsSnap, classes] = await Promise.all([
     db().collection("seasons").doc(seasonId).get(),
     db().collection("races").where("season_id", "==", seasonId).get(),
     db().collection("entries").where("season_id", "==", seasonId).get(),
     db().collection("results").where("season_id", "==", seasonId).get(),
+    fetchSeasonClasses(seasonId),
   ]);
 
   const seasonCar = seasonDoc.exists ? (seasonDoc.data().car || null) : null;
-  const races = racesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const allRaces = racesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const races = filterRacesByClass(allRaces, classId);
   const entriesById = Object.fromEntries(entriesSnap.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
-  const racesById = Object.fromEntries(races.map(r => [r.id, r]));
+  // Summaries resolve results by race, so the map must cover every race the
+  // results reference — build it from the unfiltered list.
+  const racesById = Object.fromEntries(allRaces.map(r => [r.id, r]));
   const results = decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById);
+  const classNameById = Object.fromEntries(classes.map(c => [c.id, c.name]));
 
-  const rows = races.map(r => ({ ...r, summary: summarizeRace(r, results, entriesById, seasonCar) }));
+  const rows = races.map(r => ({
+    ...r,
+    class_name: r.class_id ? (classNameById[r.class_id] ?? null) : null,
+    summary: summarizeRace(r, results, entriesById, seasonCar),
+  }));
   return NextResponse.json(rows);
 }
 

@@ -14,7 +14,7 @@ import {
   resolveSeasonConfig,
 } from "@/lib/standings";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
-import { filterEntriesByClass, filterResultsByClass } from "@/lib/classServer";
+import { filterEntriesByClass, filterRacesByClass, filterResultsByClass } from "@/lib/classServer";
 import { finalSessionName } from "@/lib/raceSummaryServer";
 import { isPastRaceDate, raceDateSortKey, toDateOnly, todayDateString } from "@/lib/raceDate";
 
@@ -94,8 +94,12 @@ async function buildStats(seasons, classId = "") {
     const entries = filterEntriesByClass(allEntries, classId);
     const entriesById = Object.fromEntries(entries.map(e => [e.id, e]));
     const teamsById = Object.fromEntries(teamsSnap.docs.map(d => [d.id, d.data()]));
-    const races = racesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-    const racesById = Object.fromEntries(races.map(r => [r.id, r]));
+    const seasonRaces = racesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Under a class filter, only that class's calendar counts toward the race
+    // totals and field size — its own events plus the shared ones. The
+    // race→doc map stays unfiltered so results always resolve their race.
+    const races = filterRacesByClass(seasonRaces, classId);
+    const racesById = Object.fromEntries(seasonRaces.map(r => [r.id, r]));
     for (const r of races) allRaces.push(r);
     const decorated = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById));
     const results = filterResultsByClass(decorated, classId, allEntriesById);

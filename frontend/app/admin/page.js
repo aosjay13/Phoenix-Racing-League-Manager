@@ -78,8 +78,10 @@ function AdminInner() {
     name: "", drop_weeks: "0", logo_url: "", car: "",
     race_points: "", qual_points: "",
     // New seasons track a combined (overall) championship by default; an admin
-    // running class-only championships turns it off.
+    // running class-only championships turns it off. Schedules start shared
+    // across every class until an admin opts into per-class calendars.
     combined_championship: true,
+    per_class_schedules: false,
     bonuses: Object.fromEntries(BONUS_TYPES.map(([k]) => [k, "0"])),
   };
   const [seasonForm, setSeasonForm] = useState(blankSeason);
@@ -203,6 +205,9 @@ function AdminInner() {
   const blankRace = {
     name: "", track: "", track_id: "", date: "", round_number: "", track_logo_url: "", sessions: "Race", car: "",
     total_laps: "", heat_format: false, heats: "", consolations: "", feature_name: "A-Main Feature",
+    // Blank = shared by every class. Only settable while the season has
+    // per-class schedules turned on.
+    class_id: "",
   };
   const [raceForm, setRaceForm] = useState(blankRace);
 
@@ -217,6 +222,10 @@ function AdminInner() {
     api(`/api/classes?season_id=${seasonId}`).then(setClasses).catch(() => setClasses([]));
   }, [seasonId]);
   useEffect(loadClasses, [loadClasses]);
+
+  // Whether this season lets each class run its own calendar. Gates the Class
+  // field on the race form — with it off, every race stays shared.
+  const perClassSchedules = !!season?.per_class_schedules;
 
   const blankTrack = { name: "", location: "", length: "", track_type: "", logo_url: "", notes: "" };
   const [trackForm, setTrackForm] = useState(blankTrack);
@@ -375,6 +384,23 @@ function AdminInner() {
               </label>
             </div>
 
+            <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
+              <input type="checkbox" id="season_per_class_schedules" disabled={!seriesId}
+                checked={seasonForm.per_class_schedules}
+                onChange={e => setSeasonForm(f => ({ ...f, per_class_schedules: e.target.checked }))}
+                style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+              <label htmlFor="season_per_class_schedules" style={{ margin: 0 }}>
+                Per-Class Schedules
+                <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
+                  Off (default): every class runs the same season schedule. On: each race can be
+                  pinned to one class, so classes can run their own calendars — races left on
+                  &ldquo;All Classes&rdquo; stay shared, so you can mix a common opener with
+                  class-specific rounds. Turning it off later doesn&rsquo;t delete anything; pinned
+                  races simply go back to showing for everyone.
+                </span>
+              </label>
+            </div>
+
             <button type="button" className="btn btn-ghost" style={{ marginTop: 14 }} onClick={() => setShowPoints(v => !v)}>
               {showPoints ? "▾" : "▸"} Points &amp; Bonuses
             </button>
@@ -457,6 +483,7 @@ function AdminInner() {
                     logo_url: s.logo_url || "",
                     car: s.car || "",
                     combined_championship: s.combined_championship !== false,
+                    per_class_schedules: !!s.per_class_schedules,
                     race_points: tableToList(s.race_points ?? s.points_scale),
                     qual_points: tableToList(s.qual_points),
                     bonuses: Object.fromEntries(BONUS_TYPES.map(([k]) => {
@@ -578,6 +605,18 @@ function AdminInner() {
               <input type="number" min="1" required disabled={!seasonId} value={raceForm.round_number} onChange={e => setRaceForm(f => ({ ...f, round_number: e.target.value }))} /></div>
             <div className="field"><label>Date</label>
               <input type="date" disabled={!seasonId} value={raceForm.date} onChange={e => setRaceForm(f => ({ ...f, date: e.target.value }))} /></div>
+            {perClassSchedules && classes.length > 0 && (
+              <div className="field"><label>Class</label>
+                <select disabled={!seasonId} value={raceForm.class_id}
+                  onChange={e => setRaceForm(f => ({ ...f, class_id: e.target.value }))}>
+                  <option value="">All Classes (shared)</option>
+                  {classes.map(c => <option key={c.id} value={c.id}>{c.name} only</option>)}
+                </select>
+                <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
+                  Shared events run for every class. Pick a class to put this round on that
+                  class&rsquo;s calendar alone.
+                </span></div>
+            )}
             <div className="field"><label>Total Race Laps</label>
               <input type="number" min="0" disabled={!seasonId} value={raceForm.total_laps} placeholder="e.g. 100"
                 onChange={e => setRaceForm(f => ({ ...f, total_laps: e.target.value }))} />
@@ -618,7 +657,14 @@ function AdminInner() {
             )}
           </form>
           <div style={{ marginTop: 16 }}>
-            {races.map(r => <ItemRow key={r.id} logo={r.track_logo_url} name={`R${r.round_number} · ${r.name}`} editing={editIds.race === r.id}
+            {races.map(r => {
+              // A class-pinned round is labelled so a mixed calendar is readable
+              // at a glance; shared rounds read as they always have.
+              const cls = r.class_id ? classes.find(c => c.id === r.class_id) : null;
+              return (
+              <ItemRow key={r.id} logo={r.track_logo_url}
+                name={`R${r.round_number} · ${r.name}${cls ? ` · ${cls.name} only` : ""}`}
+                editing={editIds.race === r.id}
               onEdit={() => {
                 setEditId("race", r.id);
                 setRaceForm({
@@ -635,9 +681,12 @@ function AdminInner() {
                   heats: Array.isArray(r.heats) ? r.heats.join(", ") : "",
                   consolations: Array.isArray(r.consolations) ? r.consolations.join(", ") : "",
                   feature_name: r.feature_name || "A-Main Feature",
+                  class_id: r.class_id || "",
                 });
               }}
-              onDelete={() => remove(`/api/races/${r.id}`, `Delete race "${r.name}"?`)} />)}
+              onDelete={() => remove(`/api/races/${r.id}`, `Delete race "${r.name}"?`)} />
+              );
+            })}
           </div>
         </Panel>
       </div>

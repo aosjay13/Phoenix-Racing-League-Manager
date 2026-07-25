@@ -26,7 +26,8 @@ selected season; a season that doesn't run classes simply stays on "All Classes"
 - 🏆 **Live standings** — driver *and* team championships with a configurable points scale,
   bonus points, and drop weeks per season
 - 🎽 **Multi-class championships** — split a season into classes (Pro/Amateur, GT3/LMP2); each
-  scores its own isolated championship, with an optional combined overall title across the field
+  scores its own isolated championship, with an optional combined overall title across the field,
+  and optionally its own race calendar
 - 🖼 **Social graphic exporter** — league name + logo branding and per-column stat toggles, so
   the downloaded PNG/JPG shows exactly the columns you want
 - ⬆ **Bulk roster import** — roll a whole roster into a new season in one click, from the series
@@ -93,9 +94,15 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      nothing changes. Classes created here fill the **Class** menu in the top bar, which scopes
      Standings, Stats and Records to one class at a time. Assign drivers to a class on the
      Roster page or from the Class column in the results grid; deleting a class only unassigns
-     its drivers, never their points or stats.
+     its drivers, never their points or stats. **Per-Class Schedules** (a season setting) lets
+     each class run its own calendar — see Races below.
    - **Races** — name, track (+ track logo), round number, date, and session list (e.g.
      `Qualifying, Race` for a weekend with a scored qualifying session and a main race).
+     With **Per-Class Schedules** on for the season, each race also gets a **Class** field:
+     leave it on *All Classes (shared)* for a round everyone runs, or pick a class to put the
+     round on that class's calendar alone. A class's Schedule and Race Entry then show its own
+     rounds plus the shared ones, and a class-only round offers just that class's drivers
+     (plus any unclassified) when entering results.
 2. **Roster & Teams** (`/roster`) — select a **Series** in the top dropdowns to manage that
    series' roster:
    - **Teams** — create teams with logos.
@@ -175,6 +182,15 @@ current entry class" — which is also why results saved before a season had cla
 the right class once drivers are assigned. Passing `class_id` to `/api/standings` or `/api/stats`
 re-scores the whole table over just that class (its own points, ranks, gaps and averages) rather
 than filtering rows out of the combined table.
+
+**Per-class schedules.** By default every class shares one season calendar. Turning on a season's
+**Per-Class Schedules** lets a race be pinned to a single class via `races.class_id`; a race left
+unpinned stays *shared* by every class, so a season can mix a common opener with class-specific
+rounds. A class's calendar is therefore "its own rounds plus every shared round" (`raceInClass` in
+`lib/classFilter.js`), which is what Schedule, Race Entry and the race-count/field-size metrics all
+filter on. Results are always scoped by the *driver's* class, independent of which calendar the race
+sits on, so a shared race still splits cleanly into each class's championship. Turning the toggle
+back off deletes nothing — pinned races simply show for everyone again.
 
 **Race dates are calendar dates, not timestamps.** A race `date` is stored as a bare `YYYY-MM-DD`
 string with no time component, and every display/comparison goes through `lib/raceDate.js`. Handing
