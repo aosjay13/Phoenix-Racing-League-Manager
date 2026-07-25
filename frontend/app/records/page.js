@@ -100,9 +100,66 @@ function FieldSizeCard({ fieldSize, scopeLabel, loading }) {
   );
 }
 
+// The headline categories broken out per class, so a multi-class scope shows
+// who holds what in each class side by side rather than one class at a time
+// through the dropdown. The full category grid above still answers the current
+// selection; this is the "all classes at once" view.
+const CLASS_CATEGORIES = [
+  ["wins", "Wins", false],
+  ["poles", "Poles", false],
+  ["podiums", "Podiums", false],
+  ["avg_finish", "Avg Finish", true],
+];
+
+function ClassRecords({ byClass, isTeams, onPick }) {
+  const withRows = byClass.filter(c => (isTeams ? c.team_rows : c.rows)?.length);
+  if (!withRows.length) return null;
+  return (
+    <>
+      <div className="section-header" style={{ marginTop: 26 }}>
+        <h3 title="Each class's own record holders, scored within that class">Records by Class</h3>
+      </div>
+      <div className="metrics" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))" }}>
+        {withRows.map(c => {
+          const rows = (isTeams ? c.team_rows : c.rows) ?? [];
+          return (
+            <article className="metric-card" key={c.class_id} style={{ alignItems: "stretch", textAlign: "left", padding: "16px 18px", cursor: c.is_default ? "default" : "pointer" }}
+              onClick={() => !c.is_default && onPick(c.class_id)}
+              title={c.is_default ? "Results with no class assigned" : `Show only ${c.class_name}`}>
+              <div className="metric-label" style={{ marginBottom: 8, color: c.color || undefined }}>{c.class_name}</div>
+              {CLASS_CATEGORIES.map(([key, label, lower]) => {
+                const { value, holders } = holdersFor(rows, key, lower);
+                return (
+                  <div key={key} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: "0.84rem", padding: "3px 0" }}>
+                    <span style={{ color: "var(--ink-2)" }}>{label}</span>
+                    <span style={{ textAlign: "right" }}>
+                      {holders.length === 0 ? "—" : (
+                        <>
+                          <strong>{formatStat(key, value)}</strong>{" "}
+                          <span style={{ color: "var(--ink-1)" }}>
+                            {holders.map(h => (isTeams ? h.team_name : h.driver_name)).join(", ")}
+                          </span>
+                        </>
+                      )}
+                    </span>
+                  </div>
+                );
+              })}
+              <div style={{ marginTop: 6, color: "var(--ink-2)", fontSize: "0.76rem" }}>
+                {rows.length} {isTeams ? "team" : "driver"}{rows.length === 1 ? "" : "s"}
+                {c.field_size?.avg_drivers_per_race != null && ` · avg field ${c.field_size.avg_drivers_per_race.toFixed(1)}`}
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
 export default function RecordsPage() {
   const league = useLeague();
-  const { gameId, seriesId, seasonId, classId, game, series, season, raceClass, loading } = league ?? {};
+  const { gameId, seriesId, seasonId, classId, setClassId, game, series, season, raceClass, loading } = league ?? {};
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [tab, setTab] = useState("drivers"); // "drivers" | "teams"
@@ -157,7 +214,9 @@ export default function RecordsPage() {
       </div>
       <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.88rem" }}>
         The record holder in each category for the current scope. Use the Game / Series / Season / Class menus
-        above to change scope (pick &quot;All&quot; to widen it).
+        above to change scope (pick &quot;All&quot; to widen it). Picking a class narrows every record below to
+        that class — at Series, Game or all-time scope it spans every season that ran the class.
+        {className && ` Showing ${className} records only.`}
       </p>
 
       {/* Average Field Size — an event stat, not a driver record, so it just
@@ -206,6 +265,13 @@ export default function RecordsPage() {
             </article>
           ))}
         </div>
+      )}
+
+      {/* Every class's own record holders, alongside the combined ones above.
+          Only shown in the combined view — inside a single class the grid above
+          already IS that class's records. */}
+      {!classId && data?.by_class?.length > 0 && (
+        <ClassRecords byClass={data.by_class} isTeams={isTeams} onPick={setClassId} />
       )}
     </section>
   );

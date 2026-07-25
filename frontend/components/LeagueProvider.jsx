@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
 import { api } from "@/lib/api";
 import { getActiveLeagueId, setActiveLeagueId } from "@/lib/leagueClient";
 
@@ -32,6 +32,9 @@ export function LeagueProvider({ children }) {
   const [seriesId, setSeriesId] = useState(null);
   const [seasonId, setSeasonId] = useState(null);
   const [classId, setClassId] = useState(null);
+  // Remembers the NAME of the selected class so a scope change can re-find the
+  // same class among the new scope's class docs (see the class-loading effect).
+  const classNameRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [version, setVersion] = useState(0);
 
@@ -124,32 +127,60 @@ export function LeagueProvider({ children }) {
       .catch(() => setSeasons([]));
   }, [seriesId, version]);
 
-  // Classes hang off the selected season. The selection always starts on
-  // "All Classes" ("") — the combined, whole-field view — and only holds a
-  // specific class while that class exists in the selected season, so switching
-  // to a season (or a league) that doesn't define it falls back to All Classes
-  // rather than filtering against an id that means nothing here.
+  // Classes hang off the SELECTED SCOPE, not just the selected season: a class
+  // doc belongs to one season, but "GT3" is the same class in every season that
+  // runs it, so widening the scope to a series/game/the league still offers each
+  // distinct class name once (the API collapses them — see /api/classes, and
+  // resolveClassScope in lib/classServer.js, which widens the chosen id back out
+  // over the scope when stats are aggregated). That's what makes an all-time
+  // "GT3 records" view reachable rather than season-only.
+  //
+  // The selection always starts on "All Classes" ("") — the combined,
+  // whole-field view — and only holds a specific class while that class exists
+  // in the current scope, so narrowing to a season (or a league) that doesn't
+  // define it falls back to All Classes rather than filtering against an id that
+  // means nothing here.
   const season = seasons.find(s => s.id === seasonId) || null;
+  const classScope = seasonId ? `season_id=${seasonId}` : seriesId ? `series_id=${seriesId}` : gameId ? `game_id=${gameId}` : "";
   useEffect(() => {
-    if (seasonId === null) return;
-    if (!seasonId) { setClasses([]); setClassId(""); return; }
+    if (gameId === null || seriesId === null || seasonId === null) return;
     const saved = loadSaved();
-    api(`/api/classes?season_id=${seasonId}`)
+    // Changing a game re-resolves its series and season a beat later, so this
+    // effect can fire twice in quick succession; ignore a superseded response so
+    // a slow first request can't overwrite the current scope's classes.
+    let cancelled = false;
+    api(`/api/classes${classScope ? `?${classScope}` : ""}`)
       .then(list => {
+        if (cancelled) return;
         setClasses(list);
         setClassId(prev => {
           const current = prev === null ? saved.classId : prev;
-          return list.find(c => c.id === current) ? current : "";
+          if (list.find(c => c.id === current)) return current;
+          // The scope changed under the selection: each scope hands back its own
+          // class docs, so the previously selected id belongs to a season that
+          // isn't in this scope. Re-select the same class BY NAME when this
+          // scope also runs it, so drilling from a series into one of its
+          // seasons keeps you on GT3 instead of snapping back to All Classes.
+          const wantedName = classNameRef.current;
+          const sameName = wantedName && list.find(c => String(c.name).trim().toLowerCase() === wantedName);
+          return sameName ? sameName.id : "";
         });
       })
-      .catch(() => { setClasses([]); setClassId(""); });
+      .catch(() => { if (!cancelled) { setClasses([]); setClassId(""); } });
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seasonId, version]);
+  }, [classScope, version]);
 
   useEffect(() => {
     if (gameId === null) return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ gameId, seriesId, seasonId, classId }));
   }, [gameId, seriesId, seasonId, classId]);
+
+  const raceClass = classes.find(c => c.id === classId) || null;
+  useEffect(() => {
+    if (raceClass) classNameRef.current = String(raceClass.name).trim().toLowerCase();
+    else if (classId === "") classNameRef.current = null;
+  }, [raceClass, classId]);
 
   const value = {
     leagues, leagueId: leagueId ?? "",
@@ -161,7 +192,12 @@ export function LeagueProvider({ children }) {
     game: games.find(g => g.id === gameId) || null,
     series: seriesList.find(s => s.id === seriesId) || null,
     season,
-    raceClass: classes.find(c => c.id === classId) || null,
+    raceClass,
+    // Every class id the current selection stands for. A class doc belongs to
+    // one season, so at series/game/league scope the dropdown's row carries the
+    // ids of every same-named class it collapsed — the server widens the id it
+    // is sent the same way, this is just what the client already knows.
+    classIds: raceClass?.class_ids ?? (classId ? [classId] : []),
     // A season only crowns one overall champion across its classes when the
     // admin left the combined championship on (the default).
     combinedChampionship: season?.combined_championship !== false,

@@ -72,7 +72,15 @@ async function replayGame(gameId) {
   for (const p of per) { resultDocs.push(...p.r); entryDocs.push(...p.e); raceDocs.push(...p.ra); }
 
   const driverByEntry = {};
-  for (const e of entryDocs) { const id = e.data().driver_id; if (id) driverByEntry[e.id] = id; }
+  // A driver's class, for the per-class SR exchange below. Falls back to the
+  // roster entry when a result predates the class being stamped on it — the same
+  // rule classOfResult applies everywhere else.
+  const classByEntry = {};
+  for (const e of entryDocs) {
+    const data = e.data();
+    if (data.driver_id) driverByEntry[e.id] = data.driver_id;
+    classByEntry[e.id] = data.class_id || "";
+  }
   const raceById = {};
   for (const ra of raceDocs) {
     raceById[ra.id] = { id: ra.id, ...ra.data() };
@@ -113,7 +121,11 @@ async function replayGame(gameId) {
     }
     if (s === null) continue; // excluded session
     if (r.created_at && (!s.minCreated || r.created_at < s.minCreated)) s.minCreated = r.created_at;
-    s.rows.push({ id: doc.id, entry_id: r.entry_id, finish_pos: Number(r.finish_pos), provisional: !!r.provisional, status: r.status || "finished", season_id: r.season_id });
+    s.rows.push({
+      id: doc.id, entry_id: r.entry_id, finish_pos: Number(r.finish_pos),
+      class_id: r.class_id || classByEntry[r.entry_id] || "",
+      provisional: !!r.provisional, status: r.status || "finished", season_id: r.season_id,
+    });
   }
 
   const ordered = [...sessions.values()].filter(Boolean).sort((a, b) => {
@@ -127,19 +139,34 @@ async function replayGame(gameId) {
   for (const s of ordered) {
     const starters = s.rows
       .filter(isStarter)
-      .map(r => ({ id: r.id, driver_id: driverByEntry[r.entry_id], finish_pos: r.finish_pos, season_id: r.season_id }))
+      .map(r => ({ id: r.id, driver_id: driverByEntry[r.entry_id], finish_pos: r.finish_pos, class_id: r.class_id, season_id: r.season_id }))
       .filter(r => r.driver_id);
     if (!starters.length) continue;
     // Score against every starter's rating as it stands BEFORE this session,
     // guaranteeing each driver's first race in the game exchanges off 1500.
-    const field = starters.map(st => ({ id: st.id, driver_id: st.driver_id, finish_pos: st.finish_pos, rating: rec(st.driver_id).rating }));
+    const field = starters.map(st => ({ id: st.id, driver_id: st.driver_id, finish_pos: st.finish_pos, class_id: st.class_id, rating: rec(st.driver_id).rating }));
+    // Strength of Field is the whole event's turnout — every starter, whatever
+    // class they ran in.
     out.sofByRace[s.raceId] = strengthOfField(field.map(f => f.rating));
-    for (const d of computeSrDeltas(field)) {
-      const dr = rec(d.driver_id);
-      dr.rating = clampSr(dr.rating + d.delta);
-      dr.races += 1;
-      dr.last_delta = d.delta;      // most recent chronological race → the trend
-      out.deltaByResultId[d.id] = d.delta;
+    // The exchange itself is PER CLASS: finishing positions run 1..N inside each
+    // class, so pairing a GT3 car against an LMP2 car would compare two results
+    // that were never in competition — and read both classes' winners as a tie
+    // for the lead. Drivers only trade rating with the people they actually
+    // raced. A season with no classes is one group: the whole field, unchanged.
+    const byClass = new Map();
+    for (const f of field) {
+      const key = f.class_id || "";
+      if (!byClass.has(key)) byClass.set(key, []);
+      byClass.get(key).push(f);
+    }
+    for (const group of byClass.values()) {
+      for (const d of computeSrDeltas(group)) {
+        const dr = rec(d.driver_id);
+        dr.rating = clampSr(dr.rating + d.delta);
+        dr.races += 1;
+        dr.last_delta = d.delta;      // most recent chronological race → the trend
+        out.deltaByResultId[d.id] = d.delta;
+      }
     }
     for (const st of starters) (out.seasonsByDriver[st.driver_id] ??= new Set()).add(st.season_id);
   }

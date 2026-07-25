@@ -3,6 +3,7 @@ import { db } from "@/lib/firebase";
 import { buildQualPosMap, configForTemplate, decorateRaceBonuses, isQualifying, pointsFor, resolveSeasonConfig } from "@/lib/standings";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
 import { gameAlias } from "@/lib/aliases";
+import { classOfResult, fetchSeasonClasses } from "@/lib/classServer";
 
 // Full detail for one event: a dedicated qualifying session plus every race
 // session (including heat/consolation/feature sessions for heat-format
@@ -13,12 +14,13 @@ export async function GET(request, { params }) {
   if (!raceDoc.exists) return NextResponse.json({ error: "Event not found" }, { status: 404 });
   const event = { id: raceDoc.id, ...raceDoc.data() };
 
-  const [seasonDoc, entriesSnap, teamsSnap, resultsSnap, templatesById] = await Promise.all([
+  const [seasonDoc, entriesSnap, teamsSnap, resultsSnap, templatesById, classes] = await Promise.all([
     db().collection("seasons").doc(event.season_id).get(),
     db().collection("entries").where("season_id", "==", event.season_id).get(),
     db().collection("teams").where("season_id", "==", event.season_id).get(),
     db().collection("results").where("race_id", "==", event.id).get(),
     fetchTemplatesById(),
+    fetchSeasonClasses(event.season_id),
   ]);
 
   const season = seasonDoc.exists ? { id: seasonDoc.id, ...seasonDoc.data() } : null;
@@ -42,8 +44,15 @@ export async function GET(request, { params }) {
     }));
   }
 
+  // The class each result was run in, so the event page can present a
+  // multi-class session as the separate races it actually was. Falls back to the
+  // driver's roster class for results saved before the class was stamped, and is
+  // simply null everywhere for a season that runs no classes.
+  const classNameById = Object.fromEntries(classes.map(c => [c.id, c.name]));
+
   const joinEntry = r => {
     const entry = entriesById[r.entry_id] || {};
+    const classId = classOfResult(r, entriesById);
     return {
       ...r,
       driver_name: entry.name ?? "Unknown",
@@ -52,6 +61,8 @@ export async function GET(request, { params }) {
       user_id: entry.user_id ?? null,
       team: teamsById[entry.team_id]?.name ?? null,
       game_alias: entry.driver_id ? (aliasByDriver[entry.driver_id] ?? null) : null,
+      class_id: classId,
+      class_name: classId ? (classNameById[classId] ?? null) : null,
     };
   };
 
@@ -99,6 +110,9 @@ export async function GET(request, { params }) {
     // points client-side (season defaults + per-session template overrides)
     // without a second round trip.
     season,
+    // The season's classes, in running order — the event page groups each
+    // session's results by these, since every class ran its own race.
+    classes,
     races,
     qualifying,
   });

@@ -16,12 +16,15 @@ export async function GET(request, { params }) {
   const doc = await db().collection("tracks").doc(params.id).get();
   if (!doc.exists) return NextResponse.json({ error: "Track not found" }, { status: 404 });
   const track = { id: doc.id, ...doc.data() };
-  // Scope the stats to the selected Game/Series/Season (top-of-page dropdowns).
+  // Scope the stats to the selected Game/Series/Season/Class (top-of-page
+  // dropdowns). A class narrows the leaderboard, past winners and headline lap
+  // record to that class; the per-class record breakdown is always returned.
   const { searchParams } = new URL(request.url);
   const scope = {
     gameId: searchParams.get("game_id") || null,
     seriesId: searchParams.get("series_id") || null,
     seasonId: searchParams.get("season_id") || null,
+    classId: searchParams.get("class_id") || null,
   };
   const profile = await buildTrackProfile({ trackId: track.id, trackName: track.name, scope });
   return NextResponse.json({ track, ...profile });

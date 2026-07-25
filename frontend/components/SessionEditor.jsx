@@ -8,7 +8,7 @@ import { DriverCreateModal } from "@/components/DriverCreateModal";
 import { PointsEditorModal } from "@/components/PointsEditorModal";
 import { ImportResultsModal } from "@/components/ImportResultsModal";
 import { NONE_TEMPLATE } from "@/lib/pointsTemplates";
-import { entriesEligibleForRace } from "@/lib/classFilter";
+import { classGroups, entriesEligibleForRace, sortClasses } from "@/lib/classFilter";
 import { pointsFor, configForTemplate, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
 import { parseTime, formatTime, formatGap, parseLapsDown, deriveLaps } from "@/lib/raceTime";
 
@@ -93,7 +93,13 @@ function assignEntry(row, entry, totalLaps) {
 // Qualifying only feeds the **Start** column of race-type sessions (via
 // qualPos), never the Finish order. A saved result's own start_pos wins over
 // the qualifying default once entered.
-function buildRows(entries, existing, totalLaps, qualPos = {}, sessionType = "race") {
+//
+// `groups` are the class sections the grid is split into, in running order (see
+// sectionsFor). Each class is a race of its own: rows are grouped by class,
+// positions run 1..N WITHIN each class, and the padding is sized to that class's
+// share of the roster. A season with no classes has exactly one group holding
+// the whole field, which is the pre-classes behaviour unchanged.
+function buildRows(entries, existing, totalLaps, qualPos = {}, sessionType = "race", groups = [{ id: "" }]) {
   const entryById = new Map(entries.map(e => [e.id ?? e.entry_id, e]));
   const filled = existing
     .filter(r => entryById.has(r.entry_id))
@@ -112,12 +118,79 @@ function buildRows(entries, existing, totalLaps, qualPos = {}, sessionType = "ra
       }
       return row;
     });
-  const sorted = sortByFinish(filled);
-  let pos = sorted.reduce((m, r) => Math.max(m, Number(r.finish_pos) || 0), 0);
-  const rows = [...sorted];
-  const target = Math.max(entries.length, sorted.length);
-  while (rows.length < target) { pos += 1; rows.push(makeRow(pos)); }
+
+  const groupIds = new Set(groups.map(g => g.id));
+  // Anything whose class no longer matches a section (a deleted class, a driver
+  // moved out of the event's class) lands in the last section rather than
+  // disappearing from the grid.
+  const bucketOf = classId => (groupIds.has(classId || "") ? (classId || "") : groups[groups.length - 1].id);
+
+  const rows = [];
+  for (const group of groups) {
+    const mine = sortByFinish(filled.filter(r => bucketOf(r.class_id) === group.id));
+    // Empty slots are stamped with their section's class so a driver dropped
+    // into one is recorded in the right class without touching the dropdown.
+    const rosterCount = entries.filter(e => bucketOf(e.class_id) === group.id).length;
+    let pos = mine.reduce((m, r) => Math.max(m, Number(r.finish_pos) || 0), 0);
+    const target = Math.max(rosterCount, mine.length);
+    const padded = [...mine];
+    while (padded.length < target) { pos += 1; padded.push({ ...makeRow(pos), class_id: group.id }); }
+    rows.push(...padded);
+  }
   return rows;
+}
+
+// The class sections a session's grid splits into, in the admin's class order.
+// An event pinned to one class shows only that class (plus any class already
+// present in its saved results, so nothing is hidden); a shared event shows every
+// class the season runs. The trailing "Unclassified" section appears only when
+// something actually sits outside the classes — a driver not yet assigned one, or
+// a result saved before the season had classes — so a fully classified season
+// never shows an empty extra table.
+function sectionsFor(classes, race, entries, rows) {
+  if (!classes.length) return [{ id: "", name: "", is_default: true }];
+  // Only classes already present in the SAVED ROWS widen a pinned event — the
+  // roster spans every class, so keying off it would put an LMP2 table on a
+  // GT3-only round. This is the "nothing vanishes" guarantee: a result recorded
+  // in another class still gets a table to sit in.
+  const present = new Set(rows.map(r => r.class_id).filter(Boolean));
+  const pinned = race?.class_id || null;
+  const active = sortClasses(classes.filter(c => !pinned || c.id === pinned || present.has(c.id)));
+  if (!active.length) return [{ id: "", name: "", is_default: true }];
+  const activeIds = new Set(active.map(c => c.id));
+  // The trailing section is for drivers with NO class — an unclassified driver
+  // can enter any event. A driver whose class simply isn't running this round
+  // isn't unclassified, so they don't conjure one.
+  const hasUnclassified =
+    rows.some(r => r.entry_id && !activeIds.has(r.class_id || "")) ||
+    entries.some(e => !e.class_id);
+  return classGroups(active, hasUnclassified);
+}
+
+// Renumber finishing positions 1..N inside each class section, preserving the
+// order rows already sit in. Every reorder/removal goes through here, so a class
+// always reads 1, 2, 3… of its own — not of the combined field.
+function renumberByClass(rows, groups) {
+  const groupIds = new Set(groups.map(g => g.id));
+  const bucketOf = classId => (groupIds.has(classId || "") ? (classId || "") : groups[groups.length - 1].id);
+  const counters = {};
+  return rows.map(r => {
+    const key = bucketOf(r.class_id);
+    counters[key] = (counters[key] || 0) + 1;
+    return { ...r, finish_pos: String(counters[key]) };
+  });
+}
+
+// Sort a flat row list into section order so each class's rows stay contiguous —
+// the invariant every index-based operation (drag, paste, renumber) relies on.
+function orderByClass(rows, groups) {
+  const rank = new Map(groups.map((g, i) => [g.id, i]));
+  const last = groups.length - 1;
+  const rankOf = r => rank.get(r.class_id || "") ?? last;
+  return [...rows]
+    .map((row, i) => ({ row, i }))
+    .sort((a, b) => rankOf(a.row) - rankOf(b.row) || a.i - b.i)
+    .map(x => x.row);
 }
 
 function sortByFinish(rows) {
@@ -176,6 +249,32 @@ export function SessionEditor({
     setTimeout(() => setToast(null), 4000);
   }
 
+  // The class sections this session's grid is split into, in the order the admin
+  // arranged the classes. One entry with a blank id means "no classes" — a
+  // single, whole-field grid, exactly as before classes existed — so every
+  // operation below is written once and works for both cases.
+  const groups = useMemo(() => sectionsFor(classes, race, entries, rows), [classes, race, entries, rows]);
+  const classMode = groups.length > 1 || !!groups[0].name;
+
+  // Which section a row belongs to. A row whose class matches no section (its
+  // class was deleted mid-season) falls into the last one rather than being
+  // dropped — this is the single rule that keeps rendering, validation and the
+  // save payload agreeing on where every row lives, so nothing can be shown in
+  // one place and silently omitted from another.
+  const sectionOf = row => {
+    const id = row.class_id || "";
+    return groups.some(g => g.id === id) ? id : groups[groups.length - 1].id;
+  };
+
+  // Re-sort a mutated row list back into class-section order and renumber each
+  // section 1..N. Sections are recomputed from the new rows, so a move that
+  // creates (or empties) the Unclassified section lands in the right place in
+  // the same pass. A season with no classes falls through unchanged.
+  const resection = next => {
+    const g = sectionsFor(classes, race, entries, next);
+    return renumberByClass(orderByClass(next, g), g);
+  };
+
   async function loadSession(sess) {
     setSession(sess);
     setLoading(true);
@@ -190,7 +289,7 @@ export function SessionEditor({
       // finishing-order grid.
       const mains = existing.filter(r => !r.provisional);
       const provs = existing.filter(r => r.provisional);
-      setRows(buildRows(entries, mains, race.total_laps, qp, sessionType));
+      setRows(buildRows(entries, mains, race.total_laps, qp, sessionType, sectionsFor(classes, race, entries, mains)));
       const entryById = new Map(entries.map(e => [e.id ?? e.entry_id, e]));
       setProvRows(provs.map(r => {
         const e = entryById.get(r.entry_id);
@@ -198,7 +297,7 @@ export function SessionEditor({
       }));
     } catch {
       setQualPos({});
-      setRows(emptySlots(entries.length));
+      setRows(buildRows(entries, [], race.total_laps, {}, sessionType, sectionsFor(classes, race, entries, [])));
       setProvRows([]);
     } finally {
       setLoading(false);
@@ -215,6 +314,16 @@ export function SessionEditor({
   }, [race?.id, sessionType, namesKey]);
 
   function updateRow(idx, field, value) {
+    // Re-classing a driver moves their row into that class's section and
+    // renumbers both sections, so the grid always reflects where the result will
+    // actually be scored.
+    if (field === "class_id" && classMode) {
+      setRows(prev => {
+        const moved = { ...prev[idx], class_id: value };
+        return resection([...prev.filter((_, i) => i !== idx), moved]); // lands at the back of its new class
+      });
+      return;
+    }
     setRows(prev => prev.map((r, i) => (i === idx ? { ...r, [field]: value } : r)));
   }
 
@@ -225,14 +334,24 @@ export function SessionEditor({
   // sets the raw value on the rows that have a driver. Only fills existing rows
   // — it never invents new finishing positions.
   function pasteColumn(field, startIdx, values) {
+    // A paste fills down within ONE class section — it stops at the section
+    // boundary instead of spilling a GT3 column into the LMP2 table below it.
+    const limitFor = rows_ => {
+      if (!classMode) return rows_.length;
+      const cls = rows_[startIdx]?.class_id || "";
+      let end = startIdx;
+      while (end < rows_.length && (rows_[end].class_id || "") === cls) end += 1;
+      return end;
+    };
     if (field === "driver") {
       setRows(prev => {
         const norm = s => String(s ?? "").trim().toLowerCase();
         const used = new Set(prev.map(r => r.entry_id).filter(Boolean));
         const next = [...prev];
+        const limit = limitFor(next);
         for (let k = 0; k < values.length; k++) {
           const i = startIdx + k;
-          if (i >= next.length) break;
+          if (i >= limit) break;
           const name = norm(values[k]);
           if (!name) continue;                       // blank line — leave the row as-is
           if (next[i].entry_id) used.delete(next[i].entry_id);   // free this row's own driver
@@ -256,23 +375,39 @@ export function SessionEditor({
   // driver's Qualifying position for race-type sessions.
   const withDriver = (row, entry) => {
     const out = assignEntry(row, entry, totalLaps);
+    // In a class-sectioned grid the SECTION decides the class: the admin put this
+    // driver in this table, so the result is recorded in that class even if their
+    // roster class says otherwise (running up a class for one round). Without
+    // sections, assignEntry's roster seed stands.
+    if (classMode) out.class_id = row.class_id || "";
     if (sessionType !== "qualifying" && qualPos[out.entry_id] != null) out.start_pos = String(qualPos[out.entry_id]);
     return out;
   };
   function assignToSlot(slotId, entry) {
     setRows(prev => prev.map(r => (r.slot_id === slotId ? withDriver(r, entry) : r)));
   }
-  // Empties a slot (mis-pick fix) — keeps the finishing position, drops the
-  // driver so it can be searched again. Non-destructive: the season entry stays.
+  // Empties a slot (mis-pick fix) — keeps the finishing position AND the class
+  // section it sits in, drops the driver so it can be searched again.
+  // Non-destructive: the season entry stays.
   function clearSlot(idx) {
-    setRows(prev => prev.map((r, i) => (i === idx ? { ...makeRow(r.finish_pos), slot_id: r.slot_id } : r)));
+    setRows(prev => prev.map((r, i) => (i === idx ? { ...makeRow(r.finish_pos), slot_id: r.slot_id, class_id: r.class_id } : r)));
   }
-  function addSlot() {
-    setRows(prev => [...prev, makeRow(prev.length + 1)]);
+  // Adds a finishing position to the end of one class's section (or of the
+  // single grid when the season runs no classes).
+  function addSlot(classId = "") {
+    setRows(prev => {
+      const inClass = prev.filter(r => (r.class_id || "") === (classId || "")).length;
+      const row = { ...makeRow(inClass + 1), class_id: classId || "" };
+      return classMode ? resection([...prev, row]) : [...prev, row];
+    });
   }
-  // Drops a finishing position from the grid and renumbers the rest.
+  // Drops a finishing position from the grid and renumbers the rest — within its
+  // own class, so removing a GT3 row never renumbers the LMP2 section.
   function removeSlot(idx) {
-    setRows(prev => prev.filter((_, i) => i !== idx).map((r, i) => ({ ...r, finish_pos: String(i + 1) })));
+    setRows(prev => {
+      const next = prev.filter((_, i) => i !== idx);
+      return classMode ? resection(next) : next.map((r, i) => ({ ...r, finish_pos: String(i + 1) }));
+    });
   }
 
   const assignedIds = useMemo(() => new Set(rows.map(r => r.entry_id).filter(Boolean)), [rows]);
@@ -303,8 +438,12 @@ export function SessionEditor({
     updateProvRow(slotId, { entry_id: entry.id ?? entry.entry_id, driver_name: entry.name ?? entry.driver_name ?? "", driver_number: entry.number ?? entry.driver_number ?? null });
   }
 
-  const leaderTimeOf = rs => {
-    const L = rs.find(r => Number(r.finish_pos) === 1);
+  // The reference time intervals are measured against. In a multi-class session
+  // each class has its own winner, so each class's gaps are read off ITS leader
+  // — a GT3 car's "+2.345" is behind the GT3 winner, not the outright one.
+  const sameClass = (a, b) => !classMode || (a.class_id || "") === (b.class_id || "");
+  const leaderTimeOf = (rs, row) => {
+    const L = rs.find(r => Number(r.finish_pos) === 1 && (!row || sameClass(r, row)));
     return L ? parseTime(L.race_time) : null;
   };
 
@@ -314,11 +453,14 @@ export function SessionEditor({
   function updateRaceTime(idx, value) {
     setRows(prev => {
       const next = prev.map((r, i) => (i === idx ? { ...r, race_time: value } : r));
-      const isLeader = Number(next[idx].finish_pos) === 1;
-      const lt = leaderTimeOf(next);
+      const edited = next[idx];
+      const isLeader = Number(edited.finish_pos) === 1;
+      const lt = leaderTimeOf(next, edited);
       if (isLeader) {
+        // Only this class's field re-derives off it — the other classes have
+        // their own leader and their own gaps.
         return next.map(r => {
-          if (Number(r.finish_pos) === 1 || lt == null) return r;
+          if (Number(r.finish_pos) === 1 || lt == null || !sameClass(r, edited)) return r;
           const gap = parseTime(r.interval); // "+1.234" → seconds; laps-down → null
           if (parseLapsDown(r.interval) == null && gap != null) return { ...r, race_time: formatTime(lt + gap) };
           return r;
@@ -342,7 +484,7 @@ export function SessionEditor({
         if (d != null) patch.laps = String(d);
         next[idx] = patch;
       } else {
-        const lt = leaderTimeOf(next);
+        const lt = leaderTimeOf(next, next[idx]);
         const gap = parseTime(value);
         const patch = { ...next[idx] };
         if (gap != null && lt != null) patch.race_time = formatTime(lt + gap);
@@ -370,9 +512,15 @@ export function SessionEditor({
   // empty finishing slot (or a new one at the back if the field is full).
   function handleDriverAdded(entry) {
     setRows(prev => {
-      const idx = prev.findIndex(r => !r.entry_id);
+      // Drop them into their OWN class's section — the first empty slot there,
+      // else a new position at the back of it.
+      const wanted = classMode ? (entry.class_id || "") : null;
+      const inSection = (r) => wanted == null || (r.class_id || "") === wanted;
+      const idx = prev.findIndex(r => !r.entry_id && inSection(r));
       if (idx >= 0) return prev.map((r, i) => (i === idx ? withDriver(r, entry) : r));
-      return [...prev, withDriver(makeRow(prev.length + 1), entry)];
+      const count = prev.filter(inSection).length;
+      const fresh = withDriver({ ...makeRow(count + 1), class_id: wanted ?? "" }, entry);
+      return classMode ? resection([...prev, fresh]) : [...prev, fresh];
     });
     setJustAddedId(entry.id);
     onEntriesChanged?.();
@@ -410,7 +558,9 @@ export function SessionEditor({
     const num = (v, fallback) => (v === "" || v == null ? fallback : String(v));
     const placed = [...byId.values()].map(im => {
       const entry = entryById.get(im.entry_id);
-      const row = withDriver(makeRow(im.finish_pos), entry);
+      // Seed the slot with the driver's roster class first, so a class-sectioned
+      // grid files each imported row under the right class.
+      const row = withDriver({ ...makeRow(im.finish_pos), class_id: entry.class_id || "" }, entry);
       // Surface the imported car number when the matched roster entry doesn't
       // already carry one, so "Car Number" / "Car #" from the CSV isn't lost.
       const importedNum = im.car_number != null && String(im.car_number).trim() !== "" ? String(im.car_number).trim() : null;
@@ -432,11 +582,16 @@ export function SessionEditor({
     });
     const sorted = sortByFinish(placed);
     const covered = new Set(placed.map(r => r.entry_id));
-    const uncovered = entries.filter(e => !covered.has(e.id ?? e.entry_id)).length;
+    const uncovered = entries.filter(e => !covered.has(e.id ?? e.entry_id));
     let pos = sorted.reduce((m, r) => Math.max(m, Number(r.finish_pos) || 0), 0);
     const next = [...sorted];
-    for (let i = 0; i < uncovered; i++) { pos += 1; next.push(makeRow(pos)); }
-    setRows(next);
+    // One empty slot per roster driver the import didn't cover, carrying that
+    // driver's class so it appears in the right section.
+    for (const e of uncovered) { pos += 1; next.push({ ...makeRow(pos), class_id: e.class_id || "" }); }
+    // Exports classify the whole field together, so an imported order is an
+    // OVERALL one. Re-splitting it by class turns it into each class's own 1..N
+    // — which is also a no-op when the export already listed class positions.
+    setRows(classMode ? resection(next) : next);
     setImportOpen(false);
     const n = byId.size;
     showToast("success", `Imported ${n} result${n === 1 ? "" : "s"}. Review the grid, then Save.`);
@@ -452,15 +607,22 @@ export function SessionEditor({
   function handleDrop(idx) {
     setRows(prev => {
       if (dragIndex == null || dragIndex === idx) return prev;
+      // Each class runs its own race, so a row can only be reordered inside its
+      // own section — dropping it onto another class's row would silently
+      // re-class the driver. Use the Class dropdown for that instead.
+      if (classMode && (prev[dragIndex]?.class_id || "") !== (prev[idx]?.class_id || "")) return prev;
       const next = [...prev];
       const [moved] = next.splice(dragIndex, 1);
       next.splice(idx, 0, moved);
-      const renumbered = next.map((r, i) => ({ ...r, finish_pos: String(i + 1) }));
+      const renumbered = classMode
+        ? renumberByClass(next, groups)
+        : next.map((r, i) => ({ ...r, finish_pos: String(i + 1) }));
       if (sessionType === "qualifying") return renumbered;
-      // Reordering can change who leads; re-derive intervals off the new P1.
-      const lt = leaderTimeOf(renumbered);
+      // Reordering can change who leads; re-derive intervals off the new P1 —
+      // each class off its own.
       return renumbered.map(r => {
         if (Number(r.finish_pos) === 1) return { ...r, interval: "" };
+        const lt = leaderTimeOf(renumbered, r);
         if (parseLapsDown(r.interval) != null || lt == null) return r;
         const rt = parseTime(r.race_time);
         if (rt != null) return { ...r, interval: formatGap(rt - lt) };
@@ -510,9 +672,17 @@ export function SessionEditor({
     const filled = rows.filter(r => r.entry_id && r.finish_pos !== "");
     const provReady = provRows.filter(r => r.entry_id);
     if (!filled.length && !provReady.length) return showToast("error", "Assign at least one driver to a finishing position.");
-    const positions = filled.map(r => Number(r.finish_pos));
-    if (new Set(positions).size !== positions.length) {
-      return showToast("error", "Two drivers share the same finishing position.");
+    // Finishing positions are unique WITHIN a class — every class has its own P1
+    // — so the clash check runs per class. Without classes that's the whole
+    // field, exactly as before.
+    for (const group of groups) {
+      const inClass = filled.filter(r => !classMode || sectionOf(r) === group.id);
+      const positions = inClass.map(r => Number(r.finish_pos));
+      if (new Set(positions).size !== positions.length) {
+        return showToast("error", classMode
+          ? `Two ${group.name} drivers share the same finishing position.`
+          : "Two drivers share the same finishing position.");
+      }
     }
     const ids = filled.map(r => r.entry_id);
     if (new Set(ids).size !== ids.length) {
@@ -528,21 +698,50 @@ export function SessionEditor({
     }
 
     // Provisionals are parked behind the field so they never collide with real
-    // finishing positions; they carry only their flat manual points.
-    const maxPos = filled.reduce((m, r) => Math.max(m, Number(r.finish_pos) || 0), 0);
-    const provPayload = provReady.map((r, i) => ({
-      entry_id: r.entry_id,
-      finish_pos: maxPos + i + 1,
-      provisional: true,
-      manual_points: r.manual_points === "" ? 0 : Number(r.manual_points),
-      laps: 0, laps_led: 0, incidents: 0, status: "finished",
-    }));
+    // finishing positions; they carry only their flat manual points. Their class
+    // comes from the driver's roster entry — they never raced, so there's no
+    // section that placed them.
+    const entryById = new Map(entries.map(e => [e.id ?? e.entry_id, e]));
+    const maxPosIn = classId => filled.reduce(
+      (m, r) => ((!classMode || sectionOf(r) === (classId || "")) ? Math.max(m, Number(r.finish_pos) || 0) : m), 0);
+    const provSeq = {};
+    const provPayload = provReady.map(r => {
+      const cls = classMode ? (entryById.get(r.entry_id)?.class_id || "") : "";
+      provSeq[cls] = (provSeq[cls] || 0) + 1;
+      return {
+        entry_id: r.entry_id,
+        class_id: cls,
+        finish_pos: maxPosIn(cls) + provSeq[cls],
+        provisional: true,
+        manual_points: r.manual_points === "" ? 0 : Number(r.manual_points),
+        laps: 0, laps_led: 0, incidents: 0, status: "finished",
+      };
+    });
 
+    const payload = [...filled, ...provPayload];
     setBusy(true);
     try {
       await api("/api/results", {
         method: "POST",
-        body: { race_id: race.id, season_id: seasonId, session, session_type: sessionType, points_template_id: templateId || null, rows: [...filled, ...provPayload] },
+        body: {
+          race_id: race.id, season_id: seasonId, session, session_type: sessionType,
+          points_template_id: templateId || null,
+          // Every row carries the class it was entered under. In a sectioned
+          // grid they're ALSO grouped by class, so the server records each split
+          // from the group it was submitted in rather than inferring it — an
+          // admin's explicit placement (a driver running up a class for one
+          // round) survives the round trip.
+          rows: payload,
+          // sectionOf, not a bare class match, so a row whose class was deleted
+          // mid-season still lands in a group and is saved rather than silently
+          // dropped from the payload.
+          ...(classMode ? {
+            classes: groups.map(g => ({
+              class_id: g.id,
+              rows: payload.filter(r => sectionOf(r) === g.id),
+            })),
+          } : {}),
+        },
       });
       showToast("success", "Results saved. Standings and profiles update instantly.");
     } catch (err) {
@@ -607,6 +806,73 @@ export function SessionEditor({
     onRemove: () => (row.entry_id ? removeEntry(row) : removeSlot(idx)),
     onPasteColumn: pasteColumn,
   });
+
+  // Each section's rows, carrying their index into the flat `rows` array — every
+  // edit, drag and paste addresses rows by that index, so splitting the grid for
+  // display doesn't change how anything is written.
+  //
+  // A row whose class matches no section renders in the last one (see
+  // sectionOf) rather than vanishing from the grid.
+  const rowsInSection = group => rows
+    .map((row, idx) => ({ row, idx }))
+    .filter(({ row }) => !classMode || sectionOf(row) === group.id);
+
+  // One grid per class. Positions inside a section run 1..N for that class, so
+  // each class is entered exactly as its own race — which is what it is.
+  const renderSection = group => {
+    const sectionRows = rowsInSection(group);
+    const placed = sectionRows.filter(({ row }) => row.entry_id).length;
+    return (
+      <div key={group.id || "__all"} style={classMode ? { marginBottom: 26 } : undefined}>
+        {classMode && (
+          <div className="section-header" style={{ marginTop: 0, marginBottom: 6 }}>
+            <h3 style={{ fontSize: "1rem", color: group.color || undefined }}>
+              {group.name}
+              <span style={{ marginLeft: 8, fontWeight: 400, fontSize: "0.8rem", color: "var(--ink-2)" }}>
+                {placed} of {sectionRows.length} position{sectionRows.length === 1 ? "" : "s"} filled
+              </span>
+            </h3>
+          </div>
+        )}
+        {group.is_default && classMode && (
+          <p style={{ margin: "0 0 8px", color: "var(--ink-2)", fontSize: "0.78rem" }}>
+            Drivers with no class set. They still score in the season&rsquo;s combined standings, but toward no
+            class championship — set a class on the Roster (or in the Class column) to fold them into one.
+          </p>
+        )}
+        {sessionType === "qualifying" ? (
+          <div className={`qual-grid${hasClasses ? " has-class" : ""}`}>
+            {["", "Pos", "Driver", ...(hasClasses ? ["Class"] : []), "Qual Time", pointsLabel, ""].map((h, i) => <span className="grid-header" key={h || i}>{h}</span>)}
+            {sectionRows.map(({ row, idx }) => (
+              <QualRow key={row.slot_id} row={row} idx={idx} updateRow={updateRow} autoFocus={row.entry_id === justAddedId} points={rowPoints(row)}
+                classes={classes} hasClasses={hasClasses}
+                dragging={dragIndex === idx} dragOver={overIndex === idx && dragIndex !== idx}
+                onDragStart={() => handleDragStart(idx)} onDragOver={e => handleDragOver(idx, e)} onDrop={() => handleDrop(idx)} onDragEnd={handleDragEnd}
+                {...rowCommon(row, idx)} />
+            ))}
+          </div>
+        ) : (
+          <div className={`result-grid result-grid-wide${hasClasses ? " has-class" : ""}`}>
+            {["", "Fin", "Start", "Driver", ...(hasClasses ? ["Class"] : []), "Race Time", "Int", "Best Lap", "Laps", "Led", "Inc", "FL", "½", "HC", "Adj", "Status", pointsLabel, ""].map((h, i) => (
+              <span className="grid-header" key={h || i}>{h}</span>
+            ))}
+            {sectionRows.map(({ row, idx }) => (
+              <RowInputs key={row.slot_id} row={row} idx={idx} updateRow={updateRow}
+                updateRaceTime={updateRaceTime} updateInterval={updateInterval} updateStatus={updateStatus}
+                autoFocus={row.entry_id === justAddedId} points={rowPoints(row)}
+                classes={classes} hasClasses={hasClasses}
+                dragging={dragIndex === idx} dragOver={overIndex === idx && dragIndex !== idx}
+                onDragStart={() => handleDragStart(idx)} onDragOver={e => handleDragOver(idx, e)} onDrop={() => handleDrop(idx)} onDragEnd={handleDragEnd}
+                {...rowCommon(row, idx)} />
+            ))}
+          </div>
+        )}
+        <button className="btn btn-ghost" type="button" onClick={() => addSlot(group.id)} style={{ marginTop: 10 }}>
+          ＋ Add finishing position{classMode ? ` to ${group.name}` : ""}
+        </button>
+      </div>
+    );
+  };
 
   return (
     <div>
@@ -694,48 +960,29 @@ export function SessionEditor({
         ⌨ Press <strong>Enter</strong> in any cell to jump to the same column one row down. Or <strong>paste a whole column</strong> at once — copy a column of names or times (e.g. from a spreadsheet) and paste into the top cell to fill straight down.
       </p>
 
+      {classMode && (
+        <p style={{ marginTop: 0, color: "var(--ink-1)", fontSize: "0.85rem" }}>
+          This season runs classes, so results are entered <strong>one table per class</strong>, in the order the
+          classes are ranked. Each class is scored as its own race — positions start at 1 in every table, and its
+          winner is that class&rsquo;s winner. Every result is still tagged with its class, so it feeds the class
+          championship <em>and</em> cascades into the season, series, game and all-time totals.
+        </p>
+      )}
+
       {!entries.length ? (
         <p style={{ color: "var(--ink-1)", fontSize: "0.9rem" }}>No drivers on the roster yet — add one below to start entering results.</p>
       ) : loading ? (
         <div className="skeleton" style={{ height: 200 }} />
-      ) : sessionType === "qualifying" ? (
-        <div style={{ overflowX: "auto" }}>
-          <p style={{ margin: "0 0 8px", color: "var(--ink-2)", fontSize: "0.78rem" }}>Drag ⠿ to reorder.</p>
-          <div className={`qual-grid${hasClasses ? " has-class" : ""}`}>
-            {["", "Pos", "Driver", ...(hasClasses ? ["Class"] : []), "Qual Time", pointsLabel, ""].map((h, i) => <span className="grid-header" key={h || i}>{h}</span>)}
-            {rows.map((row, idx) => (
-              <QualRow key={row.slot_id} row={row} idx={idx} updateRow={updateRow} autoFocus={row.entry_id === justAddedId} points={rowPoints(row)}
-                classes={classes} hasClasses={hasClasses}
-                dragging={dragIndex === idx} dragOver={overIndex === idx && dragIndex !== idx}
-                onDragStart={() => handleDragStart(idx)} onDragOver={e => handleDragOver(idx, e)} onDrop={() => handleDrop(idx)} onDragEnd={handleDragEnd}
-                {...rowCommon(row, idx)} />
-            ))}
-          </div>
-        </div>
       ) : (
         <div style={{ overflowX: "auto" }}>
-          <p style={{ margin: "0 0 8px", color: "var(--ink-2)", fontSize: "0.78rem" }}>Drag ⠿ to reorder — finishing positions renumber automatically.</p>
-          <div className={`result-grid result-grid-wide${hasClasses ? " has-class" : ""}`}>
-            {["", "Fin", "Start", "Driver", ...(hasClasses ? ["Class"] : []), "Race Time", "Int", "Best Lap", "Laps", "Led", "Inc", "FL", "½", "HC", "Adj", "Status", pointsLabel, ""].map((h, i) => (
-              <span className="grid-header" key={h || i}>{h}</span>
-            ))}
-            {rows.map((row, idx) => (
-              <RowInputs key={row.slot_id} row={row} idx={idx} updateRow={updateRow}
-                updateRaceTime={updateRaceTime} updateInterval={updateInterval} updateStatus={updateStatus}
-                autoFocus={row.entry_id === justAddedId} points={rowPoints(row)}
-                classes={classes} hasClasses={hasClasses}
-                dragging={dragIndex === idx} dragOver={overIndex === idx && dragIndex !== idx}
-                onDragStart={() => handleDragStart(idx)} onDragOver={e => handleDragOver(idx, e)} onDrop={() => handleDrop(idx)} onDragEnd={handleDragEnd}
-                {...rowCommon(row, idx)} />
-            ))}
-          </div>
+          <p style={{ margin: "0 0 8px", color: "var(--ink-2)", fontSize: "0.78rem" }}>
+            {sessionType === "qualifying"
+              ? "Drag ⠿ to reorder."
+              : "Drag ⠿ to reorder — finishing positions renumber automatically."}
+            {classMode && " Rows reorder within their own class; use the Class column to move a driver between classes."}
+          </p>
+          {groups.map(renderSection)}
         </div>
-      )}
-
-      {!!entries.length && !loading && (
-        <button className="btn btn-ghost" type="button" onClick={addSlot} style={{ marginTop: 10 }}>
-          ＋ Add finishing position
-        </button>
       )}
 
       {sessionType !== "qualifying" && !loading && (
@@ -819,7 +1066,7 @@ export function SessionEditor({
       {!!entries.length && (
         <button className="btn btn-ghost" style={{ marginLeft: 8 }}
           title="Clear every slot back to an empty finishing grid"
-          onClick={() => setRows(emptySlots(entries.length))}>
+          onClick={() => setRows(buildRows(entries, [], race?.total_laps, {}, sessionType, sectionsFor(classes, race, entries, [])))}>
           Reset Grid
         </button>
       )}

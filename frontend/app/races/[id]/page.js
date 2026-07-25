@@ -32,6 +32,39 @@ function statusLabel(s) {
   return s === "finished" ? "Running" : (s || "").toUpperCase();
 }
 
+// Split a session's results into the classes that contested it, in the season's
+// class order, with anything unclassified last. Each class ran its own race —
+// its own P1, its own order — so they're shown as separate classifications
+// rather than one table with several cars in first place.
+//
+// Returns a single unlabelled group for a session whose results carry no class
+// at all, which is every event in a season without classes: those render exactly
+// as they always have.
+function byClass(results, classes) {
+  const used = classes.filter(c => results.some(r => r.class_id === c.id));
+  const unclassified = results.filter(r => !r.class_id);
+  if (!used.length) return [{ id: "", name: null, results }];
+  const groups = used.map(c => ({ id: c.id, name: c.name, color: c.color ?? null, results: results.filter(r => r.class_id === c.id) }));
+  if (unclassified.length) groups.push({ id: "", name: "Unclassified", color: null, results: unclassified });
+  return groups;
+}
+
+// Heading above one class's classification. Omitted when the session wasn't
+// split into classes.
+function ClassHeading({ group }) {
+  if (!group.name) return null;
+  return (
+    <div className="section-header" style={{ marginBottom: 6 }}>
+      <h3 style={{ fontSize: "1rem", color: group.color || undefined }}>
+        {group.name}
+        <span style={{ marginLeft: 8, fontWeight: 400, fontSize: "0.8rem", color: "var(--ink-2)" }}>
+          {group.results.length} car{group.results.length === 1 ? "" : "s"}
+        </span>
+      </h3>
+    </div>
+  );
+}
+
 // Coloured +/- SR change a driver earned in this race.
 function SrDelta({ delta }) {
   if (delta == null) return <span style={{ color: "var(--ink-2)" }}>—</span>;
@@ -97,7 +130,7 @@ export default function EventResultsPage() {
   if (error) return <div className="empty-state"><span className="empty-state-icon">🏁</span><p>{error}</p></div>;
   if (!data) return <div className="skeleton" style={{ height: 280 }} />;
 
-  const { event, season, races, qualifying } = data;
+  const { event, season, races, qualifying, classes = [] } = data;
   const hasQualifying = qualifying.length > 0;
   const activeRace = races.find(s => s.name === tab);
   const activeResults = activeRace?.results ?? [];
@@ -254,27 +287,34 @@ export default function EventResultsPage() {
       )}
 
       {tab === "__qual" ? (
-        <div className="table-wrap">
-          <table className="stats-table">
-            <thead>
-              <tr><th>Pos</th><th style={{ textAlign: "left" }}>Driver</th><th style={{ textAlign: "left" }}>Team</th><th>Qual Time</th><th>Points</th></tr>
-            </thead>
-            <tbody>
-              {qualifying.map(r => (
-                <tr key={r.entry_id}>
-                  <td>
-                    <span className={`rank-badge ${r.position === 1 ? "rank-p1" : "rank-default"}`}>{r.position}</span>
-                    {r.position === 1 && <span className="badge" title="Pole position" style={{ marginLeft: 6 }}>POLE</span>}
-                  </td>
-                  <td className="driver-name-cell" style={{ textAlign: "left" }}><DriverCell r={r} /></td>
-                  <td style={{ textAlign: "left", color: "var(--ink-1)" }}>{r.team ?? "—"}</td>
-                  <td>{r.qual_time || "—"}</td>
-                  <td className="points-cell">{r.qual_points}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        byClass(qualifying, classes).map(group => (
+          <div key={group.id || "__all"} style={{ marginBottom: group.name ? 20 : 0 }}>
+            <ClassHeading group={group} />
+            <div className="table-wrap">
+              <table className="stats-table">
+                <thead>
+                  <tr><th>Pos</th><th style={{ textAlign: "left" }}>Driver</th><th style={{ textAlign: "left" }}>Team</th><th>Qual Time</th><th>Points</th></tr>
+                </thead>
+                <tbody>
+                  {group.results.map(r => (
+                    <tr key={r.entry_id}>
+                      <td>
+                        <span className={`rank-badge ${r.position === 1 ? "rank-p1" : "rank-default"}`}>{r.position}</span>
+                        {r.position === 1 && (
+                          <span className="badge" title={group.name ? `Pole position in ${group.name}` : "Pole position"} style={{ marginLeft: 6 }}>POLE</span>
+                        )}
+                      </td>
+                      <td className="driver-name-cell" style={{ textAlign: "left" }}><DriverCell r={r} /></td>
+                      <td style={{ textAlign: "left", color: "var(--ink-1)" }}>{r.team ?? "—"}</td>
+                      <td>{r.qual_time || "—"}</td>
+                      <td className="points-cell">{r.qual_points}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ))
       ) : activeRace && activeResults.length ? (
         <>
         {showSr && sof != null && (
@@ -288,8 +328,10 @@ export default function EventResultsPage() {
             </span>
           </div>
         )}
-        {finishers.length > 0 && (
-        <div className="table-wrap">
+        {finishers.length > 0 && byClass(finishers, classes).map(group => (
+        <div key={group.id || "__all"} style={{ marginBottom: group.name ? 20 : 0 }}>
+          <ClassHeading group={group} />
+          <div className="table-wrap">
           <table className="stats-table">
             <thead>
               <tr>
@@ -299,7 +341,7 @@ export default function EventResultsPage() {
               </tr>
             </thead>
             <tbody>
-              {finishers.map(r => (
+              {group.results.map(r => (
                 <tr key={r.entry_id}>
                   <td>
                     <span className={`rank-badge ${r.finish_pos === 1 ? "rank-p1" : r.finish_pos === 2 ? "rank-p2" : r.finish_pos === 3 ? "rank-p3" : "rank-default"}`}>
@@ -325,8 +367,9 @@ export default function EventResultsPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
-        )}
+        ))}
         {provisionals.length > 0 && (
           <div className="table-wrap" style={{ marginTop: finishers.length ? 16 : 0 }}>
             <table className="stats-table">

@@ -15,8 +15,10 @@ can create new (empty) leagues; the active league is renamed under **League Setu
 
 A **Game/Series/Season/Class** selector sits at the top of every page — pick "All" at any level to
 widen a view (e.g. league-wide stats), or drill down to one exact season or class. The **Class**
-menu lists "All Classes" (the combined, whole-field view) followed by the classes defined in the
-selected season; a season that doesn't run classes simply stays on "All Classes".
+menu lists "All Classes" (the combined, whole-field view) followed by the classes in the current
+scope; a season that doesn't run classes simply stays on "All Classes". Because a class belongs to
+one season, widening to a series, a game or the whole league lists each class *name* once and spans
+every season that ran it — so "GT3 all-time records" is a scope you can actually pick.
 
 ## Features
 
@@ -27,7 +29,9 @@ selected season; a season that doesn't run classes simply stays on "All Classes"
   bonus points, and drop weeks per season
 - 🎽 **Multi-class championships** — split a season into classes (Pro/Amateur, GT3/LMP2); each
   scores its own isolated championship, with an optional combined overall title across the field,
-  and optionally its own race calendar
+  and optionally its own race calendar. Results and qualifying are entered one table per class,
+  and every class result cascades into the season, series, game and all-time totals as well as
+  its own class table. Lap records, Skill Rating and the Records page are all split by class too
 - 🖼 **Social graphic exporter** — league name + logo branding and per-column stat toggles, so
   the downloaded PNG/JPG shows exactly the columns you want
 - ⬆ **Bulk roster import** — roll a whole roster into a new season in one click, from the series
@@ -77,6 +81,9 @@ The app runs at `http://localhost:3000`.
 7. **Records** — the record holder in each category for the current scope, plus **Avg Drivers
    per Race**: the average field size across every completed race in scope. Empty and upcoming
    events are ignored, and a heat weekend counts its Feature field once rather than each heat.
+   Pick a **Class** to narrow every category to that class — at Series, Game or all-time scope
+   that spans every season which ran it — or read the **Records by Class** cards below the grid
+   for all classes at once.
 
 ### For league admins
 
@@ -92,10 +99,12 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
    - **Classes** *(optional)* — split the season's field into separately-scored groups
      ("Pro"/"Amateur", "GT3"/"LMP2"). Leave it empty for an ordinary single-class season —
      nothing changes. Classes created here fill the **Class** menu in the top bar, which scopes
-     Standings, Stats and Records to one class at a time. Assign drivers to a class on the
-     Roster page or from the Class column in the results grid; deleting a class only unassigns
-     its drivers, never their points or stats. **Per-Class Schedules** (a season setting) lets
-     each class run its own calendar — see Races below.
+     Standings, Stats and Records to one class at a time, and they split the results and
+     qualifying editors into one table per class (in the order set here — put the headline class
+     first). Assign drivers to a class on the Roster page or from the Class column in the results
+     grid; deleting a class only unassigns its drivers, never their points or stats.
+     **Per-Class Schedules** (a season setting) lets each class run its own calendar — see Races
+     below.
    - **Races** — name, track (+ track logo), round number, date, and session list (e.g.
      `Qualifying, Race` for a weekend with a scored qualifying session and a main race).
      With **Per-Class Schedules** on for the season, each race also gets a **Class** field:
@@ -127,6 +136,11 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
    You can also jump straight to a race's edit screen from **Schedule** (✎ icon) — it has
    **Race Info** and **Race Results** tabs in one place, including per-session (qualifying)
    results editing.
+   In a season that runs **classes**, both the Qualifying and Race Results grids split into one
+   table per class, ordered as the classes are. Each table is its own race: positions start at 1,
+   drag-to-reorder stays inside a class, and gaps are measured off that class's leader. Move a
+   driver between classes with the **Class** column — handy when someone runs up a class for one
+   round; the result records the class they actually raced in, leaving their roster class alone.
 
 ### Typical first-time flow
 
@@ -182,6 +196,29 @@ current entry class" — which is also why results saved before a season had cla
 the right class once drivers are assigned. Passing `class_id` to `/api/standings` or `/api/stats`
 re-scores the whole table over just that class (its own points, ranks, gaps and averages) rather
 than filtering rows out of the combined table.
+
+**Each class is its own race.** In a multi-class season the results and qualifying editors render
+one table per class, in the classes' `sort_order`, and finishing positions run 1..N *within* each
+class — every class has its own P1, its own pole, its own gaps. The save posts the rows grouped by
+class (`{ classes: [{ class_id, rows }] }`), so the class a driver is recorded in is the table they
+were entered in, not an inference; the older flat `{ rows }` form still works and resolves each
+row's class from the row or the roster. A driver with no class gets an "Unclassified" table, which
+only appears when someone actually needs it.
+
+**The cascade.** A class result is never *moved* out of the wider totals — it counts twice over. A
+GT3 win adds to the GT3 championship, the season's combined standings (when the season's **Overall
+Championship** toggle is on), and the series, game and all-time stats. `/api/stats` returns both the
+combined tables and a `by_class` breakdown from the same pass, and `/api/standings` returns each
+class's own championship alongside the combined one. Titles work the same way: each class crowns a
+champion, and the overall champion is credited on top only when the season actually runs a combined
+championship. Seasons with no classes are one default group throughout, so legacy data keeps feeding
+Series, Game and Overall stats exactly as it did before classes existed.
+
+**Records are per class.** Lap times aren't comparable across classes any more than across games, so
+a track keeps one record per class (`records_by_class`) as well as one per game — a GT3 lap never
+overwrites the LMP2 record on the same layout. The Records page filters every category by the Class
+menu and also lists each class's holders side by side. Skill Rating is exchanged *within* a class
+too: drivers only trade rating with the people they actually raced.
 
 **Per-class schedules.** By default every class shares one season calendar. Turning on a season's
 **Per-Class Schedules** lets a race be pinned to a single class via `races.class_id`; a race left

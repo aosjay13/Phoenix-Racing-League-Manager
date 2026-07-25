@@ -94,6 +94,34 @@ function SortableTable({ cols, rows, defaultKey, rankKey = "rank", renderName, n
   );
 }
 
+// Who leads each class right now, shown above the combined table so a
+// multi-class season's real championships are visible without switching the
+// Class menu one at a time. `completed` swaps the wording to "Champion".
+// Clicking a card scopes the whole page to that class.
+function ClassLeaders({ classStandings, completed, onPick }) {
+  const withRows = classStandings.filter(c => c.drivers.length);
+  if (!withRows.length) return null;
+  return (
+    <div className="metrics" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", marginTop: 14 }}>
+      {withRows.map(c => {
+        const leader = c.drivers[0];
+        return (
+          <article className="metric-card" key={c.class_id} style={{ alignItems: "flex-start", textAlign: "left", padding: "14px 16px", cursor: "pointer" }}
+            onClick={() => onPick(c.class_id)} title={`Show the ${c.class_name} championship`}>
+            <div className="metric-label" style={{ marginBottom: 4, color: c.color || undefined }}>
+              {c.class_name} {completed ? "Champion" : "Leader"}
+            </div>
+            <div style={{ fontWeight: 600, fontSize: "1rem" }}>{leader.driver_name}</div>
+            <div style={{ color: "var(--ink-2)", fontSize: "0.8rem", marginTop: 2 }}>
+              {leader.adjusted_points} pts · {leader.wins} win{leader.wins === 1 ? "" : "s"} · {c.drivers.length} driver{c.drivers.length === 1 ? "" : "s"}
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
 function formatCell(r, key) {
   const v = r[key];
   if (v == null) return "—";
@@ -102,7 +130,7 @@ function formatCell(r, key) {
 }
 
 export default function StandingsPage() {
-  const { seasonId, season, game, series, league, classId, raceClass, classes, combinedChampionship } = useLeague();
+  const { seasonId, season, game, series, league, classId, setClassId, raceClass, classes, combinedChampionship } = useLeague();
   const { isAdmin } = useAuth();
   const [tab, setTab] = useState("drivers");
   const [data, setData] = useState(null);
@@ -203,8 +231,23 @@ export default function StandingsPage() {
       </p>
       {classes.length > 0 && !className && !combinedChampionship && (
         <p style={{ marginTop: 4, color: "var(--ink-2)", fontSize: "0.82rem" }}>
-          This season doesn&rsquo;t run an overall championship — the combined table below is for reference only.
+          This season doesn&rsquo;t run an overall championship — the class championships below are the official
+          ones, and the combined table is for reference only.
         </p>
+      )}
+      {!className && data?.unclassified_results > 0 && (
+        <p style={{ marginTop: 4, color: "var(--ink-2)", fontSize: "0.82rem" }}>
+          Some results have no class assigned. They score in the combined table but toward no class championship —
+          set each driver&rsquo;s class on the Roster, or per result in the race editor, to fold them in.
+        </p>
+      )}
+
+      {!className && data?.class_standings?.length > 0 && (
+        <ClassLeaders
+          classStandings={data.class_standings}
+          completed={season?.status === "completed"}
+          onPick={setClassId}
+        />
       )}
 
       <div className="tab-row">

@@ -86,7 +86,7 @@ export default function DriverProfilePage() {
   if (error) return <div className="empty-state"><span className="empty-state-icon">🏎</span><p>{error}</p></div>;
   if (!data) return <div className="skeleton" style={{ height: 280 }} />;
 
-  const { profile, all_games, by_game, by_track = [], linked, skill_ratings_by_game = [], aliases = [], former_names = [] } = data;
+  const { profile, all_games, by_game, by_track = [], by_class = [], linked, skill_ratings_by_game = [], aliases = [], former_names = [] } = data;
   const stats = gameFilter === "all"
     ? all_games
     : by_game.find(g => g.game_id === gameFilter)?.stats ?? all_games;
@@ -310,6 +310,38 @@ export default function DriverProfilePage() {
                     <td>{g.stats.titles}</td>
                     <td className="points-cell">{g.stats.points}</td>
                     <td>{formatStat("avg_finish", g.stats.avg_finish)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {/* Per-class career line. A driver who has raced GT3 and LMP2 sees each
+          separately here, on top of the combined totals above — the same result
+          feeds both. Absent for drivers who've only raced seasons with no
+          classes, which is every season that predates them. */}
+      {view === "career" && by_class.length > 0 && (
+        <>
+          <div className="section-header">
+            <h3 title="Each class this driver has raced in, scored on its own">By Class</h3>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Class</th><th>Starts</th><th>Wins</th><th>Podiums</th><th>Top 5s</th><th>Poles</th><th>Titles</th><th>Points</th><th>Avg Finish</th></tr></thead>
+              <tbody>
+                {by_class.map(c => (
+                  <tr key={c.class_id}>
+                    <td className="driver-name-cell" style={{ color: c.color || undefined }}>{c.class_name}</td>
+                    <td>{c.stats.starts}</td>
+                    <td>{c.stats.wins}</td>
+                    <td>{c.stats.podiums}</td>
+                    <td>{c.stats.top5}</td>
+                    <td>{c.stats.poles}</td>
+                    <td>{c.stats.titles}</td>
+                    <td className="points-cell">{c.stats.points}</td>
+                    <td>{formatStat("avg_finish", c.stats.avg_finish)}</td>
                   </tr>
                 ))}
               </tbody>

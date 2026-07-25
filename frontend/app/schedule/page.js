@@ -20,6 +20,23 @@ function Person({ p }) {
     : <span>{p.name}</span>;
 }
 
+// A pole sitter / winner per class — each class ran its own race, so each has
+// its own. Falls back to the single unlabelled person for an event that wasn't
+// split into classes, which is every event in a season without them.
+function PerClass({ rows, single, pick }) {
+  if (!rows || rows.length < 2) return <Person p={single} />;
+  return (
+    <>
+      {rows.map(c => (
+        <span key={c.class_id} style={{ display: "block", whiteSpace: "nowrap" }}>
+          <span style={{ color: "var(--ink-2)", fontSize: "0.72rem", marginRight: 5 }}>{c.class_name}</span>
+          <Person p={pick(c)} />
+        </span>
+      ))}
+    </>
+  );
+}
+
 // A race date is a bare calendar date, rendered exactly as the admin picked it
 // in every timezone — see lib/raceDate.js.
 const fmtDate = d => formatRaceDate(d, "short");
@@ -295,8 +312,12 @@ function SeasonSchedule() {
                       )}
                     </td>
                     <td style={{ textAlign: "left" }}>{s.car || <span style={{ color: "var(--ink-2)" }}>—</span>}</td>
-                    <td style={{ textAlign: "left" }}><Person p={s.pole} /></td>
-                    <td style={{ textAlign: "left", fontWeight: s.winner ? 600 : undefined }}><Person p={s.winner} /></td>
+                    {/* A multi-class event has a pole and a winner per class,
+                        so each is named with the class it belongs to. */}
+                    <td style={{ textAlign: "left" }}><PerClass rows={s.by_class} single={s.pole} pick={c => c.pole} /></td>
+                    <td style={{ textAlign: "left", fontWeight: s.winner ? 600 : undefined }}>
+                      <PerClass rows={s.by_class} single={s.winner} pick={c => c.winner} />
+                    </td>
                     <td style={{ fontVariantNumeric: "tabular-nums" }}>{s.num_drivers || "—"}</td>
                     <td>
                       {s.has_results

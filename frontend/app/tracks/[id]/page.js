@@ -51,6 +51,36 @@ function GameRecords({ records }) {
   );
 }
 
+// Fastest-lap record for each class raced at this venue. Different classes run
+// different machinery, so a GT3 lap and an LMP2 lap around the same layout are
+// separate records — the quicker class never overwrites the slower one's.
+// Absent entirely for a venue whose races were never split into classes.
+function ClassRecords({ records }) {
+  if (!records.length) return null;
+  return (
+    <>
+      <div className="section-header">
+        <h3 title="Classes run different machinery, so each keeps its own lap record here">🏎 Track Records by Class</h3>
+      </div>
+      <div className="metrics" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}>
+        {records.map(rec => (
+          <article className="metric-card" key={rec.class_id} style={{ alignItems: "flex-start", textAlign: "left", padding: "16px 18px" }}>
+            <div className="metric-label" style={{ marginBottom: 4 }}>{rec.class_name}</div>
+            <div className="metric-num" style={{ fontVariantNumeric: "tabular-nums" }}>{rec.time}</div>
+            <div style={{ color: "var(--ink-1)", fontSize: "0.82rem", marginTop: 2 }}>
+              {(rec.driver_id || rec.user_id)
+                ? <Link href={`/drivers/${rec.driver_id || rec.user_id}`} style={{ color: "var(--accent-cyan)" }}>{rec.driver_name}</Link>
+                : rec.driver_name}
+              {rec.session ? ` · ${rec.session}` : ""}
+              {rec.season_name ? ` · ${rec.season_name}` : ""}
+            </div>
+          </article>
+        ))}
+      </div>
+    </>
+  );
+}
+
 // Venue "records" — the single leader for each headline stat, drawn from the
 // per-driver leaderboard (already sorted so [0] is the winningest driver).
 function records(drivers) {
@@ -72,13 +102,13 @@ function records(drivers) {
 
 export default function TrackProfilePage() {
   const { id } = useParams();
-  const { gameId, seriesId, seasonId } = useLeague();
+  const { gameId, seriesId, seasonId, classId, raceClass } = useLeague();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [tab, setTab] = useState("records"); // "records" | "results"
 
-  // Scope the venue stats to the top-of-page Game/Series/Season dropdowns, and
-  // re-fetch whenever that context changes.
+  // Scope the venue stats to the top-of-page Game/Series/Season/Class
+  // dropdowns, and re-fetch whenever that context changes.
   useEffect(() => {
     if (!id) return;
     setData(null);
@@ -87,14 +117,19 @@ export default function TrackProfilePage() {
     if (seasonId) params.set("season_id", seasonId);
     else if (seriesId) params.set("series_id", seriesId);
     else if (gameId) params.set("game_id", gameId);
+    if (classId) params.set("class_id", classId);
     const qs = params.toString();
     api(`/api/tracks/${id}${qs ? `?${qs}` : ""}`).then(setData).catch(err => setError(err.message));
-  }, [id, gameId, seriesId, seasonId]);
+  }, [id, gameId, seriesId, seasonId, classId]);
 
   if (error) return <div className="empty-state"><span className="empty-state-icon">🏁</span><p>{error}</p></div>;
   if (!data) return <div className="skeleton" style={{ height: 280 }} />;
 
-  const { track, races_held, seasons_raced, drivers, winners, record, records_by_game = [] } = data;
+  const { track, races_held, seasons_raced, drivers, winners, record, records_by_game = [], records_by_class = [] } = data;
+  const className = raceClass?.name ?? null;
+  // A multi-class event has a winner per class, so Past Results lists one row
+  // per class win and names which one. Single-class venues keep one row.
+  const showWinnerClass = !className && winners.some(w => w.class_name);
   const recs = records(drivers);
 
   return (
@@ -158,8 +193,11 @@ export default function TrackProfilePage() {
               )}
 
               <GameRecords records={records_by_game} />
+              <ClassRecords records={records_by_class} />
 
-              <div className="section-header"><h3>Venue Records</h3></div>
+              <div className="section-header">
+                <h3>Venue Records{className ? ` · ${className}` : ""}</h3>
+              </div>
               <div className="metrics" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))" }}>
                 {recs.map(r => (
                   <article className="metric-card" key={r.label}>
@@ -208,6 +246,7 @@ export default function TrackProfilePage() {
                         <th className="sticky-col" style={{ textAlign: "left" }}>Event</th>
                         <th style={{ textAlign: "left" }}>Series</th>
                         <th style={{ textAlign: "left" }}>Season</th>
+                        {showWinnerClass && <th style={{ textAlign: "left" }}>Class</th>}
                         <th>Date</th>
                         <th>Length</th>
                         <th style={{ textAlign: "left" }}>Car</th>
@@ -218,7 +257,7 @@ export default function TrackProfilePage() {
                     </thead>
                     <tbody>
                       {winners.map(w => (
-                        <tr key={w.race_id}>
+                        <tr key={`${w.race_id}|${w.class_id ?? ""}`}>
                           <td className="sticky-col" style={{ textAlign: "left" }}>
                             <Link href={`/races/${w.race_id}`} style={{ color: "var(--accent-cyan)" }}>
                               {w.round_number != null ? `R${w.round_number} · ` : ""}{w.race_name}
@@ -226,6 +265,9 @@ export default function TrackProfilePage() {
                           </td>
                           <td style={{ textAlign: "left" }}>{w.series_name || "—"}</td>
                           <td style={{ textAlign: "left" }}>{w.season_name}</td>
+                          {showWinnerClass && (
+                            <td style={{ textAlign: "left" }}>{w.class_name || <span style={{ color: "var(--ink-2)" }}>—</span>}</td>
+                          )}
                           <td style={{ whiteSpace: "nowrap" }}>{formatRaceDate(w.date, "short", "—")}</td>
                           <td style={{ whiteSpace: "nowrap" }}>
                             {w.laps ? `${w.laps} Laps` : "—"}

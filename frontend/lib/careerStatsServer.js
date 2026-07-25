@@ -12,6 +12,7 @@ import {
   resolveSeasonConfig,
 } from "@/lib/standings";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
+import { classKey, classOfResult, fetchClassesForSeasons } from "@/lib/classServer";
 
 // Builds a driver's career stats grouped per game (and all games combined),
 // from every entry that matches the given global driver id and/or linked
@@ -42,9 +43,17 @@ export async function buildCareerProfile({ driverId = null, userId = null }) {
   const perGame = {};       // gameId -> results
   const titlesPerGame = {}; // gameId -> count
   const perTrack = {};      // trackKey -> { track_id, track_name, results[] }
+  // classKey ("gt3") -> the driver's results in that class, across every season
+  // that ran it. Keyed by NAME because a class doc belongs to one season, so a
+  // driver's GT3 career spans a different id each year.
+  const perClass = {};
   const allResults = [];
   let totalTitles = 0;
-  const templatesById = await fetchTemplatesById();
+  const [templatesById, careerClasses] = await Promise.all([
+    fetchTemplatesById(),
+    fetchClassesForSeasons(seasonIds),
+  ]);
+  const classById = Object.fromEntries(careerClasses.map(c => [c.id, c]));
 
   for (const seasonId of seasonIds) {
     const season = seasons[seasonId];
@@ -90,11 +99,44 @@ export async function buildCareerProfile({ driverId = null, userId = null }) {
       bucket.results.push(r);
     }
 
+    // Bucket the same results by the class the driver ran them in, so a career
+    // shows a GT3 line and an LMP2 line as well as the combined total. Results
+    // outside any class (a season that predates classes, or an unclassified
+    // driver) are left out of this breakdown — they're already in the totals.
+    const seasonEntriesById = Object.fromEntries(seasonEntries.map(e => [e.id, e]));
+    for (const r of mine) {
+      const cls = classById[classOfResult(r, seasonEntriesById) || ""];
+      if (!cls) continue;
+      const key = classKey(cls.name);
+      const bucket = (perClass[key] ??= { class_id: cls.id, class_name: cls.name, color: cls.color ?? null, sort_order: Number(cls.sort_order || 0), titles: 0, results: [] });
+      bucket.class_name = cls.name;
+      bucket.results.push(r);
+    }
+
     if (season.status === "completed" && mine.length) {
-      const standings = calculateStandings(seasonResults, seasonEntries, [], config, templatesById);
-      if (standings.rows[0] && myEntryIds.has(standings.rows[0].entry_id)) {
+      // The season's own championship — the overall one when the season crowns
+      // it, and each class championship the driver won on top of that. A class
+      // title is a title: it cascades into the career total exactly like a
+      // single-class season's does.
+      const seasonClasses = careerClasses.filter(c => c.season_id === seasonId);
+      const combinedOn = season.combined_championship !== false;
+      if (!seasonClasses.length || combinedOn) {
+        const standings = calculateStandings(seasonResults, seasonEntries, [], config, templatesById);
+        if (standings.rows[0] && myEntryIds.has(standings.rows[0].entry_id)) {
+          totalTitles += 1;
+          titlesPerGame[gameId] = (titlesPerGame[gameId] || 0) + 1;
+        }
+      }
+      for (const cls of seasonClasses) {
+        const classResults = seasonResults.filter(r => classOfResult(r, seasonEntriesById) === cls.id);
+        const classEntries = seasonEntries.filter(e => e.class_id === cls.id);
+        if (!classResults.length || !classEntries.length) continue;
+        const standings = calculateStandings(classResults, classEntries, [], config, templatesById);
+        if (!standings.rows[0] || !myEntryIds.has(standings.rows[0].entry_id)) continue;
         totalTitles += 1;
         titlesPerGame[gameId] = (titlesPerGame[gameId] || 0) + 1;
+        const bucket = perClass[classKey(cls.name)];
+        if (bucket) bucket.titles += 1;
       }
     }
   }
@@ -129,10 +171,24 @@ export async function buildCareerProfile({ driverId = null, userId = null }) {
       b.stats.wins - a.stats.wins || b.stats.starts - a.stats.starts ||
       String(a.track_name).localeCompare(String(b.track_name)));
 
+  // Per-class career line, in the running order classes are shown in elsewhere.
+  // Empty for a driver who has only ever raced in seasons without classes.
+  const byClass = Object.values(perClass)
+    .map(c => ({
+      class_id: c.class_id,
+      class_name: c.class_name,
+      color: c.color,
+      sort_order: c.sort_order,
+      stats: aggregateCareerStats(c.results, c.titles),
+    }))
+    .filter(c => c.stats.starts > 0 || c.stats.qualifying_sessions > 0)
+    .sort((a, b) => a.sort_order - b.sort_order || String(a.class_name).localeCompare(String(b.class_name)));
+
   return {
     all_games: aggregateCareerStats(allResults, totalTitles),
     by_game: byGame,
     by_track: byTrack,
+    by_class: byClass,
     seasons_raced: seasonIds.length,
   };
 }

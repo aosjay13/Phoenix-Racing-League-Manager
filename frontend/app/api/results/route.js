@@ -48,16 +48,51 @@ function matchesSession(data, sessionType, savingSession, firstSession) {
 // the points system this session was scored under, so standings/stats stay
 // correct even if the season's default or another session's template later
 // changes — see lib/standings.js configForTemplate().
+//
+// Two payload shapes are accepted:
+//   { rows: [ … ] }                                  — one flat finishing order
+//   { classes: [ { class_id, rows: [ … ] }, … ] }     — grouped by class
+// A multi-class season submits the grouped form: each class runs its own race,
+// so each group carries its own 1..N finishing order and its class is taken from
+// the group it was submitted in — an explicit "this driver ran GT3 this round"
+// that survives even when their roster class says otherwise. The flat form is
+// unchanged and still resolves each row's class from the row or the roster.
 export const POST = withAdmin(async (request, ctx, user) => {
-  const { race_id, season_id, session = "", session_type, points_template_id, rows } = await request.json();
+  const body = await request.json();
+  const { race_id, season_id, session = "", session_type, points_template_id, classes } = body;
   const sessionType = SESSION_TYPES.includes(session_type) ? session_type : "race";
+  const grouped = Array.isArray(classes);
+  // Flatten a grouped payload, stamping each row with its group's class. `null`
+  // marks a class the group didn't state, so the roster fallback below applies;
+  // a group class of "" is a deliberate "no class".
+  const rows = grouped
+    ? classes.flatMap(group => (Array.isArray(group?.rows) ? group.rows : [])
+        .map(row => ({ ...row, class_id: group.class_id ?? "" })))
+    : body.rows;
   if (!race_id || !season_id || !Array.isArray(rows)) {
-    return NextResponse.json({ error: "race_id, season_id, rows[] required" }, { status: 400 });
+    return NextResponse.json({ error: "race_id, season_id, rows[] or classes[] required" }, { status: 400 });
   }
   for (const row of rows) {
     if (!row.entry_id || !row.finish_pos) {
       return NextResponse.json({ error: "each row needs entry_id and finish_pos" }, { status: 400 });
     }
+  }
+  // A driver can only appear once in a session, whatever class they ran in.
+  const entryIds = rows.map(r => r.entry_id);
+  if (new Set(entryIds).size !== entryIds.length) {
+    return NextResponse.json({ error: "a driver appears more than once in this session" }, { status: 400 });
+  }
+  // Finishing positions are unique WITHIN a class — each class has its own P1 —
+  // so the clash check is per class, and per session for an ungrouped payload.
+  const seenPositions = {};
+  for (const row of rows) {
+    if (row.provisional) continue;   // parked behind the field, never a real position
+    const key = grouped ? (row.class_id ?? "") : "";
+    (seenPositions[key] ??= new Set());
+    if (seenPositions[key].has(Number(row.finish_pos))) {
+      return NextResponse.json({ error: "two drivers share the same finishing position" }, { status: 400 });
+    }
+    seenPositions[key].add(Number(row.finish_pos));
   }
 
   const { firstSession } = await sessionContext(race_id);
@@ -67,10 +102,16 @@ export const POST = withAdmin(async (request, ctx, user) => {
   // Record the class each driver ran in on the result itself, so a class
   // championship stays historically correct even if the driver is later moved
   // to another class (or the roster entry is re-used). An explicit class on the
-  // row wins (the results grid's Class dropdown); otherwise it's taken from the
-  // driver's current roster entry. Blank = unclassified.
+  // row wins (the class table it was entered in, or the grid's Class dropdown);
+  // otherwise it's taken from the driver's current roster entry. Blank =
+  // unclassified, which still scores in the season's combined standings.
   const entriesSnap = await db().collection("entries").where("season_id", "==", season_id).get();
   const classByEntry = Object.fromEntries(entriesSnap.docs.map(d => [d.id, d.data().class_id || ""]));
+  // In a grouped payload the section a row was submitted in IS the answer, blank
+  // included — the admin placed it there. Ungrouped rows fall back to the roster.
+  const classFor = row => (grouped
+    ? (row.class_id ?? "")
+    : (row.class_id != null && row.class_id !== "" ? row.class_id : (classByEntry[row.entry_id] || "")));
 
   const col = db().collection("results");
   const existing = await col.where("race_id", "==", race_id).get();
@@ -93,7 +134,7 @@ export const POST = withAdmin(async (request, ctx, user) => {
       session: savingSession,
       session_type: sessionType,
       entry_id: row.entry_id,
-      class_id: (row.class_id != null && row.class_id !== "") ? row.class_id : (classByEntry[row.entry_id] || ""),
+      class_id: classFor(row),
       finish_pos: Number(row.finish_pos),
       start_pos: row.start_pos === "" || row.start_pos == null ? null : Number(row.start_pos),
       qual_time: row.qual_time || null,

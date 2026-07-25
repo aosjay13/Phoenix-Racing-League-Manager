@@ -3,7 +3,7 @@ import { db } from "@/lib/firebase";
 import { getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
 import { decorateSessionFlags } from "@/lib/standings";
 import { summarizeRace } from "@/lib/raceSummaryServer";
-import { fetchSeasonClasses, filterRacesByClass } from "@/lib/classServer";
+import { classOfResult, fetchSeasonClasses, filterRacesByClass } from "@/lib/classServer";
 
 export const dynamic = "force-dynamic";
 
@@ -51,10 +51,16 @@ async function oneSeason(seasonId, classId = "") {
   const results = decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById);
   const classNameById = Object.fromEntries(classes.map(c => [c.id, c.name]));
 
+  // Each class runs its own race, so each has its own winner and pole. Viewing
+  // one class summarizes that class alone; "All Classes" gets every class's
+  // winner/pole listed per event (summary.by_class).
+  const shown = classId ? classes.filter(c => c.id === classId) : classes;
+  const classOf = classes.length ? (r => classOfResult(r, entriesById)) : null;
+
   const rows = races.map(r => ({
     ...r,
     class_name: r.class_id ? (classNameById[r.class_id] ?? null) : null,
-    summary: summarizeRace(r, results, entriesById, seasonCar),
+    summary: summarizeRace(r, results, entriesById, seasonCar, { classes: shown, classOf }),
   }));
   return NextResponse.json(rows);
 }

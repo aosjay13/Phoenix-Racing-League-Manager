@@ -8,7 +8,7 @@ import {
   resolveSeasonConfig,
 } from "@/lib/standings";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
-import { fetchSeasonClasses, filterEntriesByClass, filterResultsByClass } from "@/lib/classServer";
+import { classOfResult, fetchSeasonClasses, filterResultsByClass } from "@/lib/classServer";
 import { gameAlias } from "@/lib/aliases";
 
 // One season's championship tables.
@@ -43,8 +43,17 @@ export async function GET(request) {
   const racesById = Object.fromEntries(racesSnap.docs.map(d => [d.id, d.data()]));
   const allResults = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById));
 
-  const entries = filterEntriesByClass(allEntries, classId);
-  const results = filterResultsByClass(allResults, classId, entriesById);
+  // One class's field: everyone rostered in it, PLUS anyone who actually scored
+  // a result in it. A driver who runs up a class for a round is stamped with
+  // that class on the result while their roster entry still says otherwise —
+  // they belong in the championship they raced in, under their own name.
+  const fieldFor = cid => {
+    const results = filterResultsByClass(allResults, cid, entriesById);
+    if (!cid) return { entries: allEntries, results };
+    const scoredIn = new Set(results.map(r => r.entry_id));
+    return { entries: allEntries.filter(e => (e.class_id || "") === cid || scoredIn.has(e.id)), results };
+  };
+  const { entries, results } = fieldFor(classId);
 
   const config = resolveSeasonConfig(season);
   const drivers = calculateStandings(results, entries, teams, config, templatesById);
@@ -75,10 +84,37 @@ export async function GET(request) {
     r.class_name = cid ? (classNameById[cid] ?? null) : null;
   }
 
+  // Every class's own championship, computed alongside the table above so the
+  // combined view can name each class leader without a request per class. Each
+  // is scored exactly like the table above, just over its own field: its leader
+  // is rank 1 on 0 points behind, not a row lifted out of the combined order.
+  // Only built for the combined view — inside a single class the table already
+  // IS that class's championship.
+  const class_standings = classId ? [] : classes.map(cls => {
+    const { entries: classEntries, results: classResults } = fieldFor(cls.id);
+    const table = calculateStandings(classResults, classEntries, teams, config, templatesById);
+    return {
+      class_id: cls.id,
+      class_name: cls.name,
+      color: cls.color ?? null,
+      drivers: table.rows,
+      teams: calculateTeamStandings(table.rows, teams),
+    };
+  });
+
+  // Drivers racing in this season without a class. They score in the combined
+  // championship like everyone else but toward no class championship, so the
+  // combined view flags them rather than leaving them looking like an omission.
+  const unclassified = classes.length
+    ? allResults.filter(r => !classOfResult(r, entriesById)).length
+    : 0;
+
   return NextResponse.json({
     season: { id: seasonId, ...season },
     classes,
     class_id: classId || null,
+    class_standings,
+    unclassified_results: unclassified,
     // Whether this season also crowns ONE overall champion across every class.
     // Defaults to true (and is meaningless without classes, where the whole
     // field is a single championship anyway).

@@ -14,7 +14,16 @@ import {
   resolveSeasonConfig,
 } from "@/lib/standings";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
-import { filterEntriesByClass, filterRacesByClass, filterResultsByClass } from "@/lib/classServer";
+import {
+  UNCLASSIFIED_LABEL,
+  classKey,
+  classOfResult,
+  dedupeClassesByName,
+  fetchClassesForSeasons,
+  filterRacesByClass,
+  filterResultsByClass,
+  resolveClassScope,
+} from "@/lib/classServer";
 import { finalSessionName } from "@/lib/raceSummaryServer";
 import { isPastRaceDate, raceDateSortKey, toDateOnly, todayDateString } from "@/lib/raceDate";
 
@@ -26,10 +35,20 @@ export const dynamic = "force-dynamic";
 //   scope=game&game_id=…        → all seasons in a game
 //   scope=series&series_id=…    → all seasons in a series
 //   scope=season&season_id=…    → one season
-// Add &class_id=… to narrow to one season class (Pro, GT3, …); classes belong
-// to a single season, so it only bites within that season's slice of the scope.
-// Drivers are unified across seasons by linked account (user_id) when
-// present, otherwise by roster name.
+// Add &class_id=… to narrow to one class (Pro, GT3, …). A class doc belongs to a
+// single season, so at series/game/league scope the id is widened to every
+// same-named class in the scope (resolveClassScope) — that's what makes an
+// all-time "GT3 stats" view work rather than showing one season's slice.
+//
+// Every response ALSO carries `by_class`: the same aggregation run separately
+// for each class in the scope, so one race result cascades into its class table
+// and the combined table in a single pass. Seasons with no classes (and
+// unclassified drivers in seasons that have them) land in one default
+// "Unclassified" group, so legacy data keeps feeding the combined totals exactly
+// as it did before classes existed.
+//
+// Drivers are unified across seasons by linked account (user_id) when present,
+// otherwise by roster name.
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const scope = searchParams.get("scope") || "league";
@@ -63,20 +82,104 @@ export async function GET(request) {
   return NextResponse.json(await buildStats(seasons, classId));
 }
 
+// Prefer the global driver identity (driver_id) so a driver who races under a
+// different alias/number in each series still aggregates as one person; fall
+// back to linked account or name for older entries written before driver_id
+// existed.
+const driverKeyFor = entry =>
+  entry.driver_id ? `d:${entry.driver_id}` : entry.user_id ? `u:${entry.user_id}` : `n:${String(entry.name || "").trim().toLowerCase()}`;
+
+// Fold one scored result into a driver bucket (creating it on first sight) and,
+// when the driver runs for a team, into that team's bucket too. Used once for
+// the combined totals and once per class split, so a GT3 win lands in the GT3
+// table and the combined table from the same pass — the cascade.
+function accumulate(store, entry, scored, team, teamKey) {
+  const key = driverKeyFor(entry);
+  const bucket = (store.drivers[key] ??= {
+    driver_name: entry.name,
+    driver_number: entry.number ?? null,
+    driver_id: entry.driver_id ?? null,
+    user_id: entry.user_id ?? null,
+    results: [],
+    titles: 0,
+  });
+  // Prefer the most recent identity details we see.
+  bucket.driver_name = entry.name;
+  if (entry.number != null) bucket.driver_number = entry.number;
+  if (entry.user_id) bucket.user_id = entry.user_id;
+  if (entry.driver_id) bucket.driver_id = entry.driver_id;
+  bucket.results.push(scored);
+
+  // Mirror the same scored result into its team bucket. A team's stats are the
+  // combined results of every driver who raced for it in scope.
+  if (teamKey) {
+    const tb = (store.teams[teamKey] ??= {
+      team_name: team?.name ?? entry.team, logo_url: team?.logo_url ?? null, color: team?.color ?? null,
+      results: [], driverKeys: new Set(), titles: 0,
+    });
+    if (team?.name) tb.team_name = team.name;
+    if (team?.logo_url) tb.logo_url = team.logo_url;
+    if (team?.color) tb.color = team.color;
+    tb.results.push(scored);
+    tb.driverKeys.add(key);
+  }
+}
+
+// A fresh, empty aggregation store — the shape every scope (combined or one
+// class) accumulates into.
+const emptyStore = () => ({ drivers: {}, teams: {}, fieldSizes: [], races: 0 });
+
+// Credit a championship to a driver (and their team) inside one store. Silently
+// no-ops when the champion has no results in that store, which is what happens
+// for a season the current filter excluded.
+function creditTitle(store, entry, teamKey) {
+  const key = driverKeyFor(entry);
+  if (store.drivers[key]) store.drivers[key].titles += 1;
+  if (teamKey && store.teams[teamKey]) store.teams[teamKey].titles += 1;
+}
+
 async function buildStats(seasons, classId = "") {
-  // driverKey -> { name, number, user_id, results[], titles }
-  const drivers = {};
-  // teamKey (lowercased name) -> aggregated team bucket. Teams are per-season
-  // docs with no global id, so cross-season identity keys on the team name —
-  // mirroring how drivers fall back to name when they have no driver_id.
-  const teams = {};
+  const seasonIds = seasons.map(s => s.id);
+  const [templatesById, allClasses] = await Promise.all([
+    fetchTemplatesById(),
+    fetchClassesForSeasons(seasonIds),
+  ]);
+  // One selected class widens to every same-named class across the scope, so a
+  // series/game/all-time view of "GT3" spans each season that ran it.
+  const classScope = await resolveClassScope(classId, seasonIds, allClasses);
+  const scopeClasses = dedupeClassesByName(allClasses);
+  const selector = classScope?.ids ?? null;
+  const classById = Object.fromEntries(allClasses.map(c => [c.id, c]));
+
+  const combined = emptyStore();
+  // classKey ("gt3") -> that class's own isolated aggregation. Keyed by NAME so
+  // one bucket spans every season that ran the class. "" is the default group:
+  // seasons with no classes at all, plus unclassified drivers elsewhere.
+  const splits = new Map();
+  const splitFor = cls => {
+    const key = cls ? classKey(cls.name) : "";
+    let split = splits.get(key);
+    if (!split) {
+      split = {
+        key,
+        class_id: cls?.id ?? "",
+        class_ids: new Set(cls ? [cls.id] : []),
+        class_name: cls?.name ?? UNCLASSIFIED_LABEL,
+        color: cls?.color ?? null,
+        sort_order: cls ? Number(cls.sort_order || 0) : Number.MAX_SAFE_INTEGER,
+        is_default: !cls,
+        seasons: new Set(),
+        ...emptyStore(),
+      };
+      splits.set(key, split);
+    }
+    if (cls) split.class_ids.add(cls.id);
+    return split;
+  };
+
   // Every race across the scope, used for the dashboard's schedule metrics
   // (total / completed / next upcoming) alongside the per-driver aggregates.
   const allRaces = [];
-  // Field-size accumulator: one entry per race that actually has finalized
-  // results, holding how many drivers took part. See fieldSizeFor below.
-  const fieldSizes = [];
-  const templatesById = await fetchTemplatesById();
 
   for (const season of seasons) {
     const config = resolveSeasonConfig(season);
@@ -88,36 +191,37 @@ async function buildStats(seasons, classId = "") {
     ]);
     const allEntries = entriesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
     const allEntriesById = Object.fromEntries(allEntries.map(e => [e.id, e]));
-    // A class filter narrows the field before anything is scored, so a class
-    // view shows that class's own points, wins and averages — not a slice of
-    // the overall table.
-    const entries = filterEntriesByClass(allEntries, classId);
-    const entriesById = Object.fromEntries(entries.map(e => [e.id, e]));
     const teamsById = Object.fromEntries(teamsSnap.docs.map(d => [d.id, d.data()]));
     const seasonRaces = racesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
     // Under a class filter, only that class's calendar counts toward the race
     // totals and field size — its own events plus the shared ones. The
     // race→doc map stays unfiltered so results always resolve their race.
-    const races = filterRacesByClass(seasonRaces, classId);
+    const races = filterRacesByClass(seasonRaces, selector);
     const racesById = Object.fromEntries(seasonRaces.map(r => [r.id, r]));
     for (const r of races) allRaces.push(r);
     const decorated = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById));
-    const results = filterResultsByClass(decorated, classId, allEntriesById);
+    // A class filter narrows the field before anything is scored, so a class
+    // view shows that class's own points, wins and averages — not a slice of
+    // the overall table.
+    const results = filterResultsByClass(decorated, selector, allEntriesById);
+    // The class's field: everyone rostered in it, PLUS anyone who actually
+    // scored a result in it. A driver who ran up a class for one round is
+    // stamped with that class on the result while their roster entry says
+    // otherwise — they belong in the table they raced in.
+    const scoredIn = new Set(results.map(r => r.entry_id));
+    const entries = selector
+      ? allEntries.filter(e => selector.has(e.class_id || "") || scoredIn.has(e.id))
+      : allEntries;
+    const entriesById = Object.fromEntries(entries.map(e => [e.id, e]));
     const qualPosMap = buildQualPosMap(results);
     const qualTemplateByRace = buildQualTemplateMap(results);
 
     // Average field size: how many drivers actually took part in each event.
+    combined.races += races.length;
     for (const race of races) {
       const n = fieldSizeFor(race, results);
-      if (n > 0) fieldSizes.push(n);
+      if (n > 0) combined.fieldSizes.push(n);
     }
-
-    // Prefer the global driver identity (driver_id) so a driver who races
-    // under a different alias/number in each series still aggregates as one
-    // person; fall back to linked account or name for older entries written
-    // before driver_id existed.
-    const keyFor = entry =>
-      entry.driver_id ? `d:${entry.driver_id}` : entry.user_id ? `u:${entry.user_id}` : `n:${String(entry.name || "").trim().toLowerCase()}`;
 
     const teamKeyFor = entry => {
       const t = entry.team_id ? teamsById[entry.team_id] : null;
@@ -125,86 +229,141 @@ async function buildStats(seasons, classId = "") {
       return name ? `t:${name.toLowerCase()}` : null;
     };
 
+    // The classes this season actually runs, and the results each of them owns.
+    // A season with none produces a single default group holding the whole
+    // field, so legacy seasons need no special handling anywhere below.
+    const seasonClasses = allClasses.filter(c => c.season_id === season.id);
+    const resultsByClass = new Map();  // class doc (or null) -> results
+    for (const r of results) {
+      const cid = classOfResult(r, allEntriesById);
+      const cls = cid ? classById[cid] ?? null : null;
+      const key = cls ? classKey(cls.name) : "";
+      let bucket = resultsByClass.get(key);
+      if (!bucket) resultsByClass.set(key, (bucket = { cls, results: [] }));
+      bucket.results.push(r);
+    }
+
     for (const r of results) {
       const entry = entriesById[r.entry_id];
       if (!entry) continue;
-      const key = keyFor(entry);
-      const bucket = (drivers[key] ??= {
-        driver_name: entry.name,
-        driver_number: entry.number ?? null,
-        driver_id: entry.driver_id ?? null,
-        user_id: entry.user_id ?? null,
-        results: [],
-        titles: 0,
-      });
-      // Prefer the most recent identity details we see.
-      bucket.driver_name = entry.name;
-      if (entry.number != null) bucket.driver_number = entry.number;
-      if (entry.user_id) bucket.user_id = entry.user_id;
-      if (entry.driver_id) bucket.driver_id = entry.driver_id;
+      const team = entry.team_id ? teamsById[entry.team_id] : null;
+      const teamKey = teamKeyFor(entry);
       const scored = {
         ...r,
         points: (isQualifying(r) || r.counts_points === false) ? 0 : pointsFor(r, configForTemplate(config, templatesById[r.points_template_id]), qualPosMap[`${r.race_id}|${r.entry_id}`] ?? null, configForTemplate(config, templatesById[qualTemplateByRace[r.race_id]])),
       };
-      bucket.results.push(scored);
+      // The cascade: one result counts in the combined table AND in its own
+      // class's table. Nothing is moved out of the combined totals — a class is
+      // an extra view of the same result, never a replacement for it.
+      accumulate(combined, entry, scored, team, teamKey);
+      const cid = classOfResult(r, allEntriesById);
+      const split = splitFor(cid ? classById[cid] ?? null : null);
+      split.seasons.add(season.id);
+      accumulate(split, entry, scored, team, teamKey);
+    }
 
-      // Mirror the same scored result into its team bucket. A team's stats are
-      // the combined results of every driver who raced for it in scope.
-      const tk = teamKeyFor(entry);
-      if (tk) {
-        const t = entry.team_id ? teamsById[entry.team_id] : null;
-        const tb = (teams[tk] ??= { team_name: t?.name ?? entry.team, logo_url: t?.logo_url ?? null, color: t?.color ?? null, results: [], driverKeys: new Set(), titles: 0 });
-        if (t?.name) tb.team_name = t.name;
-        if (t?.logo_url) tb.logo_url = t.logo_url;
-        if (t?.color) tb.color = t.color;
-        tb.results.push(scored);
-        tb.driverKeys.add(key);
+    // Per-class race counts and field sizes: a class's calendar is its own
+    // pinned events plus every shared one.
+    for (const [, { cls, results: classResults }] of resultsByClass) {
+      const split = splitFor(cls);
+      split.seasons.add(season.id);
+      const classRaces = cls ? filterRacesByClass(races, cls.id) : races;
+      split.races += classRaces.length;
+      for (const race of classRaces) {
+        const n = fieldSizeFor(race, classResults);
+        if (n > 0) split.fieldSizes.push(n);
       }
     }
 
-    // Titles: champion of each completed season — credited to the driver and,
-    // if they were on a team that season, to that team. Under a class filter
-    // this is the class champion, since the field is already narrowed.
-    if (season.status === "completed" && results.length) {
+    if (season.status !== "completed" || !results.length) continue;
+
+    // Titles. Three things can crown a champion, and a multi-class season can
+    // crown several at once:
+    //   • a season with no classes → its one champion (unchanged, always);
+    //   • each class of a multi-class season → its class champion;
+    //   • the whole field → the overall champion, but only when the season's
+    //     "Overall Championship" toggle is on (combined_championship), since a
+    //     season running class championships only never crowns one.
+    // Under a class filter the field is already narrowed, so the standings
+    // computed here ARE that class's championship and are credited directly.
+    const combinedOn = season.combined_championship !== false;
+    const hasClasses = seasonClasses.length > 0;
+    if (selector || !hasClasses || combinedOn) {
       const standings = calculateStandings(results, entries, [], config, templatesById);
       const winner = standings.rows[0] && entriesById[standings.rows[0].entry_id];
-      if (winner) {
-        const key = keyFor(winner);
-        if (drivers[key]) drivers[key].titles += 1;
-        const tk = teamKeyFor(winner);
-        if (tk && teams[tk]) teams[tk].titles += 1;
-      }
+      if (winner) creditTitle(combined, winner, teamKeyFor(winner));
+    }
+    // Class champions cascade into the all-time totals as well: a GT3 title is a
+    // title. (Skipped under a class filter — the block above already credited
+    // exactly that class's champion.)
+    for (const [, { cls, results: classResults }] of resultsByClass) {
+      const split = splitFor(cls);
+      // Same rule as the scope filter above: the class's field is its roster
+      // plus anyone who scored in it this season.
+      const scoredInClass = new Set(classResults.map(r => r.entry_id));
+      const classEntries = cls
+        ? entries.filter(e => e.class_id === cls.id || scoredInClass.has(e.id))
+        : entries;
+      if (!classResults.length || !classEntries.length) continue;
+      const standings = calculateStandings(classResults, classEntries, [], config, templatesById);
+      const winner = standings.rows[0] && entriesById[standings.rows[0].entry_id];
+      if (!winner) continue;
+      // The default group only crowns anyone when it IS the whole season (a
+      // season with no classes) — leading the unclassified stragglers of a
+      // multi-class season is not a championship.
+      if (cls || !hasClasses) creditTitle(split, winner, teamKeyFor(winner));
+      if (!selector && hasClasses && cls) creditTitle(combined, winner, teamKeyFor(winner));
     }
   }
 
   // A driver can run a different alias per series; when aggregating across
   // more than one season, show their canonical global-driver name instead of
   // whichever alias happened to be seen last.
-  const driverIds = [...new Set(Object.values(drivers).map(d => d.driver_id).filter(Boolean))];
+  const allStores = [combined, ...splits.values()];
+  const driverIds = [...new Set(allStores.flatMap(s => Object.values(s.drivers).map(d => d.driver_id)).filter(Boolean))];
   const canonicalName = {};
   if (driverIds.length) {
     const docs = await Promise.all(driverIds.map(id => db().collection("drivers").doc(id).get()));
     for (const doc of docs) if (doc.exists) canonicalName[doc.id] = doc.data().name;
   }
 
-  const rows = Object.values(drivers).map(d => ({
-    driver_name: (d.driver_id && canonicalName[d.driver_id]) || d.driver_name,
-    driver_number: d.driver_number,
-    driver_id: d.driver_id,
-    user_id: d.user_id,
-    ...aggregateCareerStats(d.results, d.titles),
-  }));
+  const driverRowsOf = store => {
+    const rows = Object.values(store.drivers).map(d => ({
+      driver_name: (d.driver_id && canonicalName[d.driver_id]) || d.driver_name,
+      driver_number: d.driver_number,
+      driver_id: d.driver_id,
+      user_id: d.user_id,
+      ...aggregateCareerStats(d.results, d.titles),
+    }));
+    rows.sort((a, b) => b.points - a.points || b.wins - a.wins || a.driver_name.localeCompare(b.driver_name));
+    return rows;
+  };
 
-  rows.sort((a, b) => b.points - a.points || b.wins - a.wins || a.driver_name.localeCompare(b.driver_name));
+  const teamRowsOf = store => {
+    const rows = Object.values(store.teams).map(t => ({
+      team_name: t.team_name,
+      logo_url: t.logo_url,
+      color: t.color,
+      drivers: t.driverKeys.size,
+      ...aggregateCareerStats(t.results, t.titles),
+    }));
+    rows.sort((a, b) => b.points - a.points || b.wins - a.wins || String(a.team_name).localeCompare(String(b.team_name)));
+    return rows;
+  };
 
-  const team_rows = Object.values(teams).map(t => ({
-    team_name: t.team_name,
-    logo_url: t.logo_url,
-    color: t.color,
-    drivers: t.driverKeys.size,
-    ...aggregateCareerStats(t.results, t.titles),
-  }));
-  team_rows.sort((a, b) => b.points - a.points || b.wins - a.wins || String(a.team_name).localeCompare(String(b.team_name)));
+  // Average Field Size — how many drivers a race in this scope typically draws.
+  // Only races with finalized results are counted (see fieldSizeFor), so an
+  // empty or still-upcoming event never drags the average down.
+  const fieldSizeOf = ({ fieldSizes }) => {
+    const total = fieldSizes.reduce((a, b) => a + b, 0);
+    return {
+      races_counted: fieldSizes.length,
+      total_drivers: total,
+      avg_drivers_per_race: fieldSizes.length ? Math.round((total / fieldSizes.length) * 100) / 100 : null,
+      largest_field: fieldSizes.length ? Math.max(...fieldSizes) : null,
+      smallest_field: fieldSizes.length ? Math.min(...fieldSizes) : null,
+    };
+  };
 
   // Schedule metrics compare bare calendar dates (never `new Date(str)`, which
   // reads a YYYY-MM-DD date as UTC midnight and shifts it a day west).
@@ -215,22 +374,38 @@ async function buildStats(seasons, classId = "") {
     .filter(r => !isPastRaceDate(r.date, today))
     .sort((a, b) => raceDateSortKey(a.date) - raceDateSortKey(b.date))[0] || null;
 
-  const totalDrivers = fieldSizes.reduce((a, b) => a + b, 0);
+  // Class splits in the admin's class order, the default (Unclassified) group
+  // last. Dropped entirely when every result in scope falls in that one default
+  // group, which is every season that predates classes — those responses look
+  // exactly as they did before.
+  const by_class = [...splits.values()]
+    .sort((a, b) => a.sort_order - b.sort_order || String(a.class_name).localeCompare(String(b.class_name)))
+    .map(split => ({
+      class_id: split.class_id,
+      class_ids: [...split.class_ids],
+      class_name: split.class_name,
+      color: split.color,
+      is_default: split.is_default,
+      seasons_counted: split.seasons.size,
+      races_counted: split.races,
+      field_size: fieldSizeOf(split),
+      rows: driverRowsOf(split),
+      team_rows: teamRowsOf(split),
+    }));
 
   return {
     seasons_counted: seasons.length,
-    rows,
-    team_rows,
-    // Average Field Size — how many drivers a race in this scope typically
-    // draws. Only races with finalized results are counted (see fieldSizeFor),
-    // so an empty or still-upcoming event never drags the average down.
-    field_size: {
-      races_counted: fieldSizes.length,
-      total_drivers: totalDrivers,
-      avg_drivers_per_race: fieldSizes.length ? Math.round((totalDrivers / fieldSizes.length) * 100) / 100 : null,
-      largest_field: fieldSizes.length ? Math.max(...fieldSizes) : null,
-      smallest_field: fieldSizes.length ? Math.min(...fieldSizes) : null,
-    },
+    rows: driverRowsOf(combined),
+    team_rows: teamRowsOf(combined),
+    // The classes this scope offers, one row per distinct class name, and which
+    // one (if any) the returned combined tables are filtered to.
+    classes: scopeClasses,
+    class_id: classId || null,
+    class_name: classScope?.name ?? null,
+    // Every class's own isolated aggregation, alongside the combined tables
+    // above — a class result feeds both.
+    by_class: by_class.length === 1 && by_class[0].is_default ? [] : by_class,
+    field_size: fieldSizeOf(combined),
     race_summary: {
       total: allRaces.length,
       completed,
