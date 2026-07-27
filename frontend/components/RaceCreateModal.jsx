@@ -133,7 +133,8 @@ export function RaceCreateModal({ seasonId, defaultRound, classes = [], perClass
             Used to auto-count laps completed: lead-lap finishers get the full total, laps-down (e.g. 2L) and DNFs subtract from it.
           </span></div>
         <div className="field"><label>Car Type</label>
-          <input value={form.car} placeholder="Leave blank to use the season's car" onChange={e => setForm(f => ({ ...f, car: e.target.value }))} /></div>
+          <input value={form.car} placeholder={classes.length ? "Leave blank to use the class's / season's car" : "Leave blank to use the season's car"}
+            onChange={e => setForm(f => ({ ...f, car: e.target.value }))} /></div>
         <div className="field" style={{ display: "flex", alignItems: "center", gap: 8, flexDirection: "row" }}>
           <input type="checkbox" id="heat_format" checked={form.heat_format}
             onChange={e => setForm(f => ({ ...f, heat_format: e.target.checked }))}

@@ -6,7 +6,7 @@ import { useLeague } from "@/components/LeagueProvider";
 import { AdminGate } from "@/components/AdminGate";
 import { SessionEditor } from "@/components/SessionEditor";
 import { normalizedBuiltinTemplates } from "@/lib/pointsTemplates";
-import { filterRacesByClass, racePerClassResults, sessionClassScopes } from "@/lib/classFilter";
+import { carForRace, filterRacesByClass, racePerClassResults, sessionClassScopes } from "@/lib/classFilter";
 import { api } from "@/lib/api";
 
 function RaceEntryInner() {
@@ -74,6 +74,7 @@ function RaceEntryInner() {
   const visibleRaces = filterRacesByClass(races, classId);
   const classNameById = Object.fromEntries(classes.map(c => [c.id, c.name]));
   const scopeName = scopes.find(s => s.value === scope)?.label ?? "";
+  const scopeCar = carForRace(selectedRace, season, classes.find(c => c.id === scope));
   const sessionPoints = selectedRace?.session_points || {};
 
   const patchRace = updated => setRaces(prev => prev.map(r => (r.id === raceId ? { ...r, ...updated } : r)));
@@ -131,8 +132,9 @@ function RaceEntryInner() {
           <div className="class-scope-bar">
             <label htmlFor="entry-class">Entering results for</label>
             <select id="entry-class" value={scope ?? ""} onChange={e => setScope(e.target.value)}>
-              {scopes.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+              {scopes.map(s => <option key={s.value} value={s.value}>{s.car ? `${s.label} · ${s.car}` : s.label}</option>)}
             </select>
+            {scopeCar && <span className="class-scope-chip" title="The car this class races">{scopeCar}</span>}
             <span style={{ color: "var(--ink-1)", fontSize: "0.84rem" }}>
               This event runs each class separately, so you&rsquo;re building {scopeName || "this class"}&rsquo;s
               own grid — its own P1. Switch classes here (or from the Class menu in the top bar) to enter the next one.

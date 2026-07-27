@@ -10,6 +10,7 @@ import { api } from "@/lib/api";
 import { BONUS_TYPES } from "@/lib/standings";
 import { TRACK_TYPES } from "@/lib/trackTypes";
 import { BUILTIN_TEMPLATES, listToTableOrZero, tableToList } from "@/lib/pointsTemplates";
+import { carForClass } from "@/lib/classFilter";
 
 function Panel({ title, sub, step, muted, children }) {
   return (
@@ -42,11 +43,14 @@ function Crumb({ icon, label, value, logo, active }) {
   );
 }
 
-function ItemRow({ logo, name, onEdit, onDelete, editing, children }) {
+function ItemRow({ logo, name, meta, onEdit, onDelete, editing, children }) {
   return (
     <div className="driver-row" style={editing ? { background: "var(--accent-cyan-dim)" } : undefined}>
       {logo ? <img src={logo} alt="" className="avatar avatar-sm" style={{ borderRadius: 6 }} /> : <span>🏁</span>}
-      <span style={{ flex: 1 }}>{name}</span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        {name}
+        {meta && <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.76rem" }}>{meta}</span>}
+      </span>
       {children}
       {onEdit && (
         <button className="btn btn-ghost" title="Edit" style={{ marginTop: 0, padding: "4px 10px" }} onClick={onEdit}>✎</button>
@@ -215,7 +219,7 @@ function AdminInner() {
   // Classes divide the selected season's field into separately-scored groups
   // ("Pro"/"Amateur", GT3/LMP2). Empty list = a single-class season, which is
   // exactly how the app behaved before classes existed.
-  const blankClass = { name: "", color: "", description: "", sort_order: "" };
+  const blankClass = { name: "", color: "", description: "", car: "", sort_order: "" };
   const [classForm, setClassForm] = useState(blankClass);
   const [classes, setClasses] = useState([]);
   const loadClasses = useCallback(() => {
@@ -366,7 +370,7 @@ function AdminInner() {
               <input type="number" min="0" disabled={!seriesId} value={seasonForm.drop_weeks} onChange={e => setSeasonForm(f => ({ ...f, drop_weeks: e.target.value }))} /></div>
             <div className="field"><label>Car Type</label>
               <input disabled={!seriesId} value={seasonForm.car} onChange={e => setSeasonForm(f => ({ ...f, car: e.target.value }))} placeholder="e.g. NASCAR Next Gen, GT3" />
-              <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>The car this season races. Each race defaults to this — override it per race below.</span></div>
+              <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>The car this season races. Classes and individual races both default to this — override it per class in step 4, or per race below.</span></div>
             <ImageUpload label="Season Logo" kind="season-logo" value={seasonForm.logo_url} onUploaded={url => setSeasonForm(f => ({ ...f, logo_url: url }))} />
 
             <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
@@ -537,7 +541,9 @@ function AdminInner() {
             <strong>Amateur</strong>, or <strong>GT3</strong> and <strong>LMP2</strong>. Each class runs its own
             championship (points, wins, averages), and a <strong>Class</strong> menu appears next to
             Game / Series / Season on Standings, Stats and Records. Assign drivers to a class on the{" "}
-            <strong>Roster</strong> page or right in the results grid.
+            <strong>Roster</strong> page or right in the results grid. Give a class its own{" "}
+            <strong>Car Type</strong> and the schedule shows which car goes with which class — handy
+            when divisions run different machinery.
           </p>
           <form onSubmit={e => {
             e.preventDefault();
@@ -545,6 +551,7 @@ function AdminInner() {
               name: classForm.name,
               color: classForm.color,
               description: classForm.description,
+              car: classForm.car,
               sort_order: classForm.sort_order === "" ? classes.length : Number(classForm.sort_order),
             };
             if (!editIds.class) body.season_id = seasonId;
@@ -554,6 +561,14 @@ function AdminInner() {
             <div className="field"><label>Class Name</label>
               <input required disabled={!seasonId} value={classForm.name} placeholder="e.g. Pro, Amateur, GT3, LMP2"
                 onChange={e => setClassForm(f => ({ ...f, name: e.target.value }))} /></div>
+            <div className="field"><label>Car Type</label>
+              <input disabled={!seasonId} value={classForm.car} placeholder={season?.car ? `Leave blank to use ${season.car}` : "e.g. GT3, LMP2, Late Model"}
+                onChange={e => setClassForm(f => ({ ...f, car: e.target.value }))} />
+              <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
+                The car this class races. Overrides the season&rsquo;s car for this class, so a season
+                whose classes run different machinery shows the right car on every schedule row without
+                setting it race by race. A single race can still override it.
+              </span></div>
             <div className="field"><label>Display Order</label>
               <input type="number" disabled={!seasonId} value={classForm.sort_order} placeholder={`${classes.length}`}
                 onChange={e => setClassForm(f => ({ ...f, sort_order: e.target.value }))} />
@@ -576,11 +591,12 @@ function AdminInner() {
               </p>
             )}
             {classes.map(c => (
-              <ItemRow key={c.id} name={c.name} editing={editIds.class === c.id}
+              <ItemRow key={c.id} name={c.name} meta={carForClass(season, c)} editing={editIds.class === c.id}
                 onEdit={() => {
                   setEditId("class", c.id);
                   setClassForm({
                     name: c.name || "", color: c.color || "", description: c.description || "",
+                    car: c.car || "",
                     sort_order: c.sort_order != null ? String(c.sort_order) : "",
                   });
                 }}
@@ -645,7 +661,7 @@ function AdminInner() {
                 Used to auto-count laps completed: lead-lap finishers get the full total, laps-down (e.g. 2L) and DNFs subtract from it.
               </span></div>
             <div className="field"><label>Car Type</label>
-              <input disabled={!seasonId} value={raceForm.car} placeholder="Leave blank to use the season's car"
+              <input disabled={!seasonId} value={raceForm.car} placeholder={classes.length ? "Leave blank to use the class's / season's car" : "Leave blank to use the season's car"}
                 onChange={e => setRaceForm(f => ({ ...f, car: e.target.value }))} /></div>
             <div className="field" style={{ display: "flex", alignItems: "center", gap: 8, flexDirection: "row" }}>
               <input type="checkbox" id="race_heat_format" disabled={!seasonId} checked={raceForm.heat_format}

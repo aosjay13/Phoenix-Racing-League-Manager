@@ -8,7 +8,7 @@ import { ImageUpload } from "@/components/ImageUpload";
 import { SessionEditor } from "@/components/SessionEditor";
 import { TrackSelect } from "@/components/TrackSelect";
 import { normalizedBuiltinTemplates } from "@/lib/pointsTemplates";
-import { racePerClassResults, sessionClassScopes } from "@/lib/classFilter";
+import { carForRace, racePerClassResults, sessionClassScopes } from "@/lib/classFilter";
 import { api } from "@/lib/api";
 
 const BLANK_INFO = {
@@ -161,8 +161,11 @@ function RaceInfoTab({ race, season, classes = [], onSaved }) {
           </span>
         </div>
         <div className="field"><label>Car Type</label>
-          <input value={form.car} onChange={set("car")} placeholder="Leave blank to use the season's car" />
-          <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>Overrides the season's car for this event only.</span>
+          <input value={form.car} onChange={set("car")} placeholder={classes.length ? "Leave blank to use the class's / season's car" : "Leave blank to use the season's car"} />
+          <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
+            Overrides the car for this event only — for every class running it. Leave it blank so each
+            class shows its own car{season?.car ? `, falling back to ${season.car}` : ""}.
+          </span>
         </div>
 
         <div className="field" style={{ display: "flex", alignItems: "center", gap: 8, flexDirection: "row" }}>
@@ -260,6 +263,8 @@ function UnifiedEditInner() {
     setScope(prev => (scopes.some(s => s.value === prev) ? prev : scopes[0].value));
   }, [scopes]);
   const scopeName = scopes.find(s => s.value === scope)?.label ?? "";
+  // The car this class runs, resolved through class → season, for the bar below.
+  const scopeCar = carForRace(race, season, classes.find(c => c.id === scope));
   // Props every SessionEditor on this screen shares: null scope = the combined
   // grid this screen has always shown.
   const classProps = {
@@ -408,8 +413,9 @@ function UnifiedEditInner() {
         <div className="class-scope-bar">
           <label htmlFor="session-class">Entering results for</label>
           <select id="session-class" value={scope ?? ""} onChange={e => setScope(e.target.value)}>
-            {scopes.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+            {scopes.map(s => <option key={s.value} value={s.value}>{s.car ? `${s.label} · ${s.car}` : s.label}</option>)}
           </select>
+          {scopeCar && <span className="class-scope-chip" title="The car this class races">{scopeCar}</span>}
           <span style={{ color: "var(--ink-1)", fontSize: "0.84rem" }}>
             Each class runs its own Qualifying and Race at this event. Switch classes here to enter
             the next one — nothing you type in one class touches another.

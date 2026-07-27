@@ -14,6 +14,7 @@ import { raceDateSortKey } from "@/lib/raceDate";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
 import { parseTime, formatTime } from "@/lib/raceTime";
 import { finalSessionName, summarizeRace } from "@/lib/raceSummaryServer";
+import { carForClass, classOfResult, fetchSeasonClasses } from "@/lib/classServer";
 
 // Aggregates a venue's history from every race held there. Races are linked by
 // `track_id`; legacy races that only stored the track NAME (before track_id
@@ -127,10 +128,11 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
     const config = resolveSeasonConfig(season);
     const gameId = season.game_id || null;
 
-    const [entriesSnap, resultsSnap, racesSnap] = await Promise.all([
+    const [entriesSnap, resultsSnap, racesSnap, seasonClasses] = await Promise.all([
       db().collection("entries").where("season_id", "==", seasonId).get(),
       db().collection("results").where("season_id", "==", seasonId).get(),
       db().collection("races").where("season_id", "==", seasonId).get(),
+      fetchSeasonClasses(seasonId),
     ]);
     const entriesById = Object.fromEntries(entriesSnap.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
     const racesById = Object.fromEntries(racesSnap.docs.map(d => [d.id, d.data()]));
@@ -181,7 +183,11 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
         r.race_id === race.id && !isQualifying(r) && !r.provisional && (r.session || firstStd) === finalName && Number(r.finish_pos) === 1);
       if (!winner) continue;
       const entry = entriesById[winner.entry_id];
-      const summary = summarizeRace(race, results, entriesById, season.car || null);
+      // The car credited to this win is the WINNER's class car, not the
+      // season's — on a season whose classes race different machinery, a GT3
+      // win shouldn't be listed under the LMP2 default.
+      const winnerClass = seasonClasses.find(c => c.id === classOfResult(winner, entriesById)) ?? null;
+      const summary = summarizeRace(race, results, entriesById, carForClass(season, winnerClass));
       winners.push({
         race_id: race.id,
         race_name: race.name,

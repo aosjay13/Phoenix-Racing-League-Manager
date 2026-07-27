@@ -138,12 +138,15 @@ function ContextSelectors() {
           whole-field view and is always the first option, followed by the
           classes defined in the selected season. A season with no classes (or
           no season picked yet) simply sits on "All Classes" with nothing else
-          to choose. */}
+          to choose. A class that races its own car names it here ("Pro · GT3"),
+          so which car goes with which class is readable straight from the menu. */}
       <div className="context-select">
         <label>Class</label>
         <select value={classId} onChange={e => setClassId(e.target.value)} disabled={!classes.length}>
           <option value="">All Classes</option>
-          {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          {classes.map(c => (
+            <option key={c.id} value={c.id}>{c.car ? `${c.name} · ${c.car}` : c.name}</option>
+          ))}
         </select>
       </div>
     </div>

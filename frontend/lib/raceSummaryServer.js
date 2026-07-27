@@ -35,7 +35,12 @@ function personFromEntry(entry) {
 // are split by class, the Pro row of the schedule shows Pro's pole, Pro's
 // winner and Pro's field size, not the outright ones. Left blank the summary
 // covers the combined field, exactly as before.
-export function summarizeRace(race, results, entriesById, seasonCar = null, classId = "") {
+//
+// `defaultCar` is the car to fall back on when the event doesn't override it —
+// the class's car when the summary is scoped to a class, else the season's.
+// Resolution order lives in carForRace (lib/classFilter.js); callers pass the
+// already-resolved fallback so this stays a pure roll-up.
+export function summarizeRace(race, results, entriesById, defaultCar = null, classId = "") {
   const firstStd = Array.isArray(race.sessions) && race.sessions.length ? race.sessions[0] : "Race";
   const finalName = finalSessionName(race);
   const inClass = r => !isClassScoped(classId) || resultInSessionClass(r, classId, entriesById);
@@ -51,8 +56,9 @@ export function summarizeRace(race, results, entriesById, seasonCar = null, clas
   const scheduledLaps = race.total_laps ? Number(race.total_laps) : null;
 
   return {
-    // Race-level car overrides the season default; blank inherits the season's.
-    car: (race.car && String(race.car).trim()) || (seasonCar && String(seasonCar).trim()) || null,
+    // Race-level car wins; blank inherits whatever the caller resolved as the
+    // default for this scope (the class's car, else the season's).
+    car: (race.car && String(race.car).trim()) || (defaultCar && String(defaultCar).trim()) || null,
     laps: winnerLaps ?? scheduledLaps,
     scheduled_laps: scheduledLaps,
     laps_extended: winnerLaps != null && scheduledLaps != null && winnerLaps > scheduledLaps,

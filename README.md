@@ -69,7 +69,9 @@ The app runs at `http://localhost:3000`.
    broken out per game and combined across all games (starts, wins, podiums, poles, average
    finish, titles, etc.).
 4. **Schedule** — the season's race calendar. Completed races are clickable and show full
-   results.
+   results. Admins get **+ New Race** here; on the cross-season feed (Season set to "All
+   Seasons" with a series picked) there's a **+ New Season** button too, which creates the
+   season and drops you onto its empty calendar without a detour through League Setup.
 5. **Standings** — driver and team championship tables for the selected season, with
    points, gaps to the leader, and per-category stats. Click any column header to sort.
 6. **Stats** — use the Game/Series/Season/Class menus to scope driver stats to a class, a
@@ -95,8 +97,10 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      nothing changes. Classes created here fill the **Class** menu in the top bar, which scopes
      Standings, Stats and Records to one class at a time. Assign drivers to a class on the
      Roster page or from the Class column in the results grid; deleting a class only unassigns
-     its drivers, never their points or stats. **Per-Class Schedules** (a season setting) lets
-     each class run its own calendar — see Races below.
+     its drivers, never their points or stats. Give a class a **Car Type** and the schedule,
+     event pages and Class menu all show which car goes with which class — leave it blank to
+     inherit the season's car. **Per-Class Schedules** (a season setting) lets each class run
+     its own calendar — see Races below.
    - **Races** — name, track (+ track logo), round number, date, and session list (e.g.
      `Qualifying, Race` for a weekend with a scored qualifying session and a main race).
      With **Per-Class Schedules** on for the season, each race also gets a **Class** field:
@@ -224,6 +228,20 @@ table by class; and Skill Rating exchanges are keyed by class on a split event, 
 never rated against an Amateur car they never shared a grid with. Since a split event has no single
 outright order, an overall championship across classes just adds their points together — turn
 **Enable Overall Championship** off for a pure class-championship season.
+
+**Which car goes with which class.** The car on track is a three-level fallback, most specific
+first: `races.car` (this one event runs something different) → `classes.car` (this class's machinery
+all season) → `seasons.car` (the season default, and the only level that existed before). All three
+are free text and any may be blank, so a single-class season is unchanged. `carForRace` in
+`lib/classFilter.js` is the one place that order lives.
+
+Because a shared round can put two classes in different cars, "the car" isn't always a single value.
+`soleCarForRace` returns one only when it's honest — no classes, a round pinned to one class, classes
+that happen to agree, or a race-level override that collapses the split — and null otherwise;
+`carsByClassForRace` returns the per-class breakdown for exactly that null case. The Schedule's Car
+column shows one car normally and a class-by-class list at "All Classes" when they differ, the event
+header does the same, the top-bar Class menu reads "Pro · GT3", and a track's winners list credits
+each win to the *winner's* class car rather than the season default.
 
 **Race dates are calendar dates, not timestamps.** A race `date` is stored as a bare `YYYY-MM-DD`
 string with no time component, and every display/comparison goes through `lib/raceDate.js`. Handing
