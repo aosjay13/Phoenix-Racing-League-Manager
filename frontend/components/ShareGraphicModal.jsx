@@ -65,10 +65,38 @@ const ROW_OPTIONS = [10, 15, 20, 30];
 // callers that pass hand-built column lists without a `key`.
 const colKey = (c, i) => c.key ?? `${c.label}-${i}`;
 
+// The columns a screen wants switched off when the exporter opens. A column
+// with no `on` flag is on, so callers that don't opt in behave as before.
+function defaultHidden(columns) {
+  return new Set(columns.map((c, i) => (c.locked || c.on !== false ? null : colKey(c, i))).filter(Boolean));
+}
+
+// The graphic is a fixed 1080px wide, so the more columns are on, the less room
+// each gets. Rather than letting a wide selection overflow (or wrap into a
+// mess), the table's type and padding step down as columns are added — a
+// five-column results graphic stays big and bold, and a fifteen-column stats
+// dump still fits inside the frame.
+function tableScale(n) {
+  if (n <= 5) return { font: 21, head: 15, padY: 11, padX: 13, name: 360, wrapHead: false };
+  if (n <= 7) return { font: 19, head: 14, padY: 10, padX: 11, name: 300, wrapHead: false };
+  if (n <= 9) return { font: 17, head: 13, padY: 9, padX: 9, name: 250, wrapHead: false };
+  if (n <= 12) return { font: 15, head: 12, padY: 8, padX: 7, name: 210, wrapHead: false };
+  // Past a dozen columns nothing else will fit on one line: the headers wrap
+  // ("AVG / FINISH") so the widest column stops setting the table's width, and
+  // the name column gives up its slack. Verified against a 17-column standings
+  // export — without this the last column runs past the card's right edge.
+  if (n <= 15) return { font: 13, head: 11, padY: 7, padX: 5, name: 175, wrapHead: true };
+  return { font: 12, head: 10, padY: 6, padX: 4, name: 150, wrapHead: true };
+}
+
 export function ShareGraphicModal({
   open, onClose, kind = "Graphic", defaultTitle = "", subtitle = "",
   columns = [], rows = [], logos = [], leagueName = "", leagueLogoUrl = "",
+  meta = [],
 }) {
+  // Identity of the current column set, so reopening the modal for a different
+  // screen (or a different tab of the same screen) re-seeds the picker.
+  const columnsKey = columns.map((c, i) => colKey(c, i)).join("|");
   const [mounted, setMounted] = useState(false);
   const [title, setTitle] = useState(defaultTitle);
   const [theme, setTheme] = useState("dark");
@@ -79,9 +107,12 @@ export function ShareGraphicModal({
   const [leagueLogo, setLeagueLogo] = useState(leagueLogoUrl || "");
   const [uploadedLeagueLogo, setUploadedLeagueLogo] = useState(null);
   const [limit, setLimit] = useState(() => (rows.length > 15 ? 15 : rows.length || 15));
-  // Column keys the user has switched OFF. Empty = every stat shown, which is
-  // the default every time the modal opens.
-  const [hidden, setHidden] = useState(() => new Set());
+  // Column keys the user has switched OFF. Seeded from each column's `on` flag
+  // so a screen with fifteen stats opens on a readable headline set rather than
+  // an unreadably wide table — every column is still one click away in the
+  // stat picker.
+  const [hidden, setHidden] = useState(() => defaultHidden(columns));
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const cardRef = useRef(null);
@@ -97,11 +128,12 @@ export function ShareGraphicModal({
       setLogoIdx(logos.length ? 0 : -1);
       setLeague(leagueName);
       setLeagueLogo(leagueLogoUrl || "");
-      setHidden(new Set());     // smart default: all stat columns checked
+      setHidden(defaultHidden(columns));
+      setPickerOpen(false);
       setError(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, defaultTitle, leagueName, leagueLogoUrl]);
+  }, [open, defaultTitle, leagueName, leagueLogoUrl, columnsKey]);
 
   const activeLogo = uploadedLogo || (logoIdx >= 0 ? logos[logoIdx]?.url : null) || null;
   const activeLeagueLogo = uploadedLeagueLogo || leagueLogo || null;
@@ -265,42 +297,77 @@ export function ShareGraphicModal({
           </label>
         </div>
 
-        {/* Displayed Stats — uncheck a column to drop it from the graphic. */}
+        {/* Displayed Stats — a multi-select of every column the underlying
+            screen offers, so any of them can be put on the graphic. */}
         {toggleable.length > 0 && (
-          <div style={{ marginBottom: 16, padding: "12px 14px", border: "1px solid var(--border)", borderRadius: 10 }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
+          <div style={{ marginBottom: 16, position: "relative" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <strong style={{ fontSize: "0.85rem" }}>Displayed Stats</strong>
+              <button type="button" onClick={() => setPickerOpen(v => !v)}
+                style={{ ...control, display: "flex", alignItems: "center", gap: 10, minWidth: 260, cursor: "pointer", textAlign: "left" }}>
+                <span style={{ flex: 1 }}>
+                  {shownColumns.length === columns.length
+                    ? `All ${columns.length} columns`
+                    : `${shownColumns.length} of ${columns.length} columns`}
+                </span>
+                <span style={{ color: "var(--ink-2)" }}>{pickerOpen ? "▲" : "▼"}</span>
+              </button>
               <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
-                Uncheck a column to leave it out — the rest spread out to fill the space.
-              </span>
-              <span style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-                <button type="button" className="btn btn-ghost" style={{ marginTop: 0, padding: "2px 10px", fontSize: "0.78rem" }}
-                  onClick={() => setHidden(new Set())}>All</button>
-                <button type="button" className="btn btn-ghost" style={{ marginTop: 0, padding: "2px 10px", fontSize: "0.78rem" }}
-                  onClick={() => setHidden(new Set(columns.map((c, i) => (c.locked ? null : colKey(c, i))).filter(Boolean)))}>None</button>
+                Pick any stat from this screen — the chosen columns spread out to fill the graphic.
               </span>
             </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px 18px" }}>
-              {columns.map((c, i) => {
-                const key = colKey(c, i);
-                const on = !hidden.has(key);
-                return (
-                  <label key={key} title={c.locked ? "Always shown" : undefined}
-                    style={{ display: "flex", alignItems: "center", gap: 6, margin: 0, fontSize: "0.82rem", color: c.locked ? "var(--ink-2)" : "var(--ink-1)", cursor: c.locked ? "default" : "pointer" }}>
-                    <input type="checkbox" checked={on} disabled={c.locked} onChange={() => toggleColumn(key)}
-                      style={{ width: 16, height: 16, accentColor: "var(--accent-cyan)" }} />
-                    {c.label}
-                  </label>
-                );
-              })}
-            </div>
+
+            {pickerOpen && (
+              <>
+                {/* Click-away backdrop so the menu closes like a real dropdown. */}
+                <div style={{ position: "fixed", inset: 0, zIndex: 1 }} onMouseDown={() => setPickerOpen(false)} />
+                <div style={{
+                  position: "absolute", zIndex: 2, marginTop: 6, width: "min(520px, 100%)",
+                  background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 10,
+                  boxShadow: "0 14px 38px rgba(0,0,0,0.45)", overflow: "hidden",
+                }}>
+                  <div style={{ display: "flex", gap: 8, padding: "10px 12px", borderBottom: "1px solid var(--border)" }}>
+                    <button type="button" className="btn btn-ghost" style={{ marginTop: 0, padding: "3px 12px", fontSize: "0.78rem" }}
+                      onClick={() => setHidden(new Set())}>Select all</button>
+                    <button type="button" className="btn btn-ghost" style={{ marginTop: 0, padding: "3px 12px", fontSize: "0.78rem" }}
+                      onClick={() => setHidden(new Set(columns.map((c, i) => (c.locked ? null : colKey(c, i))).filter(Boolean)))}>Clear</button>
+                    <button type="button" className="btn btn-ghost" style={{ marginTop: 0, padding: "3px 12px", fontSize: "0.78rem" }}
+                      title="Back to the columns this screen starts with"
+                      onClick={() => setHidden(defaultHidden(columns))}>Reset</button>
+                    <span style={{ marginLeft: "auto", alignSelf: "center", fontSize: "0.76rem", color: "var(--ink-2)" }}>
+                      {shownColumns.length}/{columns.length}
+                    </span>
+                  </div>
+                  <div style={{ maxHeight: 280, overflowY: "auto", padding: "6px 4px" }}>
+                    {columns.map((c, i) => {
+                      const key = colKey(c, i);
+                      const on = !hidden.has(key);
+                      return (
+                        <label key={key} title={c.locked ? "Always shown — a row isn't readable without it" : undefined}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 9, margin: 0, padding: "7px 12px",
+                            fontSize: "0.85rem", borderRadius: 6,
+                            color: c.locked ? "var(--ink-2)" : "var(--ink-0)",
+                            cursor: c.locked ? "default" : "pointer",
+                          }}>
+                          <input type="checkbox" checked={on} disabled={c.locked} onChange={() => toggleColumn(key)}
+                            style={{ width: 16, height: 16, accentColor: "var(--accent-cyan)" }} />
+                          <span style={{ flex: 1 }}>{c.label}</span>
+                          {c.locked && <span style={{ fontSize: "0.72rem", color: "var(--ink-2)" }}>always on</span>}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         )}
 
         {/* Live preview — this exact node is what gets captured. */}
         <div style={{ background: t.pageBg, borderRadius: 12, padding: 16, overflowX: "auto", border: "1px solid var(--border)" }}>
           <GraphicCard cardRef={cardRef} theme={t} title={title || defaultTitle || kind} subtitle={subtitle}
-            logo={activeLogo} leagueName={league} leagueLogo={activeLeagueLogo}
+            logo={activeLogo} leagueName={league} leagueLogo={activeLeagueLogo} meta={meta}
             columns={shownColumns} rows={shownRows} totalRows={rows.length} shownCount={shownRows.length} />
         </div>
 
@@ -319,11 +386,14 @@ export function ShareGraphicModal({
 }
 
 // The captured node. Fixed 1080px wide for a consistent, feed-friendly output.
+// Exported so the layout can be rendered and screenshotted outside the app.
 // The league's name is the eyebrow above the headline; its logo anchors the
 // footer, so league branding frames the graphic without fighting the headline or
 // the series logo in the header.
-function GraphicCard({ cardRef, theme: t, title, subtitle, logo, leagueName, leagueLogo, columns, rows, totalRows, shownCount }) {
+export function GraphicCard({ cardRef, theme: t, title, subtitle, logo, leagueName, leagueLogo, meta = [], columns, rows, totalRows, shownCount }) {
   const league = (leagueName || "").trim();
+  const sz = tableScale(columns.length);
+  const facts = meta.filter(m => m && m.value != null && String(m.value).trim() !== "");
   return (
     <div
       ref={cardRef}
@@ -351,16 +421,48 @@ function GraphicCard({ cardRef, theme: t, title, subtitle, logo, leagueName, lea
         )}
       </div>
 
-      {/* Table */}
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 20, tableLayout: "auto" }}>
+      {/* Event metadata — the context that makes a results graphic readable on
+          its own: which race, at which track, on what date, in which series and
+          class. Rendered as labelled facts under the headline so the image
+          carries everything the results screen shows above the table. */}
+      {facts.length > 0 && (
+        <div style={{
+          marginBottom: 22, padding: "18px 22px",
+          background: t.headBg, borderRadius: 12, borderLeft: `4px solid ${t.accent}`,
+        }}>
+          {/* A padding-based grid rather than flex `gap` or CSS grid: both are
+              patchily supported by html2canvas, and a ragged strip is exactly
+              what stops this reading as a broadcast graphic. Thirds keep every
+              label on a column, and a long value (a track with its layout)
+              takes two of them rather than pushing the row out of line. */}
+          <div style={{ display: "flex", flexWrap: "wrap", margin: -9 }}>
+            {facts.map(m => (
+              <div key={m.label} style={{ width: `${(m.wide ? 2 : 1) * 33.333}%`, padding: 9, boxSizing: "border-box", minWidth: 0 }}>
+                <div style={{ fontSize: 12, letterSpacing: "0.16em", textTransform: "uppercase", color: t.faint, fontWeight: 700, marginBottom: 4 }}>
+                  {m.label}
+                </div>
+                <div style={{ fontSize: 18, fontWeight: 600, color: t.ink, lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {m.value}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Table. Type and padding step down as more columns are switched on, so
+          a wide selection stays inside the 1080px frame while a narrow one
+          still fills it — see tableScale. */}
+      <table style={{ width: "100%", maxWidth: "100%", borderCollapse: "collapse", fontSize: sz.font, tableLayout: "auto" }}>
         <thead>
           <tr>
             {columns.map((c, i) => (
               <th key={c.key ?? i} style={{
                 textAlign: c.align || (i === 0 ? "left" : "center"),
-                background: t.headBg, color: t.headInk, fontWeight: 700, fontSize: 15,
+                background: t.headBg, color: t.headInk, fontWeight: 700, fontSize: sz.head,
                 letterSpacing: "0.04em", textTransform: "uppercase",
-                padding: "11px 12px", whiteSpace: "nowrap",
+                padding: `${sz.padY}px ${sz.padX}px`, whiteSpace: sz.wrapHead ? "normal" : "nowrap",
+                lineHeight: 1.15,
                 borderTopLeftRadius: i === 0 ? 8 : 0, borderTopRightRadius: i === columns.length - 1 ? 8 : 0,
               }}>{c.label}</th>
             ))}
@@ -374,11 +476,11 @@ function GraphicCard({ cardRef, theme: t, title, subtitle, logo, leagueName, lea
                 return (
                   <td key={columns[ci]?.key ?? ci} style={{
                     textAlign: columns[ci]?.align || (ci === 0 ? "left" : "center"),
-                    padding: "10px 12px", borderBottom: `1px solid ${t.border}`,
+                    padding: `${sz.padY - 1}px ${sz.padX}px`, borderBottom: `1px solid ${t.border}`,
                     fontWeight: ci === 0 ? 700 : 500,
                     color: medal || (ci === 0 ? t.ink : t.muted),
                     fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap",
-                    maxWidth: ci === 0 ? 360 : undefined, overflow: "hidden", textOverflow: "ellipsis",
+                    maxWidth: ci === 0 ? sz.name : undefined, overflow: "hidden", textOverflow: "ellipsis",
                   }}>{cell === null || cell === undefined || cell === "" ? "—" : cell}</td>
                 );
               })}

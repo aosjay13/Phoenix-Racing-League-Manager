@@ -9,16 +9,11 @@ import { leagueLogos, toGraphicTable } from "@/lib/shareGraphic";
 import { api } from "@/lib/api";
 import { compareByTieBreakers, formatStat } from "@/lib/standings";
 
-// Curated columns for the shareable graphic — a readable subset of the full
-// stats table. Position (#) comes from the current on-screen sort order.
-const SHARE_DRIVER_COLS = [
-  ["rank", "#"], ["driver_name", "Driver"], ["starts", "Starts"], ["wins", "Wins"],
-  ["podiums", "Podiums"], ["top5", "Top 5s"], ["poles", "Poles"], ["avg_finish", "Avg Fin"],
-];
-const SHARE_TEAM_COLS = [
-  ["rank", "#"], ["team_name", "Team"], ["points", "Pts"], ["wins", "Wins"],
-  ["podiums", "Podiums"], ["poles", "Poles"],
-];
+// The exporter offers EVERY column this screen shows; these are just the ones
+// ticked when it opens — a readable subset, since fifteen columns at once makes
+// an unusable image. Position (#) comes from the current on-screen sort order.
+const SHARE_DRIVER_DEFAULTS = ["rank", "driver_name", "starts", "wins", "podiums", "top5", "poles", "avg_finish"];
+const SHARE_TEAM_DEFAULTS = ["rank", "team_name", "points", "wins", "podiums", "poles"];
 
 // [key, header, lowerIsBetter, fullName] — fullName becomes a hover tooltip.
 const COLUMNS = [
@@ -127,8 +122,17 @@ export default function StatsPage() {
         )}
       </div>
       {(() => {
-        const cols = tab === "teams" ? SHARE_TEAM_COLS : SHARE_DRIVER_COLS;
-        const st = toGraphicTable(cols, rows, { nameKey: tab === "teams" ? "team_name" : "driver_name" });
+        // Full column set = the identity pair plus every stat column on screen.
+        const nameKey = tab === "teams" ? "team_name" : "driver_name";
+        const cols = [
+          ["rank", "#"],
+          [nameKey, tab === "teams" ? "Team" : "Driver"],
+          ...columns.map(([key, label, , full]) => [key, full || label]),
+        ];
+        const st = toGraphicTable(cols, rows, {
+          nameKey,
+          defaultKeys: tab === "teams" ? SHARE_TEAM_DEFAULTS : SHARE_DRIVER_DEFAULTS,
+        });
         return (
           <ShareGraphicModal
             open={sharing}

@@ -140,43 +140,62 @@ export default function EventResultsPage() {
   const sof = event.strength_of_field;
 
   // Shareable graphic for the currently-viewed session (Qualifying or a race).
+  const eventDate = event.date ? formatRaceDate(event.date, "long", null) : null;
   const sharingQual = tab === "__qual";
   const sessionLabel = [activeClass?.label, sharingQual ? "Qualifying" : (tab || "Results")].filter(Boolean).join(" · ");
   const shareSource = sharingQual ? inClass(qualifying) : finishers;
-  // `key` identifies each column to the exporter's "Displayed Stats"
-  // checkboxes; Pos and Driver are locked on since a row is unreadable without
-  // them.
-  const shareColumns = sharingQual
+  // The exporter offers every column this results table shows, so any of them
+  // can go on the graphic. `on: false` marks the ones that start unticked —
+  // Pos/Driver are locked on since a row is unreadable without them, and the
+  // rest default to a feed-friendly headline set.
+  const shareSpec = sharingQual
     ? [
-        { key: "pos", label: "Pos", align: "center", locked: true },
-        { key: "driver", label: "Driver", align: "left", locked: true },
-        { key: "team", label: "Team", align: "left" },
-        { key: "qual_time", label: "Qual Time", align: "center" },
-        { key: "points", label: "Pts", align: "center" },
+        { key: "pos", label: "Pos", align: "center", locked: true, get: r => r.position },
+        { key: "driver", label: "Driver", align: "left", locked: true, get: driverDisplayName },
+        { key: "team", label: "Team", align: "left", get: r => r.team ?? "—" },
+        { key: "qual_time", label: "Qual Time", get: r => r.qual_time || "—" },
+        { key: "points", label: "Pts", get: r => r.qual_points },
       ]
     : [
-        { key: "pos", label: "Pos", align: "center", locked: true },
-        { key: "driver", label: "Driver", align: "left", locked: true },
-        { key: "team", label: "Team", align: "left" },
-        { key: "best_lap", label: "Best Lap", align: "center" },
-        { key: "points", label: "Pts", align: "center" },
+        { key: "pos", label: "Pos", align: "center", locked: true, get: r => r.finish_pos },
+        { key: "driver", label: "Driver", align: "left", locked: true, get: driverDisplayName },
+        { key: "team", label: "Team", align: "left", get: r => r.team ?? "—" },
+        { key: "start", label: "Start", on: false, get: r => r.start_pos ?? "—" },
+        { key: "race_time", label: "Race Time", on: false, get: r => (r.finish_pos === 1 ? (r.race_time || "—") : "—") },
+        { key: "interval", label: "Int", on: false, get: r => (r.finish_pos === 1 ? "—" : (r.interval || r.race_time || "—")) },
+        { key: "best_lap", label: "Best Lap", get: r => r.fastest_lap_time || "—" },
+        { key: "laps", label: "Laps", on: false, get: r => r.laps ?? "—" },
+        { key: "laps_led", label: "Led", on: false, get: r => r.laps_led ?? 0 },
+        { key: "incidents", label: "Inc", on: false, get: r => r.incidents ?? 0 },
+        { key: "status", label: "Status", on: false, get: r => statusLabel(r.status) },
+        { key: "points", label: "Pts", get: r => r.points },
+        ...(showSr ? [{ key: "sr_delta", label: "SR ±", on: false, get: r => (r.sr_delta == null ? "—" : (r.sr_delta > 0 ? `+${r.sr_delta}` : r.sr_delta)) }] : []),
       ];
+  const shareColumns = shareSpec.map(({ get, ...c }) => ({ align: "center", ...c }));
   const shareRows = shareSource.map(r => {
     const pos = sharingQual ? r.position : r.finish_pos;
     return {
       rank: pos > 0 && pos <= 3 ? pos : undefined,
-      cells: sharingQual
-        ? [pos, driverDisplayName(r), r.team ?? "—", r.qual_time || "—", r.qual_points]
-        : [pos, driverDisplayName(r), r.team ?? "—", r.fastest_lap_time || "—", r.points],
+      cells: shareSpec.map(c => c.get(r)),
     };
   });
+  // Event context carried into the image, so a results graphic stands alone
+  // without the page around it.
+  const shareMeta = [
+    { label: "Race", value: event.name },
+    { label: "Date", value: eventDate },
+    { label: "Track", value: [event.track, data.track?.track_type, data.track?.length].filter(Boolean).join(" · "), wide: true },
+    { label: "Series", value: [game?.name, series?.name].filter(Boolean).join(" · "), wide: true },
+    { label: "Season", value: season?.name },
+    { label: "Class", value: activeClass?.label },
+    { label: "Session", value: tabName },
+  ];
   // Offer the event's track logo alongside any logos from the selected league
   // context; dedupe by url so the same image isn't listed twice.
   const shareLogos = [
     event.track_logo_url && { label: `${event.track || "Track"} (Track)`, url: event.track_logo_url },
     ...leagueLogos({ league: activeLeague, game, series, season: leagueSeason }),
   ].filter(Boolean).filter((l, i, a) => a.findIndex(x => x.url === l.url) === i);
-  const eventDate = event.date ? formatRaceDate(event.date, "long", null) : null;
 
   return (
     <section>
@@ -188,6 +207,7 @@ export default function EventResultsPage() {
         subtitle={[event.track, eventDate, season?.name].filter(Boolean).join(" · ")}
         columns={shareColumns}
         rows={shareRows}
+        meta={shareMeta}
         logos={shareLogos}
         leagueName={activeLeague?.name ?? ""}
         leagueLogoUrl={activeLeague?.logo_url ?? ""}

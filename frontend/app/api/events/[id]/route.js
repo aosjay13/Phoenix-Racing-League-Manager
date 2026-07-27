@@ -99,8 +99,20 @@ export async function GET(request, { params }) {
     })
     .sort((a, b) => a.position - b.position);
 
+  // The race stores only the venue's NAME; the exporter's metadata strip wants
+  // its layout/length too, so resolve the linked track doc when there is one.
+  let track = null;
+  if (event.track_id) {
+    const tdoc = await db().collection("tracks").doc(event.track_id).get();
+    if (tdoc.exists) {
+      const t = tdoc.data();
+      track = { id: tdoc.id, name: t.name ?? null, location: t.location ?? null, length: t.length ?? null, track_type: t.track_type ?? null };
+    }
+  }
+
   return NextResponse.json({
     event,
+    track,
     // Full season doc (not just id/name) so the edit screen can resolve
     // points client-side (season defaults + per-session template overrides)
     // without a second round trip.

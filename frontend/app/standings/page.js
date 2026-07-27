@@ -10,16 +10,11 @@ import { leagueLogos, toGraphicTable } from "@/lib/shareGraphic";
 import { api } from "@/lib/api";
 import { compareByTieBreakers, formatStat, TIE_BREAKER_SUMMARY } from "@/lib/standings";
 
-// Curated, feed-friendly column sets for the shareable graphic (the full table
-// has too many columns to read cleanly at social-media sizes).
-const SHARE_DRIVER_COLS = [
-  ["rank", "Pos"], ["driver_name", "Driver"], ["adjusted_points", "Pts"],
-  ["wins", "Wins"], ["podiums", "Podiums"], ["poles", "Poles"],
-];
-const SHARE_TEAM_COLS = [
-  ["rank", "Pos"], ["team", "Team"], ["points", "Pts"],
-  ["wins", "Wins"], ["podiums", "Podiums"], ["poles", "Poles"],
-];
+// The exporter offers every column the standings table shows; these are the
+// ones ticked when it opens — a feed-friendly set, since the full table has too
+// many columns to read cleanly at social-media sizes.
+const SHARE_DRIVER_DEFAULTS = ["rank", "driver_name", "adjusted_points", "wins", "podiums", "poles"];
+const SHARE_TEAM_DEFAULTS = ["rank", "team", "points", "wins", "podiums", "poles"];
 
 // [key, label, lowIsBetter?, isText?]
 const DRIVER_COLS = [
@@ -168,8 +163,6 @@ export default function StandingsPage() {
   }
 
   const rows = data?.[tab] ?? [];
-  const shareCols = tab === "teams" ? SHARE_TEAM_COLS : SHARE_DRIVER_COLS;
-  const shareTable = toGraphicTable(shareCols, rows, { nameKey: tab === "teams" ? "team" : "driver_name" });
   const className = raceClass?.name ?? null;
   const heading = `Standings · ${season?.name ?? ""}${className ? ` · ${className}` : ""}`;
   // In the combined view, surface which class each driver runs in; inside a
@@ -177,6 +170,18 @@ export default function StandingsPage() {
   const driverCols = classes.length > 0 && !classId
     ? [...DRIVER_COLS.slice(0, 4), ["class_name", "Class", false, true], ...DRIVER_COLS.slice(4)]
     : DRIVER_COLS;
+
+  const shareNameKey = tab === "teams" ? "team" : "driver_name";
+  // Every column on screen is offered in the exporter's stat picker.
+  const shareCols = [
+    ["rank", "Pos"],
+    [shareNameKey, tab === "teams" ? "Team" : "Driver"],
+    ...(tab === "teams" ? TEAM_COLS : driverCols).filter(([key]) => key !== shareNameKey),
+  ];
+  const shareTable = toGraphicTable(shareCols, rows, {
+    nameKey: shareNameKey,
+    defaultKeys: tab === "teams" ? SHARE_TEAM_DEFAULTS : SHARE_DRIVER_DEFAULTS,
+  });
 
   return (
     <section>
