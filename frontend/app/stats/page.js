@@ -58,7 +58,7 @@ const teamHref = name => `/teams/${encodeURIComponent(name)}`;
 
 export default function StatsPage() {
   const league = useLeague();
-  const { gameId, seriesId, seasonId, classId, game, series, season, raceClass, classes, league: activeLeague, loading } = league ?? {};
+  const { gameId, seriesId, seasonId, classId, className, game, series, season, raceClass, classes, league: activeLeague, loading } = league ?? {};
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [tab, setTab] = useState("drivers"); // "drivers" | "teams"
@@ -72,8 +72,9 @@ export default function StatsPage() {
   // Scope comes straight from the top dropdowns: the deepest concrete
   // selection wins; "All …" choices widen the aggregation. A selected Class
   // narrows the field further, so every stat below is that class's own.
-  const className = raceClass?.name ?? null;
-  const classParam = classId ? `&class_id=${classId}` : "";
+  // Both id and name: the id pins an exact season's class, the name is what
+  // resolves the same class across the seasons in a wider scope.
+  const classParam = classId ? `&class_id=${classId}&class_name=${encodeURIComponent(className)}` : "";
   const active = seasonId
     ? { params: `scope=season&season_id=${seasonId}${classParam}`, title: `${series?.name ?? ""} ${season?.name ?? "Season"}${className ? ` ${className}` : ""} Stats`.trim() }
     : seriesId

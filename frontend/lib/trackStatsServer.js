@@ -14,7 +14,7 @@ import { raceDateSortKey } from "@/lib/raceDate";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
 import { parseTime, formatTime } from "@/lib/raceTime";
 import { finalSessionName, summarizeRace } from "@/lib/raceSummaryServer";
-import { carForClass, classOfResult, fetchSeasonClasses } from "@/lib/classServer";
+import { carForClass, classIdSet, classIdsInSeason, classOfResult, fetchSeasonClasses } from "@/lib/classServer";
 import { classRecordKey, gameRecordKey, keepFastest } from "@/lib/trackRecords";
 
 // Aggregates a venue's history from every race held there. Races are linked by
@@ -34,6 +34,14 @@ import { classRecordKey, gameRecordKey, keepFastest } from "@/lib/trackRecords";
 // the Game dropdown (a Series/Season still pins one game) so a track always
 // lists every game's own track record side by side.
 export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
+  // A class selection scopes the leaderboard, the winners list and the headline
+  // record to that class — the venue seen through one category's eyes. It's
+  // resolved per season (a class doc belongs to one season), so a class picked
+  // at series level still narrows every season it covers. The per-game and
+  // per-class record breakdowns stay whole, since they exist precisely to show
+  // the categories side by side.
+  const { className = "", classId: wantedClassId = "" } = scope;
+  const classFilterOn = !!(className || wantedClassId);
   const empty = { races_held: 0, seasons_raced: 0, record: null, records_by_game: [], records_by_class: [], drivers: [], winners: [] };
   const wantedName = String(trackName || "").trim();
   const queries = [db().collection("races").where("track_id", "==", trackId).get()];
@@ -154,6 +162,11 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
     // cross-season venue record needs (see recordByClass).
     const classNameById = Object.fromEntries(seasonClasses.map(c => [c.id, c.name]));
     const classNameOf = r => classNameById[classOfResult(r, entriesById)] ?? "";
+    // This season's own docs for the selected class; empty means the season
+    // doesn't run it, so none of its results belong in a class-scoped view.
+    const classSel = classIdsInSeason(seasonClasses, { className, classId: wantedClassId });
+    const inSelectedClass = r =>
+      !classFilterOn || (classSel.length > 0 && classIdSet(classSel).has(classOfResult(r, entriesById)));
 
     for (const r of results) {
       const entry = entriesById[r.entry_id];
@@ -165,10 +178,13 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
       // race-type sessions (lap in fastest_lap_time) and Qualifying (hot lap in
       // qual_time). Recorded per game always, and folded into the headline
       // record only when the race is in the full (game-scoped) selection.
-      considerLap(r, entry, race, seasonId, season.name, gameId, inFullScope, classNameOf(r));
+      // The headline record follows the class selection; the per-game and
+      // per-class breakdowns are always computed across the whole field.
+      considerLap(r, entry, race, seasonId, season.name, gameId, inFullScope && inSelectedClass(r), classNameOf(r));
 
-      // The leaderboard / career aggregation is the game-scoped view only.
-      if (!inFullScope) continue;
+      // The leaderboard / career aggregation is the game-scoped view only, and
+      // narrows to the selected class when there is one.
+      if (!inFullScope || !inSelectedClass(r)) continue;
       const scored = {
         ...r,
         points: (isQualifying(r) || r.counts_points === false) ? 0 : pointsFor(
@@ -192,14 +208,15 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
       const finalName = finalSessionName(race);
       const firstStd = Array.isArray(race.sessions) && race.sessions.length ? race.sessions[0] : "Race";
       const winner = results.find(r =>
-        r.race_id === race.id && !isQualifying(r) && !r.provisional && (r.session || firstStd) === finalName && Number(r.finish_pos) === 1);
+        r.race_id === race.id && !isQualifying(r) && !r.provisional && (r.session || firstStd) === finalName &&
+        Number(r.finish_pos) === 1 && inSelectedClass(r));
       if (!winner) continue;
       const entry = entriesById[winner.entry_id];
       // The car credited to this win is the WINNER's class car, not the
       // season's — on a season whose classes race different machinery, a GT3
       // win shouldn't be listed under the LMP2 default.
       const winnerClass = seasonClasses.find(c => c.id === classOfResult(winner, entriesById)) ?? null;
-      const summary = summarizeRace(race, results, entriesById, carForClass(season, winnerClass));
+      const summary = summarizeRace(race, results, entriesById, carForClass(season, winnerClass), classSel);
       winners.push({
         race_id: race.id,
         race_name: race.name,

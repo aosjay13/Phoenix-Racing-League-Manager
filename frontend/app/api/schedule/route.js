@@ -3,7 +3,7 @@ import { db } from "@/lib/firebase";
 import { getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
 import { decorateSessionFlags } from "@/lib/standings";
 import { summarizeRace } from "@/lib/raceSummaryServer";
-import { fetchSeasonClasses, filterRacesByClass, carForClass, carsByClassForRace } from "@/lib/classServer";
+import { classIdsInSeason, fetchSeasonClasses, filterRacesByClass, carForClass, carsByClassForRace } from "@/lib/classServer";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +24,9 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const seasonId = searchParams.get("season_id");
 
-  if (seasonId) return oneSeason(seasonId, searchParams.get("class_id") || "");
+  if (seasonId) {
+    return oneSeason(seasonId, searchParams.get("class_id") || "", searchParams.get("class_name") || "");
+  }
   return globalFeed(searchParams.get("game_id"), searchParams.get("series_id"), getRequestLeagueId(request));
 }
 
@@ -32,7 +34,7 @@ export async function GET(request) {
 // events pinned to the class plus every shared (unpinned) event. "All Classes"
 // returns the whole calendar. Each row carries `class_name` so a mixed schedule
 // shows at a glance which events are class-specific.
-async function oneSeason(seasonId, classId = "") {
+async function oneSeason(seasonId, classIdParam = "", className = "") {
   const [seasonDoc, racesSnap, entriesSnap, resultsSnap, classes] = await Promise.all([
     db().collection("seasons").doc(seasonId).get(),
     db().collection("races").where("season_id", "==", seasonId).get(),
@@ -43,7 +45,11 @@ async function oneSeason(seasonId, classId = "") {
 
   const season = seasonDoc.exists ? { id: seasonDoc.id, ...seasonDoc.data() } : null;
   const allRaces = racesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-  const races = filterRacesByClass(allRaces, classId);
+  // The selection resolved against this season's own class docs, so a class
+  // picked at series level still narrows the season it drills into.
+  const classSel = classIdsInSeason(classes, { className, classId: classIdParam });
+  const classId = classSel[0] || "";
+  const races = filterRacesByClass(allRaces, classSel);
   const entriesById = Object.fromEntries(entriesSnap.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
   // Summaries resolve results by race, so the map must cover every race the
   // results reference — build it from the unfiltered list.
@@ -66,7 +72,7 @@ async function oneSeason(seasonId, classId = "") {
     ...r,
     class_name: r.class_id ? (classNameById[r.class_id] ?? null) : null,
     class_cars: viewClass ? [] : carsByClassForRace(r, season, classes),
-    summary: summarizeRace(r, results, entriesById, carForClass(season, carClassFor(r)), classId),
+    summary: summarizeRace(r, results, entriesById, carForClass(season, carClassFor(r)), classSel),
   }));
   return NextResponse.json(rows);
 }

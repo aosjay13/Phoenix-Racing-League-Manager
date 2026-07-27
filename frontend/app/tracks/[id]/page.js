@@ -108,13 +108,16 @@ function records(drivers) {
 
 export default function TrackProfilePage() {
   const { id } = useParams();
-  const { gameId, seriesId, seasonId } = useLeague();
+  const { gameId, seriesId, seasonId, classId, className } = useLeague();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [tab, setTab] = useState("records"); // "records" | "results"
 
-  // Scope the venue stats to the top-of-page Game/Series/Season dropdowns, and
-  // re-fetch whenever that context changes.
+  // Scope the venue stats to the top-of-page Game/Series/Season/Class dropdowns,
+  // and re-fetch whenever that context changes. A selected class narrows the
+  // leaderboard, the winners list and the headline record to that class; the
+  // per-game and per-class record breakdowns stay whole, since they exist to
+  // show the categories side by side.
   useEffect(() => {
     if (!id) return;
     setData(null);
@@ -123,14 +126,23 @@ export default function TrackProfilePage() {
     if (seasonId) params.set("season_id", seasonId);
     else if (seriesId) params.set("series_id", seriesId);
     else if (gameId) params.set("game_id", gameId);
+    if (classId) {
+      params.set("class_id", classId);
+      if (className) params.set("class_name", className);
+    }
     const qs = params.toString();
     api(`/api/tracks/${id}${qs ? `?${qs}` : ""}`).then(setData).catch(err => setError(err.message));
-  }, [id, gameId, seriesId, seasonId]);
+  }, [id, gameId, seriesId, seasonId, classId, className]);
 
   if (error) return <div className="empty-state"><span className="empty-state-icon">🏁</span><p>{error}</p></div>;
   if (!data) return <div className="skeleton" style={{ height: 280 }} />;
 
   const { track, races_held, seasons_raced, drivers, winners, record, records_by_game = [], records_by_class = [] } = data;
+  // Named on the page so a narrowed leaderboard/winners list reads as deliberate
+  // rather than as missing history.
+  const scopeNote = className
+    ? `Showing ${className} only — its drivers, its winners here, and its fastest lap. Switch with the Class menu above.`
+    : null;
   const recs = records(drivers);
 
   return (
@@ -144,10 +156,12 @@ export default function TrackProfilePage() {
           <span className="page-badge">
             {races_held} Race{races_held === 1 ? "" : "s"} · {seasons_raced} Season{seasons_raced === 1 ? "" : "s"}
           </span>
+          {className && <span className="page-badge" style={{ marginLeft: 6 }}>{className}</span>}
           <p style={{ marginTop: 8, color: "var(--ink-1)", fontSize: "0.9rem" }}>
             {[track.location, track.track_type, track.length].filter(Boolean).join(" · ") || "Venue"}
           </p>
           {track.notes && <p style={{ marginTop: 4, color: "var(--ink-2)", fontSize: "0.85rem" }}>{track.notes}</p>}
+          {scopeNote && <p style={{ marginTop: 4, color: "var(--ink-2)", fontSize: "0.82rem" }}>{scopeNote}</p>}
         </div>
       </div>
 

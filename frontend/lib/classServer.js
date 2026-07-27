@@ -9,6 +9,8 @@ import { db } from "@/lib/firebase";
 
 export {
   classOfResult,
+  classIdSet,
+  classIdsInSeason,
   filterEntriesByClass,
   filterResultsByClass,
   raceInClass,
