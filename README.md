@@ -70,8 +70,8 @@ The app runs at `http://localhost:3000`.
    finish, titles, etc.).
 4. **Schedule** — the season's race calendar. Completed races are clickable and show full
    results. Admins get **+ New Race** here; on the cross-season feed (Season set to "All
-   Seasons" with a series picked) there's a **+ New Season** button too, which creates the
-   season and drops you onto its empty calendar without a detour through League Setup.
+   Seasons" with a series picked) there's a **+ New Season** button too, offering every option
+   League Setup does and dropping you onto the new season's empty calendar.
 5. **Standings** — driver and team championship tables for the selected season, with
    points, gaps to the leader, and per-category stats. Click any column header to sort.
 6. **Stats** — use the Game/Series/Season/Class menus to scope driver stats to a class, a
@@ -169,6 +169,16 @@ frontend/
 firebase/           ← Firestore + Storage security rules
 backend/            ← Legacy Python backend (unused; superseded by Next.js API routes)
 ```
+
+**One editor per entity, wherever it's opened.** Several things can be created from more than
+one screen — a season from League Setup *or* the Schedule's **+ New Season**, a driver from the
+Roster *or* inline in a results grid. Those share a form component rather than each screen
+rendering its own fields (`components/SeasonForm.jsx`, `components/DriverForm.jsx`), with the
+field list, defaults and API serialization in a matching pure module (`lib/seasonForm.js`). The
+caller supplies only what it alone knows — the parent id, whether this is a create or an edit,
+the submit button — so a quick-create dialog can never quietly offer fewer options, or write a
+different document, than the full setup screen. Add a field once, in the shared form, and every
+entry point gets it. Follow the same split when adding a second way to create something.
 
 ## Data model (Firestore collections)
 
