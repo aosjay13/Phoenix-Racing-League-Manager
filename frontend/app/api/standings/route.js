@@ -8,7 +8,7 @@ import {
   resolveSeasonConfig,
 } from "@/lib/standings";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
-import { fetchSeasonClasses, filterEntriesByClass, filterResultsByClass } from "@/lib/classServer";
+import { classIdsInSeason, fetchSeasonClasses, filterEntriesByClass, filterResultsByClass } from "@/lib/classServer";
 import { gameAlias } from "@/lib/aliases";
 
 // One season's championship tables.
@@ -23,6 +23,7 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const seasonId = searchParams.get("season_id");
   const classId = searchParams.get("class_id") || "";
+  const className = searchParams.get("class_name") || "";
   if (!seasonId) return NextResponse.json({ error: "season_id required" }, { status: 400 });
 
   const [seasonDoc, entriesSnap, teamsSnap, resultsSnap, racesSnap, templatesById, classes] = await Promise.all([
@@ -43,8 +44,11 @@ export async function GET(request) {
   const racesById = Object.fromEntries(racesSnap.docs.map(d => [d.id, d.data()]));
   const allResults = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById));
 
-  const entries = filterEntriesByClass(allEntries, classId);
-  const results = filterResultsByClass(allResults, classId, entriesById);
+  // Resolve the selection against THIS season's class docs, so a class picked
+  // at series level still narrows the season it drills into.
+  const classSel = classIdsInSeason(classes, { className, classId });
+  const entries = filterEntriesByClass(allEntries, classSel);
+  const results = filterResultsByClass(allResults, classSel, entriesById);
 
   const config = resolveSeasonConfig(season);
   const drivers = calculateStandings(results, entries, teams, config, templatesById);
@@ -78,7 +82,8 @@ export async function GET(request) {
   return NextResponse.json({
     season: { id: seasonId, ...season },
     classes,
-    class_id: classId || null,
+    class_id: classSel[0] || classId || null,
+    class_name: className || null,
     // Whether this season also crowns ONE overall champion across every class.
     // Defaults to true (and is meaningless without classes, where the whole
     // field is a single championship anyway).

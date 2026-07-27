@@ -14,7 +14,7 @@ import {
   resolveSeasonConfig,
 } from "@/lib/standings";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
-import { fetchSeasonClasses, filterEntriesByClass, filterRacesByClass, filterResultsByClass } from "@/lib/classServer";
+import { classIdsInSeason, fetchSeasonClasses, filterEntriesByClass, filterRacesByClass, filterResultsByClass } from "@/lib/classServer";
 import { crownsInScope, seasonChampions, titlesByEntry } from "@/lib/champions";
 import { finalSessionName } from "@/lib/raceSummaryServer";
 import { isPastRaceDate, raceDateSortKey, toDateOnly, todayDateString } from "@/lib/raceDate";
@@ -35,6 +35,9 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const scope = searchParams.get("scope") || "league";
   const classId = searchParams.get("class_id") || "";
+  // A class NAME is the cross-season identity: above one season, "GT3" is a
+  // separate doc per season, so the name is resolved to each season's own ids.
+  const className = searchParams.get("class_name") || "";
 
   let seasonsQuery = db().collection("seasons");
   if (scope === "game") {
@@ -50,7 +53,7 @@ export async function GET(request) {
     if (!seasonId) return NextResponse.json({ error: "season_id required" }, { status: 400 });
     const doc = await db().collection("seasons").doc(seasonId).get();
     if (!doc.exists) return NextResponse.json({ error: "Season not found" }, { status: 404 });
-    return NextResponse.json(await buildStats([{ id: doc.id, ...doc.data() }], classId));
+    return NextResponse.json(await buildStats([{ id: doc.id, ...doc.data() }], classId, className));
   } else if (scope !== "league") {
     return NextResponse.json({ error: "invalid scope" }, { status: 400 });
   }
@@ -61,10 +64,10 @@ export async function GET(request) {
   seasonsQuery = scopeByLeague(seasonsQuery, getRequestLeagueId(request));
   const snap = await seasonsQuery.get();
   const seasons = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  return NextResponse.json(await buildStats(seasons, classId));
+  return NextResponse.json(await buildStats(seasons, classId, className));
 }
 
-async function buildStats(seasons, classId = "") {
+async function buildStats(seasons, classId = "", className = "") {
   // driverKey -> { name, number, user_id, results[], titles }
   const drivers = {};
   // teamKey (lowercased name) -> aggregated team bucket. Teams are per-season
@@ -92,19 +95,24 @@ async function buildStats(seasons, classId = "") {
     const allEntriesById = Object.fromEntries(allEntries.map(e => [e.id, e]));
     // A class filter narrows the field before anything is scored, so a class
     // view shows that class's own points, wins and averages — not a slice of
-    // the overall table.
-    const entries = filterEntriesByClass(allEntries, classId);
+    // the overall table. `classSel` is this season's OWN docs for the selected
+    // class; empty means the season doesn't run it, so it drops out of the
+    // aggregation entirely rather than contributing its whole field.
+    const classSel = classIdsInSeason(seasonClasses, { className, classId });
+    const classFilterOn = !!(className || classId);
+    if (classFilterOn && !classSel.length) continue;
+    const entries = filterEntriesByClass(allEntries, classSel);
     const entriesById = Object.fromEntries(entries.map(e => [e.id, e]));
     const teamsById = Object.fromEntries(teamsSnap.docs.map(d => [d.id, d.data()]));
     const seasonRaces = racesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
     // Under a class filter, only that class's calendar counts toward the race
     // totals and field size — its own events plus the shared ones. The
     // race→doc map stays unfiltered so results always resolve their race.
-    const races = filterRacesByClass(seasonRaces, classId);
+    const races = filterRacesByClass(seasonRaces, classSel);
     const racesById = Object.fromEntries(seasonRaces.map(r => [r.id, r]));
     for (const r of races) allRaces.push(r);
     const decorated = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById));
-    const results = filterResultsByClass(decorated, classId, allEntriesById);
+    const results = filterResultsByClass(decorated, classSel, allEntriesById);
     const qualPosMap = buildQualPosMap(results);
     const qualTemplateByRace = buildQualTemplateMap(results);
 
@@ -174,7 +182,7 @@ async function buildStats(seasons, classId = "") {
     // the overall in one season still scores a single championship.
     const crowns = crownsInScope(
       seasonChampions(season, decorated, allEntries, config, templatesById, seasonClasses),
-      classId,
+      classSel.length ? classSel : classId,
     );
     for (const [entryId, rec] of titlesByEntry(crowns)) {
       const winner = allEntriesById[entryId];

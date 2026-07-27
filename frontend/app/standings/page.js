@@ -107,7 +107,7 @@ function formatCell(r, key) {
 }
 
 export default function StandingsPage() {
-  const { seasonId, season, game, series, league, classId, raceClass, classes, combinedChampionship } = useLeague();
+  const { seasonId, season, game, series, league, classId, className, raceClass, classes, combinedChampionship } = useLeague();
   const { isAdmin } = useAuth();
   const [tab, setTab] = useState("drivers");
   const [data, setData] = useState(null);
@@ -122,7 +122,7 @@ export default function StandingsPage() {
   // "All Classes" is the combined whole-field championship.
   const load = useCallback(() => {
     if (!seasonId) { setData(null); return; }
-    const qs = `season_id=${seasonId}${classId ? `&class_id=${classId}` : ""}`;
+    const qs = `season_id=${seasonId}${classId ? `&class_id=${classId}&class_name=${encodeURIComponent(className)}` : ""}`;
     api(`/api/standings?${qs}`).then(setData).catch(() => setData(null));
   }, [seasonId, classId]);
 
@@ -163,7 +163,6 @@ export default function StandingsPage() {
   }
 
   const rows = data?.[tab] ?? [];
-  const className = raceClass?.name ?? null;
   const heading = `Standings · ${season?.name ?? ""}${className ? ` · ${className}` : ""}`;
   // In the combined view, surface which class each driver runs in; inside a
   // single class the column would be the same value on every row.

@@ -192,7 +192,7 @@ function FeedSection({ title, icon, rows, kind }) {
 // ── One season's full event table (a concrete season is selected) ──────────
 
 function SeasonSchedule() {
-  const { seasonId, season, classId, classes, raceClass, refresh } = useLeague();
+  const { seasonId, season, classId, className, classes, raceClass, refresh } = useLeague();
   const { isAdmin } = useAuth();
   const router = useRouter();
   const [races, setRaces] = useState(null);
@@ -216,7 +216,7 @@ function SeasonSchedule() {
   // rounds pinned to it plus every shared round.
   const loadRaces = () => {
     if (!seasonId) { setRaces(null); return; }
-    const qs = `season_id=${seasonId}${classId ? `&class_id=${classId}` : ""}`;
+    const qs = `season_id=${seasonId}${classId ? `&class_id=${classId}&class_name=${encodeURIComponent(className)}` : ""}`;
     api(`/api/schedule?${qs}`).then(setRaces).catch(() => setRaces([]));
   };
   useEffect(loadRaces, [seasonId, classId]);

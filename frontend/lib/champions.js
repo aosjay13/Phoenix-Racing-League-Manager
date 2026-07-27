@@ -23,7 +23,7 @@
 //     profile can show the dual victory; they just don't inflate the tally.
 
 import { calculateStandings } from "@/lib/standings";
-import { filterEntriesByClass, filterResultsByClass } from "@/lib/classFilter";
+import { classIdSet, filterEntriesByClass, filterResultsByClass } from "@/lib/classFilter";
 
 // Every crown handed out in one season, as
 // [{ entry_id, kind: "overall" | "class", class_id, class_name }].
@@ -78,9 +78,13 @@ export function titlesByEntry(crowns) {
 // class's title is relevant — a GT3 view shouldn't credit the driver who led
 // the combined table. With no class selected every crown counts, which is what
 // carries class championships up into the global tally.
-export function crownsInScope(crowns, classId = "") {
-  if (!classId) return crowns;
-  return crowns.filter(c => c.class_id === classId);
+//
+// The selection may be one class id or, above season level, every id that class
+// resolves to across the seasons in scope (see classIdSet).
+export function crownsInScope(crowns, selection = "") {
+  const set = classIdSet(selection);
+  if (!set) return crowns;
+  return crowns.filter(c => set.has(c.class_id));
 }
 
 // "Overall + GT3" / "GT3" / "Overall" — a short, readable description of what

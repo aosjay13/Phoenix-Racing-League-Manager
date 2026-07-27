@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
 import { api } from "@/lib/api";
 import { getActiveLeagueId, setActiveLeagueId } from "@/lib/leagueClient";
 
@@ -32,10 +32,18 @@ export function LeagueProvider({ children }) {
   const [seriesId, setSeriesId] = useState(null);
   const [seasonId, setSeasonId] = useState(null);
   const [classId, setClassId] = useState(null);
+  // The selected class's NAME, tracked alongside its id. A class doc belongs to
+  // one season, so the id changes as you drill between scopes while the name is
+  // what the user actually picked — see the classes effect below.
+  const [className, setClassName] = useState(null);
   const [loading, setLoading] = useState(true);
   const [version, setVersion] = useState(0);
 
   const refresh = useCallback(() => setVersion(v => v + 1), []);
+  // The classes effect reads the current selection without depending on it —
+  // depending on classId would re-fetch the list every time a class is picked.
+  const classIdRef = useRef(classId);
+  useEffect(() => { classIdRef.current = classId; }, [classId]);
 
   // Load the league list and resolve the active league. Runs before anything
   // scoped so the X-League-Id header is set (via localStorage) by the time
@@ -68,7 +76,7 @@ export function LeagueProvider({ children }) {
     try { localStorage.removeItem(STORAGE_KEY); } catch {}
     setLeagueId(id);
     setGames([]); setSeriesList([]); setSeasons([]); setClasses([]);
-    setGameId(null); setSeriesId(null); setSeasonId(null); setClassId(null);
+    setGameId(null); setSeriesId(null); setSeasonId(null); setClassId(null); setClassName(null);
     setLoading(true);
     setVersion(v => v + 1);
   }, []);
@@ -124,32 +132,47 @@ export function LeagueProvider({ children }) {
       .catch(() => setSeasons([]));
   }, [seriesId, version]);
 
-  // Classes hang off the selected season. The selection always starts on
-  // "All Classes" ("") — the combined, whole-field view — and only holds a
-  // specific class while that class exists in the selected season, so switching
-  // to a season (or a league) that doesn't define it falls back to All Classes
-  // rather than filtering against an id that means nothing here.
+  // Classes are available at EVERY scope, not just inside one season. A class
+  // doc belongs to one season, so above season level /api/classes collapses the
+  // same name across seasons into one row (carrying every matching id in
+  // `ids`) — that's what keeps the Class menu populated at "All Seasons" and
+  // lets a class be answered series- or game-wide.
+  //
+  // Because of that, the selection is remembered by NAME: drilling from a
+  // series into one of its seasons keeps you on "GT3" even though the id
+  // underneath changes. It falls back to "All Classes" only when the name
+  // genuinely isn't raced in the new scope.
   const season = seasons.find(s => s.id === seasonId) || null;
   useEffect(() => {
-    if (seasonId === null) return;
-    if (!seasonId) { setClasses([]); setClassId(""); return; }
+    if (gameId === null || seriesId === null || seasonId === null) return;
     const saved = loadSaved();
-    api(`/api/classes?season_id=${seasonId}`)
+    const qs = seasonId ? `?season_id=${seasonId}`
+      : seriesId ? `?series_id=${seriesId}`
+      : gameId ? `?game_id=${gameId}`
+      : "";
+    api(`/api/classes${qs}`)
       .then(list => {
         setClasses(list);
-        setClassId(prev => {
-          const current = prev === null ? saved.classId : prev;
-          return list.find(c => c.id === current) ? current : "";
+        setClassName(prevName => {
+          const wantName = prevName === null ? (saved.className || "") : prevName;
+          const wantId = classIdRef.current === null ? (saved.classId || "") : classIdRef.current;
+          // An exact id still in scope wins (the same season, or a re-fetch);
+          // otherwise re-resolve by name, which is what survives a scope change.
+          const match = list.find(c => c.id === wantId) || (wantName ? list.find(c => c.name === wantName) : null);
+          setClassId(match ? match.id : "");
+          return match ? match.name : "";
         });
       })
-      .catch(() => { setClasses([]); setClassId(""); });
+      .catch(() => { setClasses([]); setClassId(""); setClassName(""); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seasonId, version]);
+  }, [gameId, seriesId, seasonId, version]);
+
+  const raceClass = classes.find(c => c.id === classId) || null;
 
   useEffect(() => {
     if (gameId === null) return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ gameId, seriesId, seasonId, classId }));
-  }, [gameId, seriesId, seasonId, classId]);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ gameId, seriesId, seasonId, classId, className }));
+  }, [gameId, seriesId, seasonId, classId, className]);
 
   const value = {
     leagues, leagueId: leagueId ?? "",
@@ -157,11 +180,21 @@ export function LeagueProvider({ children }) {
     switchLeague, reloadLeagues,
     games, seriesList, seasons, classes,
     gameId: gameId ?? "", seriesId: seriesId ?? "", seasonId: seasonId ?? "", classId: classId ?? "",
-    setGameId, setSeriesId, setSeasonId, setClassId,
+    setGameId, setSeriesId, setSeasonId,
+    // Picking a class records its name too, so the selection survives a change
+    // of scope (where the same class is a different doc).
+    setClassId: id => {
+      setClassId(id);
+      setClassName(classes.find(c => c.id === id)?.name ?? "");
+    },
     game: games.find(g => g.id === gameId) || null,
     series: seriesList.find(s => s.id === seriesId) || null,
     season,
-    raceClass: classes.find(c => c.id === classId) || null,
+    raceClass,
+    // The cross-season identity of the selected class. Every scoped API call
+    // sends this rather than (only) the id, so a series- or game-wide view can
+    // resolve it to that scope's own class docs.
+    className: className ?? "",
     // A season only crowns one overall champion across its classes when the
     // admin left the combined championship on (the default).
     combinedChampionship: season?.combined_championship !== false,

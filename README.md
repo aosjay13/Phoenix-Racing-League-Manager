@@ -15,8 +15,9 @@ can create new (empty) leagues; the active league is renamed under **League Setu
 
 A **Game/Series/Season/Class** selector sits at the top of every page — pick "All" at any level to
 widen a view (e.g. league-wide stats), or drill down to one exact season or class. The **Class**
-menu lists "All Classes" (the combined, whole-field view) followed by the classes defined in the
-selected season; a season that doesn't run classes simply stays on "All Classes".
+menu lists "All Classes" (the combined, whole-field view) followed by the classes raced in the
+current scope — not just inside one season, so a class stays selectable (and answerable) series- or
+game-wide. A season that doesn't run classes simply stays on "All Classes".
 
 ## Features
 
@@ -81,7 +82,11 @@ The app runs at `http://localhost:3000`.
 6. **Stats** — use the Game/Series/Season/Class menus to scope driver stats to a class, a
    season, a whole series, a whole game, or the entire league. Pick "All" at any level to
    widen the scope.
-7. **Records** — the record holder in each category for the current scope, plus **Avg Drivers
+7. **Tracks** — open a venue for its own page: every race held there, a leaderboard of who has
+   gone best, and its lap records. The **Class** menu scopes it too — the leaderboard, winners
+   and headline record become that class's — while the per-game and per-class record breakdowns
+   always stay side by side, since that's the comparison they exist to show.
+8. **Records** — the record holder in each category for the current scope, plus **Avg Drivers
    per Race**: the average field size across every completed race in scope. Empty and upcoming
    events are ignored, and a heat weekend counts its Feature field once rather than each heat.
 
@@ -256,6 +261,22 @@ that happen to agree, or a race-level override that collapses the split — and 
 column shows one car normally and a class-by-class list at "All Classes" when they differ, the event
 header does the same, the top-bar Class menu reads "Pro · GT3", and a track's winners list credits
 each win to the *winner's* class car rather than the season default.
+
+**A class is answerable above its own season.** A class doc belongs to exactly one season, so "GT3"
+in Season 3 and "GT3" in Season 4 are different ids for the same category. The cross-season identity
+is therefore the **name**, and a class *selection* (`classIdSet` in `lib/classFilter.js`) is one of:
+nothing ("All Classes"), one class id, or every id that name resolves to across the seasons in scope.
+Every filter — entries, results, races, championship crowns, race summaries — takes all three forms.
+
+`/api/classes` serves whatever scope is asked for (`season_id` / `series_id` / `game_id` / none =
+league), collapsing same-named docs into one row carrying every matching id in `ids`. That's what
+keeps the **Class** menu populated at "All Seasons" instead of going empty, and the selection is
+remembered by name — drilling from a series into one of its seasons keeps you on GT3 even though the
+id underneath changes, and falls back to All Classes only when the name genuinely isn't raced there.
+
+Scoped endpoints take `class_name` alongside `class_id` and resolve the name against **each season's
+own** class docs (`classIdsInSeason`). A season that doesn't run the selected class contributes
+nothing rather than silently contributing its whole field.
 
 **Track records are per game AND per class.** A lap time only compares to another lap in the same
 context, so a venue keeps several records side by side rather than one outright number: the overall

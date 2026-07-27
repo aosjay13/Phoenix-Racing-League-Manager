@@ -102,15 +102,16 @@ function FieldSizeCard({ fieldSize, scopeLabel, loading }) {
 
 export default function RecordsPage() {
   const league = useLeague();
-  const { gameId, seriesId, seasonId, classId, game, series, season, raceClass, loading } = league ?? {};
+  const { gameId, seriesId, seasonId, classId, className, game, series, season, raceClass, loading } = league ?? {};
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [tab, setTab] = useState("drivers"); // "drivers" | "teams"
 
   // Scope + title mirror the /stats page exactly, driven by the shared
   // Game / Series / Season / Class dropdowns in the top bar.
-  const className = raceClass?.name ?? null;
-  const classParam = classId ? `&class_id=${classId}` : "";
+  // Both id and name: the id pins an exact season's class, the name is what
+  // resolves the same class across the seasons in a wider scope.
+  const classParam = classId ? `&class_id=${classId}&class_name=${encodeURIComponent(className)}` : "";
   const active = seasonId
     ? { params: `scope=season&season_id=${seasonId}${classParam}`, title: `${series?.name ?? ""} ${season?.name ?? "Season"}${className ? ` ${className}` : ""} Records`.trim() }
     : seriesId

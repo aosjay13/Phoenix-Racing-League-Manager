@@ -18,18 +18,38 @@ export function classOfResult(result, entriesById = {}) {
   return entriesById[result.entry_id]?.class_id || null;
 }
 
-// Narrow a season's entries to one class. A falsy classId means "All Classes"
-// and leaves the list untouched.
-export function filterEntriesByClass(entries, classId) {
-  if (!classId) return entries;
-  return entries.filter(e => (e.class_id || null) === classId);
+// A class *selection* is one of:
+//   falsy            → "All Classes": no filtering at all
+//   "<class id>"     → one class doc, i.e. one season's class
+//   [ids] / Set(ids) → the same class across several seasons
+//
+// The third form is what makes a class answerable above season level. A class
+// doc belongs to exactly one season, so "GT3" in Season 3 and "GT3" in Season 4
+// are different ids for the same category; a series- or game-wide view resolves
+// the name to every matching id and filters on the set. Normalizing here means
+// every filter below takes all three forms without caring which it got.
+export function classIdSet(selection) {
+  if (!selection) return null;
+  if (typeof selection === "string") return new Set([selection]);
+  const ids = selection instanceof Set ? [...selection] : Array.isArray(selection) ? selection : [];
+  const clean = ids.filter(Boolean);
+  return clean.length ? new Set(clean) : null;
 }
 
-// Narrow a season's results to one class, judged by classOfResult so a result
+// Narrow a season's entries to a class selection. "All Classes" leaves the list
+// untouched.
+export function filterEntriesByClass(entries, selection) {
+  const set = classIdSet(selection);
+  if (!set) return entries;
+  return entries.filter(e => set.has(e.class_id || null));
+}
+
+// Narrow results to a class selection, judged by classOfResult so a result
 // saved before the driver was classified still resolves through their entry.
-export function filterResultsByClass(results, classId, entriesById = {}) {
-  if (!classId) return results;
-  return results.filter(r => classOfResult(r, entriesById) === classId);
+export function filterResultsByClass(results, selection, entriesById = {}) {
+  const set = classIdSet(selection);
+  if (!set) return results;
+  return results.filter(r => set.has(classOfResult(r, entriesById)));
 }
 
 // Does this event belong on the given class's calendar? An event with no
@@ -37,16 +57,28 @@ export function filterResultsByClass(results, classId, entriesById = {}) {
 // whose per_class_schedules toggle is off, and the default for new events even
 // when it's on. An event pinned to a class appears only on that class's
 // schedule. Viewing "All Classes" (falsy classId) shows the whole calendar.
-export function raceInClass(race, classId) {
-  if (!classId) return true;
+export function raceInClass(race, selection) {
+  const set = classIdSet(selection);
+  if (!set) return true;
   const pinned = race.class_id || null;
-  return !pinned || pinned === classId;
+  return !pinned || set.has(pinned);
 }
 
-// Filter a list of events down to one class's calendar.
-export function filterRacesByClass(races, classId) {
-  if (!classId) return races;
-  return races.filter(r => raceInClass(r, classId));
+// Filter a list of events down to a class's calendar.
+export function filterRacesByClass(races, selection) {
+  const set = classIdSet(selection);
+  if (!set) return races;
+  return races.filter(r => raceInClass(r, set));
+}
+
+// The ids, within one season's class list, that a cross-season selection picks
+// out. `selection` is either a class NAME (the cross-season identity — see
+// classIdSet) or a single class id; either way the answer is the ids that exist
+// in THIS season, which is what the filters above want.
+export function classIdsInSeason(seasonClasses = [], { className = "", classId = "" } = {}) {
+  if (className) return seasonClasses.filter(c => c.name === className).map(c => c.id);
+  if (classId) return seasonClasses.some(c => c.id === classId) ? [classId] : [];
+  return [];
 }
 
 // The drivers eligible to appear in an event's results. A shared event draws on

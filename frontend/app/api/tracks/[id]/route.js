@@ -22,6 +22,11 @@ export async function GET(request, { params }) {
     gameId: searchParams.get("game_id") || null,
     seriesId: searchParams.get("series_id") || null,
     seasonId: searchParams.get("season_id") || null,
+    // The Class menu scopes the venue too: its leaderboard, winners and
+    // headline record become that class's. The per-game / per-class record
+    // breakdowns are unaffected — they exist to show categories side by side.
+    classId: searchParams.get("class_id") || "",
+    className: searchParams.get("class_name") || "",
   };
   const profile = await buildTrackProfile({ trackId: track.id, trackName: track.name, scope });
   return NextResponse.json({ track, ...profile });
