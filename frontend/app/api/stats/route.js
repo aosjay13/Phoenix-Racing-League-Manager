@@ -5,7 +5,6 @@ import {
   aggregateCareerStats,
   buildQualPosMap,
   buildQualTemplateMap,
-  calculateStandings,
   compareStandings,
   configForTemplate,
   decorateRaceBonuses,
@@ -15,7 +14,8 @@ import {
   resolveSeasonConfig,
 } from "@/lib/standings";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
-import { filterEntriesByClass, filterRacesByClass, filterResultsByClass } from "@/lib/classServer";
+import { fetchSeasonClasses, filterEntriesByClass, filterRacesByClass, filterResultsByClass } from "@/lib/classServer";
+import { crownsInScope, seasonChampions, titlesByEntry } from "@/lib/champions";
 import { finalSessionName } from "@/lib/raceSummaryServer";
 import { isPastRaceDate, raceDateSortKey, toDateOnly, todayDateString } from "@/lib/raceDate";
 
@@ -81,11 +81,12 @@ async function buildStats(seasons, classId = "") {
 
   for (const season of seasons) {
     const config = resolveSeasonConfig(season);
-    const [entriesSnap, resultsSnap, racesSnap, teamsSnap] = await Promise.all([
+    const [entriesSnap, resultsSnap, racesSnap, teamsSnap, seasonClasses] = await Promise.all([
       db().collection("entries").where("season_id", "==", season.id).get(),
       db().collection("results").where("season_id", "==", season.id).get(),
       db().collection("races").where("season_id", "==", season.id).get(),
       db().collection("teams").where("season_id", "==", season.id).get(),
+      fetchSeasonClasses(season.id),
     ]);
     const allEntries = entriesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
     const allEntriesById = Object.fromEntries(allEntries.map(e => [e.id, e]));
@@ -163,18 +164,25 @@ async function buildStats(seasons, classId = "") {
       }
     }
 
-    // Titles: champion of each completed season — credited to the driver and,
-    // if they were on a team that season, to that team. Under a class filter
-    // this is the class champion, since the field is already narrowed.
-    if (season.status === "completed" && results.length) {
-      const standings = calculateStandings(results, entries, [], config, templatesById);
-      const winner = standings.rows[0] && entriesById[standings.rows[0].entry_id];
-      if (winner) {
-        const key = keyFor(winner);
-        if (drivers[key]) drivers[key].titles += 1;
-        const tk = teamKeyFor(winner);
-        if (tk && teams[tk]) teams[tk].titles += 1;
-      }
+    // Championships for this season, credited to the driver and — if they were
+    // on a team that season — to that team. Computed from the UNFILTERED season
+    // so every class's champion is found, then narrowed to the scope being
+    // viewed: inside a class only that class's title counts, while the
+    // league-wide view counts every crown. That's what carries a class
+    // championship up into a driver's global tally instead of losing it to
+    // whoever led the combined table. A driver who wins both their class and
+    // the overall in one season still scores a single championship.
+    const crowns = crownsInScope(
+      seasonChampions(season, decorated, allEntries, config, templatesById, seasonClasses),
+      classId,
+    );
+    for (const [entryId, rec] of titlesByEntry(crowns)) {
+      const winner = allEntriesById[entryId];
+      if (!winner) continue;
+      const key = keyFor(winner);
+      if (drivers[key]) drivers[key].titles += rec.titles;
+      const tk = teamKeyFor(winner);
+      if (tk && teams[tk]) teams[tk].titles += rec.titles;
     }
   }
 

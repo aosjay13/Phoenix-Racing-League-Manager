@@ -21,7 +21,7 @@ const CATEGORIES = [
   ["most_laps_led", "Most 'Most Laps Led'", false],
   ["starts", "Most Starts", false],
   ["points", "Most Points", false],
-  ["titles", "Most Titles", false],
+  ["titles", "Most Championships", false, "Season titles won — a class championship counts the same as an overall one"],
   ["avg_finish", "Lowest Avg Finish", true],
   ["avg_start", "Lowest Avg Start", true],
 ];

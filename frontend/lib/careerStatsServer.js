@@ -3,7 +3,6 @@ import {
   aggregateCareerStats,
   buildQualPosMap,
   buildQualTemplateMap,
-  calculateStandings,
   configForTemplate,
   decorateRaceBonuses,
   decorateSessionFlags,
@@ -12,6 +11,8 @@ import {
   resolveSeasonConfig,
 } from "@/lib/standings";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
+import { fetchSeasonClasses } from "@/lib/classServer";
+import { describeCrowns, seasonChampions, titlesByEntry } from "@/lib/champions";
 
 // Builds a driver's career stats grouped per game (and all games combined),
 // from every entry that matches the given global driver id and/or linked
@@ -43,6 +44,7 @@ export async function buildCareerProfile({ driverId = null, userId = null }) {
   const titlesPerGame = {}; // gameId -> count
   const perTrack = {};      // trackKey -> { track_id, track_name, results[] }
   const allResults = [];
+  const titleList = [];     // one row per season won, newest resolved by caller
   let totalTitles = 0;
   const templatesById = await fetchTemplatesById();
 
@@ -90,12 +92,26 @@ export async function buildCareerProfile({ driverId = null, userId = null }) {
       bucket.results.push(r);
     }
 
-    if (season.status === "completed" && mine.length) {
-      const standings = calculateStandings(seasonResults, seasonEntries, [], config, templatesById);
-      if (standings.rows[0] && myEntryIds.has(standings.rows[0].entry_id)) {
-        totalTitles += 1;
-        titlesPerGame[gameId] = (titlesPerGame[gameId] || 0) + 1;
-      }
+    // Championships. Every crown the season handed out is considered — each
+    // class's champion as well as the overall one, and no overall at all when
+    // the season runs class-only titles — then narrowed to this driver. A
+    // driver who won both their class and the overall in one season scores one
+    // championship, with both crowns recorded so the profile can show it.
+    const seasonClasses = await fetchSeasonClasses(seasonId);
+    const mineRec = [...titlesByEntry(seasonChampions(season, seasonResults, seasonEntries, config, templatesById, seasonClasses))]
+      .find(([entryId]) => myEntryIds.has(entryId))?.[1];
+    if (mineRec) {
+      totalTitles += mineRec.titles;
+      titlesPerGame[gameId] = (titlesPerGame[gameId] || 0) + mineRec.titles;
+      titleList.push({
+        season_id: seasonId,
+        season_name: season.name ?? "Season",
+        game_id: season.game_id ?? null,
+        game_name: games[season.game_id]?.name ?? null,
+        overall: mineRec.overall,
+        class_names: mineRec.class_names,
+        label: describeCrowns(mineRec),
+      });
     }
   }
 
@@ -133,6 +149,9 @@ export async function buildCareerProfile({ driverId = null, userId = null }) {
     all_games: aggregateCareerStats(allResults, totalTitles),
     by_game: byGame,
     by_track: byTrack,
+    // Every championship won, so the profile can name them ("Season 4 —
+    // Overall + GT3") rather than just showing a count.
+    titles_detail: titleList,
     seasons_raced: seasonIds.length,
   };
 }

@@ -204,7 +204,9 @@ function SeasonSchedule() {
 
   async function confirmToggleComplete() {
     // Mirrors the "Mark Completed" control on League Setup: a completed season
-    // credits its champion(s) with a Title in career/team stats. refresh() pulls
+    // credits its champion(s) with a Championship in career/team stats — each
+    // class's winner, plus the overall winner when the season runs one.
+    // refresh() pulls
     // the updated season back into the league selector so the button re-labels.
     await api(`/api/seasons/${seasonId}`, { method: "PATCH", body: { status: completed ? "active" : "completed" } });
     refresh();
@@ -264,7 +266,7 @@ function SeasonSchedule() {
               style={{ marginTop: 0 }}
               title={completed
                 ? "This season is complete and its champion holds a Title. Click to reopen it."
-                : "Mark this season complete — its champion earns a Title in career stats."}
+                : "Mark this season complete — its champion(s) earn a Championship in career stats."}
               onClick={() => setToggleComplete(true)}>
               {completed ? "✓ Season Complete" : "Mark Season Complete"}
             </button>
@@ -280,7 +282,11 @@ function SeasonSchedule() {
           title={completed ? "Reopen this season?" : "Mark season complete?"}
           message={completed
             ? `Reopen "${season?.name}"? It will no longer count as a finished season, and its champion's Title will be removed until you mark it complete again.`
-            : `Mark "${season?.name}" complete? This closes out the season and credits its champion — the points leader — with a Title in their career and team stats.`}
+            : `Mark "${season?.name}" complete? This closes out the season and credits its champion(s) with a Championship in their career and team stats — ${
+                classes.length
+                  ? `each class's points leader${season?.combined_championship === false ? " (this season awards no overall title)" : ", plus the overall points leader"}`
+                  : "the points leader"
+              }.`}
           confirmLabel={completed ? "Reopen season" : "Mark complete"}
           onConfirm={confirmToggleComplete}
           onClose={() => setToggleComplete(false)}
