@@ -59,6 +59,58 @@ export function entriesEligibleForRace(entries, race) {
   return entries.filter(e => !e.class_id || e.class_id === pinned);
 }
 
+// ── Cars ───────────────────────────────────────────────────────────────────
+//
+// Which car is on track is a three-level fallback, most specific first:
+//
+//   race.car   — this one event runs something different
+//   class.car  — this class's machinery for the whole season (GT3 vs LMP2)
+//   season.car — the season default, and the only level that existed before
+//                classes could carry a car
+//
+// Every level is free text and any of them may be blank, so a single-class
+// season behaves exactly as it always has.
+function trimmed(v) {
+  const s = String(v ?? "").trim();
+  return s || null;
+}
+
+// The car a race runs for a given class. `raceClass` is optional — omit it (or
+// pass the class the viewer has selected) and the season default is the
+// fallback.
+export function carForRace(race, season, raceClass = null) {
+  return trimmed(race?.car) || trimmed(raceClass?.car) || trimmed(season?.car);
+}
+
+// The car a class races for the season, before any per-event override.
+export function carForClass(season, raceClass) {
+  return trimmed(raceClass?.car) || trimmed(season?.car);
+}
+
+// The one car on track at an event, or null when the classes running it are in
+// different machinery and no single answer is honest. Handles the three shapes
+// a caller cares about: no classes at all (the season/race car), a round pinned
+// to one class (that class's car), and several classes that happen to agree.
+export function soleCarForRace(race, season, classes = []) {
+  const running = classes.filter(c => raceInClass(race, c.id));
+  if (running.length > 1 && new Set(running.map(c => carForRace(race, season, c))).size > 1) return null;
+  return carForRace(race, season, running[0] ?? null);
+}
+
+// The distinct cars on track at one event, as [{ class_id, class_name, car }],
+// for the whole-season view where no single class is selected. Only the classes
+// that actually run this round are listed (a round pinned to one class is just
+// that class), and the list is dropped entirely unless the classes genuinely
+// differ — otherwise every row would repeat the season's one car per class.
+export function carsByClassForRace(race, season, classes = []) {
+  const running = classes.filter(c => raceInClass(race, c.id));
+  if (!running.length) return [];
+  const rows = running.map(c => ({ class_id: c.id, class_name: c.name, car: carForRace(race, season, c) }));
+  const distinct = new Set(rows.map(r => r.car));
+  if (distinct.size < 2) return [];
+  return rows;
+}
+
 // ── Per-class sessions ─────────────────────────────────────────────────────
 //
 // A "session class scope" is the class a set of results is being entered for
@@ -120,10 +172,12 @@ export function racePerClassResults(race, season) {
 // The scopes an event's results are entered under, in display order: one per
 // class, plus Unclassified when the season has drivers with no class (or a
 // result already saved without one) so those drivers are never stranded.
-// Returns [{ value, label }] ready for a dropdown.
+// Returns [{ value, label, car }] ready for a dropdown — `car` is the class's
+// OWN car, blank when it just inherits the season's, so the picker only calls
+// out machinery that actually differs between classes.
 export function sessionClassScopes(classes = [], entries = [], results = []) {
-  const scopes = classes.map(c => ({ value: c.id, label: c.name }));
+  const scopes = classes.map(c => ({ value: c.id, label: c.name, car: trimmed(c.car) || "" }));
   const stray = entries.some(e => !e.class_id) || results.some(r => !(r.class_id || ""));
-  if (stray || !scopes.length) scopes.push({ value: UNCLASSIFIED, label: "Unclassified" });
+  if (stray || !scopes.length) scopes.push({ value: UNCLASSIFIED, label: "Unclassified", car: "" });
   return scopes;
 }

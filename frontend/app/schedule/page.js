@@ -25,6 +25,26 @@ function Person({ p }) {
 // in every timezone — see lib/raceDate.js.
 const fmtDate = d => formatRaceDate(d, "short");
 
+// The Car cell. Normally one car for the round. At "All Classes" on a season
+// whose classes race different machinery, the server sends `class_cars` instead
+// — one line per class, so the calendar shows which car goes with which class
+// rather than picking one of them arbitrarily.
+function CarCell({ summary, classCars }) {
+  if (classCars?.length) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        {classCars.map(c => (
+          <span key={c.class_id} style={{ fontSize: "0.8rem", whiteSpace: "nowrap" }}>
+            <span className="badge" style={{ marginRight: 6 }}>{c.class_name}</span>
+            {c.car || <span style={{ color: "var(--ink-2)" }}>—</span>}
+          </span>
+        ))}
+      </div>
+    );
+  }
+  return summary.car || <span style={{ color: "var(--ink-2)" }}>—</span>;
+}
+
 export default function SchedulePage() {
   const { seasonId } = useLeague();
   // A concrete season shows that season's full event table (with admin tools);
@@ -311,7 +331,7 @@ function SeasonSchedule() {
                           style={{ marginLeft: 5, fontSize: "0.7rem", color: "var(--accent-cyan)", fontWeight: 700 }}>GWC</span>
                       )}
                     </td>
-                    <td style={{ textAlign: "left" }}>{s.car || <span style={{ color: "var(--ink-2)" }}>—</span>}</td>
+                    <td style={{ textAlign: "left" }}><CarCell summary={s} classCars={r.class_cars} /></td>
                     <td style={{ textAlign: "left" }}><Person p={s.pole} /></td>
                     <td style={{ textAlign: "left", fontWeight: s.winner ? 600 : undefined }}><Person p={s.winner} /></td>
                     <td style={{ fontVariantNumeric: "tabular-nums" }}>{s.num_drivers || "—"}</td>

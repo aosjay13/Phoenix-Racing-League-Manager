@@ -9,7 +9,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ShareGraphicModal } from "@/components/ShareGraphicModal";
 import { leagueLogos, driverDisplayName } from "@/lib/shareGraphic";
 import { formatRaceDate } from "@/lib/raceDate";
-import { classIdForScope, sessionClassScopes } from "@/lib/classFilter";
+import { carForRace, carsByClassForRace, classIdForScope, sessionClassScopes, soleCarForRace } from "@/lib/classFilter";
 import { api } from "@/lib/api";
 
 function DriverCell({ r }) {
@@ -118,6 +118,13 @@ export default function EventResultsPage() {
   // classes separately — so a delete never reads as clearing the whole field.
   const tabName = tab === "__qual" ? "Qualifying" : tab;
   const scopedName = activeClass ? `${activeClass.label} ${tabName}` : tabName;
+  // Cars on track. `activeCar` is the class being viewed; `classCars` is the
+  // non-empty list only when the classes here race different machinery, in which
+  // case the header lists them all instead of naming one.
+  const eventClasses = data.classes || [];
+  const activeCar = carForRace(event, season, eventClasses.find(c => c.id === activeClass?.value));
+  const classCars = carsByClassForRace(event, season, eventClasses);
+  const headerCar = soleCarForRace(event, season, eventClasses);
 
   const hasQualifying = inClass(qualifying).length > 0;
   const activeRace = races.find(s => s.name === tab);
@@ -197,7 +204,17 @@ export default function EventResultsPage() {
             {event.track ? `${event.track} · ` : ""}
             {formatRaceDate(event.date, "full", "Date TBA")}
             {season ? ` · ${season.name}` : ""}
+            {headerCar ? ` · ${headerCar}` : ""}
           </p>
+          {classCars.length > 0 && (
+            <p style={{ margin: "4px 0 0", display: "flex", gap: 10, flexWrap: "wrap", fontSize: "0.82rem", color: "var(--ink-1)" }}>
+              {classCars.map(c => (
+                <span key={c.class_id}>
+                  <span className="badge" style={{ marginRight: 5 }}>{c.class_name}</span>{c.car || "—"}
+                </span>
+              ))}
+            </p>
+          )}
           <p style={{ margin: "6px 0 0", display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
             <Link href="/schedule" style={{ color: "var(--accent-cyan)", fontSize: "0.85rem" }}>← Back to Schedule</Link>
             {shareRows.length > 0 && (
@@ -239,8 +256,9 @@ export default function EventResultsPage() {
         <div className="class-scope-bar">
           <label htmlFor="view-class">Class</label>
           <select id="view-class" value={activeClass?.value ?? ""} onChange={e => setClassTab(e.target.value)}>
-            {classScopes.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+            {classScopes.map(s => <option key={s.value} value={s.value}>{s.car ? `${s.label} · ${s.car}` : s.label}</option>)}
           </select>
+          {activeCar && <span className="class-scope-chip" title="The car this class races">{activeCar}</span>}
           <span style={{ color: "var(--ink-1)", fontSize: "0.84rem" }}>
             Each class ran its own qualifying and race here, so every position below is
             {activeClass ? ` ${activeClass.label}'s` : " that class's"} own.

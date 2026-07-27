@@ -152,8 +152,12 @@ export const SPECS = {
   // the driver ran in (see /api/results). `sort_order` fixes the display order of
   // the class dropdown (lowest first), so "Pro" can sit above "Amateur"
   // regardless of which was created first.
+  // `car` is the free-text car/model this class races ("GT3", "LMP2", "Late
+  // Model"). It sits between the season's car and a race's own override — see
+  // carForRace in lib/classFilter.js — so a season whose classes run different
+  // machinery shows the right car per class without setting it on every event.
   classes: { collection: "classes", parentField: "season_id", sortField: "sort_order",
-             fields: { name: { required: true }, color: {}, description: {},
+             fields: { name: { required: true }, color: {}, description: {}, car: {},
                        sort_order: { number: true, default: 0 } } },
   teams:   { collection: "teams", parentField: "season_id", sortField: "name",
              fields: { name: { required: true }, logo_url: {}, color: {} } },

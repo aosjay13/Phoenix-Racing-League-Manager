@@ -3,7 +3,7 @@ import { db } from "@/lib/firebase";
 import { getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
 import { decorateSessionFlags } from "@/lib/standings";
 import { summarizeRace } from "@/lib/raceSummaryServer";
-import { fetchSeasonClasses, filterRacesByClass } from "@/lib/classServer";
+import { fetchSeasonClasses, filterRacesByClass, carForClass, carsByClassForRace } from "@/lib/classServer";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +41,7 @@ async function oneSeason(seasonId, classId = "") {
     fetchSeasonClasses(seasonId),
   ]);
 
-  const seasonCar = seasonDoc.exists ? (seasonDoc.data().car || null) : null;
+  const season = seasonDoc.exists ? { id: seasonDoc.id, ...seasonDoc.data() } : null;
   const allRaces = racesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
   const races = filterRacesByClass(allRaces, classId);
   const entriesById = Object.fromEntries(entriesSnap.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
@@ -51,13 +51,22 @@ async function oneSeason(seasonId, classId = "") {
   const results = decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById);
   const classNameById = Object.fromEntries(classes.map(c => [c.id, c.name]));
 
+  const viewClass = classId ? classes.find(c => c.id === classId) ?? null : null;
   // Inside a class, each row's summary is that class's own race: its pole, its
-  // winner, its field. Events split by class have several winners, so an
-  // unscoped summary would show whoever happened to be P1 in another class.
+  // winner, its field, and its car. Events split by class have several winners,
+  // so an unscoped summary would show whoever happened to be P1 in another
+  // class. At "All Classes" a round where the classes run different machinery
+  // carries `class_cars` instead, so the calendar still shows which car goes
+  // with which class rather than collapsing to one of them.
+  // The class whose car a row falls back on: the one being viewed, else the one
+  // the round is pinned to (a Pro-only round shows Pro's car at "All Classes"),
+  // else none — leaving the season default.
+  const carClassFor = r => viewClass ?? (r.class_id ? classes.find(c => c.id === r.class_id) ?? null : null);
   const rows = races.map(r => ({
     ...r,
     class_name: r.class_id ? (classNameById[r.class_id] ?? null) : null,
-    summary: summarizeRace(r, results, entriesById, seasonCar, classId),
+    class_cars: viewClass ? [] : carsByClassForRace(r, season, classes),
+    summary: summarizeRace(r, results, entriesById, carForClass(season, carClassFor(r)), classId),
   }));
   return NextResponse.json(rows);
 }
