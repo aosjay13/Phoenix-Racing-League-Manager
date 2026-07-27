@@ -8,7 +8,7 @@ import { useSortable } from "@/components/useSortable";
 import { ShareGraphicModal } from "@/components/ShareGraphicModal";
 import { leagueLogos, toGraphicTable } from "@/lib/shareGraphic";
 import { api } from "@/lib/api";
-import { formatStat } from "@/lib/standings";
+import { compareByTieBreakers, formatStat, TIE_BREAKER_SUMMARY } from "@/lib/standings";
 
 // Curated, feed-friendly column sets for the shareable graphic (the full table
 // has too many columns to read cleanly at social-media sizes).
@@ -33,18 +33,26 @@ const DRIVER_COLS = [
   ["top5", "Top 5s"],
   ["top10", "Top 10s"],
   ["poles", "Poles"],
+  ["best_laps", "Best Laps"],
   ["laps_led", "Laps Led"],
   ["avg_start", "Avg Start", true],
   ["avg_finish", "Avg Finish", true],
   ["dnfs", "DNFs"],
 ];
 
+// Mirrors the driver columns through the whole tie-breaker chain, so a team tie
+// can be read off the table rather than taken on trust.
 const TEAM_COLS = [
   ["points", "Points"],
   ["wins", "Wins"],
   ["podiums", "Podiums"],
   ["top5", "Top 5s"],
+  ["top10", "Top 10s"],
   ["poles", "Poles"],
+  ["best_laps", "Best Laps"],
+  ["laps_led", "Laps Led"],
+  ["avg_start", "Avg Start", true],
+  ["avg_finish", "Avg Finish", true],
   ["drivers", "Drivers"],
 ];
 
@@ -57,7 +65,9 @@ function SortableTable({ cols, rows, defaultKey, rankKey = "rank", renderName, n
   // rank counts as low-is-better so the default view (and clicks on "Pos")
   // put the championship leader at the top.
   const lowIsBetter = [rankKey, ...cols.filter(c => c[2]).map(c => c[0])];
-  const { sorted, clickSort, arrow } = useSortable(rows, defaultKey, lowIsBetter);
+  // Equal values in any column fall back to the championship order, so a click
+  // on Points shows tied drivers exactly as the standings rank them.
+  const { sorted, clickSort, arrow } = useSortable(rows, defaultKey, lowIsBetter, compareByTieBreakers);
 
   return (
     <div className="table-wrap">
@@ -206,6 +216,9 @@ export default function StandingsPage() {
           This season doesn&rsquo;t run an overall championship — the combined table below is for reference only.
         </p>
       )}
+      <p style={{ marginTop: 4, color: "var(--ink-2)", fontSize: "0.8rem" }} title={`Ties are broken by ${TIE_BREAKER_SUMMARY}`}>
+        Level on points? Ties break on {TIE_BREAKER_SUMMARY.toLowerCase()} — in that order.
+      </p>
 
       <div className="tab-row">
         <button className={`tab${tab === "drivers" ? " active" : ""}`} onClick={() => setTab("drivers")}>Drivers</button>
