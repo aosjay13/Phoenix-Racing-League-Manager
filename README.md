@@ -256,6 +256,27 @@ column shows one car normally and a class-by-class list at "All Classes" when th
 header does the same, the top-bar Class menu reads "Pro · GT3", and a track's winners list credits
 each win to the *winner's* class car rather than the season default.
 
+**Championships (Titles).** A completed season crowns champions, and each one is +1 Championship on
+the winner's career, at every scope — `lib/champions.js` is the only definition, used by the driver
+profile, the stats tables and team pages alike.
+
+- A season **with no classes** crowns its points leader, exactly as before.
+- A season **with classes** crowns *each class's* points leader. A class championship is a
+  championship: it counts in the driver's league-wide tally at "All Games"/"All Series", not just
+  inside that class's view. Previously only the outright leader was credited, so a GT3 champion who
+  ran mid-pack on combined points finished the season with nothing.
+- The **overall** title is awarded on top only when the season's *Enable Overall Championship*
+  toggle is on. Switched off, the combined table is explicitly unofficial and no overall champion is
+  awarded, displayed or counted — the class winners are that season's only champions.
+- **Double crown**: winning a class *and* the overall in the same season is **one** championship,
+  not two, so a tally can't be inflated by a season's worth of scoring being counted twice. Both
+  crowns are still recorded, and the driver profile names them ("Season 4 — Overall + GT3").
+
+Scope decides which crowns count: inside a class only that class's title does, while the unscoped
+view counts every crown — which is what carries class championships up to the global tally.
+Championships appear as a column on Stats, on the driver profile (with a Championships table listing
+every season won), and as a **Most Championships** record.
+
 **Championship tie-breakers.** Level on points, the higher-placed competitor is decided by one
 chain, applied in order until someone is ahead:
 

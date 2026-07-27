@@ -5,7 +5,6 @@ import {
   aggregateCareerStats,
   buildQualPosMap,
   buildQualTemplateMap,
-  calculateStandings,
   compareStandings,
   configForTemplate,
   decorateRaceBonuses,
@@ -15,6 +14,8 @@ import {
   resolveSeasonConfig,
 } from "@/lib/standings";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
+import { fetchSeasonClasses } from "@/lib/classServer";
+import { seasonChampions, titlesByEntry } from "@/lib/champions";
 
 export const dynamic = "force-dynamic";
 
@@ -83,15 +84,16 @@ export async function GET(request) {
     }
     if (!seasonResults.length) continue;
 
-    // Season champion on this team → a team (and driver) title.
-    if (season.status === "completed" && results.length) {
-      const standings = calculateStandings(results, entries, [], config, templatesById);
-      const champ = standings.rows[0] && entriesById[standings.rows[0].entry_id];
-      if (champ && teamIds.has(champ.team_id)) {
-        titles += 1;
-        const ck = keyFor(champ);
-        if (drivers[ck]) drivers[ck].titles += 1;
-      }
+    // Every championship won on this team that season — class champions
+    // included, and no overall champion at all when the season runs
+    // class-only titles. A dual crown (class + overall) is one championship.
+    const seasonClasses = await fetchSeasonClasses(season.id);
+    for (const [entryId, rec] of titlesByEntry(seasonChampions(season, results, entries, config, templatesById, seasonClasses))) {
+      const champ = entriesById[entryId];
+      if (!champ || !teamIds.has(champ.team_id)) continue;
+      titles += rec.titles;
+      const ck = keyFor(champ);
+      if (drivers[ck]) drivers[ck].titles += rec.titles;
     }
 
     const line = aggregateCareerStats(seasonResults, 0);

@@ -36,7 +36,7 @@ const COLUMNS = [
   ["avg_start", "Avg St", true, "Average Start"],
   ["dnfs", "DNFs"],
   ["provisionals", "Prov", false, "Provisionals"],
-  ["titles", "Titles"],
+  ["titles", "Titles", false, "Championships — season titles won, class titles included"],
 ];
 
 // Team columns mirror the driver set (summed across a team's drivers), with a
@@ -56,7 +56,7 @@ const TEAM_COLUMNS = [
   ["poles", "Poles"],
   ["avg_start", "Avg St", true, "Average Start"],
   ["dnfs", "DNFs"],
-  ["titles", "Titles"],
+  ["titles", "Titles", false, "Championships — season titles won by this team's drivers, class titles included"],
 ];
 
 const teamHref = name => `/teams/${encodeURIComponent(name)}`;

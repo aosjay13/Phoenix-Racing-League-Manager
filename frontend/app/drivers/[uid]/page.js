@@ -12,7 +12,7 @@ const STAT_LABELS = [
   ["top10", "Top 10s"], ["avg_finish", "Avg Finish"], ["laps_run", "Laps Run"],
   ["laps_led", "Laps Led"], ["most_laps_led", "Most Laps Led"], ["best_laps", "Best Laps"],
   ["poles", "Poles"], ["avg_start", "Avg Start"], ["dnfs", "DNFs"],
-  ["provisionals", "Provisionals"], ["titles", "Titles"], ["points", "Points"],
+  ["provisionals", "Provisionals"], ["titles", "Championships"], ["points", "Points"],
 ];
 
 // Small coloured +/- chip for a driver's most recent SR change in a game.
@@ -86,7 +86,7 @@ export default function DriverProfilePage() {
   if (error) return <div className="empty-state"><span className="empty-state-icon">🏎</span><p>{error}</p></div>;
   if (!data) return <div className="skeleton" style={{ height: 280 }} />;
 
-  const { profile, all_games, by_game, by_track = [], linked, skill_ratings_by_game = [], aliases = [], former_names = [] } = data;
+  const { profile, all_games, by_game, by_track = [], titles_detail = [], linked, skill_ratings_by_game = [], aliases = [], former_names = [] } = data;
   const stats = gameFilter === "all"
     ? all_games
     : by_game.find(g => g.game_id === gameFilter)?.stats ?? all_games;
@@ -289,12 +289,42 @@ export default function DriverProfilePage() {
         </>
       )}
 
+      {view === "career" && titles_detail.length > 0 && (
+        <>
+          <div className="section-header"><h3>Championships</h3></div>
+          <p style={{ marginTop: 0, color: "var(--ink-1)", fontSize: "0.85rem" }}>
+            Every season title won. A class championship counts the same as any other; winning a
+            class and the overall in one season is one championship, listed with both crowns.
+          </p>
+          <div className="table-wrap">
+            <table className="stats-table">
+              <thead><tr><th style={{ textAlign: "left" }}>Season</th><th style={{ textAlign: "left" }}>Game</th><th style={{ textAlign: "left" }}>Won</th></tr></thead>
+              <tbody>
+                {titles_detail.map(t => (
+                  <tr key={`${t.season_id}`}>
+                    <td style={{ textAlign: "left" }}>🏆 {t.season_name}</td>
+                    <td style={{ textAlign: "left", color: "var(--ink-1)" }}>{t.game_name ?? "—"}</td>
+                    <td style={{ textAlign: "left" }}>
+                      {t.overall && <span className="badge" style={{ marginRight: 6 }}>Overall</span>}
+                      {t.class_names.map(c => <span key={c} className="badge" style={{ marginRight: 6 }}>{c}</span>)}
+                      {t.overall && t.class_names.length > 0 && (
+                        <span style={{ color: "var(--ink-2)", fontSize: "0.76rem" }}>double crown — counts once</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
       {view === "career" && by_game.length > 0 && (
         <>
           <div className="section-header"><h3>By Game</h3></div>
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Game</th><th>Starts</th><th>Wins</th><th>Podiums</th><th>Top 5s</th><th>Poles</th><th>Titles</th><th>Points</th><th>Avg Finish</th></tr></thead>
+              <thead><tr><th>Game</th><th>Starts</th><th>Wins</th><th>Podiums</th><th>Top 5s</th><th>Poles</th><th title="Season championships won — class titles included">Championships</th><th>Points</th><th>Avg Finish</th></tr></thead>
               <tbody>
                 {by_game.map(g => (
                   <tr key={g.game_id}>
