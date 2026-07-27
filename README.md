@@ -69,7 +69,9 @@ The app runs at `http://localhost:3000`.
    broken out per game and combined across all games (starts, wins, podiums, poles, average
    finish, titles, etc.).
 4. **Schedule** — the season's race calendar. Completed races are clickable and show full
-   results.
+   results. Admins get **+ New Race** here; on the cross-season feed (Season set to "All
+   Seasons" with a series picked) there's a **+ New Season** button too, which creates the
+   season and drops you onto its empty calendar without a detour through League Setup.
 5. **Standings** — driver and team championship tables for the selected season, with
    points, gaps to the leader, and per-category stats. Click any column header to sort.
 6. **Stats** — use the Game/Series/Season/Class menus to scope driver stats to a class, a

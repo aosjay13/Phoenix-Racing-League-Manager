@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useLeague } from "@/components/LeagueProvider";
 import { useAuth } from "@/components/AuthProvider";
 import { RaceCreateModal } from "@/components/RaceCreateModal";
+import { SeasonCreateModal } from "@/components/SeasonCreateModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { api } from "@/lib/api";
 import { formatRaceDate, isPastRaceDate, raceDateSortKey } from "@/lib/raceDate";
@@ -55,8 +56,10 @@ export default function SchedulePage() {
 // ── Master feed across seasons (no single season selected) ─────────────────
 
 function GlobalSchedule() {
-  const { gameId, seriesId, game, series } = useLeague();
+  const { gameId, seriesId, game, series, setSeasonId, refresh } = useLeague();
+  const { isAdmin } = useAuth();
   const [rows, setRows] = useState(null);
+  const [showCreateSeason, setShowCreateSeason] = useState(false);
 
   useEffect(() => {
     const qs = seriesId ? `series_id=${seriesId}` : gameId ? `game_id=${gameId}` : "";
@@ -80,17 +83,45 @@ function GlobalSchedule() {
   }, [rows]);
 
   const scopeLabel = series?.name || game?.name || "All Games";
+  // A season belongs to one series, so a new one can only be started once a
+  // concrete series is picked — at "All Series" there's nothing to hang it on.
+  const canCreateSeason = isAdmin && !!seriesId;
 
   return (
     <section>
       <div className="page-title">
         <h2>Schedule</h2>
         <span className="page-badge">{scopeLabel}</span>
+        {canCreateSeason && (
+          <div style={{ marginLeft: "auto" }}>
+            <button className="btn btn-primary" style={{ marginTop: 0 }}
+              title={`Start a new season in ${series?.name ?? "this series"}`}
+              onClick={() => setShowCreateSeason(true)}>
+              + New Season
+            </button>
+          </div>
+        )}
       </div>
       <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.9rem", maxWidth: 720 }}>
         Racing across every series and season. Pick a specific Season above to manage its events; otherwise
         here&apos;s what&apos;s coming up and what recently ran. Narrow with the Game / Series menus.
+        {canCreateSeason && " Starting a fresh season? Use + New Season — you'll land straight on its empty calendar."}
       </p>
+
+      {showCreateSeason && (
+        <SeasonCreateModal
+          gameId={gameId} seriesId={seriesId} seriesName={series?.name}
+          onClose={() => setShowCreateSeason(false)}
+          onCreated={season => {
+            setShowCreateSeason(false);
+            // Pull the new season into the league selector, then select it — the
+            // page re-renders as that season's own (empty) calendar, ready for
+            // its first race.
+            refresh();
+            setSeasonId(season.id);
+          }}
+        />
+      )}
 
       {rows == null ? (
         <div className="skeleton" style={{ height: 240, marginTop: 16 }} />
