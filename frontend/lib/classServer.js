@@ -14,6 +14,13 @@ export {
   raceInClass,
   filterRacesByClass,
   entriesEligibleForRace,
+  UNCLASSIFIED,
+  isClassScoped,
+  classIdForScope,
+  resultInSessionClass,
+  entriesInSessionClass,
+  racePerClassResults,
+  sessionClassScopes,
 } from "@/lib/classFilter";
 
 // Every class in a season, ordered the way the dropdowns show them.

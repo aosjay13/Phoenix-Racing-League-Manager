@@ -58,3 +58,72 @@ export function entriesEligibleForRace(entries, race) {
   if (!pinned) return entries;
   return entries.filter(e => !e.class_id || e.class_id === pinned);
 }
+
+// ── Per-class sessions ─────────────────────────────────────────────────────
+//
+// A "session class scope" is the class a set of results is being entered for
+// WITHIN one event, which is a different question to which class's calendar the
+// event sits on (races.class_id, above). When several classes race the same
+// event, each class gets its own Qualifying and its own Race — its own pole,
+// its own P1, its own field — instead of one combined grid where only the
+// outright leader is a winner.
+//
+// A scope is one of:
+//   null / undefined  → not class-scoped: the whole session, exactly as the app
+//                       behaved before per-class sessions existed.
+//   UNCLASSIFIED      → the drivers with no class assigned.
+//   "<class id>"      → that class alone.
+export const UNCLASSIFIED = "__none";
+
+// Is this scope value a real, class-scoped selection (rather than "the whole
+// session")? Written as its own helper because "" and UNCLASSIFIED both mean
+// something specific and neither is falsy in the same way.
+export function isClassScoped(scope) {
+  return scope === UNCLASSIFIED || !!scope;
+}
+
+// The class_id a result saved under this scope should carry. UNCLASSIFIED
+// stores a blank class, matching a driver with no class on the roster.
+export function classIdForScope(scope) {
+  return scope === UNCLASSIFIED ? "" : (scope || "");
+}
+
+// Does a saved result belong to this session-class scope? Judged by
+// classOfResult, so a result written before the season had classes still
+// resolves through its driver's roster entry.
+export function resultInSessionClass(result, scope, entriesById = {}) {
+  if (!isClassScoped(scope)) return true;
+  return (classOfResult(result, entriesById) || "") === classIdForScope(scope);
+}
+
+// Narrow roster entries to a session-class scope. Unlike entriesEligibleForRace
+// this does NOT let unclassified drivers spill into a class's grid — a per-class
+// session is the class's own field, and unclassified drivers have their own
+// scope.
+export function entriesInSessionClass(entries, scope) {
+  if (!isClassScoped(scope)) return entries;
+  const want = classIdForScope(scope);
+  return entries.filter(e => (e.class_id || "") === want);
+}
+
+// Does this event run its sessions split by class? Resolved per event, falling
+// back to the season default — so a season can opt in wholesale while an
+// individual event still combines its classes (or vice versa). An event pinned
+// to a single class is a single-class event already, so splitting is moot and
+// this stays off.
+export function racePerClassResults(race, season) {
+  if (race?.class_id) return false;
+  if (race && race.per_class_results != null) return !!race.per_class_results;
+  return !!season?.per_class_results;
+}
+
+// The scopes an event's results are entered under, in display order: one per
+// class, plus Unclassified when the season has drivers with no class (or a
+// result already saved without one) so those drivers are never stranded.
+// Returns [{ value, label }] ready for a dropdown.
+export function sessionClassScopes(classes = [], entries = [], results = []) {
+  const scopes = classes.map(c => ({ value: c.id, label: c.name }));
+  const stray = entries.some(e => !e.class_id) || results.some(r => !(r.class_id || ""));
+  if (stray || !scopes.length) scopes.push({ value: UNCLASSIFIED, label: "Unclassified" });
+  return scopes;
+}

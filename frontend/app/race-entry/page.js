@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useLeague } from "@/components/LeagueProvider";
 import { AdminGate } from "@/components/AdminGate";
 import { SessionEditor } from "@/components/SessionEditor";
 import { normalizedBuiltinTemplates } from "@/lib/pointsTemplates";
-import { filterRacesByClass } from "@/lib/classFilter";
+import { filterRacesByClass, racePerClassResults, sessionClassScopes } from "@/lib/classFilter";
 import { api } from "@/lib/api";
 
 function RaceEntryInner() {
@@ -15,6 +15,10 @@ function RaceEntryInner() {
   const [entries, setEntries] = useState([]);
   const [raceId, setRaceId] = useState("");
   const [templates, setTemplates] = useState(normalizedBuiltinTemplates());
+  // Which class's session is being entered, on an event that runs its classes
+  // separately. Seeded from the Class menu in the top bar, so switching class up
+  // there drops you straight into that class's grid.
+  const [scope, setScope] = useState(null);
 
   const load = useCallback(async () => {
     if (!seasonId) { setRaces([]); setEntries([]); setRaceId(""); return; }
@@ -44,6 +48,23 @@ function RaceEntryInner() {
 
   useEffect(() => { load().catch(() => {}); }, [load]);
 
+  const selectedRace = races.find(r => r.id === raceId);
+  // A split event has no combined grid — every session belongs to one class, so
+  // a class has to be chosen before results can be entered. The top-bar Class
+  // menu picks it; "All Classes" falls back to the first class in the season.
+  const perClassResults = racePerClassResults(selectedRace, season);
+  const scopes = useMemo(
+    () => (perClassResults ? sessionClassScopes(classes, entries) : []),
+    [perClassResults, classes, entries]
+  );
+  useEffect(() => {
+    if (!scopes.length) { setScope(null); return; }
+    setScope(prev => {
+      if (scopes.some(s => s.value === prev)) return prev;
+      return scopes.find(s => s.value === classId)?.value ?? scopes[0].value;
+    });
+  }, [scopes, classId]);
+
   if (!seasonId) {
     return <div className="empty-state"><span className="empty-state-icon">⏱</span><p>Select a game, series and season above.</p></div>;
   }
@@ -52,7 +73,7 @@ function RaceEntryInner() {
   // its own rounds plus every shared one — mirroring the Schedule page.
   const visibleRaces = filterRacesByClass(races, classId);
   const classNameById = Object.fromEntries(classes.map(c => [c.id, c.name]));
-  const selectedRace = races.find(r => r.id === raceId);
+  const scopeName = scopes.find(s => s.value === scope)?.label ?? "";
   const sessionPoints = selectedRace?.session_points || {};
 
   const patchRace = updated => setRaces(prev => prev.map(r => (r.id === raceId ? { ...r, ...updated } : r)));
@@ -106,6 +127,19 @@ function RaceEntryInner() {
           </select>
         </div>
 
+        {selectedRace && perClassResults && scopes.length > 0 && (
+          <div className="class-scope-bar">
+            <label htmlFor="entry-class">Entering results for</label>
+            <select id="entry-class" value={scope ?? ""} onChange={e => setScope(e.target.value)}>
+              {scopes.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
+            <span style={{ color: "var(--ink-1)", fontSize: "0.84rem" }}>
+              This event runs each class separately, so you&rsquo;re building {scopeName || "this class"}&rsquo;s
+              own grid — its own P1. Switch classes here (or from the Class menu in the top bar) to enter the next one.
+            </span>
+          </div>
+        )}
+
         {selectedRace && (selectedRace.heat_format ? (
           <p style={{ color: "var(--ink-1)", fontSize: "0.9rem" }}>
             This event uses heat racing — enter its Heats, Consolation, and Feature results from the
@@ -115,7 +149,7 @@ function RaceEntryInner() {
           <SessionEditor
             key={selectedRace.id}
             race={selectedRace} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={series?.name}
-            classes={classes}
+            classes={classes} sessionClass={perClassResults ? scope : null} sessionClassName={perClassResults ? scopeName : ""}
             sessionType="race" sessionNames={stdSessions}
             season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
             canAddSession onAddSession={addStdSession} onRemoveSession={removeStdSession} onRenameSession={renameStdSession}

@@ -82,6 +82,7 @@ function AdminInner() {
     // across every class until an admin opts into per-class calendars.
     combined_championship: true,
     per_class_schedules: false,
+    per_class_results: false,
     bonuses: Object.fromEntries(BONUS_TYPES.map(([k]) => [k, "0"])),
   };
   const [seasonForm, setSeasonForm] = useState(blankSeason);
@@ -401,6 +402,25 @@ function AdminInner() {
               </label>
             </div>
 
+            <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
+              <input type="checkbox" id="season_per_class_results" disabled={!seriesId}
+                checked={seasonForm.per_class_results}
+                onChange={e => setSeasonForm(f => ({ ...f, per_class_results: e.target.checked }))}
+                style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+              <label htmlFor="season_per_class_results" style={{ margin: 0 }}>
+                Separate Results by Class
+                <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
+                  Off (default): all classes at an event share one results grid, with a Class column
+                  per row — one outright winner. On: even when every class races the same round, each
+                  class gets its <strong>own</strong> Qualifying and Race, with its own pole, its own
+                  P1 and its own field. This is the default for new events; any single event can be
+                  flipped either way on its Race Info tab. With no single outright order left, the
+                  overall championship above just adds the classes&rsquo; points together — turn it
+                  off for a pure class-championship season.
+                </span>
+              </label>
+            </div>
+
             <button type="button" className="btn btn-ghost" style={{ marginTop: 14 }} onClick={() => setShowPoints(v => !v)}>
               {showPoints ? "▾" : "▸"} Points &amp; Bonuses
             </button>
@@ -484,6 +504,7 @@ function AdminInner() {
                     car: s.car || "",
                     combined_championship: s.combined_championship !== false,
                     per_class_schedules: !!s.per_class_schedules,
+                    per_class_results: !!s.per_class_results,
                     race_points: tableToList(s.race_points ?? s.points_scale),
                     qual_points: tableToList(s.qual_points),
                     bonuses: Object.fromEntries(BONUS_TYPES.map(([k]) => {

@@ -9,6 +9,7 @@ import { RaceCreateModal } from "@/components/RaceCreateModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { api } from "@/lib/api";
 import { formatRaceDate, isPastRaceDate, raceDateSortKey } from "@/lib/raceDate";
+import { racePerClassResults } from "@/lib/classFilter";
 
 // A driver cell that links to the profile when we can resolve one, else plain
 // text. Falls back to an em-dash for events with no recorded pole/winner yet.
@@ -181,10 +182,14 @@ function SeasonSchedule() {
   const ordered = [...races].sort((a, b) => (Number(a.round_number) || 0) - (Number(b.round_number) || 0));
   const nextRound = races.reduce((m, r) => Math.max(m, Number(r.round_number) || 0), 0) + 1;
   const perClassSchedules = !!season?.per_class_schedules;
-  // The Class column is only meaningful on a season running per-class calendars,
-  // and only while looking at the whole season — inside one class every visible
-  // round is either that class's or shared.
-  const showClassCol = perClassSchedules && classes.length > 0 && !classId;
+  // Does this event run each class's sessions separately? Resolved per event,
+  // falling back to the season default.
+  const splitResults = r => racePerClassResults(r, season);
+  // The Class column carries two things: which class's calendar a round is on,
+  // and whether the round's results are split per class. It's only meaningful
+  // while looking at the whole season — inside one class every visible round is
+  // either that class's or shared, and its results are already that class's.
+  const showClassCol = classes.length > 0 && !classId && (perClassSchedules || ordered.some(splitResults));
 
   return (
     <section>
@@ -194,6 +199,11 @@ function SeasonSchedule() {
         {perClassSchedules && raceClass && (
           <span className="page-badge" title={`${raceClass.name} rounds plus every shared round`}>
             {raceClass.name} Calendar
+          </span>
+        )}
+        {raceClass && (
+          <span className="page-badge" title={`Pole, winner and field size are ${raceClass.name}'s own, on every event that runs its classes separately`}>
+            {raceClass.name} Results
           </span>
         )}
         {isAdmin && (
@@ -233,6 +243,7 @@ function SeasonSchedule() {
           classes={classes}
           perClassSchedules={perClassSchedules}
           defaultClassId={classId}
+          perClassResults={!!season?.per_class_results}
           onClose={() => setShowCreate(false)}
           onCreated={() => { setShowCreate(false); loadRaces(); }}
         />
@@ -285,6 +296,12 @@ function SeasonSchedule() {
                         {r.class_name
                           ? <span className="badge">{r.class_name}</span>
                           : <span style={{ color: "var(--ink-2)", fontSize: "0.8rem" }}>All Classes</span>}
+                        {splitResults(r) && (
+                          <span style={{ display: "block", color: "var(--accent-cyan)", fontSize: "0.72rem" }}
+                            title="Each class runs its own qualifying and race at this event">
+                            separate results
+                          </span>
+                        )}
                       </td>
                     )}
                     <td style={{ whiteSpace: "nowrap" }}>

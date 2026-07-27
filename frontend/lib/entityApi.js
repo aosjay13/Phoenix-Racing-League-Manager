@@ -133,11 +133,19 @@ export const SPECS = {
              // races.class_id, so each class can run its own calendar — races left
              // unpinned stay shared by every class, which is what makes a mixed
              // schedule (a shared opener, then class-specific rounds) possible.
+             //
+             // `per_class_results` is the other half of that: it splits the
+             // SESSIONS of a shared event by class, so classes racing the same
+             // round each get their own Qualifying and Race — their own pole,
+             // P1 and field — instead of one combined grid. It's only the
+             // default for new events; each event carries its own
+             // `per_class_results` (see SPECS.races) and can differ.
              fields: { name: { required: true }, game_id: {}, logo_url: {}, status: { default: "active" },
                        drop_weeks: { number: true, default: 0 }, points_scale: {}, car: {},
                        race_points: {}, qual_points: {}, bonus_points: {},
                        combined_championship: { bool: true, default: true },
-                       per_class_schedules: { bool: true, default: false } } },
+                       per_class_schedules: { bool: true, default: false },
+                       per_class_results: { bool: true, default: false } } },
   // Classes divide a season's field into separately-scored groups ("Pro" /
   // "Amateur", "GT3" / "LMP2"). A class belongs to exactly one season; a roster
   // entry points at one with `class_id`, and each saved result carries the class
@@ -200,8 +208,14 @@ export const SPECS = {
              // can run its own calendar; blank (the default, and the only value
              // used while the season's per_class_schedules toggle is off) means the
              // event is shared by every class. See raceInClass in lib/classServer.
+             // `per_class_results` splits this event's sessions by class: each
+             // class enters its own Qualifying and Race, with its own pole, P1
+             // and field, rather than sharing one combined grid. Absent (the
+             // default) inherits the season's setting — see racePerClassResults
+             // in lib/classFilter.js — so an admin can flip the whole season at
+             // once and still override a single event.
              fields: { name: { required: true }, track: {}, track_id: {}, track_logo_url: {}, date: { dateOnly: true },
-                       class_id: {},
+                       class_id: {}, per_class_results: { bool: true },
                        round_number: { number: true, required: true }, sessions: {},
                        total_laps: { number: true }, car: {},
                        // Heat-racing weekend structure: when heat_format is on, `heats` and

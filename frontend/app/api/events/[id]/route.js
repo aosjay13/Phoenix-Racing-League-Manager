@@ -3,6 +3,7 @@ import { db } from "@/lib/firebase";
 import { buildQualPosMap, configForTemplate, decorateRaceBonuses, isQualifying, pointsFor, resolveSeasonConfig } from "@/lib/standings";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
 import { gameAlias } from "@/lib/aliases";
+import { fetchSeasonClasses, classOfResult, racePerClassResults } from "@/lib/classServer";
 
 // Full detail for one event: a dedicated qualifying session plus every race
 // session (including heat/consolation/feature sessions for heat-format
@@ -13,12 +14,13 @@ export async function GET(request, { params }) {
   if (!raceDoc.exists) return NextResponse.json({ error: "Event not found" }, { status: 404 });
   const event = { id: raceDoc.id, ...raceDoc.data() };
 
-  const [seasonDoc, entriesSnap, teamsSnap, resultsSnap, templatesById] = await Promise.all([
+  const [seasonDoc, entriesSnap, teamsSnap, resultsSnap, templatesById, classes] = await Promise.all([
     db().collection("seasons").doc(event.season_id).get(),
     db().collection("entries").where("season_id", "==", event.season_id).get(),
     db().collection("teams").where("season_id", "==", event.season_id).get(),
     db().collection("results").where("race_id", "==", event.id).get(),
     fetchTemplatesById(),
+    fetchSeasonClasses(event.season_id),
   ]);
 
   const season = seasonDoc.exists ? { id: seasonDoc.id, ...seasonDoc.data() } : null;
@@ -42,10 +44,14 @@ export async function GET(request, { params }) {
     }));
   }
 
+  // The class each result counts toward, resolved once here (stamped class, else
+  // the driver's roster class) so the client can group a split event's sessions
+  // into one table per class without repeating the fallback rule.
   const joinEntry = r => {
     const entry = entriesById[r.entry_id] || {};
     return {
       ...r,
+      class_id: classOfResult(r, entriesById) || "",
       driver_name: entry.name ?? "Unknown",
       driver_number: entry.number ?? null,
       driver_id: entry.driver_id ?? null,
@@ -99,6 +105,11 @@ export async function GET(request, { params }) {
     // points client-side (season defaults + per-session template overrides)
     // without a second round trip.
     season,
+    // The season's classes, plus whether THIS event splits its sessions by
+    // class — with it on, each session's results are one grid per class (its
+    // own pole, its own P1) rather than a single combined order.
+    classes,
+    per_class_results: racePerClassResults(event, season),
     races,
     qualifying,
   });

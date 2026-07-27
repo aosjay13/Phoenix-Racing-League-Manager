@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { withAdmin, getRequestLeagueId } from "@/lib/serverAuth";
 import { recalcGameSkillRatings, gameIdForSeason } from "@/lib/skillRatingServer";
+import { classIdForScope, isClassScoped, resultInSessionClass } from "@/lib/classFilter";
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -23,10 +24,18 @@ const SESSION_TYPES = ["qualifying", "race", "heat", "consolation", "feature"];
 // case they're treated as the event's first standard session.
 async function sessionContext(raceId) {
   const raceDoc = await db().collection("races").doc(raceId).get();
-  const sessions = raceDoc.exists && Array.isArray(raceDoc.data().sessions) && raceDoc.data().sessions.length
-    ? raceDoc.data().sessions
-    : ["Race"];
-  return { firstSession: sessions[0] };
+  const data = raceDoc.exists ? raceDoc.data() : {};
+  const sessions = Array.isArray(data.sessions) && data.sessions.length ? data.sessions : ["Race"];
+  return { firstSession: sessions[0], seasonId: data.season_id || null };
+}
+
+// class_id per roster entry, used to resolve the class of a result saved before
+// classes existed (or before this driver was classified) — the same fallback
+// classOfResult applies everywhere else.
+async function classByEntryForSeason(seasonId) {
+  if (!seasonId) return {};
+  const snap = await db().collection("entries").where("season_id", "==", seasonId).get();
+  return Object.fromEntries(snap.docs.map(d => [d.id, { class_id: d.data().class_id || "" }]));
 }
 
 // Docs that count as "this session". Qualifying is isolated by type, but all
@@ -34,10 +43,17 @@ async function sessionContext(raceId) {
 // name: the event page merges them by name, so a leftover set saved under
 // another type (e.g. before the event was switched to heat format) would
 // render as duplicate finishing positions.
-function matchesSession(data, sessionType, savingSession, firstSession) {
+//
+// `sessionClass` narrows that to ONE class's slice of the session (see
+// lib/classFilter.js): a per-class save replaces only its own class's rows and
+// leaves the other classes racing the same event untouched. Left unset — the
+// combined mode every event used before per-class sessions existed — the whole
+// session is replaced regardless of class.
+function matchesSession(data, sessionType, savingSession, firstSession, sessionClass, entriesById) {
   const docType = data.session_type || "race";
   const docSession = data.session || firstSession;
   if (docSession !== savingSession) return false;
+  if (!resultInSessionClass(data, sessionClass, entriesById)) return false;
   return sessionType === "qualifying" ? docType === "qualifying" : docType !== "qualifying";
 }
 
@@ -49,7 +65,7 @@ function matchesSession(data, sessionType, savingSession, firstSession) {
 // correct even if the season's default or another session's template later
 // changes — see lib/standings.js configForTemplate().
 export const POST = withAdmin(async (request, ctx, user) => {
-  const { race_id, season_id, session = "", session_type, points_template_id, rows } = await request.json();
+  const { race_id, season_id, session = "", session_type, session_class, points_template_id, rows } = await request.json();
   const sessionType = SESSION_TYPES.includes(session_type) ? session_type : "race";
   if (!race_id || !season_id || !Array.isArray(rows)) {
     return NextResponse.json({ error: "race_id, season_id, rows[] required" }, { status: 400 });
@@ -69,17 +85,23 @@ export const POST = withAdmin(async (request, ctx, user) => {
   // to another class (or the roster entry is re-used). An explicit class on the
   // row wins (the results grid's Class dropdown); otherwise it's taken from the
   // driver's current roster entry. Blank = unclassified.
-  const entriesSnap = await db().collection("entries").where("season_id", "==", season_id).get();
-  const classByEntry = Object.fromEntries(entriesSnap.docs.map(d => [d.id, d.data().class_id || ""]));
+  const entriesById = await classByEntryForSeason(season_id);
+  const classByEntry = Object.fromEntries(Object.entries(entriesById).map(([id, e]) => [id, e.class_id]));
+  // A per-class save is that class's session: every row it writes belongs to
+  // the class being entered, whatever the roster or the row's own Class cell
+  // says, so a mis-set dropdown can't leak a driver into another class's grid.
+  const scoped = isClassScoped(session_class);
+  const scopeClassId = classIdForScope(session_class);
 
   const col = db().collection("results");
   const existing = await col.where("race_id", "==", race_id).get();
   const batch = db().batch();
-  // Replace this session's existing rows. SR is recomputed from scratch below
-  // (a full chronological replay of the game), so no per-session reversal is
-  // needed — corrections and re-saves are handled by the recalc.
+  // Replace this session's existing rows — or, for a per-class save, only this
+  // class's slice of them. SR is recomputed from scratch below (a full
+  // chronological replay of the game), so no per-session reversal is needed —
+  // corrections and re-saves are handled by the recalc.
   existing.docs
-    .filter(d => matchesSession(d.data(), sessionType, savingSession, firstSession))
+    .filter(d => matchesSession(d.data(), sessionType, savingSession, firstSession, session_class, entriesById))
     .forEach(d => batch.delete(d.ref));
 
   const saved = [];
@@ -93,7 +115,9 @@ export const POST = withAdmin(async (request, ctx, user) => {
       session: savingSession,
       session_type: sessionType,
       entry_id: row.entry_id,
-      class_id: (row.class_id != null && row.class_id !== "") ? row.class_id : (classByEntry[row.entry_id] || ""),
+      class_id: scoped
+        ? scopeClassId
+        : ((row.class_id != null && row.class_id !== "") ? row.class_id : (classByEntry[row.entry_id] || "")),
       finish_pos: Number(row.finish_pos),
       start_pos: row.start_pos === "" || row.start_pos == null ? null : Number(row.start_pos),
       qual_time: row.qual_time || null,
@@ -146,19 +170,26 @@ export const POST = withAdmin(async (request, ctx, user) => {
 
 // Clears the saved results for one session of a race, leaving the rest of the
 // event untouched. ?race_id=…&session=…&session_type=… — session/type default
-// to the event's first standard session / "race", mirroring POST.
+// to the event's first standard session / "race", mirroring POST. An optional
+// &session_class=… narrows the wipe to one class's slice of that session, so
+// clearing (say) the Pro race leaves the Amateur race that ran alongside it
+// alone; omit it to clear the session for every class.
 export const DELETE = withAdmin(async (request) => {
   const { searchParams } = new URL(request.url);
   const raceId = searchParams.get("race_id");
   const session = searchParams.get("session") || "";
   const typeParam = searchParams.get("session_type");
   const sessionType = SESSION_TYPES.includes(typeParam) ? typeParam : "race";
+  // Absent param = the whole session; present (including the Unclassified
+  // sentinel) = that one class.
+  const sessionClass = searchParams.has("session_class") ? searchParams.get("session_class") : null;
   if (!raceId) return NextResponse.json({ error: "race_id required" }, { status: 400 });
 
-  const { firstSession } = await sessionContext(raceId);
+  const { firstSession, seasonId: raceSeasonId } = await sessionContext(raceId);
   const target = session || firstSession;
+  const entriesById = isClassScoped(sessionClass) ? await classByEntryForSeason(raceSeasonId) : {};
   const existing = await db().collection("results").where("race_id", "==", raceId).get();
-  const doomed = existing.docs.filter(d => matchesSession(d.data(), sessionType, target, firstSession));
+  const doomed = existing.docs.filter(d => matchesSession(d.data(), sessionType, target, firstSession, sessionClass, entriesById));
   // Grab a season_id off the deleted set (all share the race → one season) to
   // resolve the game whose SR timeline must be recomputed.
   const seasonId = doomed.length ? doomed[0].data().season_id : null;
