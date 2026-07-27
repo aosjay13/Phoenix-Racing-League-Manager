@@ -9,6 +9,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ShareGraphicModal } from "@/components/ShareGraphicModal";
 import { leagueLogos, driverDisplayName } from "@/lib/shareGraphic";
 import { formatRaceDate } from "@/lib/raceDate";
+import { classIdForScope, sessionClassScopes } from "@/lib/classFilter";
 import { api } from "@/lib/api";
 
 function DriverCell({ r }) {
@@ -63,6 +64,7 @@ export default function EventResultsPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [tab, setTab] = useState(null); // "qual" or session name
+  const [classTab, setClassTab] = useState(null); // which class's results, on a split event
   const [confirmKind, setConfirmKind] = useState(null); // "event" | "session" | null
   const [sharing, setSharing] = useState(false);
 
@@ -90,6 +92,9 @@ export default function EventResultsPage() {
     const qs = new URLSearchParams({ race_id: id });
     if (tab === "__qual") { qs.set("session", "Qualifying"); qs.set("session_type", "qualifying"); }
     else { qs.set("session", tab); }
+    // On a split event this clears only the class being viewed; the other
+    // classes that raced the same round keep their results.
+    if (activeClass) qs.set("session_class", activeClass.value);
     await api(`/api/results?${qs.toString()}`, { method: "DELETE" });
     await load();
   }
@@ -98,9 +103,25 @@ export default function EventResultsPage() {
   if (!data) return <div className="skeleton" style={{ height: 280 }} />;
 
   const { event, season, races, qualifying } = data;
-  const hasQualifying = qualifying.length > 0;
+  // A split event holds one set of results per class in every session — its own
+  // pole, its own P1 — so the tables below are shown a class at a time.
+  const splitByClass = !!data.per_class_results;
+  const allResults = [...qualifying, ...races.flatMap(s => s.results)];
+  const classScopes = splitByClass ? sessionClassScopes(data.classes || [], [], allResults) : [];
+  const activeClass = splitByClass
+    ? (classScopes.find(s => s.value === classTab) ?? classScopes[0] ?? null)
+    : null;
+  // Narrows any result list to the class being viewed. A combined event has no
+  // class tabs, so this is the identity.
+  const inClass = rs => (activeClass ? rs.filter(r => (r.class_id || "") === classIdForScope(activeClass.value)) : rs);
+  // "Qualifying" / "Race 1", prefixed with the class when the event ran its
+  // classes separately — so a delete never reads as clearing the whole field.
+  const tabName = tab === "__qual" ? "Qualifying" : tab;
+  const scopedName = activeClass ? `${activeClass.label} ${tabName}` : tabName;
+
+  const hasQualifying = inClass(qualifying).length > 0;
   const activeRace = races.find(s => s.name === tab);
-  const activeResults = activeRace?.results ?? [];
+  const activeResults = inClass(activeRace?.results ?? []);
   // Provisional entries (points only, didn't race) are listed separately so
   // they never read as back-of-field finishers.
   const finishers = activeResults.filter(r => !r.provisional);
@@ -113,8 +134,8 @@ export default function EventResultsPage() {
 
   // Shareable graphic for the currently-viewed session (Qualifying or a race).
   const sharingQual = tab === "__qual";
-  const sessionLabel = sharingQual ? "Qualifying" : (tab || "Results");
-  const shareSource = sharingQual ? qualifying : finishers;
+  const sessionLabel = [activeClass?.label, sharingQual ? "Qualifying" : (tab || "Results")].filter(Boolean).join(" · ");
+  const shareSource = sharingQual ? inClass(qualifying) : finishers;
   // `key` identifies each column to the exporter's "Displayed Stats"
   // checkboxes; Pos and Driver are locked on since a row is unreadable without
   // them.
@@ -212,6 +233,21 @@ export default function EventResultsPage() {
         </div>
       </div>
 
+      {/* Which class's race am I looking at? Only on an event that ran its
+          classes as separate sessions — each has its own pole and winner. */}
+      {splitByClass && classScopes.length > 0 && (
+        <div className="class-scope-bar">
+          <label htmlFor="view-class">Class</label>
+          <select id="view-class" value={activeClass?.value ?? ""} onChange={e => setClassTab(e.target.value)}>
+            {classScopes.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+          </select>
+          <span style={{ color: "var(--ink-1)", fontSize: "0.84rem" }}>
+            Each class ran its own qualifying and race here, so every position below is
+            {activeClass ? ` ${activeClass.label}'s` : " that class's"} own.
+          </span>
+        </div>
+      )}
+
       <div className="tab-row" style={{ marginTop: 20 }}>
         {hasQualifying && (
           <button className={`tab${tab === "__qual" ? " active" : ""}`} onClick={() => setTab("__qual")}>Qualifying</button>
@@ -225,11 +261,11 @@ export default function EventResultsPage() {
           <button
             type="button"
             className="icon-btn icon-btn-danger"
-            title={`Delete the ${tab === "__qual" ? "Qualifying" : tab} results`}
+            title={`Delete the ${scopedName} results`}
             style={{ marginLeft: "auto" }}
             onClick={() => setConfirmKind("session")}
           >
-            🗑 Delete {tab === "__qual" ? "Qualifying" : tab} results
+            🗑 Delete {scopedName} results
           </button>
         )}
       </div>
@@ -245,8 +281,8 @@ export default function EventResultsPage() {
       )}
       {isAdmin && confirmKind === "session" && (
         <ConfirmDialog
-          title={`Delete ${tab === "__qual" ? "Qualifying" : tab} results?`}
-          message={`Are you sure you want to delete the ${tab === "__qual" ? "Qualifying" : tab} results for this event? This removes all associated points and stats for these drivers, and cannot be undone. The rest of the event is left untouched.`}
+          title={`Delete ${scopedName} results?`}
+          message={`Are you sure you want to delete the ${scopedName} results for this event? This removes all associated points and stats for these drivers, and cannot be undone. The rest of the event${activeClass ? ", including every other class that raced here," : ""} is left untouched.`}
           confirmLabel="Delete results"
           onConfirm={deleteSession}
           onClose={() => setConfirmKind(null)}
@@ -260,7 +296,7 @@ export default function EventResultsPage() {
               <tr><th>Pos</th><th style={{ textAlign: "left" }}>Driver</th><th style={{ textAlign: "left" }}>Team</th><th>Qual Time</th><th>Points</th></tr>
             </thead>
             <tbody>
-              {qualifying.map(r => (
+              {inClass(qualifying).map(r => (
                 <tr key={r.entry_id}>
                   <td>
                     <span className={`rank-badge ${r.position === 1 ? "rank-p1" : "rank-default"}`}>{r.position}</span>
@@ -352,7 +388,7 @@ export default function EventResultsPage() {
       ) : (
         <div className="empty-state">
           <span className="empty-state-icon">⏱</span>
-          <p>No results recorded for {tab ?? "this event"} yet.</p>
+          <p>No results recorded for {tab ? scopedName : "this event"} yet.</p>
         </div>
       )}
     </section>

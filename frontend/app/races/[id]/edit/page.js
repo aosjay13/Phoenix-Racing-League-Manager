@@ -8,12 +8,13 @@ import { ImageUpload } from "@/components/ImageUpload";
 import { SessionEditor } from "@/components/SessionEditor";
 import { TrackSelect } from "@/components/TrackSelect";
 import { normalizedBuiltinTemplates } from "@/lib/pointsTemplates";
+import { racePerClassResults, sessionClassScopes } from "@/lib/classFilter";
 import { api } from "@/lib/api";
 
 const BLANK_INFO = {
   name: "", track: "", track_id: "", date: "", round_number: "", track_logo_url: "", sessions: "Race",
   total_laps: "", car: "", heat_format: false, heats: "", consolations: "", feature_name: "A-Main Feature",
-  class_id: "",
+  class_id: "", per_class_results: false,
 };
 
 function RaceInfoTab({ race, season, classes = [], onSaved }) {
@@ -42,11 +43,16 @@ function RaceInfoTab({ race, season, classes = [], onSaved }) {
       consolations: Array.isArray(race.consolations) ? race.consolations.join(", ") : "",
       feature_name: race.feature_name || "A-Main Feature",
       class_id: race.class_id || "",
+      // Unset on the race = inherit the season default.
+      per_class_results: racePerClassResults(race, season),
     });
-  }, [race]);
+  }, [race, season]);
 
   // The Class field exists only for a season running per-class calendars.
   const showClass = !!season?.per_class_schedules && classes.length > 0;
+  // Splitting sessions by class is only meaningful when several classes share
+  // this event: a round already pinned to one class has nothing to split.
+  const showSplit = classes.length > 0 && !form.class_id;
 
   function set(field) {
     return e => setForm(f => ({ ...f, [field]: e.target.value }));
@@ -80,6 +86,10 @@ function RaceInfoTab({ race, season, classes = [], onSaved }) {
         // Only writable while the season runs per-class schedules; otherwise the
         // event stays shared by every class.
         class_id: showClass ? form.class_id : "",
+        // Stored explicitly (rather than left to inherit) once the event has
+        // been saved from this form, so changing the season default later never
+        // silently re-splits or re-merges an event whose results already exist.
+        per_class_results: showSplit ? !!form.per_class_results : false,
       };
       const updated = await api(`/api/races/${race.id}`, { method: "PATCH", body });
       onSaved?.(updated);
@@ -126,6 +136,22 @@ function RaceInfoTab({ race, season, classes = [], onSaved }) {
               Shared events run for every class. Pick a class to put this round on that class&rsquo;s
               calendar alone.
             </span>
+          </div>
+        )}
+        {showSplit && (
+          <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
+            <input type="checkbox" id="race_per_class_results" checked={!!form.per_class_results}
+              onChange={e => setForm(f => ({ ...f, per_class_results: e.target.checked }))}
+              style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+            <label htmlFor="race_per_class_results" style={{ margin: 0 }}>
+              Separate results by class
+              <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
+                Every class runs this event, but each one gets its <strong>own</strong> Qualifying and
+                Race — its own pole, its own P1, its own field. You pick the class from the menu above
+                the tabs and enter that class&rsquo;s grid. Off: one combined grid for the whole field,
+                with a Class column on each row.
+              </span>
+            </label>
           </div>
         )}
         <div className="field"><label>Total Race Laps</label>
@@ -190,6 +216,9 @@ function UnifiedEditInner() {
   const [classes, setClasses] = useState([]);
   const [templates, setTemplates] = useState(normalizedBuiltinTemplates());
   const [error, setError] = useState(null);
+  // Which class's session is being edited on a split event. null until the
+  // classes have loaded and a default is picked; a scope value thereafter.
+  const [scope, setScope] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -217,6 +246,27 @@ function UnifiedEditInner() {
     })();
     return () => { cancelled = true; };
   }, [id]);
+
+  // On a split event every session belongs to exactly one class, so the editor
+  // needs a class chosen before it can show a grid. The scopes are the season's
+  // classes, plus Unclassified when there are drivers with no class to enter.
+  const perClassResults = racePerClassResults(race, season);
+  const scopes = useMemo(
+    () => (perClassResults ? sessionClassScopes(classes, entries) : []),
+    [perClassResults, classes, entries]
+  );
+  useEffect(() => {
+    if (!scopes.length) { setScope(null); return; }
+    setScope(prev => (scopes.some(s => s.value === prev) ? prev : scopes[0].value));
+  }, [scopes]);
+  const scopeName = scopes.find(s => s.value === scope)?.label ?? "";
+  // Props every SessionEditor on this screen shares: null scope = the combined
+  // grid this screen has always shown.
+  const classProps = {
+    classes,
+    sessionClass: perClassResults ? scope : null,
+    sessionClassName: perClassResults ? scopeName : "",
+  };
 
   const heatFormat = !!race?.heat_format;
   const tabs = useMemo(() => (
@@ -351,6 +401,31 @@ function UnifiedEditInner() {
         </div>
       </div>
 
+      {/* Which class am I entering results for? On a split event this is the
+          switch that decides it — every grid below belongs to the class named
+          here. A round pinned to one class says so instead of offering a menu. */}
+      {perClassResults && scopes.length > 0 && (
+        <div className="class-scope-bar">
+          <label htmlFor="session-class">Entering results for</label>
+          <select id="session-class" value={scope ?? ""} onChange={e => setScope(e.target.value)}>
+            {scopes.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+          </select>
+          <span style={{ color: "var(--ink-1)", fontSize: "0.84rem" }}>
+            Each class runs its own Qualifying and Race at this event. Switch classes here to enter
+            the next one — nothing you type in one class touches another.
+          </span>
+        </div>
+      )}
+      {!perClassResults && race.class_id && (
+        <div className="class-scope-bar">
+          <span className="class-scope-chip">{classes.find(c => c.id === race.class_id)?.name ?? "Class"}</span>
+          <span style={{ color: "var(--ink-1)", fontSize: "0.84rem" }}>
+            This round is on {classes.find(c => c.id === race.class_id)?.name ?? "one class"}&rsquo;s calendar
+            only, so everything below is that class&rsquo;s.
+          </span>
+        </div>
+      )}
+
       <div className="tab-row" style={{ marginTop: 16 }}>
         {tabs.map(([key, label]) => (
           <button key={key} className={`tab${tab === key ? " active" : ""}`} onClick={() => setTab(key)}>{label}</button>
@@ -365,7 +440,7 @@ function UnifiedEditInner() {
       {tab === "qualifying" && (
         <div className="form-card" style={{ maxWidth: "100%" }}>
           <SessionEditor
-            race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName} classes={classes}
+            race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName} {...classProps}
             sessionType="qualifying" sessionNames={["Qualifying"]}
             season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
           />
@@ -375,7 +450,7 @@ function UnifiedEditInner() {
       {tab === "results" && (
         <div className="form-card" style={{ maxWidth: "100%" }}>
           <SessionEditor
-            race={race} seasonId={seasonId} entries={entries} initialSession={initialSession} onEntriesChanged={reloadEntries} seriesName={seriesName}
+            race={race} seasonId={seasonId} entries={entries} initialSession={initialSession} onEntriesChanged={reloadEntries} seriesName={seriesName} {...classProps}
             sessionType="race" sessionNames={standardSessions}
             season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
             sessionStats={sessionStats} onSessionStatsChange={saveSessionStats}
@@ -389,7 +464,7 @@ function UnifiedEditInner() {
       {tab === "heats" && (
         <div className="form-card" style={{ maxWidth: "100%" }}>
           <SessionEditor
-            race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName} classes={classes}
+            race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName} {...classProps}
             sessionType="heat" sessionNames={heats}
             season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
             sessionStats={sessionStats} onSessionStatsChange={saveSessionStats}
@@ -404,7 +479,7 @@ function UnifiedEditInner() {
         <div className="form-card" style={{ maxWidth: "100%" }}>
           {consolations.length ? (
             <SessionEditor
-              race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName} classes={classes}
+              race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName} {...classProps}
               sessionType="consolation" sessionNames={consolations}
               season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
               sessionStats={sessionStats} onSessionStatsChange={saveSessionStats}
@@ -426,7 +501,7 @@ function UnifiedEditInner() {
       {tab === "feature" && (
         <div className="form-card" style={{ maxWidth: "100%" }}>
           <SessionEditor
-            race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName} classes={classes}
+            race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName} {...classProps}
             sessionType="feature" sessionNames={[featureName]}
             season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
             sessionStats={sessionStats} onSessionStatsChange={saveSessionStats}

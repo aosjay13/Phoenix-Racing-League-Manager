@@ -1,5 +1,6 @@
 import { db } from "@/lib/firebase";
 import { resolveSessionFlags } from "@/lib/standings";
+import { racePerClassResults } from "@/lib/classFilter";
 import { clampSr, computeSrDeltas, strengthOfField, SR_BASELINE, ratingForGame } from "@/lib/skillRating";
 
 // ── Chronological, date-based Skill Rating engine ──────────────────────────
@@ -59,6 +60,7 @@ async function replayGame(gameId) {
   const seasonsSnap = await db().collection("seasons").where("game_id", "==", gameId).get();
   const seasonIds = seasonsSnap.docs.map(d => d.id);
   if (!seasonIds.length) return out;
+  const seasonById = Object.fromEntries(seasonsSnap.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
 
   const resultDocs = [], entryDocs = [], raceDocs = [];
   const per = await Promise.all(seasonIds.map(async sid => {
@@ -91,7 +93,12 @@ async function replayGame(gameId) {
     const race = raceById[r.race_id];
     if (!race) continue;
     const sessionName = r.session || (Array.isArray(race.sessions) && race.sessions[0]) || "Race";
-    const key = `${r.race_id}|${sessionName}`;
+    // On an event that ran its classes as separate sessions, each class is its
+    // own race: Pro's P1 beat Pro's field, not the Amateur car that finished
+    // "ahead" of them on a grid they never shared. Keying the exchange by class
+    // keeps those comparisons — and the Strength of Field behind them — honest.
+    const srClass = racePerClassResults(race, seasonById[race.season_id]) ? (r.class_id || "") : null;
+    const key = srClass == null ? `${r.race_id}|${sessionName}` : `${r.race_id}|${sessionName}|${srClass}`;
     let s = sessions.get(key);
     if (s === undefined) {
       const flags = resolveSessionFlags(

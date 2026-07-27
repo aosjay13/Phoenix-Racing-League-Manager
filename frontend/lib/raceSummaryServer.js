@@ -1,4 +1,5 @@
 import { isQualifying } from "@/lib/standings";
+import { isClassScoped, resultInSessionClass } from "@/lib/classFilter";
 
 // Which single session decides "the winner" of an event: the Feature for
 // heat-format weekends, otherwise the last standard session in the event.
@@ -29,10 +30,16 @@ function personFromEntry(entry) {
 // event's true distance — capturing green-white-checkered finishes that push
 // the race past its scheduled length. Falls back to the scheduled total (then
 // null) when the winner has no laps recorded.
-export function summarizeRace(race, results, entriesById, seasonCar = null) {
+//
+// `classId` narrows the whole summary to one class: on an event whose sessions
+// are split by class, the Pro row of the schedule shows Pro's pole, Pro's
+// winner and Pro's field size, not the outright ones. Left blank the summary
+// covers the combined field, exactly as before.
+export function summarizeRace(race, results, entriesById, seasonCar = null, classId = "") {
   const firstStd = Array.isArray(race.sessions) && race.sessions.length ? race.sessions[0] : "Race";
   const finalName = finalSessionName(race);
-  const raceResults = results.filter(r => r.race_id === race.id);
+  const inClass = r => !isClassScoped(classId) || resultInSessionClass(r, classId, entriesById);
+  const raceResults = results.filter(r => r.race_id === race.id && inClass(r));
   // Provisional entries (drivers who didn't race) never count as part of the
   // field or as the winner — they only carry points.
   const finalResults = raceResults.filter(r => !isQualifying(r) && !r.provisional && (r.session || firstStd) === finalName);

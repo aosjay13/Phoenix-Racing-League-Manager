@@ -27,7 +27,8 @@ selected season; a season that doesn't run classes simply stays on "All Classes"
   bonus points, and drop weeks per season
 - 🎽 **Multi-class championships** — split a season into classes (Pro/Amateur, GT3/LMP2); each
   scores its own isolated championship, with an optional combined overall title across the field,
-  and optionally its own race calendar
+  optionally its own race calendar, and optionally its own qualifying and race at events every
+  class runs together — each class with its own pole, winner and field
 - 🖼 **Social graphic exporter** — league name + logo branding and per-column stat toggles, so
   the downloaded PNG/JPG shows exactly the columns you want
 - ⬆ **Bulk roster import** — roll a whole roster into a new season in one click, from the series
@@ -103,6 +104,12 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      round on that class's calendar alone. A class's Schedule and Race Entry then show its own
      rounds plus the shared ones, and a class-only round offers just that class's drivers
      (plus any unclassified) when entering results.
+     **Separate Results by Class** is the other half: when several classes race the *same*
+     round, it gives each class its own Qualifying and Race — its own pole, its own P1, its own
+     field — instead of one combined grid. Set the default on the season and flip any single
+     event on its Race Info tab. On a split event, the Schedule, Race Entry and race edit
+     screens all show an **Entering results for &lt;class&gt;** menu at the top; pick the class,
+     enter its grid, switch to the next.
 2. **Roster & Teams** (`/roster`) — select a **Series** in the top dropdowns to manage that
    series' roster:
    - **Teams** — create teams with logos.
@@ -191,6 +198,32 @@ rounds. A class's calendar is therefore "its own rounds plus every shared round"
 filter on. Results are always scoped by the *driver's* class, independent of which calendar the race
 sits on, so a shared race still splits cleanly into each class's championship. Turning the toggle
 back off deletes nothing — pinned races simply show for everyone again.
+
+**Per-class results (separate sessions at a shared event).** Per-class *schedules* answer "which
+class's calendar is this round on"; per-class *results* answer the different question of how a round
+that several classes run together is scored. With **Separate Results by Class** off (the default),
+one combined grid holds the whole field and a Class column tags each row — there is a single outright
+P1. Turn it on and each class enters its **own** Qualifying and Race at that event: its own pole, its
+own P1, its own field, numbered 1..N within the class. The setting lives on the season (the default
+for new events) and on each event's Race Info tab (`races.per_class_results`, unset = inherit the
+season), resolved by `racePerClassResults` in `lib/classFilter.js`. A round already pinned to one
+class is single-class, so it never splits.
+
+Storage doesn't change shape: results have always carried the class the driver ran in, so a session
+is identified by `(session_type, session, class)`. What changes is the *scope* of a write. The
+results editor sends `session_class` — a class id, or `__none` for the unclassified group — with
+each save and delete, and the server replaces only that class's slice of the session, leaving the
+other classes that raced the same round untouched (`matchesSession` in `app/api/results/route.js`).
+Inside a scoped grid the roster picker, the loaded rows, the qualifying-to-start mapping and any
+driver created inline are all that class's; the per-row Class dropdown disappears, because every row
+in that grid is the class named in the bar above it.
+
+Everything downstream follows the same scope. Schedule rows summarised for a class show that class's
+pole, winner and field size (`summarizeRace(..., classId)`); the event page groups each session's
+table by class; and Skill Rating exchanges are keyed by class on a split event, so a Pro driver is
+never rated against an Amateur car they never shared a grid with. Since a split event has no single
+outright order, an overall championship across classes just adds their points together — turn
+**Enable Overall Championship** off for a pure class-championship season.
 
 **Race dates are calendar dates, not timestamps.** A race `date` is stored as a bare `YYYY-MM-DD`
 string with no time component, and every display/comparison goes through `lib/raceDate.js`. Handing

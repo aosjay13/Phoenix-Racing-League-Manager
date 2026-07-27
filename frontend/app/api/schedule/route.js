@@ -51,10 +51,13 @@ async function oneSeason(seasonId, classId = "") {
   const results = decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById);
   const classNameById = Object.fromEntries(classes.map(c => [c.id, c.name]));
 
+  // Inside a class, each row's summary is that class's own race: its pole, its
+  // winner, its field. Events split by class have several winners, so an
+  // unscoped summary would show whoever happened to be P1 in another class.
   const rows = races.map(r => ({
     ...r,
     class_name: r.class_id ? (classNameById[r.class_id] ?? null) : null,
-    summary: summarizeRace(r, results, entriesById, seasonCar),
+    summary: summarizeRace(r, results, entriesById, seasonCar, classId),
   }));
   return NextResponse.json(rows);
 }

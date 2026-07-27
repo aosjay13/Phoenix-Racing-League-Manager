@@ -1436,3 +1436,62 @@ tbody tr:hover {
   font-size: 0.9rem;
   width: 100%;
 }
+
+/* ── Class scope (per-class sessions) ─────────
+   The always-visible marker of WHICH class a results grid belongs to, so an
+   admin entering the Pro race at a shared event can never mistake it for the
+   Amateur one. Rendered as a bar above the grid and as the picker beside it. */
+.class-scope-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-accent, var(--border));
+  border-left: 4px solid var(--accent-cyan);
+  border-radius: 10px;
+  background: var(--accent-cyan-dim, rgba(34, 211, 238, 0.08));
+}
+
+.class-scope-bar label {
+  margin: 0;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.class-scope-bar select {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  color: var(--ink-0);
+  font-size: 0.95rem;
+  font-weight: 600;
+  min-width: 190px;
+}
+
+.class-scope-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--accent-cyan-dim, rgba(34, 211, 238, 0.08));
+  color: var(--ink-1);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.class-scope-chip {
+  flex-shrink: 0;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--accent-cyan);
+  color: #0b0b12;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}

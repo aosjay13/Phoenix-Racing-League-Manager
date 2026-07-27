@@ -8,7 +8,7 @@ import { DriverCreateModal } from "@/components/DriverCreateModal";
 import { PointsEditorModal } from "@/components/PointsEditorModal";
 import { ImportResultsModal } from "@/components/ImportResultsModal";
 import { NONE_TEMPLATE } from "@/lib/pointsTemplates";
-import { entriesEligibleForRace } from "@/lib/classFilter";
+import { classIdForScope, entriesEligibleForRace, entriesInSessionClass, isClassScoped, resultInSessionClass } from "@/lib/classFilter";
 import { pointsFor, configForTemplate, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
 import { parseTime, formatTime, formatGap, parseLapsDown, deriveLaps } from "@/lib/raceTime";
 
@@ -142,15 +142,33 @@ const LABELS = { qualifying: "Qualifying", race: "Race", heat: "Heat", consolati
 // bonus/pole bonus is looked up from their actual Qualifying result for this
 // race, not copied onto every other session, so Average Start and Poles are
 // always computed from Qualifying results alone.
+//
+// `sessionClass` scopes the whole editor to ONE class of a split event (see
+// lib/classFilter.js): the grid loads and saves only that class's results, the
+// driver picker offers only that class's drivers, and finishing positions run
+// 1..N within the class — so Pro and Amateur racing the same round each get
+// their own pole and their own winner. Left null the editor behaves exactly as
+// it did before per-class sessions: one combined grid for the whole field.
 export function SessionEditor({
-  race, seasonId, entries, sessionType, sessionNames,
+  race, seasonId, entries: allEntries, sessionType, sessionNames,
   season, templates = [], sessionPoints = {}, onSessionPointsChange, onTemplatesChanged,
   sessionStats = {}, onSessionStatsChange, sessionPointsEnabled = {}, onSessionPointsEnabledChange,
   canAddSession = false, onAddSession, onRemoveSession, onRenameSession,
   initialSession, onEntriesChanged, seriesName, classes = [],
+  sessionClass = null, sessionClassName = "",
 }) {
   const names = sessionNames.length ? sessionNames : [LABELS[sessionType] || "Session"];
   const namesKey = names.join("|");
+  // Scoped to one class: every roster read below works off this class's drivers
+  // rather than the whole field, so the grid is sized, filled and validated
+  // against the class actually being entered.
+  // Everything below reads `entries` — narrowed to the scoped class, or the
+  // whole roster when the session isn't split.
+  const scoped = isClassScoped(sessionClass);
+  // The class id a driver created from inside this grid should join. Blank for
+  // the Unclassified scope, which is exactly the class such a driver needs.
+  const scopeClassId = scoped ? classIdForScope(sessionClass) : "";
+  const entries = useMemo(() => entriesInSessionClass(allEntries, sessionClass), [allEntries, sessionClass]);
   const [session, setSession] = useState(
     initialSession && names.includes(initialSession) ? initialSession : names[0]
   );
@@ -180,7 +198,12 @@ export function SessionEditor({
     setSession(sess);
     setLoading(true);
     try {
-      const all = await api(`/api/results?race_id=${race.id}`);
+      const fetched = await api(`/api/results?race_id=${race.id}`);
+      // On a split event only this class's results exist for this grid — and
+      // its qualifying map is this class's qualifying, so Start columns come
+      // from the class's own grid positions rather than the outright order.
+      const entryById0 = Object.fromEntries(allEntries.map(e => [e.id ?? e.entry_id, e]));
+      const all = fetched.filter(r => resultInSessionClass(r, sessionClass, entryById0));
       const qp = Object.fromEntries(
         all.filter(r => r.session_type === "qualifying").map(r => [r.entry_id, Number(r.finish_pos)])
       );
@@ -212,7 +235,7 @@ export function SessionEditor({
   useEffect(() => {
     loadSession(names.includes(session) ? session : names[0]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [race?.id, sessionType, namesKey]);
+  }, [race?.id, sessionType, namesKey, sessionClass]);
 
   function updateRow(idx, field, value) {
     setRows(prev => prev.map((r, i) => (i === idx ? { ...r, [field]: value } : r)));
@@ -542,9 +565,17 @@ export function SessionEditor({
     try {
       await api("/api/results", {
         method: "POST",
-        body: { race_id: race.id, season_id: seasonId, session, session_type: sessionType, points_template_id: templateId || null, rows: [...filled, ...provPayload] },
+        body: {
+          race_id: race.id, season_id: seasonId, session, session_type: sessionType,
+          // Replaces only this class's slice of the session, leaving the other
+          // classes that raced the same round untouched.
+          ...(scoped ? { session_class: sessionClass } : {}),
+          points_template_id: templateId || null, rows: [...filled, ...provPayload],
+        },
       });
-      showToast("success", "Results saved. Standings and profiles update instantly.");
+      showToast("success", scoped
+        ? `${sessionClassName || "Class"} results saved. Standings and profiles update instantly.`
+        : "Results saved. Standings and profiles update instantly.");
     } catch (err) {
       showToast("error", err.message);
     } finally {
@@ -555,11 +586,14 @@ export function SessionEditor({
   // Clears this session's saved results from the database and resets the grid
   // — the "delete a portion of the race" action; the session itself stays.
   async function handleDeleteResults() {
-    if (!confirm(`Delete all saved ${session} results? The session stays — only its results are removed. This cannot be undone.`)) return;
+    const scopeLabel = scoped ? `${sessionClassName || "this class"}'s ${session}` : session;
+    if (!confirm(`Delete all saved ${scopeLabel} results? The session stays — only its results are removed.${scoped ? " Other classes at this event keep theirs." : ""} This cannot be undone.`)) return;
     setBusy(true);
     try {
-      await api(`/api/results?race_id=${race.id}&session=${encodeURIComponent(session)}&session_type=${sessionType}`, { method: "DELETE" });
-      showToast("success", `${session} results deleted.`);
+      const qs = new URLSearchParams({ race_id: race.id, session, session_type: sessionType });
+      if (scoped) qs.set("session_class", sessionClass);
+      await api(`/api/results?${qs.toString()}`, { method: "DELETE" });
+      showToast("success", `${scopeLabel} results deleted.`);
       await loadSession(session);
     } catch (err) {
       showToast("error", err.message);
@@ -596,8 +630,9 @@ export function SessionEditor({
   const existingNames = new Set(rows.map(r => r.driver_name).filter(Boolean).map(n => n.trim().toLowerCase()));
   const pointsLabel = sessionType === "qualifying" ? "Quali Pts" : "Points";
   // The Class column only exists for a season that runs classes; a single-class
-  // season keeps the grid exactly as it was.
-  const hasClasses = classes.length > 0;
+  // season keeps the grid exactly as it was. A grid already scoped to one class
+  // doesn't need it either — every row in it is that class by definition.
+  const hasClasses = classes.length > 0 && !scoped;
 
   const rowCommon = (row, idx) => ({
     available: availableFor(row),
@@ -610,6 +645,16 @@ export function SessionEditor({
 
   return (
     <div>
+      {scoped && (
+        <div className="class-scope-banner" style={{ marginBottom: 12 }}>
+          <span className="class-scope-chip">{sessionClassName || "Class"}</span>
+          <span>
+            You are entering the <strong>{sessionClassName || "class"}</strong> {LABELS[sessionType]?.toLowerCase() || "session"} for this event.
+            Positions here are {sessionClassName || "this class"}&rsquo;s own order — P1 is {sessionClassName || "the class"}&rsquo;s
+            {sessionType === "qualifying" ? " pole" : " winner"}. Other classes at this event have their own grid; switch with the Class menu above.
+          </span>
+        </div>
+      )}
       {(names.length > 1 || canAddSession) && (
         <div className="tab-row" style={{ marginTop: 0, marginBottom: 12, flexWrap: "wrap" }}>
           {names.map(n => (
@@ -695,7 +740,11 @@ export function SessionEditor({
       </p>
 
       {!entries.length ? (
-        <p style={{ color: "var(--ink-1)", fontSize: "0.9rem" }}>No drivers on the roster yet — add one below to start entering results.</p>
+        <p style={{ color: "var(--ink-1)", fontSize: "0.9rem" }}>
+          {scoped
+            ? `No drivers are in ${sessionClassName || "this class"} yet — assign drivers to it on the Roster page, or add one below and set their class.`
+            : "No drivers on the roster yet — add one below to start entering results."}
+        </p>
       ) : loading ? (
         <div className="skeleton" style={{ height: 200 }} />
       ) : sessionType === "qualifying" ? (
@@ -779,7 +828,8 @@ export function SessionEditor({
         </div>
       )}
 
-      <AddDriverToRace seasonId={seasonId} seriesName={seriesName} existingNames={existingNames} onCreated={handleDriverAdded} onError={msg => showToast("error", msg)} />
+      <AddDriverToRace seasonId={seasonId} seriesName={seriesName} existingNames={existingNames}
+        defaultClassId={scopeClassId} onCreated={handleDriverAdded} onError={msg => showToast("error", msg)} />
 
       {pointsModal && (
         <PointsEditorModal
@@ -801,7 +851,7 @@ export function SessionEditor({
 
       {createFor && (
         <DriverCreateModal
-          seasonId={seasonId} seriesName={seriesName} initialName={createFor.name}
+          seasonId={seasonId} seriesName={seriesName} initialName={createFor.name} defaultClassId={scopeClassId}
           onClose={() => setCreateFor(null)}
           onCreated={entry => {
             if (createFor.prov) assignProv(createFor.slotId, entry);
@@ -814,7 +864,7 @@ export function SessionEditor({
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
 
       <button className="btn btn-primary" onClick={handleSave} disabled={busy || loading || !entries.length} style={{ marginTop: 16 }}>
-        {busy ? "Saving…" : `Save ${LABELS[sessionType] || "Results"}`}
+        {busy ? "Saving…" : `Save ${scoped && sessionClassName ? `${sessionClassName} ` : ""}${LABELS[sessionType] || "Results"}`}
       </button>
       {!!entries.length && (
         <button className="btn btn-ghost" style={{ marginLeft: 8 }}
@@ -824,7 +874,7 @@ export function SessionEditor({
         </button>
       )}
       <button className="btn btn-danger" style={{ marginLeft: 8 }} onClick={handleDeleteResults} disabled={busy || loading}>
-        🗑 Delete {session} Results
+        🗑 Delete {scoped && sessionClassName ? `${sessionClassName} ` : ""}{session} Results
       </button>
     </div>
   );

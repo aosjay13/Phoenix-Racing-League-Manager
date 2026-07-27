@@ -10,7 +10,11 @@ import { DriverCreateModal } from "@/components/DriverCreateModal";
 // creation modal for a brand-new one. Either path immediately POSTs a season
 // `entry` (the same record every result row keys off), so the new row can be
 // assigned a finishing position without leaving this screen.
-export function AddDriverToRace({ seasonId, seriesName, existingNames, onCreated, onError }) {
+//
+// `defaultClassId` is the class the new entry joins — set while entering a
+// class's own session, so a driver added mid-entry lands in the class whose
+// grid is open instead of unclassified (where that grid wouldn't show them).
+export function AddDriverToRace({ seasonId, seriesName, existingNames, defaultClassId = "", onCreated, onError }) {
   const [pool, setPool] = useState([]);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -44,7 +48,7 @@ export function AddDriverToRace({ seasonId, seriesName, existingNames, onCreated
     setBusy(true);
     try {
       const driverId = await ensureDriverId({ driverId: candidate.driver_id, name: candidate.name, user_id: candidate.user_id });
-      const body = { name: candidate.name, team_id: "", season_id: seasonId, driver_id: driverId };
+      const body = { name: candidate.name, team_id: "", season_id: seasonId, driver_id: driverId, class_id: defaultClassId || "" };
       if (candidate.user_id) body.user_id = candidate.user_id;
       const entry = await api("/api/entries", { method: "POST", body });
       onCreated(entry);
@@ -102,6 +106,7 @@ export function AddDriverToRace({ seasonId, seriesName, existingNames, onCreated
           seasonId={seasonId}
           seriesName={seriesName}
           initialName={createModalName}
+          defaultClassId={defaultClassId}
           onClose={() => setCreateModalName(null)}
           onCreated={handleCreated}
         />
