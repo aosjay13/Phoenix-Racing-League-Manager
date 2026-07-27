@@ -28,11 +28,17 @@ export function driverDisplayName(r) {
 // the top three so the graphic medals them; a `nameKey` value pulls the
 // alias-aware driver/team name; everything else runs through formatStat.
 //
-// Each column keeps its source `key`, which is what the modal's "Displayed
-// Stats" checkboxes toggle on and off — a column switched off is dropped from
-// the rendered table entirely (header AND cells), so the survivors spread out
-// across the full width instead of leaving a gap.
-export function toGraphicTable(cols, rows, { nameKey } = {}) {
+// Pass the screen's FULL column list: the exporter's stat picker offers every
+// one of them, so an admin can build any graphic they like without the page
+// having to guess in advance. `defaultKeys` is the subset ticked when the modal
+// opens — a feed-friendly headline set, since all fifteen columns at once makes
+// an unreadable image. Omit it and everything starts on.
+//
+// Each column keeps its source `key`, which is what the picker toggles. A
+// column switched off is dropped from the rendered table entirely (header AND
+// cells), so the survivors spread across the full width instead of leaving a gap.
+export function toGraphicTable(cols, rows, { nameKey, defaultKeys } = {}) {
+  const onByDefault = defaultKeys ? new Set(defaultKeys) : null;
   const columns = cols.map(([key, label]) => ({
     key,
     label,
@@ -40,6 +46,7 @@ export function toGraphicTable(cols, rows, { nameKey } = {}) {
     // The identity columns are what make a row readable at all, so they're
     // pinned on in the exporter rather than being hideable.
     locked: key === "rank" || key === nameKey,
+    on: !onByDefault || onByDefault.has(key) || key === "rank" || key === nameKey,
   }));
   const outRows = rows.map((r, i) => {
     const rank = r.rank ?? i + 1;

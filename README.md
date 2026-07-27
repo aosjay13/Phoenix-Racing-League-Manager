@@ -30,8 +30,9 @@ selected season; a season that doesn't run classes simply stays on "All Classes"
   scores its own isolated championship, with an optional combined overall title across the field,
   optionally its own race calendar, and optionally its own qualifying and race at events every
   class runs together — each class with its own pole, winner and field
-- 🖼 **Social graphic exporter** — league name + logo branding and per-column stat toggles, so
-  the downloaded PNG/JPG shows exactly the columns you want
+- 🖼 **Social graphic exporter** — league name + logo branding, a multi-select of *every* stat
+  column the screen offers (with Select all / Clear / Reset), and full event metadata on results
+  exports, so the downloaded PNG/JPG stands alone as a broadcast-style graphic
 - ⬆ **Bulk roster import** — roll a whole roster into a new season in one click, from the series
   or a cloned past season, with duplicates skipped automatically
 - ⏱ **Fast race entry** — one grid per race, pre-filled with the roster; supports multiple
@@ -255,6 +256,23 @@ that happen to agree, or a race-level override that collapses the split — and 
 column shows one car normally and a class-by-class list at "All Classes" when they differ, the event
 header does the same, the top-bar Class menu reads "Pro · GT3", and a track's winners list credits
 each win to the *winner's* class car rather than the season default.
+
+**The Share Graphic exporter** builds its own DOM node rather than screenshotting the live page, so
+an export never picks up the sidebar, edit buttons or any other UI furniture — only the headline,
+branding, event metadata and data table are drawn, at a fixed 1080px for a consistent feed-friendly
+output. `ShareGraphicModal` takes `columns` / `rows` (see `toGraphicTable` in `lib/shareGraphic.js`)
+plus an optional `meta` of `{ label, value, wide? }` facts.
+
+Each screen passes its **full** column list, and `defaultKeys` picks the subset ticked when the modal
+opens — so every stat is one click away in the picker without a fifteen-column table being the
+default. Identity columns (position, driver/team name) are locked on; a row isn't readable without
+them.
+
+Because the card is a fixed width, the table's type and padding step down as more columns are
+switched on (`tableScale`), and past a dozen columns the headers wrap so the widest one stops setting
+the table's width. This is measured, not guessed: a 17-column standings export overflowed the card
+and clipped its last column before that rule existed. The metadata strip uses a padding-based
+thirds grid rather than flex `gap` or CSS grid, both of which html2canvas renders inconsistently.
 
 **Championships (Titles).** A completed season crowns champions, and each one is +1 Championship on
 the winner's career, at every scope — `lib/champions.js` is the only definition, used by the driver
