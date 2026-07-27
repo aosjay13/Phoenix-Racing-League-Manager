@@ -6,6 +6,7 @@ import {
   buildQualPosMap,
   buildQualTemplateMap,
   calculateStandings,
+  compareStandings,
   configForTemplate,
   decorateRaceBonuses,
   decorateSessionFlags,
@@ -109,7 +110,7 @@ export async function GET(request) {
 
   const driverRows = Object.values(drivers)
     .map(d => ({ driver_name: (d.driver_id && canonicalName[d.driver_id]) || d.driver_name, driver_id: d.driver_id, user_id: d.user_id, ...aggregateCareerStats(d.results, d.titles) }))
-    .sort((a, b) => b.points - a.points || b.wins - a.wins || String(a.driver_name).localeCompare(String(b.driver_name)));
+    .sort((a, b) => compareStandings(a, b, { pointsKey: "points", nameKey: "driver_name" }));
 
   return NextResponse.json({
     team_name: displayName,

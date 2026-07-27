@@ -7,7 +7,7 @@ import { useSortable } from "@/components/useSortable";
 import { ShareGraphicModal } from "@/components/ShareGraphicModal";
 import { leagueLogos, toGraphicTable } from "@/lib/shareGraphic";
 import { api } from "@/lib/api";
-import { formatStat } from "@/lib/standings";
+import { compareByTieBreakers, formatStat } from "@/lib/standings";
 
 // Curated columns for the shareable graphic — a readable subset of the full
 // stats table. Position (#) comes from the current on-screen sort order.
@@ -72,7 +72,7 @@ export default function StatsPage() {
   const columns = tab === "teams" ? TEAM_COLUMNS : COLUMNS;
   const activeRows = tab === "teams" ? data?.team_rows : data?.rows;
   const lowIsBetter = useMemo(() => columns.filter(c => c[2]).map(c => c[0]), [columns]);
-  const { sorted: rows, clickSort, arrow } = useSortable(activeRows, tab === "teams" ? "points" : "wins", lowIsBetter);
+  const { sorted: rows, clickSort, arrow } = useSortable(activeRows, tab === "teams" ? "points" : "wins", lowIsBetter, compareByTieBreakers);
 
   // Scope comes straight from the top dropdowns: the deepest concrete
   // selection wins; "All …" choices widen the aggregation. A selected Class

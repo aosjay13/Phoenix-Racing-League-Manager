@@ -225,6 +225,10 @@ function statLine(results) {
     top5: rs.filter(r => r.finish_pos <= 5).length,
     top10: rs.filter(r => r.finish_pos <= 10).length,
     avg_finish: starts ? round2(sum(r => r.finish_pos) / starts) : null,
+    // Unrounded totals behind the two averages. Kept alongside the rounded
+    // display values so tie-breaking (and team aggregation) works off exact
+    // arithmetic — 3.334 and 3.336 both render as 3.33 but are not a tie.
+    finish_sum: sum(r => r.finish_pos),
     laps_run: sum(r => Number(r.laps || 0)),
     laps_led: sum(r => Number(r.laps_led || 0)),
     most_laps_led: rs.filter(r => r.is_most_laps_led).length,
@@ -232,11 +236,85 @@ function statLine(results) {
     poles,
     qualifying_sessions: qs.length,
     avg_start: positions.length ? round2(positions.reduce((a, b) => a + b, 0) / positions.length) : null,
+    start_sum: positions.reduce((a, b) => a + b, 0),
     dnfs: rs.filter(r => r.status === "dnf").length,
     provisionals: provisionalCount,
     incidents: sum(r => Number(r.incidents || 0)),
     best_finish: starts ? Math.min(...rs.map(r => r.finish_pos)) : null,
   };
+}
+
+// ── Championship tie-breakers ──────────────────────────────────────────────
+//
+// When two competitors finish level on points, the title is decided by this
+// chain, applied in order until one of them is ahead. It is the league's single
+// definition of "who finished higher", used by driver standings, team
+// standings, the stats tables and every career/team page — so a tie is broken
+// the same way wherever it's shown.
+//
+//   1. More Wins            6. More Poles
+//   2. More Podiums         7. Better Average Start (lower is better)
+//   3. More Top 5s          8. More Best Laps
+//   4. More Top 10s         9. More Laps Led
+//   5. Better Average Finish (lower is better)
+//
+// `dir: "asc"` marks the two averages, where a LOWER number is the better
+// result (P1 beats P2). Everything else is a count where more is better.
+export const TIE_BREAKERS = [
+  { key: "wins", label: "Wins", dir: "desc" },
+  { key: "podiums", label: "Podiums", dir: "desc" },
+  { key: "top5", label: "Top 5s", dir: "desc" },
+  { key: "top10", label: "Top 10s", dir: "desc" },
+  { key: "avg_finish", label: "Average Finish", dir: "asc", sum: "finish_sum", count: "starts" },
+  { key: "poles", label: "Poles", dir: "desc" },
+  { key: "avg_start", label: "Average Start", dir: "asc", sum: "start_sum", count: "qualifying_sessions" },
+  { key: "best_laps", label: "Best Laps", dir: "desc" },
+  { key: "laps_led", label: "Laps Led", dir: "desc" },
+];
+
+// A human-readable "Points, then Wins, then Podiums, …" for tooltips/footnotes.
+export const TIE_BREAKER_SUMMARY = TIE_BREAKERS.map(t => t.label).join(", then ");
+
+// An average, preferring the exact sum ÷ count over the rounded display value
+// so two rows that merely *display* the same average aren't treated as tied.
+// Returns null when there's nothing to average (no starts, never qualified).
+function averageFor(row, tb) {
+  const count = Number(row[tb.count] || 0);
+  if (count > 0 && row[tb.sum] != null) return Number(row[tb.sum]) / count;
+  return row[tb.key] == null ? null : Number(row[tb.key]);
+}
+
+// Compare two rows by the tie-breaker chain alone (points already equal, or
+// irrelevant). Returns <0 when `a` ranks higher. A competitor with no average
+// at all — nobody to average, e.g. zero starts — never wins that step: they
+// sort behind anyone who actually has one, rather than a missing value reading
+// as a perfect 0.0.
+export function compareByTieBreakers(a, b) {
+  for (const tb of TIE_BREAKERS) {
+    if (tb.dir === "asc") {
+      const av = averageFor(a, tb) ?? Infinity;
+      const bv = averageFor(b, tb) ?? Infinity;
+      if (av !== bv) return av - bv;
+    } else {
+      const av = Number(a[tb.key] || 0);
+      const bv = Number(b[tb.key] || 0);
+      if (av !== bv) return bv - av;
+    }
+  }
+  return 0;
+}
+
+// The full championship order: points first, then the tie-breaker chain, then
+// (optionally) a name so a dead-even pair still lands in a stable, predictable
+// place instead of shuffling between requests.
+export function compareStandings(a, b, { pointsKey = "adjusted_points", nameKey = null } = {}) {
+  const ap = Number(a[pointsKey] || 0);
+  const bp = Number(b[pointsKey] || 0);
+  if (ap !== bp) return bp - ap;
+  const tie = compareByTieBreakers(a, b);
+  if (tie !== 0) return tie;
+  if (nameKey) return String(a[nameKey] ?? "").localeCompare(String(b[nameKey] ?? ""));
+  return 0;
 }
 
 // results should already be passed through decorateRaceBonuses().
@@ -298,12 +376,7 @@ export function calculateStandings(results, entries, teams = [], config, templat
     });
   }
 
-  rows.sort((a, b) => {
-    if (b.adjusted_points !== a.adjusted_points) return b.adjusted_points - a.adjusted_points;
-    if (b.wins !== a.wins) return b.wins - a.wins;
-    if (b.top5 !== a.top5) return b.top5 - a.top5;
-    return (a.avg_finish ?? 99) - (b.avg_finish ?? 99);
-  });
+  rows.sort((a, b) => compareStandings(a, b, { pointsKey: "adjusted_points", nameKey: "driver_name" }));
 
   const leader = rows[0]?.adjusted_points ?? 0;
   return {
@@ -327,17 +400,33 @@ export function calculateTeamStandings(driverRows, teams = []) {
       team: teamsById[row.team_id]?.name ?? row.team,
       logo_url: teamsById[row.team_id]?.logo_url ?? null,
       points: 0, wins: 0, podiums: 0, top5: 0, poles: 0, drivers: 0,
+      // Carried so a team tie breaks on the same chain a driver tie does.
+      // The two averages are summed as totals and divided at the end — a team's
+      // average finish is over all its drivers' races, not an average of their
+      // averages, which would weight a one-race driver like a full-season one.
+      top10: 0, best_laps: 0, laps_led: 0,
+      starts: 0, finish_sum: 0, qualifying_sessions: 0, start_sum: 0,
     });
     t.points += row.adjusted_points;
     t.wins += row.wins;
     t.podiums += row.podiums;
     t.top5 += row.top5;
+    t.top10 += row.top10;
     t.poles += row.poles;
+    t.best_laps += row.best_laps;
+    t.laps_led += row.laps_led;
+    t.starts += row.starts;
+    t.finish_sum += row.finish_sum;
+    t.qualifying_sessions += row.qualifying_sessions;
+    t.start_sum += row.start_sum;
     t.drivers += 1;
   }
-  const rows = Object.values(byTeam).sort((a, b) =>
-    b.points - a.points || b.wins - a.wins || b.top5 - a.top5
-  );
+  for (const t of Object.values(byTeam)) {
+    t.avg_finish = t.starts ? round2(t.finish_sum / t.starts) : null;
+    t.avg_start = t.qualifying_sessions ? round2(t.start_sum / t.qualifying_sessions) : null;
+  }
+  const rows = Object.values(byTeam)
+    .sort((a, b) => compareStandings(a, b, { pointsKey: "points", nameKey: "team" }));
   return rows.map((row, i) => ({ rank: i + 1, ...row }));
 }
 

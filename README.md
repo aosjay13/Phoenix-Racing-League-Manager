@@ -24,7 +24,8 @@ selected season; a season that doesn't run classes simply stays on "All Classes"
 - 🧑‍✈️ **Player profiles** — public profile pages with editable picture, bio, country; career
   stats auto-aggregated across all games with a per-game breakdown
 - 🏆 **Live standings** — driver *and* team championships with a configurable points scale,
-  bonus points, and drop weeks per season
+  bonus points, drop weeks per season, and a full tie-breaker chain (wins → podiums → top 5s →
+  top 10s → average finish → poles → average start → best laps → laps led)
 - 🎽 **Multi-class championships** — split a season into classes (Pro/Amateur, GT3/LMP2); each
   scores its own isolated championship, with an optional combined overall title across the field,
   optionally its own race calendar, and optionally its own qualifying and race at events every
@@ -73,7 +74,9 @@ The app runs at `http://localhost:3000`.
    Seasons" with a series picked) there's a **+ New Season** button too, offering every option
    League Setup does and dropping you onto the new season's empty calendar.
 5. **Standings** — driver and team championship tables for the selected season, with
-   points, gaps to the leader, and per-category stats. Click any column header to sort.
+   points, gaps to the leader, and per-category stats. Click any column header to sort. Level
+   on points? The tie-breaker chain below decides, and every step of it is a column in the
+   table so you can see why.
 6. **Stats** — use the Game/Series/Season/Class menus to scope driver stats to a class, a
    season, a whole series, a whole game, or the entire league. Pick "All" at any level to
    widen the scope.
@@ -252,6 +255,27 @@ that happen to agree, or a race-level override that collapses the split — and 
 column shows one car normally and a class-by-class list at "All Classes" when they differ, the event
 header does the same, the top-bar Class menu reads "Pro · GT3", and a track's winners list credits
 each win to the *winner's* class car rather than the season default.
+
+**Championship tie-breakers.** Level on points, the higher-placed competitor is decided by one
+chain, applied in order until someone is ahead:
+
+1. More Wins  2. More Podiums  3. More Top 5s  4. More Top 10s  5. Better Average Finish
+6. More Poles  7. Better Average Start  8. More Best Laps  9. More Laps Led
+
+`TIE_BREAKERS` in `lib/standings.js` is the only definition, and `compareStandings` (points, then
+the chain, then a name so a dead-even pair doesn't shuffle between requests) is what every ranked
+table sorts with — driver standings, team standings, the stats tables, a team's driver list. Season
+champions are `rows[0]` of that same order, so Titles are awarded on it too, and the client-side
+column sorting falls back to the chain as well: clicking **Points** shows tied drivers in
+championship order rather than in whatever order the previous sort left them.
+
+Two details worth knowing. The averages are *lower is better* (P1 beats P2) and compare on exact
+`sum ÷ count`, not the rounded value on screen — 3.334 and 3.336 both display as 3.33 but are not a
+tie. And a competitor with no average at all (zero starts, never qualified) sorts *behind* anyone
+who has one, rather than a missing value reading as a perfect 0.0. Team rows aggregate the
+underlying totals and divide once, so a team's average finish is over every race its drivers ran
+rather than an average of their averages — which would weight a one-race driver like a full-season
+one.
 
 **Race dates are calendar dates, not timestamps.** A race `date` is stored as a bare `YYYY-MM-DD`
 string with no time component, and every display/comparison goes through `lib/raceDate.js`. Handing

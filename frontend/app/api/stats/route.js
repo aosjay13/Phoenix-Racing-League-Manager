@@ -6,6 +6,7 @@ import {
   buildQualPosMap,
   buildQualTemplateMap,
   calculateStandings,
+  compareStandings,
   configForTemplate,
   decorateRaceBonuses,
   decorateSessionFlags,
@@ -195,7 +196,9 @@ async function buildStats(seasons, classId = "") {
     ...aggregateCareerStats(d.results, d.titles),
   }));
 
-  rows.sort((a, b) => b.points - a.points || b.wins - a.wins || a.driver_name.localeCompare(b.driver_name));
+  // Championship order — points, then the league tie-breaker chain (see
+  // TIE_BREAKERS in lib/standings.js), then name for a dead-even pair.
+  rows.sort((a, b) => compareStandings(a, b, { pointsKey: "points", nameKey: "driver_name" }));
 
   const team_rows = Object.values(teams).map(t => ({
     team_name: t.team_name,
@@ -204,7 +207,7 @@ async function buildStats(seasons, classId = "") {
     drivers: t.driverKeys.size,
     ...aggregateCareerStats(t.results, t.titles),
   }));
-  team_rows.sort((a, b) => b.points - a.points || b.wins - a.wins || String(a.team_name).localeCompare(String(b.team_name)));
+  team_rows.sort((a, b) => compareStandings(a, b, { pointsKey: "points", nameKey: "team_name" }));
 
   // Schedule metrics compare bare calendar dates (never `new Date(str)`, which
   // reads a YYYY-MM-DD date as UTC midnight and shifts it a day west).
