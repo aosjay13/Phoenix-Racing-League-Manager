@@ -51,6 +51,42 @@ function GameRecords({ records }) {
   );
 }
 
+// Fastest lap for each class that has raced here. A class is its own category —
+// a GT3 lap and an LMP2 lap around the same layout aren't the same record — so
+// each keeps its own, grouped under the game whose laps it's comparable with.
+function ClassRecords({ records }) {
+  if (!records.length) return null;
+  // Only name the game when more than one is represented; on a single-game
+  // venue the game label on every card is noise.
+  const games = new Set(records.map(r => r.game_id));
+  return (
+    <>
+      <div className="section-header">
+        <h3 title="Classes run different machinery, so each keeps its own lap record here">🎽 Track Records by Class</h3>
+      </div>
+      <div className="metrics" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}>
+        {records.map(rec => (
+          <article className="metric-card" key={`${rec.game_id}|${rec.class_name}`}
+            style={{ alignItems: "flex-start", textAlign: "left", padding: "16px 18px" }}>
+            <div className="metric-label" style={{ marginBottom: 4 }}>
+              {rec.class_name}
+              {games.size > 1 && <span style={{ color: "var(--ink-2)", fontWeight: 400 }}> · {rec.game_name}</span>}
+            </div>
+            <div className="metric-num" style={{ fontVariantNumeric: "tabular-nums" }}>{rec.time}</div>
+            <div style={{ color: "var(--ink-1)", fontSize: "0.82rem", marginTop: 2 }}>
+              {(rec.driver_id || rec.user_id)
+                ? <Link href={`/drivers/${rec.driver_id || rec.user_id}`} style={{ color: "var(--accent-cyan)" }}>{rec.driver_name}</Link>
+                : rec.driver_name}
+              {rec.session ? ` · ${rec.session}` : ""}
+              {rec.season_name ? ` · ${rec.season_name}` : ""}
+            </div>
+          </article>
+        ))}
+      </div>
+    </>
+  );
+}
+
 // Venue "records" — the single leader for each headline stat, drawn from the
 // per-driver leaderboard (already sorted so [0] is the winningest driver).
 function records(drivers) {
@@ -94,7 +130,7 @@ export default function TrackProfilePage() {
   if (error) return <div className="empty-state"><span className="empty-state-icon">🏁</span><p>{error}</p></div>;
   if (!data) return <div className="skeleton" style={{ height: 280 }} />;
 
-  const { track, races_held, seasons_raced, drivers, winners, record, records_by_game = [] } = data;
+  const { track, races_held, seasons_raced, drivers, winners, record, records_by_game = [], records_by_class = [] } = data;
   const recs = records(drivers);
 
   return (
@@ -121,6 +157,7 @@ export default function TrackProfilePage() {
               — still surface their track records so the per-game view is never
               hidden by the top-bar Game filter. */}
           {records_by_game.length > 0 && <div style={{ marginTop: 18 }}><GameRecords records={records_by_game} /></div>}
+          {records_by_class.length > 0 && <div style={{ marginTop: 18 }}><ClassRecords records={records_by_class} /></div>}
           <div className="empty-state" style={{ marginTop: 24 }}>
             <span className="empty-state-icon">📊</span>
             <p>{(gameId || seriesId || seasonId)
@@ -158,6 +195,7 @@ export default function TrackProfilePage() {
               )}
 
               <GameRecords records={records_by_game} />
+              <ClassRecords records={records_by_class} />
 
               <div className="section-header"><h3>Venue Records</h3></div>
               <div className="metrics" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))" }}>

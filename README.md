@@ -257,6 +257,18 @@ column shows one car normally and a class-by-class list at "All Classes" when th
 header does the same, the top-bar Class menu reads "Pro · GT3", and a track's winners list credits
 each win to the *winner's* class car rather than the season default.
 
+**Track records are per game AND per class.** A lap time only compares to another lap in the same
+context, so a venue keeps several records side by side rather than one outright number: the overall
+fastest lap in the scope being viewed, one per game (a GT7 lap and an iRacing lap around the same
+circuit aren't the same record), and one per class (nor are a GT3 lap and an LMP2 lap — without this,
+whichever class runs the faster car owns the venue outright and the slower class has no record of its
+own). `lib/trackRecords.js` holds the keying rules; `lib/trackStatsServer.js` supplies the reads.
+
+Class records key on the class **name**, not its id. A class doc belongs to one season, so "GT3" in
+Season 3 and "GT3" in Season 4 are different ids for the same category, while a venue's history spans
+seasons — the name is the only identity that survives that. An unclassified lap files under its game
+only, so a season without classes doesn't produce an "Unclassified" row duplicating the game record.
+
 **The Share Graphic exporter** builds its own DOM node rather than screenshotting the live page, so
 an export never picks up the sidebar, edit buttons or any other UI furniture — only the headline,
 branding, event metadata and data table are drawn, at a fixed 1080px for a consistent feed-friendly
