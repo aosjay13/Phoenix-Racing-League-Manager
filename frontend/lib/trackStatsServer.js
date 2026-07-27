@@ -15,6 +15,7 @@ import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
 import { parseTime, formatTime } from "@/lib/raceTime";
 import { finalSessionName, summarizeRace } from "@/lib/raceSummaryServer";
 import { carForClass, classOfResult, fetchSeasonClasses } from "@/lib/classServer";
+import { classRecordKey, gameRecordKey, keepFastest } from "@/lib/trackRecords";
 
 // Aggregates a venue's history from every race held there. Races are linked by
 // `track_id`; legacy races that only stored the track NAME (before track_id
@@ -33,7 +34,7 @@ import { carForClass, classOfResult, fetchSeasonClasses } from "@/lib/classServe
 // the Game dropdown (a Series/Season still pins one game) so a track always
 // lists every game's own track record side by side.
 export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
-  const empty = { races_held: 0, seasons_raced: 0, record: null, records_by_game: [], drivers: [], winners: [] };
+  const empty = { races_held: 0, seasons_raced: 0, record: null, records_by_game: [], records_by_class: [], drivers: [], winners: [] };
   const wantedName = String(trackName || "").trim();
   const queries = [db().collection("races").where("track_id", "==", trackId).get()];
   if (wantedName) queries.push(db().collection("races").where("track", "==", wantedName).get());
@@ -95,10 +96,18 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
   const winners = []; // one row per event won here
   let record = null;  // fastest single lap ever turned here (the track record)
   const recordByGame = {}; // game_id -> fastest single lap turned here in THAT game
+  // `${game_id}|${class name}` -> that class's own fastest lap here. Keyed on
+  // the class NAME, not its id: a class doc belongs to one season, so "GT3" in
+  // Season 3 and "GT3" in Season 4 are different ids for the same category, and
+  // a venue record spans seasons. Keyed on the game too, for the same reason
+  // recordByGame exists — a GT7 lap and an iRacing lap aren't comparable.
+  const recordByClass = {};
 
-  // Register a lap toward both the headline record (full scope only) and the
-  // per-game record (always). `gameId` is the game the season belongs to.
-  const considerLap = (r, entry, race, seasonId, seasonName, gameId, inFullScope) => {
+  // Register a lap toward the headline record (full scope only), the per-game
+  // record, and — when the driver ran in a class — that class's record.
+  // `gameId` is the game the season belongs to; `className` is blank for an
+  // unclassified driver or a season that doesn't run classes.
+  const considerLap = (r, entry, race, seasonId, seasonName, gameId, inFullScope, className) => {
     const secs = isQualifying(r) ? parseTime(r.qual_time) : parseTime(r.fastest_lap_time);
     if (secs == null) return;
     const mk = () => ({
@@ -116,10 +125,9 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
       date: race?.date || null,
     });
     if (inFullScope && (record == null || secs < record.seconds)) record = mk();
-    if (gameId) {
-      const cur = recordByGame[gameId];
-      if (cur == null || secs < cur.seconds) recordByGame[gameId] = mk();
-    }
+    keepFastest(recordByGame, gameRecordKey({ gameId }), mk());
+    keepFastest(recordByClass, classRecordKey({ gameId, className }),
+      { ...mk(), game_id: gameId, class_name: className });
   };
 
   for (const seasonId of loopSeasonIds) {
@@ -142,6 +150,10 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
 
     // Keep only results from races held at THIS venue (across all in-scope games).
     const results = allResults.filter(r => venueRaceIds.has(r.race_id));
+    // The class a result counts toward, as a NAME — that's the identity a
+    // cross-season venue record needs (see recordByClass).
+    const classNameById = Object.fromEntries(seasonClasses.map(c => [c.id, c.name]));
+    const classNameOf = r => classNameById[classOfResult(r, entriesById)] ?? "";
 
     for (const r of results) {
       const entry = entriesById[r.entry_id];
@@ -153,7 +165,7 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
       // race-type sessions (lap in fastest_lap_time) and Qualifying (hot lap in
       // qual_time). Recorded per game always, and folded into the headline
       // record only when the race is in the full (game-scoped) selection.
-      considerLap(r, entry, race, seasonId, season.name, gameId, inFullScope);
+      considerLap(r, entry, race, seasonId, season.name, gameId, inFullScope, classNameOf(r));
 
       // The leaderboard / career aggregation is the game-scoped view only.
       if (!inFullScope) continue;
@@ -217,6 +229,7 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
     ...Object.values(drivers).map(d => d.driver_id),
     record?.driver_id,
     ...Object.values(recordByGame).map(r => r.driver_id),
+    ...Object.values(recordByClass).map(r => r.driver_id),
   ].filter(Boolean))];
   const canonicalName = {};
   if (driverIds.length) {
@@ -234,7 +247,7 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
   for (const w of winners) w.series_name = (w.series_id && seriesName[w.series_id]) || null;
 
   // Resolve game names for the per-game record breakdown.
-  const gameIds = [...new Set(Object.keys(recordByGame))];
+  const gameIds = [...new Set([...Object.keys(recordByGame), ...Object.values(recordByClass).map(r => r.game_id)])];
   const gameName = {};
   if (gameIds.length) {
     const docs = await Promise.all(gameIds.map(id => db().collection("games").doc(id).get()));
@@ -268,11 +281,25 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
     }))
     .sort((a, b) => String(a.game_name).localeCompare(String(b.game_name)));
 
+  // One row per (game, class) that actually turned a lap here, so a GT3 record
+  // and an LMP2 record sit side by side instead of the quicker car's lap
+  // standing as "the" track record for both.
+  const records_by_class = Object.values(recordByClass)
+    .map(rec => ({
+      ...rec,
+      driver_name: (rec.driver_id && canonicalName[rec.driver_id]) || rec.driver_name,
+      game_name: gameName[rec.game_id] || "Unknown Game",
+    }))
+    .sort((a, b) =>
+      String(a.game_name).localeCompare(String(b.game_name)) ||
+      String(a.class_name).localeCompare(String(b.class_name)));
+
   return {
     races_held: races.length,
     seasons_raced: seasonIds.length,
     record,
     records_by_game,
+    records_by_class,
     drivers: driverRows,
     winners,
   };
