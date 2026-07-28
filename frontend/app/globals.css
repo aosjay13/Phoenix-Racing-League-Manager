@@ -1248,16 +1248,16 @@ tbody tr:hover {
 
 /* ── Wide race-entry grid ────────────────────── */
 .result-grid-wide {
-  grid-template-columns: 22px 66px 66px minmax(150px, 1fr) 96px 84px 92px 72px 72px 70px 34px 34px 34px 74px 96px 64px 34px;
-  min-width: 1240px;
+  grid-template-columns: 22px 66px 66px minmax(150px, 1fr) 96px 84px 92px 72px 72px 70px 34px 34px 34px 38px 74px 96px 64px 34px;
+  min-width: 1280px;
   align-items: center;
 }
 
 /* Multi-class seasons get an extra Class column right after Driver, so a
    driver's class can be set (or corrected) as results are entered. */
 .result-grid-wide.has-class {
-  grid-template-columns: 22px 66px 66px minmax(150px, 1fr) 108px 96px 84px 92px 72px 72px 70px 34px 34px 34px 74px 96px 64px 34px;
-  min-width: 1360px;
+  grid-template-columns: 22px 66px 66px minmax(150px, 1fr) 108px 96px 84px 92px 72px 72px 70px 34px 34px 34px 38px 74px 96px 64px 34px;
+  min-width: 1400px;
 }
 
 /* ── Stats table ─────────────────────────────── */

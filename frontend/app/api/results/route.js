@@ -134,6 +134,12 @@ export const POST = withAdmin(async (request, ctx, user) => {
       fastest_lap_time: row.fastest_lap_time || null,
       halfway_leader: !!row.halfway_leader,
       hard_charger: !!row.hard_charger,
+      // Who led the most laps. Derived in the grid from the Led column and
+      // ticked automatically, but stored rather than re-derived at read time so
+      // an admin's override survives — see lib/autoFlags.js and
+      // decorateRaceBonuses(), which falls back to deriving it for results
+      // saved before this field existed.
+      most_laps_led: !!row.most_laps_led,
       provisional: !!row.provisional,
       bonus_points: Number(row.bonus_points || 0),
       penalty_points: Number(row.penalty_points || 0),
