@@ -127,6 +127,9 @@ export default function EventResultsPage() {
   const headerCar = soleCarForRace(event, season, eventClasses);
 
   const hasQualifying = inClass(qualifying).length > 0;
+  // An admin can run a qualifying session for visual purposes only — the grid
+  // still shows here, but it's kept out of Poles / Average Start.
+  const qualCountsStats = event.session_stats?.Qualifying;
   const activeRace = races.find(s => s.name === tab);
   const activeResults = inClass(activeRace?.results ?? []);
   // Provisional entries (points only, didn't race) are listed separately so
@@ -329,6 +332,11 @@ export default function EventResultsPage() {
 
       {tab === "__qual" ? (
         <div className="table-wrap">
+          {qualCountsStats === false && (
+            <p style={{ margin: "0 0 8px", color: "var(--ink-2)", fontSize: "0.8rem" }}>
+              Shown for reference only — this qualifying session doesn&rsquo;t count toward Poles or Average Start.
+            </p>
+          )}
           <table className="stats-table">
             <thead>
               <tr><th>Pos</th><th style={{ textAlign: "left" }}>Driver</th><th style={{ textAlign: "left" }}>Team</th><th>Qual Time</th><th>Points</th></tr>

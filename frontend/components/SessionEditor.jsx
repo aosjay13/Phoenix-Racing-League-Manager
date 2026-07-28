@@ -515,14 +515,19 @@ export function SessionEditor({
     return configForTemplate(base, template);
   }, [season, templates, qualTemplateId]);
 
-  // Per-session eligibility toggles. Qualifying is excluded — it never earns
-  // championship points on its own and always feeds Poles/Average Start, so the
-  // switches only apply to race-type sessions. Falls back to the session-type
-  // default until an admin explicitly flips a switch.
+  // Per-session eligibility toggles, falling back to the session-type default
+  // until an admin explicitly flips a switch. The stats toggle applies to every
+  // session type: off on a race session drops it from Wins/Average Finish/…,
+  // off on Qualifying drops it from Poles/Average Start — for a grid set purely
+  // for visual purposes, which should show on the event page without landing on
+  // anyone's record. The championship-points toggle stays race-only, since
+  // qualifying never awards championship points on its own.
+  const isQual = sessionType === "qualifying";
   const flagDefaults = defaultSessionFlags(sessionType);
   const statsOn = session in sessionStats ? !!sessionStats[session] : flagDefaults.counts_stats;
   const pointsOn = session in sessionPointsEnabled ? !!sessionPointsEnabled[session] : flagDefaults.counts_points;
-  const showToggles = sessionType !== "qualifying" && (onSessionStatsChange || onSessionPointsEnabledChange);
+  const showStatsToggle = !!onSessionStatsChange;
+  const showPointsToggle = !isQual && !!onSessionPointsEnabledChange;
 
   // Points only meaningful once a driver is in the slot.
   const rowPoints = row => (!row.entry_id ? "" : sessionType === "qualifying"
@@ -703,12 +708,16 @@ export function SessionEditor({
             </button>
           </div>
         )}
-        {showToggles && (
+        {(showStatsToggle || showPointsToggle) && (
           <div style={{ display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap" }}>
-            <Toggle label="Count towards Official Stats" checked={statsOn}
-              onChange={v => onSessionStatsChange?.(session, v)} />
-            <Toggle label="Award Championship Points" checked={pointsOn}
-              onChange={v => onSessionPointsEnabledChange?.(session, v)} />
+            {showStatsToggle && (
+              <Toggle label="Count towards Official Stats" checked={statsOn}
+                onChange={v => onSessionStatsChange?.(session, v)} />
+            )}
+            {showPointsToggle && (
+              <Toggle label="Award Championship Points" checked={pointsOn}
+                onChange={v => onSessionPointsEnabledChange?.(session, v)} />
+            )}
           </div>
         )}
         {onRenameSession && (
@@ -735,6 +744,13 @@ export function SessionEditor({
           ? "Position 1 is the pole. Each slot starts empty — click it, type a name, and pick the driver from the dropdown (or create a new one inline). This is the only place starting position is recorded — Average Start and Poles are calculated from Qualifying results only."
           : <>Each finishing position starts empty — click a slot, type a driver's name, and pick them from the dropdown (or create a new driver inline). Drag ⠿ to reorder; positions renumber automatically. Enter <strong>Race Time</strong> for the leader, then either a Race Time or an <strong>Int</strong> (gap behind leader, e.g. <code>+2.345</code>) for everyone else — each fills in the other. Use <code>1L</code>, <code>2L</code>… in Int for laps down.{totalLaps ? ` Laps auto-count off the ${totalLaps}-lap distance (laps down and DNF lap subtract from it).` : " Set Total Race Laps on the Race Info tab so laps auto-count."}</>}
       </p>
+      {isQual && showStatsToggle && !statsOn && (
+        <p style={{ marginTop: 0, color: "var(--ink-1)", fontSize: "0.82rem" }}>
+          ⚠ <strong>Official Stats are off for {session}.</strong> The grid below still shows on the event page,
+          but these positions don&rsquo;t count toward Poles or Average Start — use this for a qualifying session
+          run for visual purposes only.
+        </p>
+      )}
       <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.78rem" }}>
         ⌨ Press <strong>Enter</strong> in any cell to jump to the same column one row down. Or <strong>paste a whole column</strong> at once — copy a column of names or times (e.g. from a spreadsheet) and paste into the top cell to fill straight down.
       </p>
