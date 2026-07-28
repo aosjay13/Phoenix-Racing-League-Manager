@@ -10,10 +10,11 @@ import { ImportResultsModal } from "@/components/ImportResultsModal";
 import { NONE_TEMPLATE } from "@/lib/pointsTemplates";
 import { classIdForScope, entriesEligibleForRace, entriesInSessionClass, isClassScoped, resultInSessionClass } from "@/lib/classFilter";
 import { pointsFor, configForTemplate, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
+import { applyAutoFlags, detectFlagLocks } from "@/lib/autoFlags";
 import { parseTime, formatTime, formatGap, parseLapsDown, deriveLaps } from "@/lib/raceTime";
 
-const RESULT_FIELDS = ["finish_pos", "start_pos", "qual_time", "race_time", "interval", "fastest_lap_time", "laps", "laps_led", "incidents", "fastest_lap", "halfway_leader", "hard_charger", "provisional", "points_adjustment", "manual_points", "status", "class_id"];
-const BOOL_FIELDS = new Set(["fastest_lap", "halfway_leader", "hard_charger", "provisional"]);
+const RESULT_FIELDS = ["finish_pos", "start_pos", "qual_time", "race_time", "interval", "fastest_lap_time", "laps", "laps_led", "incidents", "fastest_lap", "halfway_leader", "hard_charger", "most_laps_led", "provisional", "points_adjustment", "manual_points", "status", "class_id"];
+const BOOL_FIELDS = new Set(["fastest_lap", "halfway_leader", "hard_charger", "most_laps_led", "provisional"]);
 
 // Each grid row is a *finishing position* — it may or may not yet have a
 // driver assigned. `entry_id === null` is an empty slot (rendered with a
@@ -40,6 +41,7 @@ function makeRow(position) {
     fastest_lap: false,
     halfway_leader: false,
     hard_charger: false,
+    most_laps_led: false,
     provisional: false,
     points_adjustment: "0",
     manual_points: "",
@@ -112,6 +114,20 @@ function buildRows(entries, existing, totalLaps, qualPos = {}, sessionType = "ra
       }
       return row;
     });
+  // Most Laps Led used to be derived at read time rather than stored, so a
+  // result saved before the column existed comes back with nothing set. Seed
+  // those from laps led, so the grid opens showing the flag the standings have
+  // been scoring all along — and so it isn't mistaken for an admin having
+  // deliberately cleared it (see detectFlagLocks).
+  if (sessionType !== "qualifying") {
+    const savedById = new Map(existing.map(r => [r.entry_id, r]));
+    const maxLed = Math.max(0, ...filled.map(r => Number(r.laps_led || 0)));
+    for (const row of filled) {
+      if (savedById.get(row.entry_id)?.most_laps_led == null) {
+        row.most_laps_led = maxLed > 0 && Number(row.laps_led || 0) === maxLed;
+      }
+    }
+  }
   const sorted = sortByFinish(filled);
   let pos = sorted.reduce((m, r) => Math.max(m, Number(r.finish_pos) || 0), 0);
   const rows = [...sorted];
@@ -173,6 +189,10 @@ export function SessionEditor({
     initialSession && names.includes(initialSession) ? initialSession : names[0]
   );
   const [rows, setRows] = useState(() => emptySlots(entries.length));
+  // Which of the auto-derived bonus flags (Fastest Lap / Hard Charger / Most
+  // Laps Led) the admin has taken over by hand for this session — see
+  // lib/autoFlags.js. A locked flag stops following the grid's data.
+  const [flagLocks, setFlagLocks] = useState({});
   const [provRows, setProvRows] = useState([]); // provisional entries (points only, no stats)
   const [qualPos, setQualPos] = useState({}); // entry_id -> this race's Qualifying finish position
   const [toast, setToast] = useState(null);
@@ -213,7 +233,12 @@ export function SessionEditor({
       // finishing-order grid.
       const mains = existing.filter(r => !r.provisional);
       const provs = existing.filter(r => r.provisional);
-      setRows(buildRows(entries, mains, race.total_laps, qp, sessionType));
+      const built = buildRows(entries, mains, race.total_laps, qp, sessionType);
+      // Saved flags that disagree with what the grid would derive were set by
+      // hand — keep them, and keep hands off that flag for the rest of the
+      // session. Anything that already matches carries on auto-deriving.
+      setFlagLocks(sessionType === "qualifying" ? {} : detectFlagLocks(built));
+      setRows(built);
       const entryById = new Map(entries.map(e => [e.id ?? e.entry_id, e]));
       setProvRows(provs.map(r => {
         const e = entryById.get(r.entry_id);
@@ -222,6 +247,7 @@ export function SessionEditor({
     } catch {
       setQualPos({});
       setRows(emptySlots(entries.length));
+      setFlagLocks({});
       setProvRows([]);
     } finally {
       setLoading(false);
@@ -237,8 +263,27 @@ export function SessionEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [race?.id, sessionType, namesKey, sessionClass]);
 
+  // Keep the derived bonus flags in step with the numbers as they're typed:
+  // the quickest Best Lap gets FL, the biggest position gain gets HC, and the
+  // most laps led gets MLL. Runs on every grid change, and re-runs when a lock
+  // is released. applyAutoFlags returns the same array when nothing moves, so
+  // this settles immediately rather than looping. Qualifying has none of these
+  // columns and is skipped.
+  useEffect(() => {
+    if (sessionType === "qualifying" || loading) return;
+    setRows(prev => applyAutoFlags(prev, flagLocks));
+  }, [rows, flagLocks, sessionType, loading]);
+
   function updateRow(idx, field, value) {
     setRows(prev => prev.map((r, i) => (i === idx ? { ...r, [field]: value } : r)));
+  }
+
+  // Ticking or unticking one of the auto-derived boxes by hand hands that flag
+  // to the admin for the rest of the session — the grid won't move it again,
+  // even as more times or laps are entered. The other two keep auto-deriving.
+  function updateFlag(idx, field, value) {
+    setFlagLocks(prev => (prev[field] ? prev : { ...prev, [field]: true }));
+    updateRow(idx, field, value);
   }
 
   // Column paste ("fill-down"): drop a copied column of values into a grid
@@ -460,6 +505,10 @@ export function SessionEditor({
     const next = [...sorted];
     for (let i = 0; i < uncovered; i++) { pos += 1; next.push(makeRow(pos)); }
     setRows(next);
+    // An import that names its own fastest lap (a column the file carried,
+    // rather than one derived from lap times) keeps it; otherwise the grid
+    // derives FL/HC/MLL from the imported numbers as usual.
+    setFlagLocks(detectFlagLocks(next));
     setImportOpen(false);
     const n = byId.size;
     showToast("success", `Imported ${n} result${n === 1 ? "" : "s"}. Review the grid, then Save.`);
@@ -751,6 +800,16 @@ export function SessionEditor({
           run for visual purposes only.
         </p>
       )}
+      {!isQual && (
+        <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.78rem" }}>
+          ✓ <strong>FL</strong>, <strong>HC</strong> and <strong>MLL</strong> tick themselves as you type:
+          the quickest <strong>Best Lap</strong> takes Fastest Lap (one lap time entered is the fastest one),
+          the biggest gain from <strong>Start</strong> to <strong>Fin</strong> takes Hard Charger (a tie goes to
+          whoever started furthest back), and the highest <strong>Led</strong> count takes Most Laps Led.
+          Tick or untick any of them yourself and that one stops moving — your call sticks.
+          These are stats either way; they only affect points if your season or points structure pays a bonus for them.
+        </p>
+      )}
       <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.78rem" }}>
         ⌨ Press <strong>Enter</strong> in any cell to jump to the same column one row down. Or <strong>paste a whole column</strong> at once — copy a column of names or times (e.g. from a spreadsheet) and paste into the top cell to fill straight down.
       </p>
@@ -781,11 +840,11 @@ export function SessionEditor({
         <div style={{ overflowX: "auto" }}>
           <p style={{ margin: "0 0 8px", color: "var(--ink-2)", fontSize: "0.78rem" }}>Drag ⠿ to reorder — finishing positions renumber automatically.</p>
           <div className={`result-grid result-grid-wide${hasClasses ? " has-class" : ""}`}>
-            {["", "Fin", "Start", "Driver", ...(hasClasses ? ["Class"] : []), "Race Time", "Int", "Best Lap", "Laps", "Led", "Inc", "FL", "½", "HC", "Adj", "Status", pointsLabel, ""].map((h, i) => (
+            {["", "Fin", "Start", "Driver", ...(hasClasses ? ["Class"] : []), "Race Time", "Int", "Best Lap", "Laps", "Led", "Inc", "FL", "½", "HC", "MLL", "Adj", "Status", pointsLabel, ""].map((h, i) => (
               <span className="grid-header" key={h || i}>{h}</span>
             ))}
             {rows.map((row, idx) => (
-              <RowInputs key={row.slot_id} row={row} idx={idx} updateRow={updateRow}
+              <RowInputs key={row.slot_id} row={row} idx={idx} updateRow={updateRow} updateFlag={updateFlag}
                 updateRaceTime={updateRaceTime} updateInterval={updateInterval} updateStatus={updateStatus}
                 autoFocus={row.entry_id === justAddedId} points={rowPoints(row)}
                 classes={classes} hasClasses={hasClasses}
@@ -885,7 +944,7 @@ export function SessionEditor({
       {!!entries.length && (
         <button className="btn btn-ghost" style={{ marginLeft: 8 }}
           title="Clear every slot back to an empty finishing grid"
-          onClick={() => setRows(emptySlots(entries.length))}>
+          onClick={() => { setRows(emptySlots(entries.length)); setFlagLocks({}); }}>
           Reset Grid
         </button>
       )}
@@ -1156,7 +1215,7 @@ function ClassCell({ row, idx, classes, updateRow }) {
   );
 }
 
-function RowInputs({ row, idx, updateRow, updateRaceTime, updateInterval, updateStatus, autoFocus, points, classes = [], hasClasses, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, available, onAssign, onClear, onRequestCreate, onPasteColumn }) {
+function RowInputs({ row, idx, updateRow, updateFlag, updateRaceTime, updateInterval, updateStatus, autoFocus, points, classes = [], hasClasses, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, available, onAssign, onClear, onRequestCreate, onPasteColumn }) {
   const hasDriver = !!row.entry_id;
   const isLeader = Number(row.finish_pos) === 1;
   // Shared per-cell wiring: column/row tags, Enter-to-next-row, and column
@@ -1189,9 +1248,13 @@ function RowInputs({ row, idx, updateRow, updateRaceTime, updateInterval, update
       {num("laps")}
       {num("laps_led")}
       {num("incidents")}
-      <Check title="Fastest lap" value={row.fastest_lap} disabled={!hasDriver} onChange={v => updateRow(idx, "fastest_lap", v)} />
+      <Check title="Fastest lap — ticked automatically for the quickest Best Lap time entered. Change it and it stays where you put it."
+        value={row.fastest_lap} disabled={!hasDriver} onChange={v => updateFlag(idx, "fastest_lap", v)} />
       <Check title="Halfway-point leader" value={row.halfway_leader} disabled={!hasDriver} onChange={v => updateRow(idx, "halfway_leader", v)} />
-      <Check title="Hard charger" value={row.hard_charger} disabled={!hasDriver} onChange={v => updateRow(idx, "hard_charger", v)} />
+      <Check title="Hard charger — ticked automatically for the biggest gain from Start to Fin (ties go to whoever started furthest back). Change it and it stays where you put it."
+        value={row.hard_charger} disabled={!hasDriver} onChange={v => updateFlag(idx, "hard_charger", v)} />
+      <Check title="Most laps led — ticked automatically for the highest Led count (a tie is shared). Change it and it stays where you put it."
+        value={row.most_laps_led} disabled={!hasDriver} onChange={v => updateFlag(idx, "most_laps_led", v)} />
       <input type="number" title="Points adjustment — penalty (−) or bonus (+). Applied on top of scored points without changing the finishing position."
         placeholder="0" value={row.points_adjustment} disabled={!hasDriver}
         {...gridProps("points_adjustment")} onChange={e => updateRow(idx, "points_adjustment", e.target.value)} style={{ textAlign: "center" }} />

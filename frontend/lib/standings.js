@@ -106,6 +106,11 @@ export function decorateSessionFlags(results, racesById = {}) {
 
 // Mark per-race derived flags (most laps led) before scoring. Events can
 // hold multiple races ("sessions"), each scored independently.
+//
+// Results saved from the editor carry an explicit `most_laps_led` flag — the
+// grid ticks it automatically off the Led column, but an admin can move it, so
+// a result that has the flag is taken at its word. Results saved before the
+// field existed have it derived here from laps led, exactly as before.
 export function decorateRaceBonuses(results) {
   const byRace = {};
   for (const r of results) (byRace[`${r.race_id}|${r.session || ""}`] ??= []).push(r);
@@ -113,7 +118,12 @@ export function decorateRaceBonuses(results) {
   for (const raceResults of Object.values(byRace)) {
     const maxLed = Math.max(0, ...raceResults.map(r => Number(r.laps_led || 0)));
     for (const r of raceResults) {
-      out.push({ ...r, is_most_laps_led: maxLed > 0 && Number(r.laps_led || 0) === maxLed });
+      out.push({
+        ...r,
+        is_most_laps_led: r.most_laps_led != null
+          ? !!r.most_laps_led
+          : maxLed > 0 && Number(r.laps_led || 0) === maxLed,
+      });
     }
   }
   return out;
