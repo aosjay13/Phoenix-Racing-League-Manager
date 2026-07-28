@@ -303,11 +303,17 @@ function UnifiedEditInner() {
 
   // Saves the assignment on the race AND cascades it onto any already-saved
   // results for that session, so points re-score everywhere immediately.
+  // `sessionClass` is set on a split event, where the assignment belongs to ONE
+  // class's session rather than the event's — see the session-points route.
   const sessionPoints = race?.session_points || {};
-  const saveSessionPoints = useCallback(async (name, templateId, sessionType = "race") => {
+  const sessionPointsByClass = race?.session_points_by_class || {};
+  const saveSessionPoints = useCallback(async (name, templateId, sessionType = "race", sessionClass = null) => {
     const updated = await api(`/api/races/${race.id}/session-points`, {
       method: "POST",
-      body: { session: name, template_id: templateId || "", session_type: sessionType },
+      body: {
+        session: name, template_id: templateId || "", session_type: sessionType,
+        ...(sessionClass ? { session_class: sessionClass } : {}),
+      },
     });
     setRace(r => ({ ...r, ...updated }));
   }, [race]);
@@ -448,7 +454,7 @@ function UnifiedEditInner() {
           <SessionEditor
             race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName} {...classProps}
             sessionType="qualifying" sessionNames={["Qualifying"]}
-            season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
+            season={season} templates={templates} sessionPoints={sessionPoints} sessionPointsByClass={sessionPointsByClass} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
             sessionStats={sessionStats} onSessionStatsChange={saveSessionStats}
           />
         </div>
@@ -459,7 +465,7 @@ function UnifiedEditInner() {
           <SessionEditor
             race={race} seasonId={seasonId} entries={entries} initialSession={initialSession} onEntriesChanged={reloadEntries} seriesName={seriesName} {...classProps}
             sessionType="race" sessionNames={standardSessions}
-            season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
+            season={season} templates={templates} sessionPoints={sessionPoints} sessionPointsByClass={sessionPointsByClass} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
             sessionStats={sessionStats} onSessionStatsChange={saveSessionStats}
             sessionPointsEnabled={sessionPointsEnabled} onSessionPointsEnabledChange={saveSessionPointsEnabled}
             canAddSession onAddSession={addStdSession} onRemoveSession={removeStdSession}
@@ -473,7 +479,7 @@ function UnifiedEditInner() {
           <SessionEditor
             race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName} {...classProps}
             sessionType="heat" sessionNames={heats}
-            season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
+            season={season} templates={templates} sessionPoints={sessionPoints} sessionPointsByClass={sessionPointsByClass} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
             sessionStats={sessionStats} onSessionStatsChange={saveSessionStats}
             sessionPointsEnabled={sessionPointsEnabled} onSessionPointsEnabledChange={saveSessionPointsEnabled}
             canAddSession onAddSession={addHeat} onRemoveSession={removeHeat}
@@ -488,7 +494,7 @@ function UnifiedEditInner() {
             <SessionEditor
               race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName} {...classProps}
               sessionType="consolation" sessionNames={consolations}
-              season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
+              season={season} templates={templates} sessionPoints={sessionPoints} sessionPointsByClass={sessionPointsByClass} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
               sessionStats={sessionStats} onSessionStatsChange={saveSessionStats}
               sessionPointsEnabled={sessionPointsEnabled} onSessionPointsEnabledChange={saveSessionPointsEnabled}
               canAddSession onAddSession={addConsolation} onRemoveSession={removeConsolation}
@@ -510,7 +516,7 @@ function UnifiedEditInner() {
           <SessionEditor
             race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName} {...classProps}
             sessionType="feature" sessionNames={[featureName]}
-            season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
+            season={season} templates={templates} sessionPoints={sessionPoints} sessionPointsByClass={sessionPointsByClass} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
             sessionStats={sessionStats} onSessionStatsChange={saveSessionStats}
             sessionPointsEnabled={sessionPointsEnabled} onSessionPointsEnabledChange={saveSessionPointsEnabled}
             onRenameSession={(from, to) => renameSession("feature", from, to)}

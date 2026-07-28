@@ -3,14 +3,11 @@ import { db } from "@/lib/firebase";
 import { getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
 import {
   aggregateCareerStats,
-  buildQualPosMap,
-  buildQualTemplateMap,
   compareStandings,
-  configForTemplate,
   decorateRaceBonuses,
   decorateSessionFlags,
   isQualifying,
-  pointsFor,
+  makeScorer,
   resolveSeasonConfig,
 } from "@/lib/standings";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
@@ -113,8 +110,9 @@ async function buildStats(seasons, classId = "", className = "") {
     for (const r of races) allRaces.push(r);
     const decorated = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById));
     const results = filterResultsByClass(decorated, classSel, allEntriesById);
-    const qualPosMap = buildQualPosMap(results);
-    const qualTemplateByRace = buildQualTemplateMap(results);
+    // Scores every result under the class its driver raced in, so a class with
+    // its own points structure totals under that structure here too.
+    const scorer = makeScorer(results, { config, classes: seasonClasses, entriesById: allEntriesById, templatesById });
 
     // Average field size: how many drivers actually took part in each event.
     for (const race of races) {
@@ -154,7 +152,7 @@ async function buildStats(seasons, classId = "", className = "") {
       if (entry.driver_id) bucket.driver_id = entry.driver_id;
       const scored = {
         ...r,
-        points: (isQualifying(r) || r.counts_points === false) ? 0 : pointsFor(r, configForTemplate(config, templatesById[r.points_template_id]), qualPosMap[`${r.race_id}|${r.entry_id}`] ?? null, configForTemplate(config, templatesById[qualTemplateByRace[r.race_id]])),
+        points: (isQualifying(r) || r.counts_points === false) ? 0 : scorer.points(r),
       };
       bucket.results.push(scored);
 

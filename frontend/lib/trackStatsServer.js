@@ -1,13 +1,10 @@
 import { db } from "@/lib/firebase";
 import {
   aggregateCareerStats,
-  buildQualPosMap,
-  buildQualTemplateMap,
-  configForTemplate,
   decorateRaceBonuses,
   decorateSessionFlags,
   isQualifying,
-  pointsFor,
+  makeScorer,
   resolveSeasonConfig,
 } from "@/lib/standings";
 import { raceDateSortKey } from "@/lib/raceDate";
@@ -153,8 +150,9 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
     const entriesById = Object.fromEntries(entriesSnap.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
     const racesById = Object.fromEntries(racesSnap.docs.map(d => [d.id, d.data()]));
     const allResults = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById));
-    const qualPosMap = buildQualPosMap(allResults);
-    const qualTemplateByRace = buildQualTemplateMap(allResults);
+    // Scored under the class each result was run in, so a class with its own
+    // points structure carries it into the venue leaderboard too.
+    const scorer = makeScorer(allResults, { config, classes: seasonClasses, entriesById, templatesById });
 
     // Keep only results from races held at THIS venue (across all in-scope games).
     const results = allResults.filter(r => venueRaceIds.has(r.race_id));
@@ -187,12 +185,7 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
       if (!inFullScope || !inSelectedClass(r)) continue;
       const scored = {
         ...r,
-        points: (isQualifying(r) || r.counts_points === false) ? 0 : pointsFor(
-          r,
-          configForTemplate(config, templatesById[r.points_template_id]),
-          qualPosMap[`${r.race_id}|${r.entry_id}`] ?? null,
-          configForTemplate(config, templatesById[qualTemplateByRace[r.race_id]]),
-        ),
+        points: (isQualifying(r) || r.counts_points === false) ? 0 : scorer.points(r),
       };
       const k = keyFor(entry);
       const bucket = (drivers[k] ??= { driver_name: entry.name, driver_id: entry.driver_id ?? null, user_id: entry.user_id ?? null, results: [] });

@@ -1,13 +1,10 @@
 import { db } from "@/lib/firebase";
 import {
   aggregateCareerStats,
-  buildQualPosMap,
-  buildQualTemplateMap,
-  configForTemplate,
   decorateRaceBonuses,
   decorateSessionFlags,
   isQualifying,
-  pointsFor,
+  makeScorer,
   resolveSeasonConfig,
 } from "@/lib/standings";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
@@ -55,22 +52,27 @@ export async function buildCareerProfile({ driverId = null, userId = null }) {
     const gameId = season.game_id || "unknown";
     const myEntryIds = new Set(myEntries.filter(e => e.season_id === seasonId).map(e => e.id));
 
-    const [resultsSnap, entriesSnap2, racesSnap] = await Promise.all([
+    const [resultsSnap, entriesSnap2, racesSnap, seasonClasses] = await Promise.all([
       db().collection("results").where("season_id", "==", seasonId).get(),
       db().collection("entries").where("season_id", "==", seasonId).get(),
       db().collection("races").where("season_id", "==", seasonId).get(),
+      fetchSeasonClasses(seasonId),
     ]);
     const racesById = Object.fromEntries(racesSnap.docs.map(d => [d.id, d.data()]));
     const seasonResults = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById));
     const seasonEntries = entriesSnap2.docs.map(d => ({ id: d.id, ...d.data() }));
-    const qualPosMap = buildQualPosMap(seasonResults);
-    const qualTemplateByRace = buildQualTemplateMap(seasonResults);
+    // Scored under the class each result was run in, so a class with its own
+    // points structure reaches the career totals as well as the standings.
+    const scorer = makeScorer(seasonResults, {
+      config, classes: seasonClasses, templatesById,
+      entriesById: Object.fromEntries(seasonEntries.map(e => [e.id, e])),
+    });
 
     const mine = seasonResults
       .filter(r => myEntryIds.has(r.entry_id))
       .map(r => ({
         ...r,
-        points: (isQualifying(r) || r.counts_points === false) ? 0 : pointsFor(r, configForTemplate(config, templatesById[r.points_template_id]), qualPosMap[`${r.race_id}|${r.entry_id}`] ?? null, configForTemplate(config, templatesById[qualTemplateByRace[r.race_id]])),
+        points: (isQualifying(r) || r.counts_points === false) ? 0 : scorer.points(r),
       }));
     (perGame[gameId] ??= []).push(...mine);
     allResults.push(...mine);
@@ -97,7 +99,6 @@ export async function buildCareerProfile({ driverId = null, userId = null }) {
     // the season runs class-only titles — then narrowed to this driver. A
     // driver who won both their class and the overall in one season scores one
     // championship, with both crowns recorded so the profile can show it.
-    const seasonClasses = await fetchSeasonClasses(seasonId);
     const mineRec = [...titlesByEntry(seasonChampions(season, seasonResults, seasonEntries, config, templatesById, seasonClasses))]
       .find(([entryId]) => myEntryIds.has(entryId))?.[1];
     if (mineRec) {

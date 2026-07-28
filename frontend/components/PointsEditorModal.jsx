@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Modal } from "@/components/Modal";
 import { api } from "@/lib/api";
-import { BONUS_TYPES, resolveSeasonConfig } from "@/lib/standings";
+import { BONUS_TYPES } from "@/lib/standings";
 import { listToTableOrZero, tableToList } from "@/lib/pointsTemplates";
 
 const isBuiltin = id => String(id).startsWith("builtin-");
@@ -15,14 +15,15 @@ function bonusesToStrings(src) {
 }
 
 // The editable comma-list view of whatever points system `value` points at:
-// "" → the season default, "none" → nothing (handled by the caller), any
-// other id → that template from the normalized list.
-function fieldsFor(value, templates, season) {
+// "" → the base structure this session falls back to (the class's own points
+// when it has them, else the season's), "none" → nothing (handled by the
+// caller), any other id → that template from the normalized list.
+function fieldsFor(value, templates, baseConfig) {
   const t = templates.find(x => x.id === value);
   if (t) {
     return { race: tableToList(t.race_points), qual: tableToList(t.qual_points), bonuses: bonusesToStrings(t.bonus_points) };
   }
-  const cfg = resolveSeasonConfig(season || {});
+  const cfg = baseConfig || {};
   return { race: tableToList(cfg.racePoints), qual: tableToList(cfg.qualPoints), bonuses: bonusesToStrings(cfg.bonuses) };
 }
 
@@ -34,13 +35,22 @@ const monoBox = {
 
 // Inline points-structure manager, opened from the results editor of any
 // session (Qualifying, a race, a Heat, a Consolation, the Feature). Lets an
-// admin assign the session's points system — season default, no points at
-// all, a builtin or saved template — and view/edit the structure itself as
-// comma lists + bonus values, saving edits back as a new or updated template
-// and applying them to the session in one step, without leaving the screen.
-export function PointsEditorModal({ session, sessionType, value, templates, season, onAssign, onTemplatesChanged, onClose }) {
+// admin assign the session's points system — the default it inherits, no
+// points at all, a builtin or saved template — and view/edit the structure
+// itself as comma lists + bonus values, saving edits back as a new or updated
+// template and applying them to the session in one step, without leaving the
+// screen.
+//
+// `baseConfig` is what "no override" scores under, already resolved by the
+// caller through season → class, and `baseLabel` names it — so on a class's
+// session the default option reads "Pro points" and shows Pro's structure,
+// not the season's.
+export function PointsEditorModal({
+  session, sessionType, value, templates, baseConfig, baseLabel = "Season default",
+  classLabel = "", onAssign, onTemplatesChanged, onClose,
+}) {
   const [selection, setSelection] = useState(value || "");
-  const [fields, setFields] = useState(() => fieldsFor(value || "", templates, season));
+  const [fields, setFields] = useState(() => fieldsFor(value || "", templates, baseConfig));
   const [dirty, setDirty] = useState(false);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -51,7 +61,7 @@ export function PointsEditorModal({ session, sessionType, value, templates, seas
 
   function changeSelection(id) {
     setSelection(id);
-    setFields(fieldsFor(id, templates, season));
+    setFields(fieldsFor(id, templates, baseConfig));
     setDirty(false);
     setError(null);
   }
@@ -93,11 +103,11 @@ export function PointsEditorModal({ session, sessionType, value, templates, seas
   });
 
   return (
-    <Modal title={`Points Structure · ${session}`} onClose={onClose}>
+    <Modal title={`Points Structure · ${classLabel ? `${classLabel} · ` : ""}${session}`} onClose={onClose}>
       <div className="field" style={{ marginTop: 12 }}>
-        <label>Points system for this session</label>
+        <label>Points system for {classLabel ? `${classLabel}'s ${session}` : "this session"}</label>
         <select value={selection} onChange={e => changeSelection(e.target.value)}>
-          <option value="">Season default</option>
+          <option value="">{baseLabel}</option>
           <option value="none">No points — all drivers score 0</option>
           <optgroup label="Standard">
             {templates.filter(t => isBuiltin(t.id)).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -118,7 +128,9 @@ export function PointsEditorModal({ session, sessionType, value, templates, seas
       ) : (
         <>
           <p style={{ margin: "0 0 4px", color: "var(--ink-1)", fontSize: "0.8rem" }}>
-            {selection === "" ? "Viewing the season default. Edit below and save as a template to customize this session." : "Edit below, then update the template or save your changes as a new one."}
+            {selection === ""
+              ? `Viewing ${baseLabel.toLowerCase()}. Edit below and save as a template to customize ${classLabel ? `${classLabel}'s ` : "this "}session.`
+              : "Edit below, then update the template or save your changes as a new one."}
           </p>
           <div className="field"><label>Race Points — comma-separated, 1st place first (blank = 0 points)</label>
             <textarea rows={3} value={fields.race} style={monoBox}
@@ -159,7 +171,7 @@ export function PointsEditorModal({ session, sessionType, value, templates, seas
         </>
       ) : (
         <button className="btn btn-primary" type="button" disabled={busy} onClick={assign}>
-          {busy ? "Applying…" : `Apply to ${session}`}
+          {busy ? "Applying…" : `Apply to ${classLabel ? `${classLabel}'s ${session}` : session}`}
         </button>
       )}
       <button className="btn btn-ghost" type="button" style={{ marginLeft: 8 }} onClick={onClose}>Cancel</button>

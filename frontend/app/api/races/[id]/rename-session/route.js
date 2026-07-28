@@ -5,7 +5,7 @@ import { withAdmin } from "@/lib/serverAuth";
 // Renames one session of an event and cascades the change so nothing orphans:
 //   - the name in the race's sessions / heats / consolations list (or
 //     feature_name for the feature),
-//   - the session_points entry keyed by that name,
+//   - the session_points entry keyed by that name (and any per-class ones),
 //   - and every saved results doc filed under the old session name.
 // body: { session_type: "race"|"heat"|"consolation"|"feature", from, to }
 export const POST = withAdmin(async (request, { params }) => {
@@ -47,6 +47,20 @@ export const POST = withAdmin(async (request, { params }) => {
     const map = { ...(race[field] || {}) };
     if (from in map) { map[newName] = map[from]; delete map[from]; updates[field] = map; }
   }
+  // …and the per-class assignments for the same session, one map per class, so
+  // renaming a session an individual class had its own points system for
+  // doesn't quietly drop that class back to the default.
+  const byClass = { ...(race.session_points_by_class || {}) };
+  let renamedAnyClass = false;
+  for (const [scope, map] of Object.entries(byClass)) {
+    if (!(from in map)) continue;
+    const next = { ...map };
+    next[newName] = next[from];
+    delete next[from];
+    byClass[scope] = next;
+    renamedAnyClass = true;
+  }
+  if (renamedAnyClass) updates.session_points_by_class = byClass;
 
   // Cascade to saved results filed under the old session name.
   const firstStd = Array.isArray(race.sessions) && race.sessions.length ? race.sessions[0] : "Race";

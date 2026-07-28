@@ -51,7 +51,9 @@ export async function GET(request) {
   const results = filterResultsByClass(allResults, classSel, entriesById);
 
   const config = resolveSeasonConfig(season);
-  const drivers = calculateStandings(results, entries, teams, config, templatesById);
+  // `classes` lets a class scoring on its own points structure total under it —
+  // in its own championship and in the combined table alike.
+  const drivers = calculateStandings(results, entries, teams, config, templatesById, classes);
   const teamRows = calculateTeamStandings(drivers.rows, teams);
 
   // Contextual name rendering: on this game's standings, surface each driver's

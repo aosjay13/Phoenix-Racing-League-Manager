@@ -156,8 +156,17 @@ export const SPECS = {
   // Model"). It sits between the season's car and a race's own override — see
   // carForRace in lib/classFilter.js — so a season whose classes run different
   // machinery shows the right car per class without setting it on every event.
+  //
+  // `race_points` / `qual_points` / `bonus_points` are the class's OWN points
+  // structure, in the same shape a season and a points template use — so a
+  // class sits between the two as an override layer: season default → class
+  // structure → session template. Every field is optional and only overrides
+  // what it sets, and all three left unset (the default) means the class scores
+  // on the season's points exactly as it always did. See classScoresOwnPoints /
+  // configForClass in lib/standings.js.
   classes: { collection: "classes", parentField: "season_id", sortField: "sort_order",
              fields: { name: { required: true }, color: {}, description: {}, car: {},
+                       race_points: {}, qual_points: {}, bonus_points: {},
                        sort_order: { number: true, default: 0 } } },
   teams:   { collection: "teams", parentField: "season_id", sortField: "name",
              fields: { name: { required: true }, logo_url: {}, color: {} } },
@@ -227,11 +236,17 @@ export const SPECS = {
                        // from the event screen) feeding into one Feature session. `session_points`
                        // maps a session name -> points_templates id, so every session (including
                        // Qualifying and standard `sessions`) can carry its own points system.
+                       // `session_points_by_class` is the same map one level deeper —
+                       // class scope -> { session name -> points_templates id } — for an
+                       // event whose classes run their own sessions, so Pro's Race and
+                       // Amateur's Race at the same event can score differently. A class
+                       // with no entry for a session falls back to `session_points`, then
+                       // to the class's own structure, then to the season's.
                        // `session_stats` / `session_points_enabled` map a session name -> boolean,
                        // letting an admin exclude a session from official stats and/or championship
                        // points (see resolveSessionFlags in lib/standings.js for the defaults).
                        heat_format: {}, heats: {}, consolations: {}, feature_name: { default: "A-Main Feature" },
-                       session_points: {}, session_stats: {}, session_points_enabled: {},
+                       session_points: {}, session_points_by_class: {}, session_stats: {}, session_points_enabled: {},
                        // `strength_of_field` records the average Skill Rating of the field that
                        // started this event's main race (Race, or the Feature for heat weekends).
                        // Written by the stats engine on save; null when SR wasn't exchanged.
