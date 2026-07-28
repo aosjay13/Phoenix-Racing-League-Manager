@@ -66,8 +66,9 @@ export function configForTemplate(baseConfig, template) {
 // override. Preliminary sessions (heats, consolations/B- & C-Mains) are off by
 // default so they don't skew a driver's global Win/Top-5/Average-Finish metrics
 // or award championship points; standard races, the feature, and qualifying are
-// on. Admin toggles (race.session_stats / session_points_enabled, keyed by
-// session name) override these per session.
+// on — including Qualifying, which feeds Poles/Average Start unless an admin
+// turns its stats toggle off. Admin toggles (race.session_stats /
+// session_points_enabled, keyed by session name) override these per session.
 export function defaultSessionFlags(sessionType) {
   const preliminary = sessionType === "heat" || sessionType === "consolation";
   return { counts_stats: !preliminary, counts_points: !preliminary };
@@ -78,8 +79,11 @@ export function defaultSessionFlags(sessionType) {
 export function resolveSessionFlags(result, racesById = {}) {
   const race = racesById[result.race_id] || {};
   const firstStd = Array.isArray(race.sessions) && race.sessions.length ? race.sessions[0] : "Race";
-  const name = result.session || firstStd;
-  const def = defaultSessionFlags(result.session_type || "race");
+  const type = result.session_type || "race";
+  // A qualifying result with no session name recorded (older data) is keyed as
+  // "Qualifying" — never as the first race session, whose toggles are its own.
+  const name = result.session || (type === "qualifying" ? "Qualifying" : firstStd);
+  const def = defaultSessionFlags(type);
   const statsMap = race.session_stats || {};
   const pointsMap = race.session_points_enabled || {};
   return {
@@ -207,12 +211,15 @@ function startInfo(qualResults) {
 // separate: race metrics come only from race sessions, while Poles and
 // Average Start come from qualifying sessions.
 function statLine(results) {
-  // A race session with its stats toggle off is ignored for finishing-position
-  // metrics (Wins, Top 5s, Average Finish, Laps Led, …). Provisional entries
-  // (drivers who didn't race) are excluded too — they earn points only, never
-  // stats. Qualifying always feeds Poles/Average Start.
+  // A session with its stats toggle off is ignored: a race session drops out of
+  // the finishing-position metrics (Wins, Top 5s, Average Finish, Laps Led, …),
+  // and a qualifying session drops out of Poles / Average Start — that's how a
+  // qualifying run held purely for show (a grid set for visual purposes, an
+  // exhibition hot-lap session) stays on the event page without touching
+  // anyone's record. Provisional entries (drivers who didn't race) are excluded
+  // too — they earn points only, never stats.
   const rs = results.filter(r => !isQualifying(r) && r.counts_stats !== false && !r.provisional);
-  const qs = results.filter(r => isQualifying(r));
+  const qs = results.filter(r => isQualifying(r) && r.counts_stats !== false);
   // Provisionals are counted from the full race set, since `rs` now omits them.
   const provisionalCount = results.filter(r => !isQualifying(r) && r.provisional).length;
   const starts = rs.length;
