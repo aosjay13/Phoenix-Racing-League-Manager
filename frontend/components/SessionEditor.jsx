@@ -9,7 +9,7 @@ import { PointsEditorModal } from "@/components/PointsEditorModal";
 import { ImportResultsModal } from "@/components/ImportResultsModal";
 import { NONE_TEMPLATE } from "@/lib/pointsTemplates";
 import { classIdForScope, entriesEligibleForRace, entriesInSessionClass, isClassScoped, resultInSessionClass } from "@/lib/classFilter";
-import { pointsFor, configForTemplate, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
+import { pointsFor, classConfigs, classScoresOwnPoints, configForTemplate, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
 import { applyAutoFlags, detectFlagLocks } from "@/lib/autoFlags";
 import { parseTime, formatTime, formatGap, parseLapsDown, deriveLaps } from "@/lib/raceTime";
 
@@ -167,7 +167,8 @@ const LABELS = { qualifying: "Qualifying", race: "Race", heat: "Heat", consolati
 // it did before per-class sessions: one combined grid for the whole field.
 export function SessionEditor({
   race, seasonId, entries: allEntries, sessionType, sessionNames,
-  season, templates = [], sessionPoints = {}, onSessionPointsChange, onTemplatesChanged,
+  season, templates = [], sessionPoints = {}, sessionPointsByClass = {},
+  onSessionPointsChange, onTemplatesChanged,
   sessionStats = {}, onSessionStatsChange, sessionPointsEnabled = {}, onSessionPointsEnabledChange,
   canAddSession = false, onAddSession, onRemoveSession, onRenameSession,
   initialSession, onEntriesChanged, seriesName, classes = [],
@@ -545,24 +546,56 @@ export function SessionEditor({
     setOverIndex(null);
   }
 
-  const templateId = sessionPoints[session] || "";
-  const config = useMemo(() => {
-    const base = resolveSeasonConfig(season || {});
-    const template = templateId === NONE_TEMPLATE.id ? NONE_TEMPLATE : templates.find(t => t.id === templateId);
-    return configForTemplate(base, template);
-  }, [season, templates, templateId]);
+  // ── Points structure ─────────────────────────────────────────────────────
+  //
+  // Three layers, most specific last: the season's points, the CLASS's own
+  // structure when it scores on one, then the template assigned to this
+  // session. Switching class in the bar above swaps the middle layer, so the
+  // Points column (and the modal below it) re-reads the moment you change
+  // class — exactly the way it already re-reads when you change session.
+  const seasonConfig = useMemo(() => resolveSeasonConfig(season || {}), [season]);
+  const classBase = useMemo(() => classConfigs(seasonConfig, classes), [seasonConfig, classes]);
+  // The base config for a class id: its own structure, else the season's. On a
+  // combined grid this is asked per ROW, since a driver's points come from the
+  // class they raced in even when every class shares one results table.
+  const baseFor = classId => (classId && classBase[classId]) || seasonConfig;
+  const scopeClass = scoped ? classes.find(c => c.id === scopeClassId) : null;
+  const classOwnPoints = classScoresOwnPoints(scopeClass);
+  // What "no session override" scores under, named for the dropdown.
+  const baseLabel = classOwnPoints ? `${sessionClassName || scopeClass?.name || "Class"} points` : "Season default";
+  const baseConfig = scoped ? baseFor(scopeClassId) : seasonConfig;
+
+  // This session's assigned template. On a split event the assignment is per
+  // class — Pro's Race and Amateur's Race can score differently — falling back
+  // to an event-wide assignment, then to the class/season structure above.
+  const classSessionPoints = scoped ? (sessionPointsByClass[sessionClass] || {}) : {};
+  const templateId = (scoped && session in classSessionPoints)
+    ? (classSessionPoints[session] || "")
+    : (sessionPoints[session] || "");
+  const templateFor = id => (id === NONE_TEMPLATE.id ? NONE_TEMPLATE : templates.find(t => t.id === id));
+  const template = useMemo(() => templateFor(templateId), [templates, templateId]);
+  const config = useMemo(() => configForTemplate(baseConfig, template), [baseConfig, template]);
 
   // Qualifying's own points system (always the "Qualifying" session, regardless
   // of which tab is open) — used to resolve the qualifying-position bonus
   // folded into race-type rows below, so a points structure assigned
-  // specifically to Qualifying is reflected here too, not just the season/race
+  // specifically to Qualifying is reflected here too, not just the season/class
   // default. See lib/standings.js:pointsFor's `qualConfig` param.
-  const qualTemplateId = sessionPoints["Qualifying"] || "";
-  const qualConfig = useMemo(() => {
-    const base = resolveSeasonConfig(season || {});
-    const template = qualTemplateId === NONE_TEMPLATE.id ? NONE_TEMPLATE : templates.find(t => t.id === qualTemplateId);
-    return configForTemplate(base, template);
-  }, [season, templates, qualTemplateId]);
+  const qualTemplateId = (scoped && "Qualifying" in classSessionPoints)
+    ? (classSessionPoints.Qualifying || "")
+    : (sessionPoints["Qualifying"] || "");
+  const qualTemplate = useMemo(() => templateFor(qualTemplateId), [templates, qualTemplateId]);
+
+  // A row's own configs. Scoped grids are all one class; a combined grid scores
+  // each row under the class on that row.
+  const configForRow = row => (scoped ? config : configForTemplate(baseFor(row.class_id || ""), template));
+  const qualConfigForRow = row => configForTemplate(scoped ? baseConfig : baseFor(row.class_id || ""), qualTemplate);
+
+  // Assign a points system to this session — for THIS class when the event runs
+  // its classes separately, so switching class and picking a template doesn't
+  // re-point the class next door.
+  const assignSessionPoints = (name, id, type) =>
+    onSessionPointsChange(name, id, type, scoped ? sessionClass : null);
 
   // Per-session eligibility toggles, falling back to the session-type default
   // until an admin explicitly flips a switch. The stats toggle applies to every
@@ -580,8 +613,8 @@ export function SessionEditor({
 
   // Points only meaningful once a driver is in the slot.
   const rowPoints = row => (!row.entry_id ? "" : sessionType === "qualifying"
-    ? Number(config.qualPoints[row.finish_pos] ?? 0)
-    : pointsFor(row, config, qualPos[row.entry_id] ?? null, qualConfig));
+    ? Number(configForRow(row).qualPoints[row.finish_pos] ?? 0)
+    : pointsFor(row, configForRow(row), qualPos[row.entry_id] ?? null, qualConfigForRow(row)));
 
   async function handleSave() {
     const filled = rows.filter(r => r.entry_id && r.finish_pos !== "");
@@ -706,6 +739,7 @@ export function SessionEditor({
             You are entering the <strong>{sessionClassName || "class"}</strong> {LABELS[sessionType]?.toLowerCase() || "session"} for this event.
             Positions here are {sessionClassName || "this class"}&rsquo;s own order — P1 is {sessionClassName || "the class"}&rsquo;s
             {sessionType === "qualifying" ? " pole" : " winner"}. Other classes at this event have their own grid; switch with the Class menu above.
+            {classOwnPoints && <> Points below are scored on <strong>{sessionClassName || "this class"}&rsquo;s</strong> own points structure.</>}
           </span>
         </div>
       )}
@@ -743,13 +777,20 @@ export function SessionEditor({
         {onSessionPointsChange && (
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
             <div className="field" style={{ maxWidth: 280, margin: 0 }}>
-              <label>Points system · {session}</label>
+              <label>Points system · {scoped && sessionClassName ? `${sessionClassName} · ` : ""}{session}</label>
               <select value={templateId}
-                onChange={e => Promise.resolve(onSessionPointsChange(session, e.target.value, sessionType)).catch(err => showToast("error", err.message))}>
-                <option value="">Season default</option>
+                onChange={e => Promise.resolve(assignSessionPoints(session, e.target.value, sessionType)).catch(err => showToast("error", err.message))}>
+                <option value="">{baseLabel}</option>
                 <option value={NONE_TEMPLATE.id}>{NONE_TEMPLATE.name}</option>
                 {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
+              {scoped && (
+                <span style={{ fontSize: "0.75rem", color: "var(--ink-2)" }}>
+                  {classOwnPoints
+                    ? `${sessionClassName} scores on its own points structure — switching class here swaps it.`
+                    : "Applies to this class's session only."}
+                </span>
+              )}
             </div>
             <button className="btn btn-ghost" type="button" title="View, edit, or create the points structure for this session"
               style={{ marginTop: 0, whiteSpace: "nowrap" }} onClick={() => setPointsModal(true)}>
@@ -909,8 +950,9 @@ export function SessionEditor({
       {pointsModal && (
         <PointsEditorModal
           session={session} sessionType={sessionType} value={templateId}
-          templates={templates} season={season}
-          onAssign={onSessionPointsChange} onTemplatesChanged={onTemplatesChanged}
+          templates={templates} baseConfig={baseConfig} baseLabel={baseLabel}
+          classLabel={scoped ? sessionClassName : ""}
+          onAssign={assignSessionPoints} onTemplatesChanged={onTemplatesChanged}
           onClose={() => setPointsModal(false)}
         />
       )}

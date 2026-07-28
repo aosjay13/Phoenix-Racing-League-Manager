@@ -1,3 +1,5 @@
+import { classOfResult } from "@/lib/classFilter";
+
 // Default points tables mirror the PRA spreadsheet:
 // race: P1 350, P2 320, P3 300, P4 280, P5 260, then -10 per position (min 10)
 // qual: P1 35, P2 32, P3 30, P4 28, P5 26, then 31-pos (min 1)
@@ -60,6 +62,46 @@ export function configForTemplate(baseConfig, template) {
     qualPoints: parseMaybeJson(template.qual_points, baseConfig.qualPoints),
     bonuses: { ...baseConfig.bonuses, ...parseMaybeJson(template.bonus_points, {}) },
   };
+}
+
+// ── Per-class points structures ────────────────────────────────────────────
+//
+// A class can score on its own points structure. Class docs carry the same
+// race_points / qual_points / bonus_points shape a season (and a points
+// template) does, so a class is just another override layer between the season
+// and the session:
+//
+//   season default → the class's own structure → the session's template
+//
+// Every level only overrides what it actually sets, so a class that changes
+// nothing but the pole bonus still inherits the season's race scale.
+
+// Does this value hold a real points table? An unset field, an empty object and
+// unparseable JSON all mean "inherit"; `{ 1: 0 }` (what a deliberately blank
+// scale saves as) does not.
+function hasTable(value) {
+  if (!value) return false;
+  if (typeof value === "string") {
+    try { return Object.keys(JSON.parse(value) || {}).length > 0; } catch { return false; }
+  }
+  return Object.keys(value).length > 0;
+}
+
+// Does this class score on its own points structure, rather than the season's?
+export function classScoresOwnPoints(cls) {
+  return !!cls && (hasTable(cls.race_points) || hasTable(cls.qual_points) || hasTable(cls.bonus_points));
+}
+
+// The base config a class's results are scored against: the season config with
+// the class's own structure laid over it, or the season config untouched when
+// the class doesn't define one.
+export function configForClass(baseConfig, cls) {
+  return classScoresOwnPoints(cls) ? configForTemplate(baseConfig, cls) : baseConfig;
+}
+
+// class id -> that class's base config, for a whole season's class list.
+export function classConfigs(baseConfig, classes = []) {
+  return Object.fromEntries(classes.map(c => [c.id, configForClass(baseConfig, c)]));
 }
 
 // Whether a session counts toward stats/points by default, before any admin
@@ -178,16 +220,55 @@ export function buildQualPosMap(results) {
   return map;
 }
 
-// race_id -> the Qualifying session's own points_template_id (or null for the
-// season default), so the qualifying-position bonus folded into a race result
-// (see pointsFor) can be resolved against the actual points system assigned
-// to Qualifying rather than whatever template the race session happens to use.
-export function buildQualTemplateMap(results) {
+// The Qualifying session's own points_template_id (or null for the season/class
+// default), so the qualifying-position bonus folded into a race result (see
+// pointsFor) can be resolved against the actual points system assigned to
+// Qualifying rather than whatever template the race session happens to use.
+//
+// Keyed both by race and by race+class: at a split event each class runs its
+// OWN Qualifying, which can carry its own points system, so "the Qualifying
+// template for this race" is only an answer once you know whose race it is.
+export function buildQualTemplateMap(results, entriesById = {}) {
   const map = {};
   for (const r of results) {
-    if (r.session_type === "qualifying") map[r.race_id] = r.points_template_id || null;
+    if (r.session_type !== "qualifying") continue;
+    const template = r.points_template_id || null;
+    map[r.race_id] = template;
+    map[`${r.race_id}|${classOfResult(r, entriesById) || ""}`] = template;
   }
   return map;
+}
+
+// The Qualifying template a given result's qualifying bonus scores under:
+// its own class's Qualifying when that class ran one, else the event's.
+export function qualTemplateFor(map, result, entriesById = {}) {
+  const key = `${result.race_id}|${classOfResult(result, entriesById) || ""}`;
+  return key in map ? map[key] : (map[result.race_id] ?? null);
+}
+
+// Everything needed to score one season's results in one place: each result is
+// scored under its own class's structure (configForClass), with the session's
+// assigned template laid on top, and its qualifying bonus resolved against that
+// same class's Qualifying session. Every screen and stat page builds its points
+// through this, so a per-class structure reaches all of them identically.
+export function makeScorer(results, { config, classes = [], entriesById = {}, templatesById = {} } = {}) {
+  const byClass = classConfigs(config, classes);
+  const baseFor = r => byClass[classOfResult(r, entriesById)] || config;
+  const qualPosMap = buildQualPosMap(results);
+  const qualTemplates = buildQualTemplateMap(results, entriesById);
+
+  const configFor = r => configForTemplate(baseFor(r), templatesById[r.points_template_id]);
+  const qualConfigFor = r => configForTemplate(baseFor(r), templatesById[qualTemplateFor(qualTemplates, r, entriesById)]);
+  const qualPosFor = r => qualPosMap[`${r.race_id}|${r.entry_id}`] ?? null;
+
+  return {
+    qualPosMap,
+    qualPosFor,
+    baseFor,
+    configFor,
+    qualConfigFor,
+    points: r => pointsFor(r, configFor(r), qualPosFor(r), qualConfigFor(r)),
+  };
 }
 
 const round2 = n => Math.round(n * 100) / 100;
@@ -340,13 +421,14 @@ export function compareStandings(a, b, { pointsKey = "adjusted_points", nameKey 
 // scored under a different points system than the season default still
 // totals correctly — falls back to the season config when a result carries
 // no template of its own.
-export function calculateStandings(results, entries, teams = [], config, templatesById = {}) {
+// `classes` (optional) is the season's class list, so a class scoring on its
+// own points structure totals under that structure — in its own championship
+// AND in the combined table, where each row is scored under the class its
+// driver actually raced in.
+export function calculateStandings(results, entries, teams = [], config, templatesById = {}, classes = []) {
   const entriesById = Object.fromEntries(entries.map(e => [e.id, e]));
   const teamsById = Object.fromEntries(teams.map(t => [t.id, t]));
-  const configFor = r => configForTemplate(config, templatesById[r.points_template_id]);
-  const qualPosMap = buildQualPosMap(results);
-  const qualTemplateByRace = buildQualTemplateMap(results);
-  const qualConfigFor = r => configForTemplate(config, templatesById[qualTemplateByRace[r.race_id]]);
+  const scorer = makeScorer(results, { config, classes, entriesById, templatesById });
 
   const byEntry = {};
   for (const r of results) (byEntry[r.entry_id] ??= []).push(r);
@@ -358,12 +440,12 @@ export function calculateStandings(results, entries, teams = [], config, templat
     // Championship points come only from race-type sessions (race, heat,
     // consolation, feature) — qualifying results never earn points on their
     // own, only a starting-position bonus folded into the next session, scored
-    // against Qualifying's own points structure (qualConfigFor) so a points
+    // against Qualifying's own points structure (see makeScorer) so a points
     // system assigned specifically to Qualifying actually reaches the total.
     // A session whose points toggle is off is skipped even if it carries a
     // points template.
     const raceResults = entryResults.filter(r => !isQualifying(r) && r.counts_points !== false);
-    const pointsList = raceResults.map(r => pointsFor(r, configFor(r), qualPosMap[`${r.race_id}|${r.entry_id}`] ?? null, qualConfigFor(r)));
+    const pointsList = raceResults.map(r => scorer.points(r));
     const totalPoints = pointsList.reduce((a, b) => a + b, 0);
 
     let droppedPoints = 0;

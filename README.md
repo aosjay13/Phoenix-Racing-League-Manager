@@ -108,8 +108,14 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      Roster page or from the Class column in the results grid; deleting a class only unassigns
      its drivers, never their points or stats. Give a class a **Car Type** and the schedule,
      event pages and Class menu all show which car goes with which class — leave it blank to
-     inherit the season's car. **Per-Class Schedules** (a season setting) lets each class run
-     its own calendar — see Races below.
+     inherit the season's car. Tick **This class scores on its own points structure** and the
+     class gets its own scale, qualifying points and bonuses — the same editor the season uses,
+     templates included — so Pro and Amateur can pay different points for the same finishing
+     position. It starts seeded from the season's current points, and every screen follows it:
+     switch class in the results grid and the Points column re-scores on that class's structure
+     automatically. Leave it unticked (the default) and the class scores on the season's points
+     exactly as before. **Per-Class Schedules** (a season setting) lets each class run its own
+     calendar — see Races below.
    - **Races** — name, track (+ track logo), round number, date, and session list (e.g.
      `Qualifying, Race` for a weekend with a scored qualifying session and a main race).
      With **Per-Class Schedules** on for the season, each race also gets a **Class** field:
@@ -122,7 +128,9 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      field — instead of one combined grid. Set the default on the season and flip any single
      event on its Race Info tab. On a split event, the Schedule, Race Entry and race edit
      screens all show an **Entering results for &lt;class&gt;** menu at the top; pick the class,
-     enter its grid, switch to the next.
+     enter its grid, switch to the next. The **Points system** picker next to the grid is that
+     class's too on a split event — Pro's Race and Amateur's Race at the same event can score on
+     different templates, and switching class swaps the picker with it.
 2. **Roster & Teams** (`/roster`) — select a **Series** in the top dropdowns to manage that
    series' roster:
    - **Teams** — create teams with logos.
@@ -207,9 +215,9 @@ scoped to the active league (sent as an `X-League-Id` header; see `lib/serverAut
 accounts and their roles span leagues.
 
 `games (league_id)` → `series (game_id)` → `seasons (series_id, game_id, drop_weeks, points_scale,
-combined_championship)` → `races (season_id, sessions[])`, `classes (season_id, name, sort_order)`
+combined_championship)` → `races (season_id, sessions[])`, `classes (season_id, name, sort_order, race_points?)`
 and `entries (season_id, team_id, class_id, user_id, number)` / `teams (season_id)` →
-`results (race_id, season_id, entry_id, class_id)`. `users` holds player profiles; linking a
+`results (race_id, season_id, entry_id, class_id, points_template_id)`. `users` holds player profiles; linking a
 roster entry to a user account is what feeds their public career stats.
 
 **Classes** are the optional fourth tier. A class belongs to one season; a roster entry points at
@@ -255,6 +263,24 @@ table by class; and Skill Rating exchanges are keyed by class on a split event, 
 never rated against an Amateur car they never shared a grid with. Since a split event has no single
 outright order, an overall championship across classes just adds their points together — turn
 **Enable Overall Championship** off for a pure class-championship season.
+
+**Which class pays what.** Points resolve through the same shape of fallback the car does, most
+specific last: the season's structure → the **class's own structure** (`classes.race_points` /
+`qual_points` / `bonus_points`, all unset by default = inherit) → the template assigned to the
+session. Each level overrides only the fields it actually sets, so a class that changes nothing but
+the pole bonus still scores the season's race scale. `classScoresOwnPoints` / `configForClass` in
+`lib/standings.js` hold that rule, and `makeScorer` applies it everywhere points are computed —
+standings, class championships, career and team profiles, venue leaderboards, the event page and the
+live Points column in the results editor — so a class's structure can't reach one screen and miss
+another. In the combined table each row is still scored under the class its driver raced in, which
+is what keeps "All Classes" honest when the classes pay differently.
+
+On an event whose classes run separate sessions, the per-session assignment is per class as well
+(`races.session_points_by_class[class][session]`, falling back to the event-wide
+`races.session_points[session]`). Assigning one re-points only that class's saved results, so
+re-scoring Pro's Feature leaves Amateur's alone, and clearing it hands that class back to the
+event-wide assignment rather than to nothing. A class's Qualifying is resolved the same way, so the
+qualifying bonus folded into a race result comes from *that class's* Qualifying structure.
 
 **Which car goes with which class.** The car on track is a three-level fallback, most specific
 first: `races.car` (this one event runs something different) → `classes.car` (this class's machinery

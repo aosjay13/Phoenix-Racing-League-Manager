@@ -41,14 +41,14 @@ export function seasonChampions(season, results, entries, config, templatesById 
   for (const c of classes) {
     const classResults = filterResultsByClass(results, c.id, entriesById);
     if (!classResults.length) continue;
-    const top = calculateStandings(classResults, filterEntriesByClass(entries, c.id), [], config, templatesById).rows[0];
+    const top = calculateStandings(classResults, filterEntriesByClass(entries, c.id), [], config, templatesById, classes).rows[0];
     if (top) crowns.push({ entry_id: top.entry_id, kind: "class", class_id: c.id, class_name: c.name ?? null });
   }
 
   // The overall title. A season without classes has only this one; a season
   // with classes awards it only when the combined championship is enabled.
   if (!classes.length || season.combined_championship !== false) {
-    const top = calculateStandings(results, entries, [], config, templatesById).rows[0];
+    const top = calculateStandings(results, entries, [], config, templatesById, classes).rows[0];
     if (top) crowns.push({ entry_id: top.entry_id, kind: "overall", class_id: null, class_name: null });
   }
 

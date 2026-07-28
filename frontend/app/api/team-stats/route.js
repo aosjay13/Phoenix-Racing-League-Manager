@@ -3,14 +3,11 @@ import { db } from "@/lib/firebase";
 import { getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
 import {
   aggregateCareerStats,
-  buildQualPosMap,
-  buildQualTemplateMap,
   compareStandings,
-  configForTemplate,
   decorateRaceBonuses,
   decorateSessionFlags,
   isQualifying,
-  pointsFor,
+  makeScorer,
   resolveSeasonConfig,
 } from "@/lib/standings";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
@@ -43,11 +40,12 @@ export async function GET(request) {
   const keyFor = e => e.driver_id ? `d:${e.driver_id}` : e.user_id ? `u:${e.user_id}` : `n:${String(e.name || "").trim().toLowerCase()}`;
 
   for (const season of seasons) {
-    const [teamsSnap, entriesSnap, resultsSnap, racesSnap] = await Promise.all([
+    const [teamsSnap, entriesSnap, resultsSnap, racesSnap, seasonClasses] = await Promise.all([
       db().collection("teams").where("season_id", "==", season.id).get(),
       db().collection("entries").where("season_id", "==", season.id).get(),
       db().collection("results").where("season_id", "==", season.id).get(),
       db().collection("races").where("season_id", "==", season.id).get(),
+      fetchSeasonClasses(season.id),
     ]);
     const matchTeams = teamsSnap.docs.filter(d => String(d.data().name || "").trim().toLowerCase() === wanted);
     if (!matchTeams.length) continue;
@@ -62,8 +60,9 @@ export async function GET(request) {
     const entriesById = Object.fromEntries(entries.map(e => [e.id, e]));
     const racesById = Object.fromEntries(racesSnap.docs.map(d => [d.id, d.data()]));
     const results = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById));
-    const qualPosMap = buildQualPosMap(results);
-    const qualTemplateByRace = buildQualTemplateMap(results);
+    // Each result scores under its driver's class, so a class with its own
+    // points structure carries that structure into the team totals.
+    const scorer = makeScorer(results, { config, classes: seasonClasses, entriesById, templatesById });
 
     const seasonResults = [];
     for (const r of results) {
@@ -71,7 +70,7 @@ export async function GET(request) {
       if (!entry || !teamIds.has(entry.team_id)) continue;
       const scored = {
         ...r,
-        points: (isQualifying(r) || r.counts_points === false) ? 0 : pointsFor(r, configForTemplate(config, templatesById[r.points_template_id]), qualPosMap[`${r.race_id}|${r.entry_id}`] ?? null, configForTemplate(config, templatesById[qualTemplateByRace[r.race_id]])),
+        points: (isQualifying(r) || r.counts_points === false) ? 0 : scorer.points(r),
       };
       all.push(scored);
       seasonResults.push(scored);
@@ -87,7 +86,6 @@ export async function GET(request) {
     // Every championship won on this team that season — class champions
     // included, and no overall champion at all when the season runs
     // class-only titles. A dual crown (class + overall) is one championship.
-    const seasonClasses = await fetchSeasonClasses(season.id);
     for (const [entryId, rec] of titlesByEntry(seasonChampions(season, results, entries, config, templatesById, seasonClasses))) {
       const champ = entriesById[entryId];
       if (!champ || !teamIds.has(champ.team_id)) continue;

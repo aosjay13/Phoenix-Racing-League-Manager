@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
-import { buildQualPosMap, configForTemplate, decorateRaceBonuses, isQualifying, pointsFor, resolveSeasonConfig } from "@/lib/standings";
+import { decorateRaceBonuses, isQualifying, makeScorer, resolveSeasonConfig } from "@/lib/standings";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
 import { gameAlias } from "@/lib/aliases";
 import { fetchSeasonClasses, classOfResult, racePerClassResults } from "@/lib/classServer";
@@ -25,10 +25,13 @@ export async function GET(request, { params }) {
 
   const season = seasonDoc.exists ? { id: seasonDoc.id, ...seasonDoc.data() } : null;
   const config = resolveSeasonConfig(season || {});
-  const configFor = r => configForTemplate(config, templatesById[r.points_template_id]);
   const entriesById = Object.fromEntries(entriesSnap.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
   const teamsById = Object.fromEntries(teamsSnap.docs.map(d => [d.id, d.data()]));
   const all = decorateRaceBonuses(resultsSnap.docs.map(d => d.data()));
+  // Points shown per row come from the class that row raced in — its own points
+  // structure when it has one — with the session's template on top.
+  const scorer = makeScorer(all, { config, classes, entriesById, templatesById });
+  const configFor = r => scorer.configFor(r);
 
   // Contextual name rendering: this event belongs to one game (season.game_id),
   // so resolve each driver's alias for that game (their on-track name) and stamp
@@ -63,7 +66,7 @@ export async function GET(request, { params }) {
 
   const raceResults = all.filter(r => !isQualifying(r));
   const qualResults = all.filter(r => isQualifying(r));
-  const qualPosMap = buildQualPosMap(all);
+  const qualPosMap = scorer.qualPosMap;
 
   // Race sessions: whatever the event declares (standard `sessions`, or for
   // heat-format events its heats/consolations/feature), plus any found in
@@ -85,7 +88,7 @@ export async function GET(request, { params }) {
         // Start = the driver's own saved start_pos, else their qualifying
         // finishing position. Finish is scored/ordered independently of both.
         const start = r.start_pos != null ? Number(r.start_pos) : qp;
-        return { ...joinEntry(r), start_pos: start, points: pointsFor(r, configFor(r), qp) };
+        return { ...joinEntry(r), start_pos: start, points: scorer.points(r) };
       })
       .sort((a, b) => a.finish_pos - b.finish_pos),
   })).filter(s => s.results.length || names.length === 1);

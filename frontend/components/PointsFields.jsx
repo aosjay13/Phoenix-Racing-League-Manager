@@ -1,0 +1,150 @@
+"use client";
+
+import { useState } from "react";
+import { api } from "@/lib/api";
+import { BONUS_TYPES } from "@/lib/standings";
+import { BUILTIN_TEMPLATES, tableToList } from "@/lib/pointsTemplates";
+import { pointsFormToTemplate } from "@/lib/seasonForm";
+
+// One points structure, as an editable block of fields: the template loader,
+// the race scale, the qualifying scale (with its own loader, so qualifying can
+// run a different template to the race), every bonus, and "save this setup as
+// a template".
+//
+// Rendered by the Season form and by the Class form in League Setup, so a
+// class's points structure is edited with exactly the same controls a season's
+// is — the two can't drift apart, and a template loads the same way in both.
+//
+// State lives in the caller. `value` is { race_points, qual_points, bonuses }
+// (comma-list strings + a bonus map of strings, straight off the inputs) and
+// `onPatch` takes a partial of that shape. See lib/seasonForm.js for the
+// serialization into what the API stores.
+export function PointsFields({
+  value, onPatch, templates = [], onTemplatesChanged,
+  disabled = false, onError, noPoints = false, blankWarning = "",
+}) {
+  const [templateId, setTemplateId] = useState("");
+  const [qualTemplateId, setQualTemplateId] = useState("");
+  const [templateName, setTemplateName] = useState("");
+
+  const fail = msg => (onError ? onError(msg) : alert(msg));
+
+  // Load a whole template: race scale, qualifying scale and bonuses together.
+  function applyTemplate(id) {
+    setTemplateId(id);
+    setQualTemplateId("");   // a full-template load also sets qualifying points
+    const builtin = BUILTIN_TEMPLATES.find(x => x.id === id);
+    const saved = templates.find(x => x.id === id);
+    if (!builtin && !saved) return;
+    let bonusSrc = builtin ? builtin.bonuses : (saved.bonus_points || {});
+    if (typeof bonusSrc === "string") { try { bonusSrc = JSON.parse(bonusSrc); } catch { bonusSrc = {}; } }
+    onPatch({
+      race_points: (builtin ? builtin.race : tableToList(saved.race_points)) || "",
+      qual_points: (builtin ? builtin.qual : tableToList(saved.qual_points)) || "",
+      bonuses: Object.fromEntries(BONUS_TYPES.map(([k]) => [k, String(bonusSrc[k] ?? 0)])),
+    });
+  }
+
+  // Load ONLY the qualifying scale, leaving race points and bonuses alone — so
+  // qualifying can run a different template to the race.
+  function applyQualTemplate(id) {
+    setQualTemplateId(id);
+    if (!id) return;
+    const builtin = BUILTIN_TEMPLATES.find(x => x.id === id);
+    const saved = templates.find(x => x.id === id);
+    if (!builtin && !saved) return;
+    onPatch({ qual_points: (builtin ? builtin.qual : tableToList(saved.qual_points)) || "" });
+  }
+
+  async function saveAsTemplate() {
+    if (!templateName.trim()) return fail("Give the template a name first.");
+    try {
+      await api("/api/points-templates", { method: "POST", body: pointsFormToTemplate(value, templateName.trim()) });
+      setTemplateName("");
+      onTemplatesChanged?.();
+    } catch (err) { fail(err.message); }
+  }
+
+  async function deleteTemplate() {
+    const t = templates.find(x => x.id === templateId);
+    if (!t || !confirm(`Delete template "${t.name}"? Seasons already using it keep their saved points.`)) return;
+    try {
+      await api(`/api/points-templates/${t.id}`, { method: "DELETE" });
+      setTemplateId("");
+      onTemplatesChanged?.();
+    } catch (err) { fail(err.message); }
+  }
+
+  return (
+    <>
+      <div className="field">
+        <label>Load Template (race + qualifying + bonuses)</label>
+        <div style={{ display: "flex", gap: 8 }}>
+          <select value={templateId} disabled={disabled} onChange={e => applyTemplate(e.target.value)} style={{ flex: 1 }}>
+            <option value="">Custom / start blank…</option>
+            <optgroup label="Standard">
+              {BUILTIN_TEMPLATES.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </optgroup>
+            {templates.length > 0 && (
+              <optgroup label="My Templates">
+                {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </optgroup>
+            )}
+          </select>
+          {templateId && templates.some(t => t.id === templateId) && (
+            <button type="button" className="btn btn-danger" style={{ marginTop: 0, padding: "6px 12px" }} onClick={deleteTemplate}>✕</button>
+          )}
+        </div>
+      </div>
+
+      <div className="field"><label>Race Points — comma-separated, 1st place first (blank = 0 points)</label>
+        <textarea rows={3} disabled={disabled} value={value.race_points}
+          placeholder="350, 320, 300, 280, 260, 250, 240, …"
+          onChange={e => onPatch({ race_points: e.target.value })} />
+        {noPoints && (
+          <span style={{ fontSize: "0.78rem", color: "var(--accent-gold, #e2b714)" }}>
+            {blankWarning || "⚠ Blank scores 0 for every finishing position — load a template above if that isn’t what you want."}
+          </span>
+        )}
+      </div>
+
+      <div className="field">
+        <label>Load Qualifying Points Template</label>
+        <select value={qualTemplateId} disabled={disabled} onChange={e => applyQualTemplate(e.target.value)}>
+          <option value="">Custom / keep current…</option>
+          <optgroup label="Standard">
+            {BUILTIN_TEMPLATES.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </optgroup>
+          {templates.length > 0 && (
+            <optgroup label="My Templates">
+              {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </optgroup>
+          )}
+        </select>
+        <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
+          Fills only the qualifying scale below from the chosen template, so qualifying can score on its own template.
+        </span>
+      </div>
+
+      <div className="field"><label>Qualifying Points — comma-separated, pole first (blank = 0 points)</label>
+        <textarea rows={2} disabled={disabled} value={value.qual_points}
+          placeholder="35, 32, 30, 28, 26, 25, …"
+          onChange={e => onPatch({ qual_points: e.target.value })} /></div>
+
+      {BONUS_TYPES.map(([key, label]) => (
+        <div className="field" key={key}><label>{label}</label>
+          <input type="number" min="0" disabled={disabled} value={value.bonuses[key]}
+            onChange={e => onPatch({ bonuses: { ...value.bonuses, [key]: e.target.value } })} /></div>
+      ))}
+
+      <div className="field">
+        <label>Save Current Setup as Template</label>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input value={templateName} disabled={disabled} onChange={e => setTemplateName(e.target.value)}
+            placeholder="e.g. PRA Standard, Sprint Cup" style={{ flex: 1 }} />
+          <button type="button" className="btn btn-ghost" style={{ marginTop: 0 }} onClick={saveAsTemplate}>Save</button>
+        </div>
+      </div>
+    </>
+  );
+}

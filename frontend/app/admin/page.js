@@ -12,7 +12,10 @@ import { TRACK_TYPES } from "@/lib/trackTypes";
 import { listToTableOrZero, tableToList } from "@/lib/pointsTemplates";
 import { carForClass } from "@/lib/classFilter";
 import { SeasonForm } from "@/components/SeasonForm";
-import { BLANK_SEASON_FORM, seasonFormToBody, seasonToForm } from "@/lib/seasonForm";
+import { PointsFields } from "@/components/PointsFields";
+import { BLANK_SEASON_FORM, scoresNoPoints, seasonFormToBody, seasonToForm } from "@/lib/seasonForm";
+import { BLANK_CLASS_FORM, classFormToBody, classToForm, seasonPointsAsClassFields } from "@/lib/classForm";
+import { classScoresOwnPoints } from "@/lib/standings";
 
 function Panel({ title, sub, step, muted, children }) {
   return (
@@ -152,8 +155,23 @@ function AdminInner() {
   // Classes divide the selected season's field into separately-scored groups
   // ("Pro"/"Amateur", GT3/LMP2). Empty list = a single-class season, which is
   // exactly how the app behaved before classes existed.
-  const blankClass = { name: "", color: "", description: "", car: "", sort_order: "" };
+  const blankClass = BLANK_CLASS_FORM;
   const [classForm, setClassForm] = useState(blankClass);
+  // The class points block is collapsed until an admin goes looking for it, the
+  // same way the season's is.
+  const [showClassPoints, setShowClassPoints] = useState(false);
+  const patchClassForm = patch => setClassForm(f => ({ ...f, ...(typeof patch === "function" ? patch(f) : patch) }));
+  // Turning a class's own structure ON seeds it from the season it belongs to,
+  // so an override starts from what the class was already scoring rather than
+  // from blank — which would silently drop it to 0 points a race.
+  function toggleOwnPoints(on) {
+    setShowClassPoints(on);
+    setClassForm(f => ({
+      ...f,
+      own_points: on,
+      ...(on && !f.race_points && !f.qual_points ? seasonPointsAsClassFields(season || {}) : {}),
+    }));
+  }
   const [classes, setClasses] = useState([]);
   const loadClasses = useCallback(() => {
     if (!seasonId) { setClasses([]); return; }
@@ -339,19 +357,19 @@ function AdminInner() {
             Game / Series / Season on Standings, Stats and Records. Assign drivers to a class on the{" "}
             <strong>Roster</strong> page or right in the results grid. Give a class its own{" "}
             <strong>Car Type</strong> and the schedule shows which car goes with which class — handy
-            when divisions run different machinery.
+            when divisions run different machinery. Each class can also score on its own{" "}
+            <strong>points structure</strong>, so Pro and Amateur pay different points for the same
+            finishing position.
           </p>
           <form onSubmit={e => {
             e.preventDefault();
-            const body = {
-              name: classForm.name,
-              color: classForm.color,
-              description: classForm.description,
-              car: classForm.car,
-              sort_order: classForm.sort_order === "" ? classes.length : Number(classForm.sort_order),
-            };
+            const body = classFormToBody(classForm, classes.length);
             if (!editIds.class) body.season_id = seasonId;
-            save("/api/classes", body, editIds.class, () => { setClassForm(blankClass); setEditId("class", null); });
+            save("/api/classes", body, editIds.class, () => {
+              setClassForm(blankClass);
+              setShowClassPoints(false);
+              setEditId("class", null);
+            });
             setTimeout(loadClasses, 400);
           }}>
             <div className="field"><label>Class Name</label>
@@ -374,10 +392,43 @@ function AdminInner() {
             <div className="field"><label>Description</label>
               <input disabled={!seasonId} value={classForm.description} placeholder="Optional — e.g. Top split, invite only"
                 onChange={e => setClassForm(f => ({ ...f, description: e.target.value }))} /></div>
+
+            <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
+              <input type="checkbox" id="class_own_points" disabled={!seasonId} checked={!!classForm.own_points}
+                onChange={e => toggleOwnPoints(e.target.checked)}
+                style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+              <label htmlFor="class_own_points" style={{ margin: 0 }}>
+                This class scores on its own points structure
+                <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
+                  Off (default): the class scores on {season?.name ?? "the season"}&rsquo;s points, exactly as
+                  before. On: the scale, qualifying points and bonuses below apply to every result this class
+                  runs — its own championship and its share of the combined table alike — and the results
+                  screen switches to them automatically when you pick this class. Seeded from the
+                  season&rsquo;s current points so you start from what it already scores. A race session can
+                  still override this class&rsquo;s points for one session.
+                </span>
+              </label>
+            </div>
+
+            {classForm.own_points && (
+              <>
+                <button type="button" className="btn btn-ghost" style={{ marginTop: 4 }}
+                  onClick={() => setShowClassPoints(v => !v)}>
+                  {showClassPoints ? "▾" : "▸"} {classForm.name || "Class"} Points &amp; Bonuses
+                </button>
+                {showClassPoints && (
+                  <PointsFields value={classForm} onPatch={patchClassForm} templates={templates}
+                    onTemplatesChanged={loadTemplates} disabled={!seasonId} onError={msg => showToast("error", msg)}
+                    noPoints={scoresNoPoints(classForm)}
+                    blankWarning="⚠ Blank scores 0 for every finishing position in this class — load a template above, or untick the box to score on the season's points." />
+                )}
+              </>
+            )}
+
             <button className="btn btn-primary" type="submit" disabled={!seasonId}>{editIds.class ? "Save Changes" : "Add Class"}</button>
             {editIds.class && (
               <button className="btn btn-ghost" type="button" style={{ marginLeft: 8 }}
-                onClick={() => { setEditId("class", null); setClassForm(blankClass); }}>Cancel</button>
+                onClick={() => { setEditId("class", null); setClassForm(blankClass); setShowClassPoints(false); }}>Cancel</button>
             )}
           </form>
           <div style={{ marginTop: 16 }}>
@@ -387,20 +438,19 @@ function AdminInner() {
               </p>
             )}
             {classes.map(c => (
-              <ItemRow key={c.id} name={c.name} meta={carForClass(season, c)} editing={editIds.class === c.id}
+              <ItemRow key={c.id} name={c.name}
+                meta={[carForClass(season, c), classScoresOwnPoints(c) ? "own points" : null].filter(Boolean).join(" · ")}
+                editing={editIds.class === c.id}
                 onEdit={() => {
                   setEditId("class", c.id);
-                  setClassForm({
-                    name: c.name || "", color: c.color || "", description: c.description || "",
-                    car: c.car || "",
-                    sort_order: c.sort_order != null ? String(c.sort_order) : "",
-                  });
+                  setClassForm(classToForm(c));
+                  setShowClassPoints(classScoresOwnPoints(c));
                 }}
                 onDelete={async () => {
-                  if (!confirm(`Delete class "${c.name}"? Its drivers keep every point and stat they've scored — they just become unclassified.`)) return;
+                  if (!confirm(`Delete class "${c.name}"? Its drivers keep every stat they've scored — they just become unclassified.${classScoresOwnPoints(c) ? " Its own points structure goes with it, so their results re-score on the season's points." : ""}`)) return;
                   try {
                     await api(`/api/classes/${c.id}`, { method: "DELETE" });
-                    if (editIds.class === c.id) { setClassForm(blankClass); setEditId("class", null); }
+                    if (editIds.class === c.id) { setClassForm(blankClass); setShowClassPoints(false); setEditId("class", null); }
                     loadClasses();
                     refresh();
                   } catch (err) { showToast("error", err.message); }

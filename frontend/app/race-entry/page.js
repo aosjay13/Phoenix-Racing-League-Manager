@@ -76,15 +76,21 @@ function RaceEntryInner() {
   const scopeName = scopes.find(s => s.value === scope)?.label ?? "";
   const scopeCar = carForRace(selectedRace, season, classes.find(c => c.id === scope));
   const sessionPoints = selectedRace?.session_points || {};
+  const sessionPointsByClass = selectedRace?.session_points_by_class || {};
 
   const patchRace = updated => setRaces(prev => prev.map(r => (r.id === raceId ? { ...r, ...updated } : r)));
 
   // Saves the assignment on the race AND cascades it onto any already-saved
   // results for that session, so points re-score everywhere immediately.
-  async function saveSessionPoints(name, templateId, sessionType = "race") {
+  // `sessionClass` is set on a split event, where the assignment belongs to ONE
+  // class's session rather than the event's — see the session-points route.
+  async function saveSessionPoints(name, templateId, sessionType = "race", sessionClass = null) {
     const updated = await api(`/api/races/${raceId}/session-points`, {
       method: "POST",
-      body: { session: name, template_id: templateId || "", session_type: sessionType },
+      body: {
+        session: name, template_id: templateId || "", session_type: sessionType,
+        ...(sessionClass ? { session_class: sessionClass } : {}),
+      },
     });
     patchRace(updated);
   }
@@ -153,7 +159,7 @@ function RaceEntryInner() {
             race={selectedRace} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={series?.name}
             classes={classes} sessionClass={perClassResults ? scope : null} sessionClassName={perClassResults ? scopeName : ""}
             sessionType="race" sessionNames={stdSessions}
-            season={season} templates={templates} sessionPoints={sessionPoints} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
+            season={season} templates={templates} sessionPoints={sessionPoints} sessionPointsByClass={sessionPointsByClass} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
             canAddSession onAddSession={addStdSession} onRemoveSession={removeStdSession} onRenameSession={renameStdSession}
           />
         ))}
