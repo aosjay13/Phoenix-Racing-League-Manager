@@ -46,6 +46,27 @@ function CarCell({ summary, classCars }) {
   return summary.car || <span style={{ color: "var(--ink-2)" }}>—</span>;
 }
 
+// The Pole / Winner cells. Normally one driver for the round. At "All Classes"
+// on a multi-class season, a round several classes run carries
+// `class_summaries` — each class has its own pole and winner, so the cell
+// stacks one line per class instead of showing one class's driver as if it were
+// the round's.
+function PersonCell({ summary, classSummaries, field }) {
+  if (classSummaries?.length && summary?.has_results) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        {classSummaries.map(cs => (
+          <span key={cs.class_id} style={{ fontSize: "0.8rem", whiteSpace: "nowrap" }}>
+            <span className="badge" style={{ marginRight: 6 }}>{cs.class_name}</span>
+            <Person p={cs[field]} />
+          </span>
+        ))}
+      </div>
+    );
+  }
+  return <Person p={summary?.[field]} />;
+}
+
 export default function SchedulePage() {
   const { seasonId } = useLeague();
   // A concrete season shows that season's full event table (with admin tools);
@@ -369,8 +390,8 @@ function SeasonSchedule() {
                       )}
                     </td>
                     <td style={{ textAlign: "left" }}><CarCell summary={s} classCars={r.class_cars} /></td>
-                    <td style={{ textAlign: "left" }}><Person p={s.pole} /></td>
-                    <td style={{ textAlign: "left", fontWeight: s.winner ? 600 : undefined }}><Person p={s.winner} /></td>
+                    <td style={{ textAlign: "left" }}><PersonCell summary={s} classSummaries={r.class_summaries} field="pole" /></td>
+                    <td style={{ textAlign: "left", fontWeight: s.winner ? 600 : undefined }}><PersonCell summary={s} classSummaries={r.class_summaries} field="winner" /></td>
                     <td style={{ fontVariantNumeric: "tabular-nums" }}>{s.num_drivers || "—"}</td>
                     <td>
                       {s.has_results

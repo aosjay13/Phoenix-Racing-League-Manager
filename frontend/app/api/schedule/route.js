@@ -4,6 +4,7 @@ import { getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
 import { decorateSessionFlags } from "@/lib/standings";
 import { summarizeRace } from "@/lib/raceSummaryServer";
 import { classIdsInSeason, fetchSeasonClasses, filterRacesByClass, carForClass, carsByClassForRace } from "@/lib/classServer";
+import { raceInClass } from "@/lib/classFilter";
 
 export const dynamic = "force-dynamic";
 
@@ -68,10 +69,24 @@ async function oneSeason(seasonId, classIdParam = "", className = "") {
   // the round is pinned to (a Pro-only round shows Pro's car at "All Classes"),
   // else none — leaving the season default.
   const carClassFor = r => viewClass ?? (r.class_id ? classes.find(c => c.id === r.class_id) ?? null : null);
+  // At "All Classes" on a multi-class season, a round several classes run has a
+  // pole and a winner PER CLASS — a single combined summary would show whichever
+  // class's P1 happened to sort first. Each such round carries `class_summaries`
+  // so the calendar can list every class's pole/winner side by side.
+  const classSummariesFor = r => {
+    if (viewClass || classes.length < 2) return [];
+    const running = classes.filter(c => raceInClass(r, c.id));
+    if (running.length < 2) return [];
+    return running.map(c => {
+      const s = summarizeRace(r, results, entriesById, null, c.id);
+      return { class_id: c.id, class_name: c.name, pole: s.pole, winner: s.winner };
+    });
+  };
   const rows = races.map(r => ({
     ...r,
     class_name: r.class_id ? (classNameById[r.class_id] ?? null) : null,
     class_cars: viewClass ? [] : carsByClassForRace(r, season, classes),
+    class_summaries: classSummariesFor(r),
     summary: summarizeRace(r, results, entriesById, carForClass(season, carClassFor(r)), classSel),
   }));
   return NextResponse.json(rows);
