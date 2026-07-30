@@ -1436,18 +1436,19 @@ tbody tr:hover {
 .schedule-table td { vertical-align: middle; }
 
 /* ── Qualifying entry grid ───────────────────── */
+/* ⠿ · Pos · Driver · [Class] · Qual Time · To Lead · Gap · Pts · ✕ */
 .qual-grid {
   display: grid;
-  grid-template-columns: 22px 70px minmax(160px, 1fr) 140px 80px 34px;
+  grid-template-columns: 22px 70px minmax(160px, 1fr) 140px 100px 100px 80px 34px;
   gap: 8px;
   align-items: center;
-  min-width: 520px;
+  min-width: 720px;
   margin-bottom: 16px;
 }
 
 .qual-grid.has-class {
-  grid-template-columns: 22px 70px minmax(160px, 1fr) 108px 140px 80px 34px;
-  min-width: 640px;
+  grid-template-columns: 22px 70px minmax(160px, 1fr) 108px 140px 100px 100px 80px 34px;
+  min-width: 840px;
 }
 
 .qual-grid select {
