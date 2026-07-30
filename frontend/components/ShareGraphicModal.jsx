@@ -21,12 +21,14 @@ import { createPortal } from "react-dom";
 //   defaultTitle  – pre-filled headline (editable by the user)
 //   subtitle      – muted meta line under the title (series · season · date …)
 //   columns       – [{ key?, label, align?, locked? }]  (align: "left"|"center"|"right")
-//                   locked columns can't be switched off in "Displayed Stats".
+//                   every column starts ticked in "Displayed Stats"; locked ones
+//                   can't be switched off at all.
 //   rows          – [{ cells: (string|number)[], rank? }]  cells.length === columns.length
 //                   rank (1..3) tints the row's leading cell gold/silver/bronze.
 //   logos         – [{ label, url }] logos the user can drop into the header.
 //   leagueName    – pre-fills the League Name field (from League Settings)
-//   leagueLogoUrl – pre-fills the League Logo picker (from League Settings)
+//   leagueLogoUrl – offered as "League Settings logo" in the League Logo picker.
+//                   Both logo pickers start on None — a logo is opt-in.
 
 const THEMES = {
   dark: {
@@ -65,10 +67,11 @@ const ROW_OPTIONS = [10, 15, 20, 30];
 // callers that pass hand-built column lists without a `key`.
 const colKey = (c, i) => c.key ?? `${c.label}-${i}`;
 
-// The columns a screen wants switched off when the exporter opens. A column
-// with no `on` flag is on, so callers that don't opt in behave as before.
-function defaultHidden(columns) {
-  return new Set(columns.map((c, i) => (c.locked || c.on !== false ? null : colKey(c, i))).filter(Boolean));
+// Every column a screen offers starts ticked — the graphic opens showing all
+// of the data, and anything unwanted is one click away in "Displayed Stats".
+// (The table scales its type down as columns are added, see tableScale.)
+function defaultHidden() {
+  return new Set();
 }
 
 // The graphic is a fixed 1080px wide, so the more columns are on, the less room
@@ -104,14 +107,14 @@ export function ShareGraphicModal({
   const [logoIdx, setLogoIdx] = useState(-1);     // index into `logos`, or -1 = none
   const [uploadedLogo, setUploadedLogo] = useState(null); // data URL from a file upload
   const [league, setLeague] = useState(leagueName);
-  const [leagueLogo, setLeagueLogo] = useState(leagueLogoUrl || "");
+  // Logos start off — a plain graphic is the common case, and both pickers
+  // still offer the league/series/track logos (and an upload) a click away.
+  const [leagueLogo, setLeagueLogo] = useState("");
   const [uploadedLeagueLogo, setUploadedLeagueLogo] = useState(null);
   const [limit, setLimit] = useState(() => (rows.length > 15 ? 15 : rows.length || 15));
-  // Column keys the user has switched OFF. Seeded from each column's `on` flag
-  // so a screen with fifteen stats opens on a readable headline set rather than
-  // an unreadably wide table — every column is still one click away in the
-  // stat picker.
-  const [hidden, setHidden] = useState(() => defaultHidden(columns));
+  // Column keys the user has switched OFF. Starts empty: the graphic opens with
+  // every stat the screen offers already on it.
+  const [hidden, setHidden] = useState(() => defaultHidden());
   const [pickerOpen, setPickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -125,10 +128,10 @@ export function ShareGraphicModal({
       setLimit(rows.length > 15 ? 15 : rows.length || 15);
       setUploadedLogo(null);
       setUploadedLeagueLogo(null);
-      setLogoIdx(logos.length ? 0 : -1);
+      setLogoIdx(-1);
       setLeague(leagueName);
-      setLeagueLogo(leagueLogoUrl || "");
-      setHidden(defaultHidden(columns));
+      setLeagueLogo("");
+      setHidden(defaultHidden());
       setPickerOpen(false);
       setError(null);
     }
@@ -331,9 +334,6 @@ export function ShareGraphicModal({
                       onClick={() => setHidden(new Set())}>Select all</button>
                     <button type="button" className="btn btn-ghost" style={{ marginTop: 0, padding: "3px 12px", fontSize: "0.78rem" }}
                       onClick={() => setHidden(new Set(columns.map((c, i) => (c.locked ? null : colKey(c, i))).filter(Boolean)))}>Clear</button>
-                    <button type="button" className="btn btn-ghost" style={{ marginTop: 0, padding: "3px 12px", fontSize: "0.78rem" }}
-                      title="Back to the columns this screen starts with"
-                      onClick={() => setHidden(defaultHidden(columns))}>Reset</button>
                     <span style={{ marginLeft: "auto", alignSelf: "center", fontSize: "0.76rem", color: "var(--ink-2)" }}>
                       {shownColumns.length}/{columns.length}
                     </span>

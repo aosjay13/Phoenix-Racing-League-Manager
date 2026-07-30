@@ -182,6 +182,12 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
    gaps first and they fill in the moment the pole time lands. Pole is the reference, so its own
    two cells stay blank. Only the lap times are stored: the gaps are recalculated from them on
    every load, which is what keeps them right after a reorder or a correction.
+   The **event page** shows the same gaps on its results tables — **To Lead** and **Gap** on
+   qualifying, and a **Gap** column beside **Int** on a race — and because they're worked out from
+   the times on the results themselves, every session already in the database has them without being
+   re-entered. A race row with no elapsed time falls back to reconstructing one from the winner's
+   time plus its stored interval; a lapped car or a DNF has no comparable time and reads as a dash.
+   All of these columns are offered in the Share Graphic exporter too.
 
 ### Typical first-time flow
 
@@ -349,10 +355,11 @@ branding, event metadata and data table are drawn, at a fixed 1080px for a consi
 output. `ShareGraphicModal` takes `columns` / `rows` (see `toGraphicTable` in `lib/shareGraphic.js`)
 plus an optional `meta` of `{ label, value, wide? }` facts.
 
-Each screen passes its **full** column list, and `defaultKeys` picks the subset ticked when the modal
-opens — so every stat is one click away in the picker without a fifteen-column table being the
-default. Identity columns (position, driver/team name) are locked on; a row isn't readable without
-them.
+Each screen passes its **full** column list and every one of them opens ticked, so the graphic starts
+out carrying all the data the screen shows; the picker switches off anything you don't want. Identity
+columns (position, driver/team name) are locked on — a row isn't readable without them. Both logo
+pickers start on **None**: a logo is opt-in, with the league, series and track logos (and an upload)
+a click away.
 
 Because the card is a fixed width, the table's type and padding step down as more columns are
 switched on (`tableScale`), and past a dozen columns the headers wrap so the widest one stops setting
