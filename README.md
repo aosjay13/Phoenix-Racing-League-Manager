@@ -283,8 +283,10 @@ driver created inline are all that class's; the per-row Class dropdown disappear
 in that grid is the class named in the bar above it.
 
 Everything downstream follows the same scope. Schedule rows summarised for a class show that class's
-pole, winner and field size (`summarizeRace(..., classId)`); the event page groups each session's
-table by class; and Skill Rating exchanges are keyed by class on a split event, so a Pro driver is
+pole, winner and field size (`summarizeRace(..., classId)`); at "All Classes" a round several classes
+ran carries a `class_summaries` list instead — one pole and winner per class, stacked in the cell —
+on both a season's own calendar and the cross-season feed, since showing whichever class's P1 sorted
+first would read as *the* winner; the event page groups each session's table by class; and Skill Rating exchanges are keyed by class on a split event, so a Pro driver is
 never rated against an Amateur car they never shared a grid with. Since a split event has no single
 outright order, an overall championship across classes just adds their points together — turn
 **Enable Overall Championship** off for a pure class-championship season.

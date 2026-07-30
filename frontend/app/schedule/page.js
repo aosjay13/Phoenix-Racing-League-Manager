@@ -192,8 +192,14 @@ function FeedSection({ title, icon, rows, kind }) {
                     {[r.series_name, r.season_name].filter(Boolean).join(" · ") || "—"}
                     {r.game_name && <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.74rem" }}>{r.game_name}</span>}
                   </td>
+                  {/* Same per-class stacking as a season's own calendar: a
+                      round several classes ran lists each class's winner (or
+                      each class's car, before it runs) rather than picking one
+                      of them. */}
                   <td style={{ textAlign: "left", fontWeight: archive && s.winner ? 600 : undefined }}>
-                    {archive ? <Person p={s.winner} /> : (s.car || <span style={{ color: "var(--ink-2)" }}>—</span>)}
+                    {archive
+                      ? <PersonCell summary={s} classSummaries={r.class_summaries} field="winner" />
+                      : <CarCell summary={s} classCars={r.class_cars} />}
                   </td>
                   <td>
                     {archive
