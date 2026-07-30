@@ -174,6 +174,14 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
    stops moving; your choice is saved as-is. They're recorded as stats either way, and only
    affect points if the season (or that session's points structure) pays a bonus for them.
    Qualifying grids have none of these columns.
+   A **Qualifying** grid instead carries **Qual Time**, **To Lead** and **Gap**, and the three
+   fill each other in — enter whichever your timing screen gives you. Type lap times and both
+   gap columns appear (To Lead is the gap to pole; Gap is to the car one position up); type a
+   gap instead — `+0.312` — and the lap time is worked out from the pole time (To Lead) or from
+   the car above (Gap), so a sheet that only publishes gaps can be typed straight in. Enter the
+   gaps first and they fill in the moment the pole time lands. Pole is the reference, so its own
+   two cells stay blank. Only the lap times are stored: the gaps are recalculated from them on
+   every load, which is what keeps them right after a reorder or a correction.
 
 ### Typical first-time flow
 

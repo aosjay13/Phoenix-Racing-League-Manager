@@ -45,6 +45,30 @@ export function formatGap(gapSec) {
   return `+${s}.${pad(millis, 3)}`;
 }
 
+// A signed gap string → seconds, negative allowed ("-0.180" → -0.18). parseTime
+// itself rejects negatives (a lap or elapsed time can't be one); a gap between
+// two entered times legitimately can be.
+export function parseDelta(str) {
+  if (str == null) return null;
+  const s = String(str).trim();
+  if (!s) return null;
+  if (s.startsWith("-")) {
+    const v = parseTime(s.slice(1));
+    return v == null ? null : -v;
+  }
+  return parseTime(s);
+}
+
+// A signed gap, e.g. "+2.345" or "-0.180". Unlike formatGap, a negative value
+// renders rather than blanking: on a qualifying sheet a driver placed below
+// someone with a slower time shows "-0.180" instead of nothing, so an
+// out-of-order grid is visible instead of silently swallowed.
+export function formatDelta(gapSec) {
+  if (gapSec == null || isNaN(gapSec)) return "";
+  if (gapSec < 0) return `-${formatGap(-gapSec).slice(1)}`;
+  return formatGap(gapSec);
+}
+
 // "3L" / "3 l" → 3 (laps behind the leader); anything else → null.
 export function parseLapsDown(str) {
   if (str == null) return null;
