@@ -1,7 +1,7 @@
 "use client";
 
 // Shared driver-identity fields: Name, per-series Car Number, Class, Team, and
-// an optional linked player account. Used by the Roster page's Add Driver card
+// an optional linked player account. Used by the Roster manager's Add Driver card
 // and by the race-entry "create driver on the fly" modal, so both surfaces
 // stay in sync with the same fields and the same series-scoped number.
 //

@@ -1,15 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
 import { DirectoryRow } from "@/components/DirectoryRow";
+import { RosterManager } from "@/components/RosterManager";
+import { UserAccountsManager } from "@/components/UserAccountsManager";
 import { DriverPoolCreateModal } from "@/components/DriverPoolCreateModal";
 import { DriverEditModal } from "@/components/DriverEditModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Modal } from "@/components/Modal";
 
-export default function DriversPage() {
+// The global driver directory — the "Drivers" tab, and the only one every
+// visitor sees.
+function DriversDirectory() {
   const { user, isAdmin } = useAuth();
   const [drivers, setDrivers] = useState(null);
   const [users, setUsers] = useState([]);
@@ -270,5 +275,61 @@ export default function DriversPage() {
         />
       )}
     </section>
+  );
+}
+
+// ── The Drivers menu ───────────────────────────────────────────────────────
+// Everything about the people in the league lives here, one tab per view, so
+// an admin never has to hop between menus (or scroll past one screen to reach
+// the next): the public directory, the season roster & teams manager, and the
+// player accounts behind the profiles.
+const TABS = [
+  { key: "directory", label: "Drivers",        icon: "🏎", admin: false },
+  { key: "roster",    label: "Roster & Teams", icon: "⊞",  admin: true  },
+  { key: "accounts",  label: "User Accounts",  icon: "👥", admin: true  },
+];
+
+function DriversTabs() {
+  const { isAdmin } = useAuth();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const wanted = searchParams.get("tab") || "directory";
+
+  const visible = TABS.filter(t => !t.admin || isAdmin);
+  // A non-admin (or an admin whose role is still loading) can only ever be on
+  // the directory, so an admin-only ?tab= falls back rather than showing blank.
+  const tab = visible.some(t => t.key === wanted) ? wanted : "directory";
+
+  function selectTab(key) {
+    // Shallow URL update so the tab is linkable/back-buttonable without
+    // re-running the route.
+    router.replace(key === "directory" ? "/drivers" : `/drivers?tab=${key}`, { scroll: false });
+  }
+
+  return (
+    <section>
+      {visible.length > 1 && (
+        <div className="tab-row" style={{ marginTop: 0, marginBottom: 18, flexWrap: "wrap" }}>
+          {visible.map(t => (
+            <button key={t.key} type="button" className={`tab${tab === t.key ? " active" : ""}`}
+              onClick={() => selectTab(t.key)}>
+              <span style={{ marginRight: 6 }}>{t.icon}</span>{t.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {tab === "directory" && <DriversDirectory />}
+      {tab === "roster" && isAdmin && <RosterManager />}
+      {tab === "accounts" && isAdmin && <UserAccountsManager />}
+    </section>
+  );
+}
+
+export default function DriversPage() {
+  return (
+    <Suspense fallback={<div className="skeleton" style={{ height: 240 }} />}>
+      <DriversTabs />
+    </Suspense>
   );
 }

@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AdminGate } from "@/components/AdminGate";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useAuth } from "@/components/AuthProvider";
 import { USERS_SEEN_KEY, USERS_SEEN_EVENT } from "@/components/AppShell";
@@ -147,7 +146,10 @@ function DriverLinkSelect({ drivers, valueId, valueName, disabled, onChange }) {
   );
 }
 
-function UserAccountsInner() {
+// The account directory: roles, driver-profile links and pending claims.
+// Rendered as the "User Accounts" tab of the Drivers page (it used to be its
+// own /admin/users screen).
+export function UserAccountsManager() {
   const { user: me, role: myRole, roleLevel: myLevel } = useAuth();
   const [users, setUsers] = useState(null);
   const [drivers, setDrivers] = useState([]);
@@ -447,8 +449,4 @@ function UserAccountsInner() {
       )}
     </section>
   );
-}
-
-export default function UserAccountsPage() {
-  return <AdminGate><UserAccountsInner /></AdminGate>;
 }

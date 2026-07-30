@@ -1180,6 +1180,45 @@ tbody tr:hover {
   color: var(--ink-2);
 }
 
+/* League Setup screen switcher: one button per setup form, so only the screen
+   being worked on is on the page (instead of every form stacked into one long
+   scroll). Shares the .tab pill look with the rest of the app. */
+.setup-switch {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 22px 0 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+}
+
+.setup-switch-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.setup-switch-label:not(:first-child) { margin-top: 10px; }
+
+.setup-switch-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.setup-switch-btn { white-space: nowrap; }
+
+/* The one open setup screen. Capped so full-width forms stay readable on a
+   wide monitor. */
+.setup-stage {
+  margin-top: 16px;
+  max-width: 900px;
+}
+
 /* Numbered step chip on a structure panel's heading. */
 .setup-panel-head {
   display: flex;

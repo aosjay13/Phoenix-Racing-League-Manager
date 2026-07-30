@@ -298,6 +298,14 @@ function SeasonSchedule() {
         )}
       </div>
 
+      {isAdmin && (
+        <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.85rem" }}>
+          Every event is managed from this table: <strong>⏱</strong> opens its results grid (qualifying,
+          races, heats and points), <strong>✎</strong> edits the event itself — name, date, track, sessions
+          and heat racing — and <strong>🗑</strong> deletes it.
+        </p>
+      )}
+
       {isAdmin && toggleComplete && (
         <ConfirmDialog
           title={completed ? "Reopen this season?" : "Mark season complete?"}
@@ -400,7 +408,13 @@ function SeasonSchedule() {
                     </td>
                     {isAdmin && (
                       <td style={{ whiteSpace: "nowrap" }}>
-                        <button className="icon-btn" title="Edit race" onClick={() => router.push(`/races/${r.id}/edit`)}>✎</button>
+                        {/* Results entry lives on the event's own edit screen —
+                            this jumps straight to the right grid (the Feature
+                            on a heat-racing event, the Race otherwise), which
+                            is what the old Race Entry menu did. */}
+                        <button className="icon-btn" title="Enter / edit results"
+                          onClick={() => router.push(`/races/${r.id}/edit?tab=${r.heat_format ? "feature" : "results"}`)}>⏱</button>
+                        <button className="icon-btn" title="Edit race details" onClick={() => router.push(`/races/${r.id}/edit`)}>✎</button>
                         <button className="icon-btn icon-btn-danger" title="Delete race" onClick={() => setToDelete(r)}>🗑</button>
                       </td>
                     )}
