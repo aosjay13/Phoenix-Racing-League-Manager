@@ -7,7 +7,8 @@ import { useAuth } from "@/components/AuthProvider";
 import { useLeague } from "@/components/LeagueProvider";
 import { api } from "@/lib/api";
 
-// localStorage key + custom event shared with the User Accounts page: it stamps
+// localStorage key + custom event shared with the User Accounts tab on the
+// Drivers page (components/UserAccountsManager.jsx): it stamps
 // "everything up to now has been seen" when the admin opens the dashboard, which
 // clears the red new-signup badge in the sidebar.
 export const USERS_SEEN_KEY = "pr_users_last_seen";
@@ -59,10 +60,11 @@ const publicNav = [
   { href: "/tracks",    label: "Tracks",    icon: "🏁" },
 ];
 
+// Everything else an admin used to reach from here now lives as a tab on the
+// page it belongs to: races are edited from the Schedule, and the roster, teams
+// and user accounts are tabs on Drivers. Only the league hierarchy itself is
+// admin-only enough to keep its own entry.
 const adminNav = [
-  { href: "/race-entry",  label: "Race Entry",     icon: "⏱" },
-  { href: "/roster",      label: "Roster & Teams", icon: "⊞" },
-  { href: "/admin/users", label: "User Accounts",  icon: "👥" },
   { href: "/admin",       label: "League Setup",   icon: "⚙", exact: true },
 ];
 
@@ -184,7 +186,9 @@ export function AppShell({ children }) {
   const { isAdmin } = useAuth();
   const league = useLeague();
   const userAccountsAlerts = useUserAccountsAlerts(isAdmin, pathname);
-  const adminBadges = { "/admin/users": userAccountsAlerts };
+  // New signups / pending claims are handled on the Drivers page's User
+  // Accounts tab, so the badge rides along with that nav item.
+  const navBadges = { "/drivers": userAccountsAlerts };
 
   return (
     <div className="shell">
@@ -198,12 +202,12 @@ export function AppShell({ children }) {
         </Link>
 
         <span className="nav-section-label">Navigation</span>
-        <nav><NavLinks items={publicNav} pathname={pathname} /></nav>
+        <nav><NavLinks items={publicNav} pathname={pathname} badges={navBadges} /></nav>
 
         {isAdmin && (
           <>
             <span className="nav-section-label" style={{ marginTop: 16 }}>Admin</span>
-            <nav><NavLinks items={adminNav} pathname={pathname} badges={adminBadges} /></nav>
+            <nav><NavLinks items={adminNav} pathname={pathname} /></nav>
           </>
         )}
 

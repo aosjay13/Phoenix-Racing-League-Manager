@@ -65,6 +65,20 @@ function ItemRow({ logo, name, meta, onEdit, onDelete, editing, children }) {
   );
 }
 
+// League Setup is one screen per topic, reached from the button row at the top,
+// rather than every form stacked into one long scroll. `group` splits the row
+// into the league hierarchy (build it top-down) and the reusable library.
+const SECTIONS = [
+  { key: "league",    label: "League",          icon: "🏛", group: "structure", hint: "Name, logo & multi-league" },
+  { key: "games",     label: "Games",           icon: "🎮", group: "structure", hint: "iRacing, F1 25, GT7…" },
+  { key: "series",    label: "Series",          icon: "🏆", group: "structure", hint: "Championships within a game" },
+  { key: "seasons",   label: "Seasons",         icon: "📅", group: "structure", hint: "A series' runs & their points" },
+  { key: "classes",   label: "Classes",         icon: "🎽", group: "structure", hint: "Split a season's field" },
+  { key: "races",     label: "Races",           icon: "🏁", group: "structure", hint: "A season's calendar" },
+  { key: "tracks",    label: "Tracks",          icon: "🏟", group: "library",   hint: "Shared venue database" },
+  { key: "templates", label: "Points Templates", icon: "🔢", group: "library",  hint: "Reusable scoring structures" },
+];
+
 function toArray(str) {
   return String(str || "").split(",").map(s => s.trim()).filter(Boolean);
 }
@@ -78,6 +92,9 @@ function AdminInner() {
   const { games, seriesList, seasons, gameId, seriesId, seasonId, game, series, season, refresh } = league;
   const [races, setRaces] = useState([]);
   const [toast, setToast] = useState(null);
+  // Which setup screen is open. Starts on Games — the top of the hierarchy an
+  // admin actually edits.
+  const [section, setSection] = useState("games");
 
   const [gameForm, setGameForm] = useState({ name: "", logo_url: "" });
   const [seriesForm, setSeriesForm] = useState({ name: "", logo_url: "" });
@@ -229,12 +246,9 @@ function AdminInner() {
         Your league is a hierarchy — a <strong>Game</strong> holds <strong>Series</strong>, a series holds
         <strong> Seasons</strong>, and a season holds its <strong>Classes</strong> and <strong>Races</strong>.
         Pick what you&apos;re working in with the dropdowns at the top of the page; the banner below always
-        shows your current spot.
+        shows your current spot, and the buttons under it open one setup screen at a time.
       </p>
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
-
-      {/* Multi-league: settings for the active league + Owner-only create/migrate. */}
-      <LeagueSettings />
 
       {/* Always-visible "you are here" breadcrumb, driven by the top dropdowns. */}
       <div className="setup-context">
@@ -249,11 +263,36 @@ function AdminInner() {
         <Crumb icon="🏁" label="Races" value={seasonId ? `${races.length} scheduled` : ""} />
       </div>
 
-      <h3 className="setup-section-title">
-        League Structure
-        <span className="setup-section-hint">Build the tree top-down — each step fills in the one below it</span>
-      </h3>
-      <div className="two-col" style={{ marginTop: 14 }}>
+      {/* One button per setup screen — nothing is stacked, so switching topics
+          never means scrolling past the form you're not using. */}
+      <div className="setup-switch">
+        <span className="setup-switch-label">League Structure</span>
+        <div className="setup-switch-row">
+          {SECTIONS.filter(s => s.group === "structure").map(s => (
+            <button key={s.key} type="button" title={s.hint}
+              className={`tab setup-switch-btn${section === s.key ? " active" : ""}`}
+              onClick={() => setSection(s.key)}>
+              <span aria-hidden="true">{s.icon}</span> {s.label}
+            </button>
+          ))}
+        </div>
+        <span className="setup-switch-label">Shared Library</span>
+        <div className="setup-switch-row">
+          {SECTIONS.filter(s => s.group === "library").map(s => (
+            <button key={s.key} type="button" title={s.hint}
+              className={`tab setup-switch-btn${section === s.key ? " active" : ""}`}
+              onClick={() => setSection(s.key)}>
+              <span aria-hidden="true">{s.icon}</span> {s.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="setup-stage">
+        {/* Multi-league: settings for the active league + Owner-only create/migrate. */}
+        {section === "league" && <LeagueSettings />}
+
+        {section === "games" && (
         <Panel title="Games" step={1} sub="e.g. iRacing, F1 25, Gran Turismo 7">
           <form onSubmit={e => {
             e.preventDefault();
@@ -274,7 +313,9 @@ function AdminInner() {
               onDelete={() => remove(`/api/games/${g.id}`, `Delete game "${g.name}"? Its series/seasons remain in the database but will be hidden.`)} />)}
           </div>
         </Panel>
+        )}
 
+        {section === "series" && (
         <Panel title="Series" step={2} muted={!gameId} sub={gameId ? `In ${game?.name}` : "Select a game above first"}>
           <form onSubmit={e => {
             e.preventDefault();
@@ -296,7 +337,9 @@ function AdminInner() {
               onDelete={() => remove(`/api/series/${s.id}`, `Delete series "${s.name}"?`)} />)}
           </div>
         </Panel>
+        )}
 
+        {section === "seasons" && (
         <Panel title="Seasons" step={3} muted={!seriesId} sub={seriesId ? `In ${series?.name}` : "Select a series above first"}>
           <form onSubmit={e => {
             e.preventDefault();
@@ -347,15 +390,17 @@ function AdminInner() {
             ))}
           </div>
         </Panel>
+        )}
 
+        {section === "classes" && (
         <Panel title="Classes" step={4} muted={!seasonId}
           sub={seasonId ? `In ${season?.name} — optional; leave empty for a single-class season` : "Select a season above first"}>
           <p style={{ marginTop: 0, color: "var(--ink-1)", fontSize: "0.85rem" }}>
             Split this season&rsquo;s field into separately-scored groups — <strong>Pro</strong> and{" "}
             <strong>Amateur</strong>, or <strong>GT3</strong> and <strong>LMP2</strong>. Each class runs its own
             championship (points, wins, averages), and a <strong>Class</strong> menu appears next to
-            Game / Series / Season on Standings, Stats and Records. Assign drivers to a class on the{" "}
-            <strong>Roster</strong> page or right in the results grid. Give a class its own{" "}
+            Game / Series / Season on Standings, Stats and Records. Assign drivers to a class on{" "}
+            <strong>Drivers ▸ Roster &amp; Teams</strong> or right in the results grid. Give a class its own{" "}
             <strong>Car Type</strong> and the schedule shows which car goes with which class — handy
             when divisions run different machinery. Each class can also score on its own{" "}
             <strong>points structure</strong>, so Pro and Amateur pay different points for the same
@@ -458,7 +503,9 @@ function AdminInner() {
             ))}
           </div>
         </Panel>
+        )}
 
+        {section === "races" && (
         <Panel title="Races" step={5} muted={!seasonId} sub={seasonId ? `In ${season?.name}` : "Select a season above first"}>
           <form onSubmit={e => {
             e.preventDefault();
@@ -572,13 +619,9 @@ function AdminInner() {
             })}
           </div>
         </Panel>
-      </div>
+        )}
 
-      <h3 className="setup-section-title">
-        Shared Library
-        <span className="setup-section-hint">Reusable building blocks — the same across every game &amp; season</span>
-      </h3>
-      <div className="two-col" style={{ marginTop: 14 }}>
+        {section === "tracks" && (
         <Panel title="Tracks" sub="Venue database shared across every game & season">
           <form onSubmit={async e => {
             e.preventDefault();
@@ -635,7 +678,9 @@ function AdminInner() {
               }} />)}
           </div>
         </Panel>
+        )}
 
+        {section === "templates" && (
         <Panel title="Points Templates" sub="Reusable scoring structures — assign to a season or any session's points">
           <form onSubmit={e => { e.preventDefault(); saveTemplateForm(); }}>
             <div className="field"><label>Template Name</label>
@@ -672,6 +717,7 @@ function AdminInner() {
             ))}
           </div>
         </Panel>
+        )}
       </div>
     </section>
   );

@@ -3,7 +3,6 @@
 import { Fragment, useEffect, useState, useCallback, useMemo } from "react";
 import { useLeague } from "@/components/LeagueProvider";
 import { useSortable } from "@/components/useSortable";
-import { AdminGate } from "@/components/AdminGate";
 import { ImageUpload } from "@/components/ImageUpload";
 import { DriverForm } from "@/components/DriverForm";
 import { Modal } from "@/components/Modal";
@@ -75,7 +74,10 @@ function PoolAddInline({ onAdd, onCancel }) {
   );
 }
 
-function RosterInner() {
+// The season/series roster + teams manager. Rendered as the "Roster & Teams"
+// tab of the Drivers page (it used to be its own /roster screen), so drivers,
+// their rosters and the accounts behind them all live under one menu.
+export function RosterManager() {
   const league = useLeague();
   const { gameId, seriesId, series, seriesList } = league;
   const scope = useScope(league);
@@ -732,8 +734,4 @@ function RosterInner() {
       )}
     </section>
   );
-}
-
-export default function RosterPage() {
-  return <AdminGate><RosterInner /></AdminGate>;
 }

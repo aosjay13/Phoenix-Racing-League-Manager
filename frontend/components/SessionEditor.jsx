@@ -916,7 +916,7 @@ export function SessionEditor({
       {!entries.length ? (
         <p style={{ color: "var(--ink-1)", fontSize: "0.9rem" }}>
           {scoped
-            ? `No drivers are in ${sessionClassName || "this class"} yet — assign drivers to it on the Roster page, or add one below and set their class.`
+            ? `No drivers are in ${sessionClassName || "this class"} yet — assign drivers to it on Drivers ▸ Roster & Teams, or add one below and set their class.`
             : "No drivers on the roster yet — add one below to start entering results."}
         </p>
       ) : loading ? (

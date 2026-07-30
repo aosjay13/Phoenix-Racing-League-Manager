@@ -42,7 +42,8 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
 - 📊 **Stats & Roster filtering** — Game/Series/Season dropdowns filter Stats and Roster
   everywhere, with sortable columns and per-series car numbers
 - 🖼 **Custom branding** — upload game, series, season, team, and track logos
-- 👑 **Admin roles** — set `ADMIN_EMAILS`; admins get Race Entry, Roster & Teams, and League Setup
+- 👑 **Admin roles** — set `ADMIN_EMAILS`; admins get results entry from the Schedule, the
+  Roster & Teams and User Accounts tabs on Drivers, and League Setup
 
 ## Getting live (beta)
 
@@ -105,7 +106,8 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      ("Pro"/"Amateur", "GT3"/"LMP2"). Leave it empty for an ordinary single-class season —
      nothing changes. Classes created here fill the **Class** menu in the top bar, which scopes
      Standings, Stats and Records to one class at a time. Assign drivers to a class on the
-     Roster page or from the Class column in the results grid; deleting a class only unassigns
+     Drivers ▸ Roster & Teams tab or from the Class column in the results grid; deleting a class
+     only unassigns
      its drivers, never their points or stats. Give a class a **Car Type** and the schedule,
      event pages and Class menu all show which car goes with which class — leave it blank to
      inherit the season's car. Tick **This class scores on its own points structure** and the
@@ -120,41 +122,50 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      `Qualifying, Race` for a weekend with a scored qualifying session and a main race).
      With **Per-Class Schedules** on for the season, each race also gets a **Class** field:
      leave it on *All Classes (shared)* for a round everyone runs, or pick a class to put the
-     round on that class's calendar alone. A class's Schedule and Race Entry then show its own
+     round on that class's calendar alone. A class's Schedule then shows its own
      rounds plus the shared ones, and a class-only round offers just that class's drivers
      (plus any unclassified) when entering results.
      **Separate Results by Class** is the other half: when several classes race the *same*
      round, it gives each class its own Qualifying and Race — its own pole, its own P1, its own
      field — instead of one combined grid. Set the default on the season and flip any single
-     event on its Race Info tab. On a split event, the Schedule, Race Entry and race edit
-     screens all show an **Entering results for &lt;class&gt;** menu at the top; pick the class,
+     event on its Race Info tab. On a split event, the race edit
+     screen shows an **Entering results for &lt;class&gt;** menu at the top; pick the class,
      enter its grid, switch to the next. The **Points system** picker next to the grid is that
      class's too on a split event — Pro's Race and Amateur's Race at the same event can score on
      different templates, and switching class swaps the picker with it.
-2. **Roster & Teams** (`/roster`) — select a **Series** in the top dropdowns to manage that
-   series' roster:
-   - **Teams** — create teams with logos.
-   - **Drivers** — add a driver, assign their team, class, car number, and (optionally) link
-     them to a registered player account so their results count toward that account's profile
-     stats.
-   - **Import Roster** — the season-rollover shortcut. Bulk-add every driver in the series, or
-     clone a specific past season's roster, in one write. Drivers already on the season's
-     roster are skipped rather than duplicated (matched by global driver id, then linked
-     account, then name), so it's safe to run twice or to top up a half-built roster. Team and
-     class don't carry over — both are per-season records — so imported drivers land
-     unassigned.
-   - **Car numbers by series** — a driver can run a different number in each series they're
-     part of; when editing a driver, set/update their number per series in one place.
-   - With **no series selected**, the Roster shows the combined driver list across every
-     series in scope (Number column is hidden, since a single number doesn't apply) —
-     useful for seeing the whole league roster at a glance.
-3. **Race Entry** (`/race-entry`) — pick a season, then a race, then fill in the results
-   grid (one row per driver: finishing position, laps led, incidents, DNF/DNS status).
-   Save — standings, stats, and every linked player's profile update immediately.
-   Re-open and re-save a race any time to correct results; it overwrites cleanly.
-   You can also jump straight to a race's edit screen from **Schedule** (✎ icon) — it has
-   **Race Info** and **Race Results** tabs in one place, including per-session (qualifying)
-   results editing.
+2. **Drivers** (`/drivers`) — everyone in the league, under one menu. The buttons at the top
+   switch between its three views, so nothing is stacked into one long scroll:
+   - **Drivers** — the public directory of every driver profile (admins get Edit / Merge /
+     Delete and **Sync names**; players can claim their own profile).
+   - **User Accounts** *(admin)* — every signed-in account: set its **role**, link it to the
+     driver profile it races as, rename it, delete it, and approve or deny pending profile
+     claims. The red badge on the Drivers nav item counts new signups + pending claims.
+   - **Roster & Teams** *(admin)* — select a **Series** in the top dropdowns to manage that
+     series' roster:
+     - **Teams** — create teams with logos.
+     - **Roster** — add a driver, assign their team, class, car number, and (optionally) link
+       them to a registered player account so their results count toward that account's profile
+       stats.
+     - **Driver Pool** — create driver identities without assigning them to a season or series
+       yet, ready to pull into any series (or into a race, mid-entry) later.
+     - **Import Roster** — the season-rollover shortcut. Bulk-add every driver in the series, or
+       clone a specific past season's roster, in one write. Drivers already on the season's
+       roster are skipped rather than duplicated (matched by global driver id, then linked
+       account, then name), so it's safe to run twice or to top up a half-built roster. Team and
+       class don't carry over — both are per-season records — so imported drivers land
+       unassigned.
+     - **Car numbers by series** — a driver can run a different number in each series they're
+       part of; when editing a driver, set/update their number per series in one place.
+     - With **no series selected**, the Roster shows the combined driver list across every
+       series in scope (Number column is hidden, since a single number doesn't apply) —
+       useful for seeing the whole league roster at a glance.
+3. **Results entry** — everything about an event is managed from **Schedule**. Each row's
+   **⏱** button opens that event's results grid and **✎** its details; both land on the same
+   race edit screen, which carries **Race Info**, **Qualifying** and **Race Results** tabs
+   (Heats / Consolation / Feature on a heat-racing event). Fill in the grid (one row per
+   driver: finishing position, laps led, incidents, DNF/DNS status) and save — standings,
+   stats, and every linked player's profile update immediately. Re-open and re-save a race
+   any time to correct results; it overwrites cleanly.
    On a race grid, three of the checkboxes fill themselves in from what you've already
    typed, so you don't have to work them out by eye: **FL** goes to the quickest Best Lap
    time (a single lap time entered is, trivially, the fastest one), **HC** to the biggest
@@ -166,9 +177,9 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
 
 ### Typical first-time flow
 
-`Sign in as admin → League Setup: create Game → Series → Season → Races → Roster & Teams:
-add Teams and Drivers (link accounts where possible) → Race Entry: enter results after each
-race → Standings/Stats update automatically.`
+`Sign in as admin → League Setup: create Game → Series → Season → Races → Drivers ▸ Roster &
+Teams: add Teams and Drivers (link accounts where possible) → Schedule: ⏱ on an event to enter
+results after each race → Standings/Stats update automatically.`
 
 ## Project Layout
 
@@ -181,16 +192,16 @@ frontend/
     page.js         ← Dashboard (per selected season)
     standings/      ← Driver + team points tables
     stats/          ← Scoped driver stats (season/series/game/league), sortable
-    schedule/       ← Season calendar
-    race-entry/     ← Admin: submit/edit race results
-    roster/         ← Admin: roster + teams, scoped by game/series/season
-    admin/          ← Admin: build games/series/seasons/races, upload logos
-    drivers/        ← Player directory + public profiles (/drivers/[uid])
+    schedule/       ← Season calendar (admin: ⏱ enter results, ✎ edit event, 🗑 delete)
+    admin/          ← Admin: League Setup — build games/series/seasons/races, upload logos
+    drivers/        ← Driver directory + public profiles (/drivers/[uid]), plus the admin
+                      Roster & Teams and User Accounts tabs (?tab=roster / ?tab=accounts)
     races/[id]/     ← Race results view; races/[id]/edit ← admin race info + results editor
     profile/        ← Edit your own profile
     login/          ← Sign in / create account
   lib/              ← Firebase admin + client init, auth guards, standings math, shared CRUD
-  components/       ← AppShell, Auth/League providers, ImageUpload, AdminGate, RaceResultsEditor
+  components/       ← AppShell, Auth/League providers, ImageUpload, AdminGate, SessionEditor,
+                      RosterManager + UserAccountsManager (the Drivers page's admin tabs)
 firebase/           ← Firestore + Storage security rules
 backend/            ← Legacy Python backend (unused; superseded by Next.js API routes)
 ```
@@ -233,7 +244,7 @@ than filtering rows out of the combined table.
 **Per-Class Schedules** lets a race be pinned to a single class via `races.class_id`; a race left
 unpinned stays *shared* by every class, so a season can mix a common opener with class-specific
 rounds. A class's calendar is therefore "its own rounds plus every shared round" (`raceInClass` in
-`lib/classFilter.js`), which is what Schedule, Race Entry and the race-count/field-size metrics all
+`lib/classFilter.js`), which is what Schedule and the race-count/field-size metrics all
 filter on. Results are always scoped by the *driver's* class, independent of which calendar the race
 sits on, so a shared race still splits cleanly into each class's championship. Turning the toggle
 back off deletes nothing — pinned races simply show for everyone again.

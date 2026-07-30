@@ -7,7 +7,7 @@ import { Modal } from "@/components/Modal";
 import { DriverForm } from "@/components/DriverForm";
 
 // The full driver-creation form, opened from the race-entry autocomplete's
-// "+ Create new driver" option — same fields as the Roster page's Add Driver
+// "+ Create new driver" option — same fields as the Roster manager's Add Driver
 // card, so a car number is always captured for this season's series, not
 // just a bare name.
 export function DriverCreateModal({ seasonId, seriesName, initialName, defaultClassId = "", onClose, onCreated }) {
