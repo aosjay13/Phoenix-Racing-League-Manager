@@ -60,6 +60,11 @@ function emptySlots(n) {
 
 // A provisional entry: a driver awarded a flat, custom points value without
 // having raced (so they never take a finishing position or count toward stats).
+//
+// `auto` means the points box is still following the grid — it fills itself
+// with the points for the first finishing position nobody took (see
+// autoProvPoints). Typing over it hands the value to the admin for good; a
+// saved entry loads with auto off, since its value was already decided.
 let PROV_SEQ = 0;
 function makeProvRow(src = {}) {
   PROV_SEQ += 1;
@@ -68,7 +73,9 @@ function makeProvRow(src = {}) {
     entry_id: src.entry_id ?? null,
     driver_name: src.driver_name ?? "",
     driver_number: src.driver_number ?? null,
+    class_id: src.class_id ?? "",
     manual_points: src.manual_points != null ? String(src.manual_points) : "",
+    auto: src.auto ?? true,
   };
 }
 
@@ -243,7 +250,10 @@ export function SessionEditor({
       const entryById = new Map(entries.map(e => [e.id ?? e.entry_id, e]));
       setProvRows(provs.map(r => {
         const e = entryById.get(r.entry_id);
-        return makeProvRow({ entry_id: r.entry_id, driver_name: e?.name ?? "", driver_number: e?.number ?? null, manual_points: r.manual_points });
+        return makeProvRow({
+          entry_id: r.entry_id, driver_name: e?.name ?? "", driver_number: e?.number ?? null,
+          class_id: e?.class_id ?? "", manual_points: r.manual_points, auto: false,
+        });
       }));
     } catch {
       setQualPos({});
@@ -369,7 +379,22 @@ export function SessionEditor({
   function updateProvRow(slotId, patch) { setProvRows(prev => prev.map(r => (r.slot_id === slotId ? { ...r, ...patch } : r))); }
   function removeProvRow(slotId) { setProvRows(prev => prev.filter(r => r.slot_id !== slotId)); }
   function assignProv(slotId, entry) {
-    updateProvRow(slotId, { entry_id: entry.id ?? entry.entry_id, driver_name: entry.name ?? entry.driver_name ?? "", driver_number: entry.number ?? entry.driver_number ?? null });
+    updateProvRow(slotId, {
+      entry_id: entry.id ?? entry.entry_id,
+      driver_name: entry.name ?? entry.driver_name ?? "",
+      driver_number: entry.number ?? entry.driver_number ?? null,
+      class_id: entry.class_id ?? "",
+    });
+  }
+  // Picking a driver — by Enter, Tab or click — drops focus straight into that
+  // row's Points box, so a provisional entry is name → Enter → points without
+  // reaching for the mouse. The box only exists after the render that assigns
+  // the driver, hence the deferred lookup.
+  function focusProvPoints(slotId) {
+    setTimeout(() => {
+      const el = typeof document !== "undefined" && document.querySelector(`[data-prov-points="${slotId}"]`);
+      if (el) { el.focus(); el.select?.(); }
+    }, 0);
   }
 
   const leaderTimeOf = rs => {
@@ -615,6 +640,39 @@ export function SessionEditor({
   const rowPoints = row => (!row.entry_id ? "" : sessionType === "qualifying"
     ? Number(configForRow(row).qualPoints[row.finish_pos] ?? 0)
     : pointsFor(row, configForRow(row), qualPos[row.entry_id] ?? null, qualConfigForRow(row)));
+
+  // ── Provisional points auto-fill ─────────────────────────────────────────
+  //
+  // A provisional entry is saved just behind the field (handleSave parks them
+  // at maxPos + 1, + 2, …), so the natural value for one is the points of the
+  // first finishing position nobody took: a two-car finish means the first
+  // provisional is worth P3. Each further provisional steps down one more
+  // position, matching the order they're saved in. Filled in for the admin,
+  // then editable — typing a value turns the auto-fill off for that row.
+  const lastFinishPos = useMemo(
+    () => rows.reduce((m, r) => (r.entry_id && r.finish_pos !== "" ? Math.max(m, Number(r.finish_pos) || 0) : m), 0),
+    [rows]
+  );
+  const autoProvPoints = (row, i) => {
+    const cfg = scoped ? config : configForTemplate(baseFor(row.class_id || ""), template);
+    return Number(cfg.racePoints[lastFinishPos + i + 1] ?? 0);
+  };
+
+  useEffect(() => {
+    if (sessionType === "qualifying" || loading) return;
+    setProvRows(prev => {
+      let changed = false;
+      const next = prev.map((r, i) => {
+        if (!r.auto) return r;
+        const value = String(autoProvPoints(r, i));
+        if (value === r.manual_points) return r;
+        changed = true;
+        return { ...r, manual_points: value };
+      });
+      return changed ? next : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provRows, lastFinishPos, config, template, sessionType, loading, scoped]);
 
   async function handleSave() {
     const filled = rows.filter(r => r.entry_id && r.finish_pos !== "");
@@ -909,9 +967,14 @@ export function SessionEditor({
           <p style={{ margin: "0 0 10px", color: "var(--ink-1)", fontSize: "0.82rem" }}>
             Drivers who didn&rsquo;t make the race but are still awarded points. Each earns the flat points you enter here and does <strong>not</strong> count toward stats (starts, wins, average finish…).
           </p>
+          <p style={{ margin: "0 0 10px", color: "var(--ink-2)", fontSize: "0.78rem" }}>
+            ⌨ Type a name and press <strong>Enter</strong> (or <strong>Tab</strong>) to lock the driver in and jump to Points.
+            Points fill in automatically with the first finishing position nobody took
+            {lastFinishPos > 0 ? <> — P{lastFinishPos + 1} for the first entry here, then down from there</> : null}. Type over it for your own value; ↺ puts the auto-fill back.
+          </p>
           {provRows.length > 0 && (
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
-              {provRows.map(row => (
+              {provRows.map((row, i) => (
                 <div key={row.slot_id} style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                   <div style={{ flex: "1 1 240px", minWidth: 220 }}>
                     {row.entry_id ? (
@@ -920,17 +983,27 @@ export function SessionEditor({
                         <span>{row.driver_name}</span>
                         <button type="button" title="Change driver" className="btn btn-ghost"
                           style={{ marginTop: 0, padding: "0 6px", color: "var(--ink-2)", lineHeight: 1.4 }}
-                          onClick={() => updateProvRow(row.slot_id, { entry_id: null, driver_name: "", driver_number: null })}>✕</button>
+                          onClick={() => updateProvRow(row.slot_id, { entry_id: null, driver_name: "", driver_number: null, class_id: "" })}>✕</button>
                       </div>
                     ) : (
-                      <DriverCombobox available={availableForProv(row)} onAssign={e => assignProv(row.slot_id, e)}
+                      <DriverCombobox available={availableForProv(row)} commitOnTab
+                        onAssign={e => { assignProv(row.slot_id, e); focusProvPoints(row.slot_id); }}
                         onRequestCreate={name => setCreateFor({ slotId: row.slot_id, name, prov: true })} />
                     )}
                   </div>
                   <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.82rem", color: "var(--ink-1)", margin: 0 }}>
                     Points
                     <input type="number" value={row.manual_points} placeholder="0" style={{ width: 90 }}
-                      onChange={e => updateProvRow(row.slot_id, { manual_points: e.target.value })} />
+                      data-prov-points={row.slot_id}
+                      title={row.auto
+                        ? `Auto-filled with P${lastFinishPos + i + 1} points — the first position nobody finished in. Type over it to set your own.`
+                        : "Your own value — click ↺ to go back to the auto-filled points."}
+                      onChange={e => updateProvRow(row.slot_id, { manual_points: e.target.value, auto: false })} />
+                    {!row.auto && (
+                      <button type="button" className="btn btn-ghost" title="Back to the auto-filled points"
+                        style={{ marginTop: 0, padding: "0 6px", color: "var(--ink-2)", lineHeight: 1.4 }}
+                        onClick={() => updateProvRow(row.slot_id, { auto: true })}>↺</button>
+                    )}
                   </label>
                   <button type="button" className="btn btn-danger" style={{ marginTop: 0, padding: "2px 10px", fontSize: "0.8rem" }}
                     onClick={() => removeProvRow(row.slot_id)}>Remove</button>
@@ -971,7 +1044,7 @@ export function SessionEditor({
           seasonId={seasonId} seriesName={seriesName} initialName={createFor.name} defaultClassId={scopeClassId}
           onClose={() => setCreateFor(null)}
           onCreated={entry => {
-            if (createFor.prov) assignProv(createFor.slotId, entry);
+            if (createFor.prov) { assignProv(createFor.slotId, entry); focusProvPoints(createFor.slotId); }
             else assignToSlot(createFor.slotId, entry);
             setCreateFor(null); onEntriesChanged?.();
           }}
@@ -1084,7 +1157,10 @@ function handleColumnPaste(e, field, idx, onPasteColumn) {
   onPasteColumn(field, idx, values);
 }
 
-function DriverCombobox({ available, onAssign, onRequestCreate, gridIdx, onPasteColumn }) {
+// `commitOnTab` also locks the highlighted driver in on Tab, so tabbing out of
+// the box moves on with the name entered rather than losing what was typed —
+// used by the Provisional Entries rows, where Tab lands on Points.
+function DriverCombobox({ available, onAssign, onRequestCreate, gridIdx, onPasteColumn, commitOnTab = false }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -1135,6 +1211,12 @@ function DriverCombobox({ available, onAssign, onRequestCreate, gridIdx, onPaste
       if (opt?.type === "entry" && grid) {
         setTimeout(() => focusNextGridInput(grid, "driver", gridIdx), 0);
       }
+    }
+    else if (e.key === "Tab" && commitOnTab && !e.shiftKey) {
+      const opt = options[active];
+      // Only a real driver commits on Tab — the create-a-driver option needs a
+      // deliberate Enter/click, not a stray tab out of the field.
+      if (query.trim() && opt?.type === "entry") { e.preventDefault(); choose(opt); }
     }
     else if (e.key === "Escape") { setOpen(false); }
   }
