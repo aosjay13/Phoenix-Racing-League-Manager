@@ -69,6 +69,30 @@ export function formatDelta(gapSec) {
   return formatGap(gapSec);
 }
 
+// The two gap columns a results table shows, for a list of times already in
+// finishing/qualifying order: `toLead` is the gap to the row on top (P1 / pole)
+// and `gap` the gap to the car one position up.
+//
+// Nothing here is stored — every gap is worked out from the times themselves,
+// so it's the same answer for a session entered last year as for one entered
+// today. A row with no time (a DNF, a driver who never set a lap) gets nulls
+// and is skipped in the chain, so the row below it measures to the next timed
+// car up rather than to nothing. Takes seconds (see parseTime), returns
+// seconds — the caller formats.
+export function gapColumns(times) {
+  const leader = times.length ? times[0] : null;
+  let prev = null;
+  return times.map((t, i) => {
+    if (t == null) return { toLead: null, gap: null };
+    const out = {
+      toLead: i === 0 || leader == null ? null : t - leader,
+      gap: i === 0 || prev == null ? null : t - prev,
+    };
+    prev = t;
+    return out;
+  });
+}
+
 // "3L" / "3 l" → 3 (laps behind the leader); anything else → null.
 export function parseLapsDown(str) {
   if (str == null) return null;

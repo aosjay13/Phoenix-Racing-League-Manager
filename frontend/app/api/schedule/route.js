@@ -99,18 +99,34 @@ async function globalFeed(gameId, seriesId, leagueId) {
   // Only the seasons read needs the league filter: races join through their
   // season, so an out-of-league race resolves to no in-scope season and is
   // dropped below. Games/series here are just name-lookup maps.
-  const [gamesSnap, seriesSnap, seasonsSnap, racesSnap, entriesSnap, resultsSnap] = await Promise.all([
+  const [gamesSnap, seriesSnap, seasonsSnap, racesSnap, entriesSnap, resultsSnap, classesSnap] = await Promise.all([
     db().collection("games").get(),
     db().collection("series").get(),
     scopeByLeague(db().collection("seasons"), leagueId).get(),
     db().collection("races").get(),
     db().collection("entries").get(),
     db().collection("results").get(),
+    // Read whole and grouped by season below: the feed spans every season, so
+    // one read beats a per-season query (same shape as the league-wide stats
+    // endpoints).
+    db().collection("classes").get(),
   ]);
 
   const gameName = Object.fromEntries(gamesSnap.docs.map(d => [d.id, d.data().name || "Game"]));
   const series = Object.fromEntries(seriesSnap.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
   const seasons = Object.fromEntries(seasonsSnap.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
+  // A season's classes, in the order the dropdowns show them — same ordering
+  // fetchSeasonClasses applies, so the feed lists classes the way every other
+  // screen does.
+  const classesBySeason = {};
+  for (const d of classesSnap.docs) {
+    const c = { id: d.id, ...d.data() };
+    (classesBySeason[c.season_id] ||= []).push(c);
+  }
+  for (const list of Object.values(classesBySeason)) {
+    list.sort((a, b) => (Number(a.sort_order || 0) - Number(b.sort_order || 0)) ||
+      String(a.name || "").localeCompare(String(b.name || "")));
+  }
 
   // Which seasons are in scope, given the optional game/series filters.
   const seasonInScope = s => {
@@ -130,8 +146,19 @@ async function globalFeed(gameId, seriesId, leagueId) {
     const season = seasons[r.season_id];
     if (!seasonInScope(season)) continue;
     const ser = season.series_id ? series[season.series_id] : null;
+    // A multi-class round has a pole and a winner PER CLASS, so the feed gets
+    // the same per-class breakdown the season calendar shows rather than
+    // whichever class's P1 happened to sort first. Both lists come back empty
+    // for a single-class season, leaving the row exactly as it was.
+    const seasonClasses = classesBySeason[season.id] || [];
+    const running = seasonClasses.filter(c => raceInClass(r, c.id));
     rows.push({
       ...r,
+      class_cars: carsByClassForRace(r, season, seasonClasses),
+      class_summaries: running.length < 2 ? [] : running.map(c => {
+        const s = summarizeRace(r, results, entriesById, null, c.id);
+        return { class_id: c.id, class_name: c.name, pole: s.pole, winner: s.winner };
+      }),
       summary: summarizeRace(r, results, entriesById, season.car || null),
       season_id: season.id,
       season_name: season.name || "Season",
