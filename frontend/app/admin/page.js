@@ -9,6 +9,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { ImageUpload } from "@/components/ImageUpload";
 import { TrackSelect } from "@/components/TrackSelect";
 import { RaceLengthField } from "@/components/RaceLengthField";
+import { TrackMergeModal } from "@/components/TrackMergeModal";
 import { LENGTH_LAPS, LENGTH_TIME } from "@/lib/raceLength";
 import { api } from "@/lib/api";
 import { BONUS_TYPES } from "@/lib/standings";
@@ -214,6 +215,8 @@ function AdminInner() {
   const blankTrack = { name: "", location: "", length: "", track_type: "", logo_url: "", notes: "" };
   const [trackForm, setTrackForm] = useState(blankTrack);
   const [tracks, setTracks] = useState([]);
+  // The venue duplicates get folded INTO, while the merge dialog is open.
+  const [mergingTrack, setMergingTrack] = useState(null);
   const loadTracks = useCallback(() => {
     api("/api/tracks").then(rows => setTracks(rows.sort((a, b) => String(a.name).localeCompare(String(b.name))))).catch(() => setTracks([]));
   }, []);
@@ -694,9 +697,16 @@ function AdminInner() {
                 onClick={() => { setEditId("track", null); setTrackForm(blankTrack); }}>Cancel</button>
             )}
           </form>
+          {/* ⧉ folds duplicates of the same circuit into a venue, under a name
+              the admin picks — every race held at them (and all the history
+              derived from those races) comes across. */}
           <div style={{ marginTop: 16 }}>
             {tracks.map(t => <ItemRow key={t.id} logo={t.logo_url}
               name={`${t.name}${t.track_type ? ` · ${t.track_type}` : ""}`} editing={editIds.track === t.id}
+              children={
+                <button className="btn btn-ghost" title="Merge duplicate venues into this one"
+                  style={{ marginTop: 0, padding: "4px 10px" }} onClick={() => setMergingTrack(t)}>⧉</button>
+              }
               onEdit={() => {
                 setEditId("track", t.id);
                 setTrackForm({
@@ -711,6 +721,23 @@ function AdminInner() {
               }} />)}
           </div>
         </Panel>
+        )}
+
+        {mergingTrack && (
+          <TrackMergeModal
+            track={mergingTrack}
+            tracks={tracks}
+            onClose={() => setMergingTrack(null)}
+            onMerged={res => {
+              setMergingTrack(null);
+              // The survivor may have been renamed and the losers are gone, so
+              // reload the pool rather than patching it.
+              loadTracks();
+              // A merged-away track could be the one open in the form.
+              if (res.merged_ids?.includes(editIds.track)) { setEditId("track", null); setTrackForm(blankTrack); }
+              showToast("success", `Merged ${res.tracks_merged} track${res.tracks_merged === 1 ? "" : "s"} into “${res.track.name}” — ${res.races_moved} race${res.races_moved === 1 ? "" : "s"} moved across.`);
+            }}
+          />
         )}
 
         {section === "templates" && (
