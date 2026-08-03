@@ -473,14 +473,27 @@ export function GraphicCard({ cardRef, theme: t, title, subtitle, logo, leagueNa
             <tr key={ri} style={{ background: ri % 2 ? t.stripe : "transparent" }}>
               {r.cells.map((cell, ci) => {
                 const medal = ci === 0 && r.rank ? MEDAL[r.rank] : null;
-                return (
+                  // A column of prose (an event name, a track, "Pro: Ana ·
+                  // Am: Bo") can be far wider than the numbers these tables
+                  // usually hold, and the card is a fixed 1080px — left on one
+                  // line it pushes the last columns out past the frame. `wrap`
+                  // lets such a column break onto a second line inside a capped
+                  // width instead. Numeric columns stay on one line as before.
+                  const wrap = !!columns[ci]?.wrap;
+                  return (
                   <td key={columns[ci]?.key ?? ci} style={{
                     textAlign: columns[ci]?.align || (ci === 0 ? "left" : "center"),
                     padding: `${sz.padY - 1}px ${sz.padX}px`, borderBottom: `1px solid ${t.border}`,
                     fontWeight: ci === 0 ? 700 : 500,
                     color: medal || (ci === 0 ? t.ink : t.muted),
-                    fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap",
-                    maxWidth: ci === 0 ? sz.name : undefined, overflow: "hidden", textOverflow: "ellipsis",
+                    fontVariantNumeric: "tabular-nums",
+                    whiteSpace: wrap ? "normal" : "nowrap",
+                    lineHeight: wrap ? 1.25 : undefined,
+                    // overflowWrap (not wordBreak): breaks between words, and
+                    // only ever mid-word for a single word too long to fit at
+                    // all — so "Spa-Francorchamps" stays intact.
+                    overflowWrap: wrap ? "break-word" : undefined,
+                    maxWidth: wrap || ci === 0 ? sz.name : undefined, overflow: "hidden", textOverflow: "ellipsis",
                   }}>{cell === null || cell === undefined || cell === "" ? "—" : cell}</td>
                 );
               })}

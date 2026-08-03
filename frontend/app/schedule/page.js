@@ -8,6 +8,8 @@ import { useAuth } from "@/components/AuthProvider";
 import { RaceCreateModal } from "@/components/RaceCreateModal";
 import { SeasonCreateModal } from "@/components/SeasonCreateModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ShareGraphicModal } from "@/components/ShareGraphicModal";
+import { leagueLogos } from "@/lib/shareGraphic";
 import { api } from "@/lib/api";
 import { formatRaceDate, isPastRaceDate, raceDateSortKey } from "@/lib/raceDate";
 import { racePerClassResults } from "@/lib/classFilter";
@@ -65,6 +67,42 @@ function PersonCell({ summary, classSummaries, field }) {
     );
   }
   return <Person p={summary?.[field]} />;
+}
+
+// ── Share Graphic helpers ───────────────────────────────────────────────────
+// The exporter draws its own table, so the cells that stack per class on screen
+// (a round several classes ran has a pole and a winner each) are flattened to
+// one line — "Pro: Ana · Am: Bo" — rather than losing all but one class.
+
+function personText(summary, classSummaries, field) {
+  if (classSummaries?.length && summary?.has_results) {
+    return classSummaries.map(cs => `${cs.class_name}: ${cs[field]?.name || "—"}`).join(" · ");
+  }
+  return summary?.[field]?.name || "—";
+}
+
+function carText(summary, classCars) {
+  if (classCars?.length) return classCars.map(c => `${c.class_name}: ${c.car || "—"}`).join(" · ");
+  return summary?.car || "—";
+}
+
+// The header button every exportable screen carries.
+function ShareGraphicButton({ onClick }) {
+  return (
+    <button className="btn btn-ghost" style={{ marginTop: 0, padding: "6px 12px", fontSize: "0.82rem" }} onClick={onClick}>
+      🖼 Share Graphic
+    </button>
+  );
+}
+
+// Turns a [{ key, label, align?, locked?, get }] spec into the modal's
+// columns/rows, the same way the race results page does. A calendar has no
+// finishing order, so no row is medalled.
+function toShareTable(spec, rows) {
+  return {
+    columns: spec.map(({ get, ...c }) => ({ align: "center", ...c })),
+    rows: rows.map(r => ({ cells: spec.map(c => c.get(r)) })),
+  };
 }
 
 export default function SchedulePage() {
@@ -159,14 +197,50 @@ function GlobalSchedule() {
 }
 
 function FeedSection({ title, icon, rows, kind }) {
+  const { league, game, series } = useLeague();
+  const [sharing, setSharing] = useState(false);
   if (!rows.length) return null;
   const archive = kind === "archive";
+
+  // Each half of the feed exports on its own — an "Upcoming" graphic and a
+  // "Recent Results" one are different posts. The last column follows the table:
+  // who won for the archive, what they're driving for what's still to come.
+  const shareSpec = [
+    { key: "date", label: "Date", locked: true, get: r => fmtDate(r.date) },
+    { key: "event", label: "Event", align: "left", locked: true, wrap: true, get: r => r.name },
+    { key: "track", label: "Track", align: "left", wrap: true, get: r => r.track || "—" },
+    { key: "series", label: "Series · Season", align: "left", wrap: true, get: r => [r.series_name, r.season_name].filter(Boolean).join(" · ") || "—" },
+    { key: "game", label: "Game", align: "left", get: r => r.game_name || "—" },
+    archive
+      ? { key: "winner", label: "Winner", align: "left", wrap: true, get: r => personText(r.summary, r.class_summaries, "winner") }
+      : { key: "car", label: "Car", align: "left", wrap: true, get: r => carText(r.summary || {}, r.class_cars) },
+  ];
+  const shareTable = toShareTable(shareSpec, rows);
+  const scopeLabel = series?.name || game?.name || "All Games";
+
   return (
     <div style={{ marginTop: 22 }}>
       <h3 style={{ margin: "0 0 10px", display: "flex", alignItems: "center", gap: 8 }}>
         <span>{icon}</span>{title}
         <span className="page-badge" style={{ marginLeft: 4 }}>{rows.length}</span>
+        <ShareGraphicButton onClick={() => setSharing(true)} />
       </h3>
+      <ShareGraphicModal
+        open={sharing}
+        onClose={() => setSharing(false)}
+        kind={archive ? "Recent Results" : "Upcoming Races"}
+        defaultTitle={`${scopeLabel} — ${archive ? "Recent Results" : "Upcoming Races"}`}
+        subtitle={[game?.name, series?.name].filter(Boolean).join(" · ")}
+        columns={shareTable.columns}
+        rows={shareTable.rows}
+        meta={[
+          { label: "Scope", value: [game?.name, series?.name].filter(Boolean).join(" · ") || "All Games", wide: true },
+          { label: "Events", value: rows.length },
+        ]}
+        logos={leagueLogos({ league, game, series })}
+        leagueName={league?.name ?? ""}
+        leagueLogoUrl={league?.logo_url ?? ""}
+      />
       <div className="table-wrap">
         <table className="stats-table" style={{ width: "100%", minWidth: 720 }}>
           <thead>
@@ -219,10 +293,11 @@ function FeedSection({ title, icon, rows, kind }) {
 // ── One season's full event table (a concrete season is selected) ──────────
 
 function SeasonSchedule() {
-  const { seasonId, season, classId, className, classes, raceClass, refresh } = useLeague();
+  const { seasonId, season, classId, className, classes, raceClass, refresh, league, game, series } = useLeague();
   const { isAdmin } = useAuth();
   const router = useRouter();
   const [races, setRaces] = useState(null);
+  const [sharing, setSharing] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [toDelete, setToDelete] = useState(null); // race pending delete confirmation
   const [toggleComplete, setToggleComplete] = useState(false); // season completion pending confirmation
@@ -271,6 +346,26 @@ function SeasonSchedule() {
   // either that class's or shared, and its results are already that class's.
   const showClassCol = classes.length > 0 && !classId && (perClassSchedules || ordered.some(splitResults));
 
+  // The calendar as a shareable image: every column the table shows, in the same
+  // order, with the round and event locked on since a row is unreadable without
+  // them. Rounds that haven't run yet export with em-dashes for pole/winner,
+  // which is what makes this useful as a "season ahead" graphic as well as a
+  // season-in-review one.
+  const shareSpec = [
+    { key: "round", label: "Rd", locked: true, get: r => r.round_number ?? "—" },
+    { key: "date", label: "Date", get: r => fmtDate(r.date) },
+    { key: "event", label: "Event", align: "left", locked: true, wrap: true, get: r => r.name },
+    { key: "track", label: "Track", align: "left", wrap: true, get: r => r.track || "—" },
+    ...(showClassCol ? [{ key: "class", label: "Class", align: "left", wrap: true, get: r => r.class_name || "All Classes" }] : []),
+    { key: "length", label: "Length", get: r => (r.summary?.laps ? `${r.summary.laps} Laps` : "—") },
+    { key: "car", label: "Car", align: "left", wrap: true, get: r => carText(r.summary || {}, r.class_cars) },
+    { key: "pole", label: "Pole", align: "left", wrap: true, get: r => personText(r.summary, r.class_summaries, "pole") },
+    { key: "winner", label: "Winner", align: "left", wrap: true, get: r => personText(r.summary, r.class_summaries, "winner") },
+    { key: "drivers", label: "Drivers", get: r => r.summary?.num_drivers || "—" },
+  ];
+  const shareTable = toShareTable(shareSpec, ordered);
+  const scopeName = [season?.name, raceClass?.name].filter(Boolean).join(" · ");
+
   return (
     <section>
       <div className="page-title">
@@ -286,6 +381,7 @@ function SeasonSchedule() {
             {raceClass.name} Results
           </span>
         )}
+        {races.length > 0 && <ShareGraphicButton onClick={() => setSharing(true)} />}
         {isAdmin && (
           <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
             <button
@@ -303,6 +399,25 @@ function SeasonSchedule() {
           </div>
         )}
       </div>
+
+      <ShareGraphicModal
+        open={sharing}
+        onClose={() => setSharing(false)}
+        kind="Schedule"
+        defaultTitle={`${scopeName || "Season"} Schedule`}
+        subtitle={[game?.name, series?.name, raceClass?.name].filter(Boolean).join(" · ")}
+        columns={shareTable.columns}
+        rows={shareTable.rows}
+        meta={[
+          { label: "Series", value: [game?.name, series?.name].filter(Boolean).join(" · "), wide: true },
+          { label: "Season", value: season?.name },
+          { label: "Class", value: raceClass?.name },
+          { label: "Events", value: races.length },
+        ]}
+        logos={leagueLogos({ league, game, series, season })}
+        leagueName={league?.name ?? ""}
+        leagueLogoUrl={league?.logo_url ?? ""}
+      />
 
       {isAdmin && (
         <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.85rem" }}>
