@@ -30,12 +30,24 @@ function RoleBadge({ role, locked, title }) {
   );
 }
 
+// One driver row is roughly this tall (padding + name + availability line +
+// separator), so ten of them is the list height we aim for.
+const DRIVER_ROW_H = 52;
+const DRIVER_ROWS_VISIBLE = 10;
+const DRIVER_LIST_MAX = DRIVER_ROW_H * DRIVER_ROWS_VISIBLE;
+const SEARCH_BOX_H = 50;   // the search field above the list
+const VIEWPORT_GAP = 12;   // breathing room against the window edge
+
 // Searchable driver-profile picker rendered as a proper select: a trigger that
 // always shows the current link, and a roomy dropdown listing every driver with
 // its availability (unclaimed / linked here / linked to another account).
 function DriverLinkSelect({ drivers, valueId, valueName, disabled, onChange }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
+  // Where the panel hangs and how tall its list may be — recomputed whenever
+  // it opens (or the page moves) so a row near the bottom of the window opens
+  // upwards instead of being clipped off-screen.
+  const [placement, setPlacement] = useState({ up: false, listMax: DRIVER_LIST_MAX });
   const boxRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -48,6 +60,28 @@ function DriverLinkSelect({ drivers, valueId, valueName, disabled, onChange }) {
   }, []);
 
   useEffect(() => { if (open) inputRef.current?.focus(); }, [open]);
+
+  // Pick the side with more room and cap the list to what actually fits there,
+  // never asking for more than ten rows.
+  useEffect(() => {
+    if (!open) return;
+    function measure() {
+      const rect = boxRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const below = window.innerHeight - rect.bottom - VIEWPORT_GAP;
+      const above = rect.top - VIEWPORT_GAP;
+      const up = below < Math.min(DRIVER_LIST_MAX + SEARCH_BOX_H, above);
+      const room = (up ? above : below) - SEARCH_BOX_H;
+      setPlacement({ up, listMax: Math.max(DRIVER_ROW_H * 3, Math.min(DRIVER_LIST_MAX, room)) });
+    }
+    measure();
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure, true);
+    };
+  }, [open]);
 
   const list = drivers || [];
   const matches = useMemo(() => {
@@ -84,7 +118,8 @@ function DriverLinkSelect({ drivers, valueId, valueName, disabled, onChange }) {
 
       {open && !disabled && (
         <div style={{
-          position: "absolute", zIndex: 30, top: "calc(100% + 4px)", left: 0, right: 0,
+          position: "absolute", zIndex: 30, left: 0, right: 0,
+          ...(placement.up ? { bottom: "calc(100% + 4px)" } : { top: "calc(100% + 4px)" }),
           background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 10,
           boxShadow: "0 8px 24px rgba(0,0,0,0.35)", overflow: "hidden",
         }}>
@@ -98,7 +133,7 @@ function DriverLinkSelect({ drivers, valueId, valueName, disabled, onChange }) {
               style={{ width: "100%" }}
             />
           </div>
-          <div style={{ maxHeight: 320, overflowY: "auto" }}>
+          <div style={{ maxHeight: placement.listMax, overflowY: "auto", overscrollBehavior: "contain" }}>
             {/* Always-present "no driver" / unlink option. */}
             <button type="button" onClick={() => pick(null, null)}
               style={{
