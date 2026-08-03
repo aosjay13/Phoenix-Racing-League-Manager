@@ -236,7 +236,7 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
    On a race grid, three of the checkboxes fill themselves in from what you've already
    typed, so you don't have to work them out by eye: **FL** goes to the quickest Best Lap
    time (a single lap time entered is, trivially, the fastest one), **HC** to the biggest
-   gain from Start to Fin — a tie going to whoever started furthest back — and **MLL** to
+   gain from Start to Fin — a tie going to whoever finished highest — and **MLL** to
    the highest Led count, shared on a tie. Tick or untick any of them yourself and that one
    stops moving; your choice is saved as-is. They're recorded as stats either way, and only
    affect points if the season (or that session's points structure) pays a bonus for them.

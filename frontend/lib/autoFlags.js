@@ -7,7 +7,7 @@
 //   • Fastest Lap  — whoever set the quickest Best Lap time (a single entered
 //                    lap time is, trivially, the fastest one).
 //   • Hard Charger — whoever gained the most positions from start to finish;
-//                    ties go to the driver who started furthest back.
+//                    ties go to the driver who finished highest.
 //   • Most Laps Led — whoever led the most laps, when Led is being tracked at
 //                    all. Ties share it, matching how the bonus has always
 //                    been scored.
@@ -46,8 +46,8 @@ export function autoFastestLapSlot(rows) {
 }
 
 // Slot that gained the most positions start → finish. Ties go to whoever
-// started deepest in the field. Null when nobody moved forward (or starting
-// positions haven't been entered).
+// finished highest. Null when nobody moved forward (or starting positions
+// haven't been entered).
 export function autoHardChargerSlot(rows) {
   let best = null;
   for (const r of filled(rows)) {
@@ -57,8 +57,8 @@ export function autoHardChargerSlot(rows) {
     if (!(start > 0) || !(finish > 0)) continue;
     const gained = start - finish;
     if (gained <= 0) continue;
-    if (best == null || gained > best.gained || (gained === best.gained && start > best.start)) {
-      best = { gained, start, slot_id: r.slot_id };
+    if (best == null || gained > best.gained || (gained === best.gained && finish < best.finish)) {
+      best = { gained, finish, slot_id: r.slot_id };
     }
   }
   return best?.slot_id ?? null;
