@@ -44,6 +44,10 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
 - 🖼 **Custom branding** — upload game, series, season, team, and track logos
 - 👑 **Admin roles** — set `ADMIN_EMAILS`; admins get results entry from the Schedule, the
   Roster & Teams and User Accounts tabs on Drivers, and League Setup
+- 💾 **Backup & restore** — the Owner can export the *entire* application to one JSON file and
+  import it back after a crash, a corruption or a hack, with every record keeping its original ID
+  so all the links survive; plus an automatic backup every Saturday at 3 AM Eastern, filed into the
+  repo, a workflow artifact and (optionally) Google Drive
 
 ## Getting live (beta)
 
@@ -218,6 +222,8 @@ frontend/
                       RosterManager + UserAccountsManager (the Drivers page's admin tabs)
 firebase/           ← Firestore + Storage security rules
 backend/            ← Legacy Python backend (unused; superseded by Next.js API routes)
+scripts/            ← Ops scripts: fetch-backup.mjs, upload-to-drive.mjs (see Backups below)
+backups/            ← Weekly automatic backup JSON files, committed by the scheduled workflow
 ```
 
 **One editor per entity, wherever it's opened.** Several things can be created from more than
@@ -237,7 +243,14 @@ hierarchy/pool collection — `games`, `series`, `seasons`, `races`, `entries`, 
 `results`, `drivers`, `tracks`, `points_templates` — carries a `league_id` and is read/written
 scoped to the active league (sent as an `X-League-Id` header; see `lib/serverAuth.js`
 `getRequestLeagueId`/`scopeByLeague`). `users` and `claim_requests` are **not** league-scoped —
-accounts and their roles span leagues.
+accounts and their roles span leagues. That partition map lives once, in `lib/backup.js`
+(`SCOPED_COLLECTIONS` / `GLOBAL_COLLECTIONS`), and is imported by both the containment migration
+and the backup engine, so adding a collection can't leave one of them behind.
+
+Two collections are internal bookkeeping and are excluded from backups: `backup_log` (the
+export/restore history shown on the Backup & Restore screen — restoring an old copy of it would
+erase the record of every backup taken since) and `restore_uploads` (transient staging for a
+chunked import, deleted as soon as the import finishes).
 
 `games (league_id)` → `series (game_id)` → `seasons (series_id, game_id, drop_weeks, points_scale,
 combined_championship)` → `races (season_id, sessions[])`, `classes (season_id, name, sort_order, race_points?)`
@@ -436,3 +449,105 @@ aggregation by `user_id` when linked, otherwise by roster name.
 
 Everything runs through the server API — clients never talk to Firestore directly (see
 `firebase/firestore.rules` and `firebase/storage.rules`).
+
+## Backups & disaster recovery
+
+The whole application can be written to — and rebuilt from — a single JSON file. That file holds
+every Firestore document the app owns (leagues, games, series, seasons, classes, races, sessions,
+results, drivers, teams, tracks, points templates, roster entries, user accounts and their roles),
+**with the original document IDs**. Keeping the IDs is the point: an export that minted new ones
+would restore the rows but shred every `season_id` / `race_id` / `driver_id` / `class_id` link
+between them.
+
+Two things are deliberately *not* in a backup, because they don't live in Firestore:
+
+- **Sign-in credentials.** Passwords and Google/OAuth links live in Firebase Auth. The `users`
+  documents — display name, role, driver link, profile — restore fine; the credential behind a uid
+  is Firebase's to keep. Restoring into a brand-new project therefore restores the *profiles*, and
+  people sign in again to reattach them.
+- **Uploaded images.** Logos and avatars live in Cloud Storage. The backup keeps their URLs, which
+  keep working as long as the bucket does.
+
+### Manual export / import
+
+**League Setup → Data & Recovery → Backup & Restore**, Owner-only (Admins, Moderators and
+Statisticians can't see it).
+
+- **Export** downloads one JSON file. Choose *Entire application* — accounts and every league, the
+  file you want for disaster recovery — or *Only the active league*, which carries just that
+  league's racing data and no accounts, so it's safe to hand to someone else or move between
+  projects.
+- **Import** reads a file back. The file is parsed and summarized in the browser first, so a wrong
+  file is caught before a byte is uploaded, and the import only runs once you've typed `RESTORE`.
+  Two modes:
+  - **Merge** — every record in the file is written over the top of what's there now, and anything
+    added since the backup was taken is left alone. The safe default.
+  - **Replace** — as well as writing the file's records, this **deletes** everything the backup
+    doesn't contain, so the database ends up matching the backup exactly. This is the real recovery
+    mode after a corruption or a compromised account. A league-scoped backup only ever replaces
+    within its own league — other leagues and all user accounts are untouched.
+
+Large files are uploaded in ~400 KB pieces and staged server-side before being applied, so a backup
+bigger than the host's request-body limit still imports in one go.
+
+The screen also lists recent export and restore runs (manual and scheduled), so "when were we last
+backed up?" is answerable without going to look at a drive.
+
+### Automatic weekly backup — Saturdays, 3:00 AM Eastern
+
+`.github/workflows/weekly-backup.yml` calls the same export endpoint every Saturday morning and
+files the result in three places:
+
+1. **This repository**, committed into [`backups/`](backups/) — the newest 12 files are kept
+   (about three months), older ones pruned by the same run.
+2. **A workflow artifact**, downloadable from the run page for 90 days — grab this one if you want
+   a copy on a local drive.
+3. **Google Drive**, if configured (see below). Skipped silently when it isn't.
+
+GitHub schedules only in UTC and Eastern moves twice a year, so the workflow registers *two*
+schedules — 07:00 UTC (3 AM EDT) and 08:00 UTC (3 AM EST) — and a guard job checks Eastern's
+current UTC offset to let only the one that really is 3 AM Eastern through. It matches on which
+cron fired rather than on the wall clock, so a run GitHub delays under load still counts.
+
+**Setup — two repository secrets** (*Settings → Secrets and variables → Actions*):
+
+| Secret | Value |
+| --- | --- |
+| `BACKUP_APP_URL` | Base URL of the deployed app, e.g. `https://your-app.vercel.app` |
+| `BACKUP_CRON_SECRET` | Any long random string |
+
+Then set `BACKUP_CRON_SECRET` to **the same value** in the app's environment (Vercel → Settings →
+Environment Variables) and redeploy. The scheduled job has no Firebase account to sign in as, so it
+presents this shared secret instead. Note the asymmetry: the secret can take a backup, but it can
+**never** restore one — importing is always Owner-only, because taking a copy of the data is
+harmless and overwriting the live database with one is not. Leave `BACKUP_CRON_SECRET` unset and
+token access is off entirely; only a signed-in Owner can export.
+
+Run it on demand any time from *Actions → Weekly Backup → Run workflow*.
+
+**Optional — Google Drive.** Add two more secrets and each weekly backup is also uploaded to a
+Drive folder, so a copy survives losing the repository too:
+
+| Secret | Value |
+| --- | --- |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | A Google Cloud service-account key file, pasted whole |
+| `GOOGLE_DRIVE_FOLDER_ID` | The folder id from its URL (`…/folders/<id>`) |
+
+Share that Drive folder with the service account's `client_email` as **Editor**. The upload uses
+the `drive.file` scope, so the script can only see and manage the files it created itself — it
+cannot read the rest of the Drive it's uploading into. It keeps the newest 12 there as well.
+
+### Saving to a local drive
+
+The same script that powers the workflow will write anywhere you point it:
+
+```bash
+APP_URL=https://your-app.vercel.app \
+BACKUP_CRON_SECRET=… \
+BACKUP_DIR="/Volumes/Backups/phoenix" \
+npm run backup
+```
+
+It refuses to write a file that doesn't parse as one of our backups, or that comes back with zero
+records — a backup folder full of plausible-looking garbage is worse than one that's visibly
+missing a week.

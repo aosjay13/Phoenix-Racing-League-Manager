@@ -1,0 +1,124 @@
+name: Weekly Backup
+
+# Takes a full JSON backup of the application every Saturday at 3:00 AM Eastern
+# and files it in three places: committed into backups/ in this repository, kept
+# as a downloadable workflow artifact, and (optionally) uploaded to a Google
+# Drive folder.
+#
+# GitHub only schedules in UTC, and Eastern time moves twice a year, so there
+# are two schedules — 07:00 UTC (= 3 AM EDT, summer) and 08:00 UTC (= 3 AM EST,
+# winter) — and the first job checks which one is actually 3 AM Eastern today
+# and lets only that one through. Matching on the cron string rather than on
+# "what time is it now" means a run GitHub delays by half an hour (which it
+# does, under load) still counts.
+#
+# Required repository secrets:
+#   BACKUP_APP_URL       Base URL of the deployed app, e.g. https://your-app.vercel.app
+#   BACKUP_CRON_SECRET   Must match BACKUP_CRON_SECRET in the app's environment
+#
+# Optional, for the off-site copy:
+#   GOOGLE_SERVICE_ACCOUNT_JSON  Service-account key JSON
+#   GOOGLE_DRIVE_FOLDER_ID       Drive folder id, shared with that service account
+
+on:
+  schedule:
+    - cron: "0 7 * * 6"   # 03:00 America/New_York while EDT is in effect
+    - cron: "0 8 * * 6"   # 03:00 America/New_York while EST is in effect
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: "Commit the backup into the repo"
+        type: boolean
+        default: true
+
+concurrency:
+  group: weekly-backup
+  cancel-in-progress: false
+
+jobs:
+  # Exactly one of the two schedules is 3 AM Eastern on any given Saturday.
+  # Work out which by asking what Eastern's UTC offset is right now.
+  guard:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      - id: check
+        run: |
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "Manual run — proceeding."
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          offset=$(TZ=America/New_York date +%z)
+          if [ "$offset" = "-0400" ]; then wanted="0 7 * * 6"; else wanted="0 8 * * 6"; fi
+          echo "Eastern offset $offset → 3 AM Eastern is the '$wanted' schedule."
+          echo "This run came from '${{ github.event.schedule }}'."
+          if [ "${{ github.event.schedule }}" = "$wanted" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Not 3 AM Eastern — skipping."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  backup:
+    needs: guard
+    if: needs.guard.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # to commit the backup file back into the repo
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Fetch backup
+        id: fetch
+        env:
+          APP_URL: ${{ secrets.BACKUP_APP_URL }}
+          BACKUP_CRON_SECRET: ${{ secrets.BACKUP_CRON_SECRET }}
+          BACKUP_DIR: backups
+          BACKUP_KEEP: "12"      # ~3 months of weekly backups kept in the repo
+        run: node scripts/fetch-backup.mjs
+
+      # A copy that lives outside the repository, downloadable from the run
+      # page — this is the one to grab if you want it on a local drive.
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.fetch.outputs.name }}
+          path: ${{ steps.fetch.outputs.path }}
+          retention-days: 90
+
+      - name: Upload to Google Drive
+        # Skipped entirely unless both Drive secrets are configured, so the
+        # off-site copy is opt-in and its absence never fails the backup.
+        if: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID != '' && secrets.GOOGLE_SERVICE_ACCOUNT_JSON != '' }}
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
+          GOOGLE_DRIVE_KEEP: "12"
+        run: node scripts/upload-to-drive.mjs "${{ steps.fetch.outputs.path }}"
+
+      - name: Commit backup
+        if: ${{ github.event_name == 'schedule' || inputs.commit }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backups
+          if git diff --cached --quiet; then
+            echo "Nothing to commit."
+            exit 0
+          fi
+          git commit -m "Weekly backup: ${{ steps.fetch.outputs.name }} (${{ steps.fetch.outputs.records }} records)"
+          # The scheduled run races nothing, but a rebase keeps it safe if a
+          # push lands between checkout and here.
+          for attempt in 1 2 3 4; do
+            git pull --rebase origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            echo "Push failed, retrying in $((2 ** attempt))s…"
+            sleep $((2 ** attempt))
+          done
+          echo "::error::Couldn't push the backup commit."
+          exit 1
