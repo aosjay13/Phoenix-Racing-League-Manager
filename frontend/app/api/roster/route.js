@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
+import { fetchDriverNames } from "@/lib/driverNamesServer";
 
 export const dynamic = "force-dynamic";
 
@@ -119,23 +120,49 @@ export async function GET(request) {
     }
   }
 
-  // In aggregated scopes (game/league) a driver can span series with
-  // different alias names, so show their canonical global-driver name
-  // instead of whichever alias happened to be seen last.
+  // Display names, resolved from each driver's profile (see lib/driverNames.js).
+  // Every scope here sits under at most one game — season/series through their
+  // season docs, `scope=game` through the query — so inside a game the roster
+  // shows the name that driver is shown under in THAT game, and league-wide it
+  // shows their overall display name.
+  //
+  // `name` stays the raw editable name (canonical driver name in aggregated
+  // scopes, the per-series entry alias in season/series scope) because the
+  // roster editor writes it straight back; `display_name` is the one to render.
+  // League scope spans every game, so it has no per-game name to apply.
+  const scopeGameId =
+    scope === "game" ? searchParams.get("game_id")
+      : scope === "league" ? null
+        : (seasons.find(s => s.game_id)?.game_id || null);
+  const names = await fetchDriverNames(Object.values(drivers).map(d => d.driver_id), scopeGameId);
+
   if (!showNumber) {
-    const driverIds = [...new Set(Object.values(drivers).map(d => d.driver_id).filter(Boolean))];
-    if (driverIds.length) {
-      const docs = await Promise.all(driverIds.map(id => db().collection("drivers").doc(id).get()));
-      const canonicalName = Object.fromEntries(docs.filter(d => d.exists).map(d => [d.id, d.data().name]));
-      for (const bucket of Object.values(drivers)) {
-        if (bucket.driver_id && canonicalName[bucket.driver_id]) bucket.name = canonicalName[bucket.driver_id];
-      }
+    // Aggregated scopes: a driver can span series with different entry names,
+    // so fall back to their profile name rather than whichever was seen last.
+    for (const bucket of Object.values(drivers)) {
+      const overall = bucket.driver_id ? names[bucket.driver_id]?.overall : null;
+      if (overall) bucket.name = overall;
     }
+  }
+  for (const bucket of Object.values(drivers)) {
+    const n = bucket.driver_id ? names[bucket.driver_id] : null;
+    // A per-game name takes over; without one the row keeps the name it already
+    // had — the per-series entry alias in a season/series roster, the profile
+    // name in an aggregated one.
+    bucket.display_name = n?.game || bucket.name;
+    bucket.profile_name = n?.overall || bucket.name;
+    bucket.game_alias = n?.game ?? null;
   }
 
   const rows = Object.values(drivers).map(d => ({
     key: d.key,
     name: d.name,
+    // What to show: the game's name for this driver when the scope is inside a
+    // game, else their overall display name. `profile_name` is always the
+    // overall one, so a game roster can note who the on-track name belongs to.
+    display_name: d.display_name,
+    profile_name: d.profile_name,
+    game_alias: d.game_alias,
     driver_id: d.driver_id,
     user_id: d.user_id,
     // Only expose a concrete number when the scope pins it to one series.

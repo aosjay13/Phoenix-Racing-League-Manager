@@ -1,19 +1,23 @@
 import { db } from "@/lib/firebase";
+import { overallNameFor } from "@/lib/driverNames";
 
-// The canonical display name for a pool driver: a linked player account's
-// display_name wins (that's what the public profile shows), otherwise the
-// driver-pool doc's own `name`. Kept in one place so the cascade and the
-// backfill always agree on "the current name".
+// The canonical display name for a pool driver: the admin's explicit overall
+// display-name override wins, then a linked player account's display_name
+// (that's what the public profile shows), otherwise the driver-pool doc's own
+// `name`. Kept in one place so the cascade and the backfill always agree on
+// "the current name". Per-GAME names are deliberately not considered here —
+// entries are denormalized across every game, so the name stamped on them is
+// the overall one and each game's pages layer their own name on top at read
+// time (see lib/driverNames.js).
 export async function canonicalNameForDriver(driverId, driverData = null) {
   const data = driverData || (await db().collection("drivers").doc(driverId).get()).data();
   if (!data) return null;
+  let accountName = null;
   if (data.user_id) {
     const u = await db().collection("users").doc(data.user_id).get();
-    const dn = u.exists ? String(u.data().display_name || "").trim() : "";
-    if (dn) return dn;
+    if (u.exists) accountName = String(u.data().display_name || "").trim();
   }
-  const name = String(data.name || "").trim();
-  return name || null;
+  return overallNameFor(data, accountName);
 }
 
 // Cascade a driver's current name onto every roster entry that resolves to

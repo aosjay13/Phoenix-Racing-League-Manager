@@ -5,8 +5,26 @@ import { decorateSessionFlags } from "@/lib/standings";
 import { summarizeRace } from "@/lib/raceSummaryServer";
 import { classIdsInSeason, fetchSeasonClasses, filterRacesByClass, carForClass, carsByClassForRace } from "@/lib/classServer";
 import { raceInClass } from "@/lib/classFilter";
+import { fetchNameResolver } from "@/lib/driverNamesServer";
 
 export const dynamic = "force-dynamic";
+
+// Name every pole sitter / winner the way the game that event was raced on
+// names them (see lib/driverNames.js), leaving the entry's own name in place
+// for anyone with no name set for that game. Each row carries its own game, so
+// the master feed across games gets each event's name right.
+async function applyGameNames(rows, gameIdOf) {
+  const people = rows.flatMap(r => [
+    r.summary?.winner, r.summary?.pole,
+    ...(r.class_summaries || []).flatMap(cs => [cs.winner, cs.pole]),
+  ].filter(Boolean).map(p => ({ person: p, gameId: gameIdOf(r) })));
+
+  const nameFor = await fetchNameResolver(people.map(p => p.person.driver_id));
+  for (const { person, gameId } of people) {
+    if (person.driver_id) person.name = nameFor.display(person.driver_id, gameId) || person.name;
+  }
+  return rows;
+}
 
 // Schedule listing enriched with the SimRacerHub-style summary each row needs
 // (pole, winner, field size, distance). Two modes:
@@ -89,7 +107,7 @@ async function oneSeason(seasonId, classIdParam = "", className = "") {
     class_summaries: classSummariesFor(r),
     summary: summarizeRace(r, results, entriesById, carForClass(season, carClassFor(r)), classSel),
   }));
-  return NextResponse.json(rows);
+  return NextResponse.json(await applyGameNames(rows, () => season?.game_id || null));
 }
 
 // Master feed across every season (optionally scoped to a game or a series).
@@ -168,5 +186,5 @@ async function globalFeed(gameId, seriesId, leagueId) {
       game_name: season.game_id ? (gameName[season.game_id] || null) : null,
     });
   }
-  return NextResponse.json(rows);
+  return NextResponse.json(await applyGameNames(rows, r => r.game_id));
 }

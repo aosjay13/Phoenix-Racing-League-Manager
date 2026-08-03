@@ -211,6 +211,11 @@ export default function StatsPage() {
                           ? <Link href={`/drivers/${r.driver_id || r.user_id}`} style={{ color: "var(--accent-cyan)" }}>{r.driver_name}</Link>
                           : r.driver_name}
                         {r.driver_number != null && <span style={{ color: "var(--ink-2)", marginLeft: 6 }}>#{r.driver_number}</span>}
+                        {/* Inside a game these tables lead with the name the driver
+                            is shown under there, so their profile name goes under it. */}
+                        {r.game_alias && r.profile_name && r.game_alias !== r.profile_name && (
+                          <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.74rem" }}>{r.profile_name}</span>
+                        )}
                       </td>
                       {columns.map(([key]) => (
                         <td key={key} className={best[key] != null && r[key] === best[key] ? "stat-leader" : undefined}>

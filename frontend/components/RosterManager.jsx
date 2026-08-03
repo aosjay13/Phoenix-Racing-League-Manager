@@ -602,7 +602,16 @@ export function RosterManager() {
                       <td className="driver-name-cell">
                         {editing
                           ? <input value={rowForm.name} onChange={e => setRowForm(f => ({ ...f, name: e.target.value }))} />
-                          : d.name}
+                          : (
+                            <>
+                              {d.display_name || d.name}
+                              {/* Inside a game the roster shows that game's name for the
+                                  driver, with their overall profile name underneath. */}
+                              {d.game_alias && d.profile_name && d.game_alias !== d.profile_name && (
+                                <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.74rem" }}>{d.profile_name}</span>
+                              )}
+                            </>
+                          )}
                       </td>
                       {showClass && (
                         <td className="team-cell">

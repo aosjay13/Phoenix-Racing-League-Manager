@@ -181,8 +181,12 @@ export const SPECS = {
   // backward-compat reads but is no longer written. `aliases` is an ordered list
   // of { label, value } connected-account identities (Discord/PSN/Xbox/… — see
   // lib/aliases.js) the importer also matches imported names against.
+  // `display_name` overrides the name shown everywhere that isn't tied to one
+  // game, and `game_names` ([{ game_id, name }]) sets the name shown on each
+  // game's own pages — see lib/driverNames.js.
   drivers: { collection: "drivers", parentField: null, sortField: "name",
              fields: { name: { required: true }, user_id: {}, notes: {},
+                       display_name: {}, game_names: {},
                        skillRating: { number: true }, skillRatings: {}, aliases: {},
                        // Names this driver was previously known as — appended when
                        // another driver is merged into them (see /api/admin/drivers/merge).

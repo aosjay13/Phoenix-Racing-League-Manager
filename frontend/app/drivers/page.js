@@ -64,8 +64,14 @@ function DriversDirectory() {
           const account = d.user_id ? byUid[d.user_id] : null;
           return {
             id: d.id,
-            name: account?.display_name || d.name,
+            // The directory isn't tied to a game, so it shows the overall
+            // display name: the driver's own override first, then a linked
+            // account's name, then the pool name (see lib/driverNames.js).
+            name: d.display_name || account?.display_name || d.name,
             pool_name: d.name,
+            account_name: account?.display_name || "",
+            display_name: d.display_name || "",
+            game_names: d.game_names || [],
             notes: d.notes || "",
             aliases: d.aliases || [],
             photo_url: account?.photo_url || null,
@@ -148,9 +154,18 @@ function DriversDirectory() {
   function handleSaved(updated) {
     setDrivers(prev => (prev || [])
       .map(d => (d.id === updated.id
-        // A linked driver keeps its account display name; an unlinked one takes
-        // the new pool name.
-        ? { ...d, pool_name: updated.name, notes: updated.notes ?? d.notes, aliases: updated.aliases ?? d.aliases, name: d.linked ? d.name : updated.name }
+        // An explicit overall display name wins; without one, a linked driver
+        // keeps its account display name and an unlinked one takes the new
+        // pool name.
+        ? {
+            ...d,
+            pool_name: updated.name,
+            display_name: updated.display_name ?? d.display_name,
+            game_names: updated.game_names ?? d.game_names,
+            notes: updated.notes ?? d.notes,
+            aliases: updated.aliases ?? d.aliases,
+            name: (updated.display_name || "").trim() || d.account_name || updated.name,
+          }
         : d))
       .sort((a, b) => String(a.name).localeCompare(String(b.name))));
     setEditing(null);
@@ -225,7 +240,16 @@ function DriversDirectory() {
       )}
       {editing && (
         <DriverEditModal
-          driver={{ id: editing.id, name: editing.pool_name, notes: editing.notes, aliases: editing.aliases, linked: editing.linked }}
+          driver={{
+            id: editing.id,
+            name: editing.pool_name,
+            display_name: editing.display_name,
+            game_names: editing.game_names,
+            account_name: editing.account_name,
+            notes: editing.notes,
+            aliases: editing.aliases,
+            linked: editing.linked,
+          }}
           onClose={() => setEditing(null)}
           onSaved={handleSaved}
         />

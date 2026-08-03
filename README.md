@@ -171,6 +171,20 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
    switch between its three views, so nothing is stacked into one long scroll:
    - **Drivers** — the public directory of every driver profile (admins get Edit / Merge /
      Delete and **Sync names**; players can claim their own profile).
+     - **Display Names** — what a driver is *shown* as, set per context in the Edit dialog.
+       The **overall display name** covers the directory, their profile, and All Games stats
+       and records; leave it blank to keep using their linked account's name (or the pool
+       name). Under it, add a **name per game** — pick the game, type the name — and that name
+       takes over everywhere inside that game: its standings, race results, stats, records,
+       skill ratings, roster and share graphics, with the overall name shown quietly beneath.
+       So Ryan Maynard can be "Ryanbirdman" throughout BeamNG and "Ryan Maynard" everywhere
+       else. Game names are matched by the Smart Importer too, so a BeamNG export listing
+       "Ryanbirdman" still resolves to the right profile.
+     - **Aliases / Connected Accounts** — the platform usernames a driver races under
+       (Discord, PSN, Xbox, Steam, iRacing…), used by the Smart Importer to map imported
+       names back to one profile. An alias mapped to a game still acts as that game's display
+       name when no per-game Display Name is set, so nothing set up before this existed
+       changes.
    - **User Accounts** *(admin)* — every account that has signed up: set its **role**, link it to
      the driver profile it races as, rename it, delete it, and approve or deny pending profile
      claims. The red badge on the Drivers nav item counts new signups + pending claims.
@@ -292,6 +306,17 @@ combined_championship)` → `races (season_id, sessions[])`, `classes (season_id
 and `entries (season_id, team_id, class_id, user_id, number)` / `teams (season_id)` →
 `results (race_id, season_id, entry_id, class_id, points_template_id)`. `users` holds player profiles; linking a
 roster entry to a user account is what feeds their public career stats.
+
+**Display names** live on the global driver doc: `drivers.display_name` (the overall override) and
+`drivers.game_names` — `[{ game_id, name }]`, one entry per game the driver is shown differently in.
+Every surface resolves a name through `lib/driverNames.js` (pure rules) and
+`lib/driverNamesServer.js` (the lookups): a page scoped to one game asks for that game's name and
+falls back to the overall one, while an all-games page asks only for the overall name — which is
+itself `display_name` → linked account's `display_name` → the pool driver's `name`. A game-mapped
+alias (`drivers.aliases[].game_id`) is still honoured as the per-game name when `game_names` has
+none, so setups made before this existed keep working. Only the *overall* name is denormalized onto
+roster entries (`entries.name`, cascaded on save by `lib/driverSync.js`); per-game names are applied
+at read time and never rewrite stored data.
 
 **Classes** are the optional fourth tier. A class belongs to one season; a roster entry points at
 one via `class_id`, and each saved result records the class the driver ran in *at the time*, so

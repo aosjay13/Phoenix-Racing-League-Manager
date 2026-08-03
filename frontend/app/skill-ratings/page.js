@@ -159,6 +159,11 @@ export default function SkillRatingsPage() {
                     {(r.driver_id || r.user_id)
                       ? <Link href={`/drivers/${r.driver_id || r.user_id}`} style={{ color: "var(--accent-cyan)" }}>{r.driver_name}</Link>
                       : r.driver_name}
+                    {/* This board is always one game, so it leads with that game's
+                        name for the driver and keeps their profile name beneath. */}
+                    {r.game_alias && r.profile_name && r.game_alias !== r.profile_name && (
+                      <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.74rem" }}>{r.profile_name}</span>
+                    )}
                   </td>
                   <td className="points-cell" style={{ fontWeight: 600 }}>{r.skill_rating}</td>
                   <td><Trend delta={r.last_delta} /></td>

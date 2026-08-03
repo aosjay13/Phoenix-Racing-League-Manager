@@ -9,7 +9,7 @@ import {
 } from "@/lib/standings";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
 import { classIdsInSeason, fetchSeasonClasses, filterEntriesByClass, filterResultsByClass } from "@/lib/classServer";
-import { gameAlias } from "@/lib/aliases";
+import { fetchDriverNames } from "@/lib/driverNamesServer";
 
 // One season's championship tables.
 //   ?season_id=…              → the overall (whole-field) championship
@@ -56,20 +56,15 @@ export async function GET(request) {
   const drivers = calculateStandings(results, entries, teams, config, templatesById, classes);
   const teamRows = calculateTeamStandings(drivers.rows, teams);
 
-  // Contextual name rendering: on this game's standings, surface each driver's
-  // game-specific alias (the on-track name) when they've mapped one. The season
-  // carries its game_id; look up each pooled driver's alias for that game and
-  // stamp it on the row (null when none), for the client to prefer over the
-  // primary profile name.
+  // Contextual name rendering: on this game's standings, surface the name each
+  // driver is shown under IN THIS GAME when they've set one. The season carries
+  // its game_id; resolve every pooled driver's name for that game (see
+  // lib/driverNames.js) and stamp it on the row — null when they haven't set
+  // one, so the client falls back to the name on the entry.
   const gameId = season.game_id || null;
   if (gameId) {
-    const driverIds = [...new Set(drivers.rows.map(r => r.driver_id).filter(Boolean))];
-    const aliasByDriver = {};
-    await Promise.all(driverIds.map(async id => {
-      const doc = await db().collection("drivers").doc(id).get();
-      if (doc.exists) aliasByDriver[id] = gameAlias(doc.data().aliases, gameId);
-    }));
-    for (const r of drivers.rows) r.game_alias = r.driver_id ? (aliasByDriver[r.driver_id] ?? null) : null;
+    const names = await fetchDriverNames(drivers.rows.map(r => r.driver_id), gameId);
+    for (const r of drivers.rows) r.game_alias = r.driver_id ? (names[r.driver_id]?.game ?? null) : null;
   }
 
   // Tag every row with its class so the combined table can still show which

@@ -7,6 +7,7 @@ import { buildCareerProfile } from "@/lib/careerStatsServer";
 import { computeGameSkillRatings } from "@/lib/skillRatingServer";
 import { SR_BASELINE } from "@/lib/skillRating";
 import { normalizeAliases } from "@/lib/aliases";
+import { gameNameFor, normalizeGameNames, overallNameFor } from "@/lib/driverNames";
 
 const routes = makeDocRoutes(SPECS.drivers);
 export const DELETE = routes.DELETE;
@@ -29,13 +30,22 @@ export const PATCH = withAdmin(async (request, { params }) => {
   if (!Object.keys(updates).length) {
     return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
   }
+  // Display-name fields are stored clean: the overall override trimmed (blank =
+  // "no override", falling back to the linked account / pool name), and the
+  // per-game names stripped of half-filled and duplicate rows.
+  if (updates.display_name !== undefined) updates.display_name = String(updates.display_name ?? "").trim();
+  if (updates.game_names !== undefined) updates.game_names = normalizeGameNames(updates.game_names);
+
   const ref = db().collection("drivers").doc(params.id);
   const doc = await ref.get();
   if (!doc.exists) return NextResponse.json({ error: "Not found" }, { status: 404 });
   await ref.update(updates);
 
   let entries_synced;
-  if (updates.name !== undefined || updates.user_id !== undefined) {
+  // The overall display name is denormalized onto roster entries, so a change
+  // to it cascades exactly like a rename does. (Per-game names are resolved at
+  // read time and never touch stored entries.)
+  if (updates.name !== undefined || updates.user_id !== undefined || updates.display_name !== undefined) {
     // Name sync is a display convenience — never fail the edit over it.
     try {
       entries_synced = await syncEntryNamesForDriver(params.id, { ...doc.data(), ...updates });
@@ -83,8 +93,10 @@ export async function GET(request, { params }) {
     if (u.exists) { const { email, role, ...pub } = u.data(); account = pub; }
   }
 
+  // The overall display name: the driver's own override first, then the linked
+  // account's name, then the pool name (see lib/driverNames.js).
   const profile = {
-    display_name: account?.display_name || driver?.name || "Unknown Driver",
+    display_name: overallNameFor(driver, account?.display_name) || "Unknown Driver",
     photo_url: account?.photo_url ?? null,
     country: account?.country ?? null,
     bio: account?.bio ?? null,
@@ -105,6 +117,11 @@ export async function GET(request, { params }) {
   }
 
   const career = await buildCareerProfile({ driverId, userId: linkedUserId });
+
+  // Each game the driver has raced in carries the name they're shown under
+  // THERE, so the profile's per-game breakdown can label it ("racing as
+  // Ryanbirdman") instead of repeating the overall name.
+  for (const g of career.by_game || []) g.driver_game_name = gameNameFor(driver, g.game_id);
 
   // Per-game Skill Ratings for the profile's "Skill Ratings" section: one entry
   // per game the driver has raced in (from career.by_game). Rating and trend

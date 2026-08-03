@@ -13,6 +13,7 @@ import { parseTime, formatTime } from "@/lib/raceTime";
 import { finalSessionName, summarizeRace } from "@/lib/raceSummaryServer";
 import { carForClass, classIdSet, classIdsInSeason, classOfResult, fetchSeasonClasses } from "@/lib/classServer";
 import { classRecordKey, gameRecordKey, keepFastest } from "@/lib/trackRecords";
+import { fetchNameResolver } from "@/lib/driverNamesServer";
 
 // Aggregates a venue's history from every race held there. Races are linked by
 // `track_id`; legacy races that only stored the track NAME (before track_id
@@ -121,6 +122,9 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
       driver_name: entry.name,
       driver_id: entry.driver_id ?? null,
       user_id: entry.user_id ?? null,
+      // The game this lap was set in, so the holder can be named the way that
+      // game names them (see lib/driverNames.js).
+      game_id: gameId,
       race_id: r.race_id,
       race_name: race?.name ?? null,
       session: r.session || (isQualifying(r) ? "Qualifying" : null),
@@ -240,21 +244,28 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
     }
   }
 
-  // Prefer canonical global-driver names everywhere a driver is shown — the
-  // leaderboard, the headline record, and each game's record. Collect ids from
-  // all of those so a record-holder excluded from the leaderboard (different
-  // game) still resolves.
-  const driverIds = [...new Set([
+  // Names come from each driver's profile everywhere a driver is shown — the
+  // leaderboard, the headline record, each game's record, and the winners list.
+  // A venue's history can span several games, so this resolver answers per game
+  // (see lib/driverNames.js): a row belonging to one game shows that game's
+  // name for the driver, and anything not tied to a single game shows their
+  // overall display name. Ids are collected from every section so a
+  // record-holder excluded from the leaderboard (different game) still resolves.
+  const nameFor = await fetchNameResolver([
     ...Object.values(drivers).map(d => d.driver_id),
     record?.driver_id,
     ...Object.values(recordByGame).map(r => r.driver_id),
     ...Object.values(recordByClass).map(r => r.driver_id),
-  ].filter(Boolean))];
-  const canonicalName = {};
-  if (driverIds.length) {
-    const docs = await Promise.all(driverIds.map(id => db().collection("drivers").doc(id).get()));
-    for (const doc of docs) if (doc.exists) canonicalName[doc.id] = doc.data().name;
-  }
+    ...winners.map(w => w.driver_id),
+  ]);
+  // The leaderboard and headline record are shown under whatever game the page
+  // is scoped to — a Series/Season pins one just as a Game selection does.
+  const scopeGameId =
+    scope.gameId ||
+    (scope.seasonId ? seasonsById[scope.seasonId]?.game_id : null) ||
+    (scope.seriesId ? Object.values(seasonsById).find(s => s.series_id === scope.seriesId)?.game_id : null) ||
+    null;
+  const canonicalName = Object.fromEntries(nameFor.ids.map(id => [id, nameFor.display(id, scopeGameId)]));
 
   // Resolve the series each past-result event ran in (seasons sit under series).
   const seriesIds = [...new Set(winners.map(w => w.series_id).filter(Boolean))];
@@ -276,7 +287,12 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
     const docs = await Promise.all(gameIds.map(id => db().collection("games").doc(id).get()));
     for (const doc of docs) if (doc.exists) gameName[doc.id] = doc.data().name;
   }
-  for (const w of winners) w.game_name = (w.game_id && gameName[w.game_id]) || null;
+  for (const w of winners) {
+    w.game_name = (w.game_id && gameName[w.game_id]) || null;
+    // Each past win belongs to one game, so the winner is named as that game
+    // names them (falling back to the name stored on the entry).
+    if (w.driver_id) w.driver_name = nameFor.display(w.driver_id, w.game_id) || w.driver_name;
+  }
 
   const driverRows = Object.values(drivers)
     .map(d => ({
@@ -294,12 +310,15 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
   // as such (never through `new Date()`) — see lib/raceDate.js.
   winners.sort((a, b) => raceDateSortKey(b.date, -Infinity) - raceDateSortKey(a.date, -Infinity));
 
-  if (record?.driver_id && canonicalName[record.driver_id]) record.driver_name = canonicalName[record.driver_id];
+  if (record?.driver_id) {
+    record.driver_name = nameFor.display(record.driver_id, record.game_id) || record.driver_name;
+  }
 
   const records_by_game = Object.entries(recordByGame)
     .map(([gid, rec]) => ({
       ...rec,
-      driver_name: (rec.driver_id && canonicalName[rec.driver_id]) || rec.driver_name,
+      // Each row IS one game, so the holder is named as that game names them.
+      driver_name: (rec.driver_id && nameFor.display(rec.driver_id, gid)) || rec.driver_name,
       game_id: gid,
       game_name: gameName[gid] || "Unknown Game",
     }))
@@ -311,7 +330,7 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
   const records_by_class = Object.values(recordByClass)
     .map(rec => ({
       ...rec,
-      driver_name: (rec.driver_id && canonicalName[rec.driver_id]) || rec.driver_name,
+      driver_name: (rec.driver_id && nameFor.display(rec.driver_id, rec.game_id)) || rec.driver_name,
       game_name: gameName[rec.game_id] || "Unknown Game",
     }))
     .sort((a, b) =>
