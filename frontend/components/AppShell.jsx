@@ -14,15 +14,19 @@ import { api } from "@/lib/api";
 export const USERS_SEEN_KEY = "pr_users_last_seen";
 export const USERS_SEEN_EVENT = "pr-users-seen";
 
+// How often the sidebar re-checks for signups that happened while the admin sat
+// on a page — without this the badge only appears on the next navigation.
+const ALERTS_POLL_MS = 60_000;
+
 // Count of User Accounts items needing admin attention: accounts created since
 // the admin last opened the dashboard PLUS pending driver-claim requests. Drives
 // the red badge next to the nav item. The new-signup baseline is stamped to "now"
 // on first ever load so an admin isn't greeted by their whole existing roster.
 function useUserAccountsAlerts(isAdmin, pathname) {
-  const [count, setCount] = useState(0);
+  const [alerts, setAlerts] = useState({ accounts: 0, claims: 0, total: 0 });
 
   const load = useCallback(async () => {
-    if (!isAdmin) { setCount(0); return; }
+    if (!isAdmin) { setAlerts({ accounts: 0, claims: 0, total: 0 }); return; }
     try {
       const [users, requests] = await Promise.all([
         api("/api/admin/users"),
@@ -32,20 +36,39 @@ function useUserAccountsAlerts(isAdmin, pathname) {
         localStorage.setItem(USERS_SEEN_KEY, new Date().toISOString());
       }
       const seen = localStorage.getItem(USERS_SEEN_KEY) || "";
-      const newAccounts = (Array.isArray(users) ? users : []).filter(u => (u.created_at || "") > seen).length;
-      const pending = Array.isArray(requests) ? requests.length : 0;
-      setCount(newAccounts + pending);
+      const accounts = (Array.isArray(users) ? users : []).filter(u => (u.created_at || "") > seen).length;
+      const claims = Array.isArray(requests) ? requests.length : 0;
+      setAlerts({ accounts, claims, total: accounts + claims });
     } catch { /* leave count unchanged on transient errors */ }
   }, [isAdmin]);
 
   useEffect(() => {
     load();
     function onSeen() { load(); }
+    // Re-check on a timer and whenever the admin comes back to the tab, so a
+    // signup during an open session raises the badge on its own.
+    function onVisible() { if (document.visibilityState === "visible") load(); }
+    const timer = setInterval(load, ALERTS_POLL_MS);
     window.addEventListener(USERS_SEEN_EVENT, onSeen);
-    return () => window.removeEventListener(USERS_SEEN_EVENT, onSeen);
+    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener(USERS_SEEN_EVENT, onSeen);
+      window.removeEventListener("focus", onVisible);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [load, pathname]);
 
-  return count;
+  return alerts;
+}
+
+// "2 new accounts · 1 claim request" — spells out what the badge number covers.
+function alertsTitle({ accounts, claims }) {
+  const parts = [];
+  if (accounts) parts.push(`${accounts} new account${accounts === 1 ? "" : "s"}`);
+  if (claims) parts.push(`${claims} driver claim request${claims === 1 ? "" : "s"}`);
+  return parts.join(" · ") || "Nothing new";
 }
 
 const publicNav = [
@@ -73,13 +96,17 @@ function NavLinks({ items, pathname, badges }) {
     const isActive = item.href === "/" || item.exact
       ? pathname === item.href
       : pathname.startsWith(item.href);
-    const badge = badges?.[item.href] || 0;
+    const entry = badges?.[item.href];
+    const badge = typeof entry === "number" ? entry : (entry?.count || 0);
+    const badgeTitle = typeof entry === "number"
+      ? `${badge} item${badge === 1 ? "" : "s"} need${badge === 1 ? "s" : ""} your attention`
+      : entry?.title;
     return (
       <Link className={`nav-link${isActive ? " active" : ""}`} key={item.href} href={item.href}>
         <span className="nav-icon">{item.icon}</span>
         {item.label}
         {badge > 0 && (
-          <span className="nav-badge" title={`${badge} item${badge === 1 ? "" : "s"} need${badge === 1 ? "s" : ""} your attention`}>{badge}</span>
+          <span className="nav-badge" title={badgeTitle}>{badge > 99 ? "99+" : badge}</span>
         )}
       </Link>
     );
@@ -188,7 +215,9 @@ export function AppShell({ children }) {
   const userAccountsAlerts = useUserAccountsAlerts(isAdmin, pathname);
   // New signups / pending claims are handled on the Drivers page's User
   // Accounts tab, so the badge rides along with that nav item.
-  const navBadges = { "/drivers": userAccountsAlerts };
+  const navBadges = {
+    "/drivers": { count: userAccountsAlerts.total, title: alertsTitle(userAccountsAlerts) },
+  };
 
   return (
     <div className="shell">
