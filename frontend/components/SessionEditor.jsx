@@ -259,7 +259,7 @@ const LABELS = { qualifying: "Qualifying", race: "Race", heat: "Heat", consolati
 //
 // Starting position lives only on Qualifying (its Pos column) — there is no
 // "Start" field on race/heat/consolation/feature rows. A driver's qualifying
-// bonus/pole bonus is looked up from their actual Qualifying result for this
+// points are looked up from their actual Qualifying result for this
 // race, not copied onto every other session, so Average Start and Poles are
 // always computed from Qualifying results alone.
 //

@@ -18,8 +18,13 @@ export const DEFAULT_RACE_POINTS = buildRacePoints();
 export const DEFAULT_QUAL_POINTS = buildQualPoints();
 export const DEFAULT_POINTS_SCALE = DEFAULT_RACE_POINTS; // legacy alias
 
+// The bonuses a season / class / points template can pay. There is deliberately
+// no pole bonus here: pole is position 1 of Qualifying, so a pole bonus and the
+// P1 qualifying points were two separate settings paying for the same result —
+// and a league that set both silently paid twice. Qualifying Points is now the
+// single place a pole is worth something (put the value first in the list).
+// `bonus_points.pole` left on old season/class/template docs is simply ignored.
 export const BONUS_TYPES = [
-  ["pole", "Pole Bonus"],
   ["best_lap", "Best Lap Bonus"],
   ["most_laps_led", "Most Laps Led Bonus"],
   ["lead_a_lap", "Lead a Lap Bonus"],
@@ -74,7 +79,7 @@ export function configForTemplate(baseConfig, template) {
 //   season default → the class's own structure → the session's template
 //
 // Every level only overrides what it actually sets, so a class that changes
-// nothing but the pole bonus still inherits the season's race scale.
+// nothing but the best-lap bonus still inherits the season's race scale.
 
 // Does this value hold a real points table? An unset field, an empty object and
 // unparseable JSON all mean "inherit"; `{ 1: 0 }` (what a deliberately blank
@@ -175,7 +180,7 @@ export function decorateRaceBonuses(results) {
 // (looked up separately — see buildQualPosMap), not a copy stored on the
 // race result itself. That's the only source of starting-position info now;
 // there is no editable "Start" field on race/heat/consolation/feature rows.
-// `qualConfig` resolves the qualifying-position bonus against the Qualifying
+// `qualConfig` resolves the qualifying-position points against the Qualifying
 // session's OWN assigned points system (see buildQualTemplateMap) — falling
 // back to `config` (the race result's own template) when Qualifying carries
 // no override of its own, so a session-specific Qualifying points structure
@@ -196,10 +201,9 @@ export function pointsFor(result, config, qualPos = null, qualConfig = null) {
   const { racePoints, bonuses } = config;
   const qualPoints = (qualConfig || config).qualPoints;
   let pts = Number(racePoints[result.finish_pos] ?? 0);
-  if (qualPos != null) {
-    pts += Number(qualPoints[qualPos] ?? 0);
-    if (Number(qualPos) === 1) pts += Number(bonuses.pole || 0);
-  }
+  // Grid position pays through the qualifying scale alone — pole is just its
+  // position 1 (see BONUS_TYPES on why there's no separate pole bonus).
+  if (qualPos != null) pts += Number(qualPoints[qualPos] ?? 0);
   if (result.fastest_lap) pts += Number(bonuses.best_lap || 0);
   if (result.is_most_laps_led) pts += Number(bonuses.most_laps_led || 0);
   if (Number(result.laps_led || 0) > 0) pts += Number(bonuses.lead_a_lap || 0);
@@ -211,7 +215,7 @@ export function pointsFor(result, config, qualPos = null, qualConfig = null) {
 }
 
 // A driver's Qualifying finish position, per event — the number the qualifying
-// bonus (and the pole bonus) in pointsFor is scored off.
+// points in pointsFor are scored off.
 //
 // Keyed by race + entry + class, because one roster entry can race SEVERAL
 // classes at the same event: at a split event each class runs its own
@@ -270,7 +274,7 @@ export function buildQualTemplateMap(results, entriesById = {}) {
   return map;
 }
 
-// The Qualifying template a given result's qualifying bonus scores under:
+// The Qualifying template a given result's qualifying points score under:
 // its own class's Qualifying when that class ran one, else the event's.
 export function qualTemplateFor(map, result, entriesById = {}) {
   const key = `${result.race_id}|${classOfResult(result, entriesById) || ""}`;
@@ -279,7 +283,7 @@ export function qualTemplateFor(map, result, entriesById = {}) {
 
 // Everything needed to score one season's results in one place: each result is
 // scored under its own class's structure (configForClass), with the session's
-// assigned template laid on top, and its qualifying bonus resolved against that
+// assigned template laid on top, and its qualifying points resolved against that
 // same class's Qualifying session. Every screen and stat page builds its points
 // through this, so a per-class structure reaches all of them identically.
 export function makeScorer(results, { config, classes = [], entriesById = {}, templatesById = {} } = {}) {

@@ -129,7 +129,12 @@ export function PointsFields({
       <div className="field"><label>Qualifying Points — comma-separated, pole first (blank = 0 points)</label>
         <textarea rows={2} disabled={disabled} value={value.qual_points}
           placeholder="35, 32, 30, 28, 26, 25, …"
-          onChange={e => onPatch({ qual_points: e.target.value })} /></div>
+          onChange={e => onPatch({ qual_points: e.target.value })} />
+        {/* There's no Pole Bonus field any more — it paid for the same result as
+            the first number here, so a season with both scored a pole twice. */}
+        <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
+          Pole is position 1 of this list — set what a pole is worth here; there is no separate pole bonus.
+        </span></div>
 
       {BONUS_TYPES.map(([key, label]) => (
         <div className="field" key={key}><label>{label}</label>
