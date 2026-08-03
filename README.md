@@ -134,7 +134,8 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
    - **Series** — name + logo under a game (e.g. "Asphalt Assault Series").
    - **Season** — name (e.g. "Season 3") under a series; set drop weeks, the points scale
      (or pick a built-in template), qualifying points, and bonus points (most laps led,
-     fastest lap, etc.). **Enable Overall Championship** decides whether a multi-class season
+     fastest lap, etc.). There is no separate pole bonus — pole is position 1 of the qualifying
+     points list, so a pole is worth whatever the first number in that list says. **Enable Overall Championship** decides whether a multi-class season
      also crowns one champion across the whole field on top of the per-class titles.
    - **Classes** *(optional)* — split the season's field into separately-scored groups
      ("Pro"/"Amateur", "GT3"/"LMP2"). Leave it empty for an ordinary single-class season —
@@ -386,7 +387,7 @@ outright order, an overall championship across classes just adds their points to
 specific last: the season's structure → the **class's own structure** (`classes.race_points` /
 `qual_points` / `bonus_points`, all unset by default = inherit) → the template assigned to the
 session. Each level overrides only the fields it actually sets, so a class that changes nothing but
-the pole bonus still scores the season's race scale. `classScoresOwnPoints` / `configForClass` in
+the best-lap bonus still scores the season's race scale. `classScoresOwnPoints` / `configForClass` in
 `lib/standings.js` hold that rule, and `makeScorer` applies it everywhere points are computed —
 standings, class championships, career and team profiles, venue leaderboards, the event page and the
 live Points column in the results editor — so a class's structure can't reach one screen and miss
@@ -398,9 +399,9 @@ On an event whose classes run separate sessions, the per-session assignment is p
 `races.session_points[session]`). Assigning one re-points only that class's saved results, so
 re-scoring Pro's Feature leaves Amateur's alone, and clearing it hands that class back to the
 event-wide assignment rather than to nothing. A class's Qualifying is resolved the same way, so the
-qualifying bonus folded into a race result comes from *that class's* Qualifying structure.
+qualifying points folded into a race result come from *that class's* Qualifying structure.
 
-The grid *position* that bonus is paid on is per class too. One roster entry can race several
+The grid *position* those points are paid on is per class too. One roster entry can race several
 classes at the same round, so "where did this driver qualify?" has one answer per class, and
 `buildQualPosMap` keys on race + entry + **class** to keep them apart (`qualPosFor` in
 `lib/standings.js` resolves a race result against its own class's Qualifying, falling back to the
