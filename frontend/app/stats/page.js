@@ -140,7 +140,7 @@ export default function StatsPage() {
             onClose={() => setSharing(false)}
             kind="Stats"
             defaultTitle={active.title}
-            subtitle={[className, tab === "teams" ? "Team Stats" : "Driver Stats"].filter(Boolean).join(" · ")}
+            subtitle={[game?.name, series?.name, className, tab === "teams" ? "Team Stats" : "Driver Stats"].filter(Boolean).join(" · ")}
             columns={st.columns}
             rows={st.rows}
             logos={leagueLogos({ league: activeLeague, game, series, season })}

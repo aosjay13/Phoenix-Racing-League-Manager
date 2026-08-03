@@ -212,7 +212,7 @@ export default function StandingsPage() {
         onClose={() => setSharing(false)}
         kind="Standings"
         defaultTitle={`${season?.name ?? "Championship"}${className ? ` ${className}` : ""} Standings`}
-        subtitle={[series?.name, className, tab === "teams" ? "Team Championship" : "Driver Championship"].filter(Boolean).join(" · ")}
+        subtitle={[game?.name, series?.name, className, tab === "teams" ? "Team Championship" : "Driver Championship"].filter(Boolean).join(" · ")}
         columns={shareTable.columns}
         rows={shareTable.rows}
         logos={leagueLogos({ league, game, series, season })}
