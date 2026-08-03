@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { parseTable, mapHeaders, buildRows, MAPPABLE_FIELDS } from "@/lib/resultsImport";
 import { DriverCreateModal } from "@/components/DriverCreateModal";
 import { aliasValues } from "@/lib/aliases";
+import { displayNameValues } from "@/lib/driverNames";
 import { api } from "@/lib/api";
 
 const SKIP = "__skip__";
@@ -32,13 +33,18 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
   const fileRef = useRef(null);
 
   // Pull the global driver pool once so we can match imported names not just
-  // against each entry's display name but every connected-account alias the
-  // linked driver has stored (PSN, Xbox, Discord, iRacing…). Keyed by driver_id,
-  // which every season entry carries.
+  // against each entry's display name but every other name the linked driver
+  // goes by: their connected-account aliases (PSN, Xbox, Discord, iRacing…) and
+  // the display names they're shown under overall and per game. Keyed by
+  // driver_id, which every season entry carries.
   useEffect(() => {
     let alive = true;
     api("/api/drivers")
-      .then(pool => { if (alive) setAliasesByDriver(Object.fromEntries(pool.map(d => [d.id, aliasValues(d.aliases)]))); })
+      .then(pool => {
+        if (alive) setAliasesByDriver(Object.fromEntries(
+          pool.map(d => [d.id, [...aliasValues(d.aliases), ...displayNameValues(d)]])
+        ));
+      })
       .catch(() => {});
     return () => { alive = false; };
   }, []);

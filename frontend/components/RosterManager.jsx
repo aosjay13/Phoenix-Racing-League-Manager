@@ -5,9 +5,11 @@ import { useLeague } from "@/components/LeagueProvider";
 import { useSortable } from "@/components/useSortable";
 import { ImageUpload } from "@/components/ImageUpload";
 import { DriverForm } from "@/components/DriverForm";
+import { ClassPicker } from "@/components/ClassPicker";
 import { Modal } from "@/components/Modal";
 import { RosterImportModal } from "@/components/RosterImportModal";
 import { ensureDriverId } from "@/lib/driverPool";
+import { entryClassIds } from "@/lib/classFilter";
 import { api } from "@/lib/api";
 
 // Resolve the current top-dropdown selection into a roster scope, exactly the
@@ -103,7 +105,7 @@ export function RosterManager() {
   const [mergeInto, setMergeInto] = useState("");     // survivor row key
   const [mergeBusy, setMergeBusy] = useState(false);
 
-  const [addForm, setAddForm] = useState({ name: "", number: "", team_id: "", user_id: "", class_id: "" });
+  const [addForm, setAddForm] = useState({ name: "", number: "", team_id: "", user_id: "", class_ids: [] });
   const [pullKey, setPullKey] = useState("");        // gameRoster key chosen via "Pull Existing Driver"
 
   const [teamForm, setTeamForm] = useState({ name: "", color: "", logo_url: "" });
@@ -167,7 +169,7 @@ export function RosterManager() {
     setSeriesPanelKey(null);
     setRowForm({
       name: row.name, number: row.number ?? "", team_id: row.team_id ?? "",
-      user_id: row.user_id ?? "", class_id: row.class_id ?? "",
+      user_id: row.user_id ?? "", class_ids: row.class_ids ?? (row.class_id ? [row.class_id] : []),
     });
   }
   function cancelRowEdit() { setRowKey(null); setRowForm(null); }
@@ -175,7 +177,7 @@ export function RosterManager() {
   async function saveRow(row) {
     if (!rowForm) return;
     try {
-      const body = { name: rowForm.name, team_id: rowForm.team_id, user_id: rowForm.user_id, class_id: rowForm.class_id ?? "" };
+      const body = { name: rowForm.name, team_id: rowForm.team_id, user_id: rowForm.user_id, class_ids: rowForm.class_ids ?? [] };
       if (rowForm.number !== "") body.number = rowForm.number;
       await api(`/api/entries/${row.entry_id}`, { method: "PATCH", body });
       // Push the primary name edit up to the global driver profile. The driver
@@ -217,6 +219,20 @@ export function RosterManager() {
       showToast("success", `Merged “${mergeFrom.name}” into “${intoRow.name}” (${res.entries_moved} entr${res.entries_moved === 1 ? "y" : "ies"} moved).`);
     } catch (err) { showToast("error", err.message); }
     finally { setMergeBusy(false); }
+  }
+
+  // Fold a driver's duplicate season entries — the old "add them once per
+  // class" workaround — into one entry that carries every class. Results move
+  // across keeping the class they were scored in, so no history is lost.
+  async function combineEntries(row) {
+    const n = row.entry_ids?.length ?? 0;
+    if (n < 2) return;
+    if (!confirm(`${row.name} has ${n} separate entries this season (one per class). Combine them into one entry that races all of those classes? Every saved result moves across and keeps the class it was scored in.`)) return;
+    try {
+      const res = await api("/api/admin/entries/combine", { method: "POST", body: { entry_ids: row.entry_ids } });
+      await load();
+      showToast("success", `Combined ${n} entries into one${res.results_moved ? ` (${res.results_moved} result${res.results_moved === 1 ? "" : "s"} moved)` : ""}.`);
+    } catch (err) { showToast("error", err.message); }
   }
 
   async function deleteDriver(row) {
@@ -287,7 +303,7 @@ export function RosterManager() {
 
   function resetAddForm() {
     setPullKey("");
-    setAddForm({ name: "", number: "", team_id: "", user_id: "", class_id: "" });
+    setAddForm({ name: "", number: "", team_id: "", user_id: "", class_ids: [] });
   }
 
   async function addDriver(e) {
@@ -296,10 +312,35 @@ export function RosterManager() {
     try {
       const pulled = pullKey ? gameRoster.find(r => r.key === pullKey) : null;
       const driverId = await ensureDriverId({ driverId: pulled?.driver_id, name: addForm.name, user_id: addForm.user_id });
-      const body = { name: addForm.name, team_id: addForm.team_id, user_id: addForm.user_id, driver_id: driverId, class_id: addForm.class_id || "" };
+      const classIds = addForm.class_ids || [];
+      const body = { name: addForm.name, team_id: addForm.team_id, user_id: addForm.user_id, driver_id: driverId, class_ids: classIds };
       if (addForm.number !== "") body.number = addForm.number;
-      await api("/api/entries", { method: "POST", body: { ...body, season_id: editSeasonId } });
-      showToast("success", "Driver added to roster.");
+
+      // Someone already on this season's roster is never added twice: adding
+      // them again just means they're racing another class, so those classes
+      // are folded into the entry they already have. That's what stops the same
+      // name appearing on the roster once per class.
+      const seasonEntries = await api(`/api/entries?season_id=${editSeasonId}`);
+      const wanted = addForm.name.trim().toLowerCase();
+      const existing = seasonEntries.find(en =>
+        (driverId && en.driver_id === driverId) ||
+        String(en.name || "").trim().toLowerCase() === wanted);
+
+      if (existing) {
+        const have = entryClassIds(existing);
+        const merged = [...have, ...classIds.filter(c => !have.includes(c))];
+        const patch = { class_ids: merged };
+        if (addForm.team_id) patch.team_id = addForm.team_id;
+        if (addForm.number !== "") patch.number = addForm.number;
+        await api(`/api/entries/${existing.id}`, { method: "PATCH", body: patch });
+        const added = merged.length - have.length;
+        showToast("success", added
+          ? `${existing.name} was already on this roster — added ${added === 1 ? "that class" : `${added} classes`} to their entry.`
+          : `${existing.name} is already on this roster; their entry was updated.`);
+      } else {
+        await api("/api/entries", { method: "POST", body: { ...body, season_id: editSeasonId } });
+        showToast("success", "Driver added to roster.");
+      }
       resetAddForm();
       await load();
     } catch (err) { showToast("error", err.message); }
@@ -602,18 +643,36 @@ export function RosterManager() {
                       <td className="driver-name-cell">
                         {editing
                           ? <input value={rowForm.name} onChange={e => setRowForm(f => ({ ...f, name: e.target.value }))} />
-                          : d.name}
+                          : (
+                            <>
+                              {d.display_name || d.name}
+                              {/* Inside a game the roster shows that game's name for the
+                                  driver, with their overall profile name underneath. */}
+                              {d.game_alias && d.profile_name && d.game_alias !== d.profile_name && (
+                                <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.74rem" }}>{d.profile_name}</span>
+                              )}
+                            </>
+                          )}
                       </td>
                       {showClass && (
                         <td className="team-cell">
                           {editing
                             ? (
-                              <select value={rowForm.class_id ?? ""} onChange={e => setRowForm(f => ({ ...f, class_id: e.target.value }))}>
-                                <option value="">Unclassified</option>
-                                {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                              </select>
+                              <ClassPicker
+                                classes={classes}
+                                value={rowForm.class_ids ?? []}
+                                onChange={ids => setRowForm(f => ({ ...f, class_ids: ids }))}
+                              />
                             )
-                            : (d.class_name ? <span className="badge">{d.class_name}</span> : "—")}
+                            // Every class this driver races this season, not just
+                            // the first one they were put in.
+                            : ((d.class_names ?? []).length
+                              ? (
+                                <span style={{ display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
+                                  {d.class_names.map(n => <span className="badge" key={n}>{n}</span>)}
+                                </span>
+                              )
+                              : "—")}
                         </td>
                       )}
                       <td className="team-cell">
@@ -654,6 +713,13 @@ export function RosterManager() {
                                 <button className="btn btn-ghost" style={{ marginTop: 0, padding: "4px 10px", marginLeft: 6 }}
                                   title="Merge this driver into another (for duplicates / renamed drivers)"
                                   onClick={() => { setMergeFrom(d); setMergeInto(""); }}>Merge</button>
+                              )}
+                              {(d.entry_ids?.length ?? 0) > 1 && (
+                                <button className="btn btn-ghost" style={{ marginTop: 0, padding: "4px 10px", marginLeft: 6, color: "var(--accent-gold)" }}
+                                  title="This driver holds several entries this season — one per class, from before a single entry could carry more than one. Combine them into one multi-class entry, keeping every result."
+                                  onClick={() => combineEntries(d)}>
+                                  Combine {d.entry_ids.length}
+                                </button>
                               )}
                               {d.entry_id && (
                                 <button className="btn btn-danger" style={{ marginTop: 0, padding: "4px 10px", marginLeft: 6 }} onClick={() => deleteDriver(d)}>✕</button>

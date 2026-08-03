@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { computeGameSkillRatings } from "@/lib/skillRatingServer";
+import { fetchDriverNames } from "@/lib/driverNamesServer";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +61,9 @@ export async function GET(request) {
   ]);
   const nameById = {};
   for (const d of driversSnap.docs) nameById[d.id] = { driver_name: d.data().name || "Unknown", user_id: d.data().user_id || null };
+  // This board only ever shows one game, so each driver appears under the name
+  // they're shown under in that game, with their overall name kept alongside.
+  const names = await fetchDriverNames(Object.keys(ratings), gameId);
 
   let rows = Object.entries(ratings)
     // Narrower scope: keep only drivers who raced an SR event in its seasons.
@@ -70,7 +74,9 @@ export async function GET(request) {
     })
     .map(([driverId, rec]) => ({
       driver_id: driverId,
-      driver_name: nameById[driverId]?.driver_name || "Unknown",
+      driver_name: names[driverId]?.display || nameById[driverId]?.driver_name || "Unknown",
+      profile_name: names[driverId]?.overall || nameById[driverId]?.driver_name || "Unknown",
+      game_alias: names[driverId]?.game ?? null,
       user_id: nameById[driverId]?.user_id || null,
       skill_rating: rec.rating,
       total_races: rec.races,

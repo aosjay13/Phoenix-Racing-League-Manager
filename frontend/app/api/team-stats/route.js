@@ -13,6 +13,7 @@ import {
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
 import { fetchSeasonClasses } from "@/lib/classServer";
 import { seasonChampions, titlesByEntry } from "@/lib/champions";
+import { fetchDriverNames } from "@/lib/driverNamesServer";
 
 export const dynamic = "force-dynamic";
 
@@ -100,16 +101,13 @@ export async function GET(request) {
 
   if (displayName == null) return NextResponse.json({ error: "Team not found" }, { status: 404 });
 
-  // Prefer canonical global-driver names for members spanning seasons.
-  const driverIds = [...new Set(Object.values(drivers).map(d => d.driver_id).filter(Boolean))];
-  const canonicalName = {};
-  if (driverIds.length) {
-    const docs = await Promise.all(driverIds.map(id => db().collection("drivers").doc(id).get()));
-    for (const doc of docs) if (doc.exists) canonicalName[doc.id] = doc.data().name;
-  }
+  // A team profile spans every game the team raced in, so its members show
+  // their overall display name (see lib/driverNames.js) rather than any one
+  // game's on-track name.
+  const names = await fetchDriverNames(Object.values(drivers).map(d => d.driver_id));
 
   const driverRows = Object.values(drivers)
-    .map(d => ({ driver_name: (d.driver_id && canonicalName[d.driver_id]) || d.driver_name, driver_id: d.driver_id, user_id: d.user_id, ...aggregateCareerStats(d.results, d.titles) }))
+    .map(d => ({ driver_name: (d.driver_id && names[d.driver_id]?.overall) || d.driver_name, driver_id: d.driver_id, user_id: d.user_id, ...aggregateCareerStats(d.results, d.titles) }))
     .sort((a, b) => compareStandings(a, b, { pointsKey: "points", nameKey: "driver_name" }));
 
   return NextResponse.json({

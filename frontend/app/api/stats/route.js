@@ -15,6 +15,7 @@ import { classIdsInSeason, fetchSeasonClasses, filterEntriesByClass, filterRaces
 import { crownsInScope, seasonChampions, titlesByEntry } from "@/lib/champions";
 import { finalSessionName } from "@/lib/raceSummaryServer";
 import { isPastRaceDate, raceDateSortKey, toDateOnly, todayDateString } from "@/lib/raceDate";
+import { fetchDriverNames, gameIdForScope } from "@/lib/driverNamesServer";
 
 export const dynamic = "force-dynamic";
 
@@ -50,7 +51,8 @@ export async function GET(request) {
     if (!seasonId) return NextResponse.json({ error: "season_id required" }, { status: 400 });
     const doc = await db().collection("seasons").doc(seasonId).get();
     if (!doc.exists) return NextResponse.json({ error: "Season not found" }, { status: 404 });
-    return NextResponse.json(await buildStats([{ id: doc.id, ...doc.data() }], classId, className));
+    const season = { id: doc.id, ...doc.data() };
+    return NextResponse.json(await buildStats([season], classId, className, season.game_id || null));
   } else if (scope !== "league") {
     return NextResponse.json({ error: "invalid scope" }, { status: 400 });
   }
@@ -61,10 +63,18 @@ export async function GET(request) {
   seasonsQuery = scopeByLeague(seasonsQuery, getRequestLeagueId(request));
   const snap = await seasonsQuery.get();
   const seasons = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  return NextResponse.json(await buildStats(seasons, classId, className));
+  // A Game or Series scope is tied to one game, so its tables show each
+  // driver's name for THAT game; league scope ("All Games") has no game and
+  // shows overall names.
+  const gameId = await gameIdForScope({
+    scope,
+    gameId: searchParams.get("game_id"),
+    seriesId: searchParams.get("series_id"),
+  });
+  return NextResponse.json(await buildStats(seasons, classId, className, gameId));
 }
 
-async function buildStats(seasons, classId = "", className = "") {
+async function buildStats(seasons, classId = "", className = "", gameId = null) {
   // driverKey -> { name, number, user_id, results[], titles }
   const drivers = {};
   // teamKey (lowercased name) -> aggregated team bucket. Teams are per-season
@@ -192,23 +202,26 @@ async function buildStats(seasons, classId = "", className = "") {
     }
   }
 
-  // A driver can run a different alias per series; when aggregating across
-  // more than one season, show their canonical global-driver name instead of
-  // whichever alias happened to be seen last.
-  const driverIds = [...new Set(Object.values(drivers).map(d => d.driver_id).filter(Boolean))];
-  const canonicalName = {};
-  if (driverIds.length) {
-    const docs = await Promise.all(driverIds.map(id => db().collection("drivers").doc(id).get()));
-    for (const doc of docs) if (doc.exists) canonicalName[doc.id] = doc.data().name;
-  }
+  // A driver can be entered under a different name per series, so the name
+  // shown here comes from their driver profile rather than whichever entry was
+  // seen last: inside one game that's the name they've set for that game, and
+  // league-wide it's their overall display name (see lib/driverNames.js).
+  // `profile_name` keeps the overall name alongside it so a game's table can
+  // show "who that is" under the on-track name.
+  const names = await fetchDriverNames(Object.values(drivers).map(d => d.driver_id), gameId);
 
-  const rows = Object.values(drivers).map(d => ({
-    driver_name: (d.driver_id && canonicalName[d.driver_id]) || d.driver_name,
-    driver_number: d.driver_number,
-    driver_id: d.driver_id,
-    user_id: d.user_id,
-    ...aggregateCareerStats(d.results, d.titles),
-  }));
+  const rows = Object.values(drivers).map(d => {
+    const n = d.driver_id ? names[d.driver_id] : null;
+    return {
+      driver_name: n?.display || d.driver_name,
+      profile_name: n?.overall || d.driver_name,
+      game_alias: n?.game ?? null,
+      driver_number: d.driver_number,
+      driver_id: d.driver_id,
+      user_id: d.user_id,
+      ...aggregateCareerStats(d.results, d.titles),
+    };
+  });
 
   // Championship order — points, then the league tie-breaker chain (see
   // TIE_BREAKERS in lib/standings.js), then name for a dead-even pair.

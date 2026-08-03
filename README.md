@@ -171,6 +171,20 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
    switch between its three views, so nothing is stacked into one long scroll:
    - **Drivers** — the public directory of every driver profile (admins get Edit / Merge /
      Delete and **Sync names**; players can claim their own profile).
+     - **Display Names** — what a driver is *shown* as, set per context in the Edit dialog.
+       The **overall display name** covers the directory, their profile, and All Games stats
+       and records; leave it blank to keep using their linked account's name (or the pool
+       name). Under it, add a **name per game** — pick the game, type the name — and that name
+       takes over everywhere inside that game: its standings, race results, stats, records,
+       skill ratings, roster and share graphics, with the overall name shown quietly beneath.
+       So Ryan Maynard can be "Ryanbirdman" throughout BeamNG and "Ryan Maynard" everywhere
+       else. Game names are matched by the Smart Importer too, so a BeamNG export listing
+       "Ryanbirdman" still resolves to the right profile.
+     - **Aliases / Connected Accounts** — the platform usernames a driver races under
+       (Discord, PSN, Xbox, Steam, iRacing…), used by the Smart Importer to map imported
+       names back to one profile. An alias mapped to a game still acts as that game's display
+       name when no per-game Display Name is set, so nothing set up before this existed
+       changes.
    - **User Accounts** *(admin)* — every account that has signed up: set its **role**, link it to
      the driver profile it races as, rename it, delete it, and approve or deny pending profile
      claims. The red badge on the Drivers nav item counts new signups + pending claims.
@@ -182,9 +196,23 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
    - **Roster & Teams** *(admin)* — select a **Series** in the top dropdowns to manage that
      series' roster:
      - **Teams** — create teams with logos.
-     - **Roster** — add a driver, assign their team, class, car number, and (optionally) link
+     - **Roster** — add a driver, assign their team, classes, car number, and (optionally) link
        them to a registered player account so their results count toward that account's profile
        stats.
+     - **Drivers in several classes** — the Classes picker is a set of tick boxes, so one driver
+       can race Pro *and* Am (or GT3 *and* LMP2) from a **single roster entry**. They appear in
+       each of those class championships, in each class's grid when an event splits its results
+       by class, and the roster's Class column lists every class they're in. Ticking nothing
+       leaves them Unclassified. The first class ticked is their *primary* one — what a
+       single-class field falls back to (a standings row's Class column, or a result saved
+       without a class in a combined session, where the grid's own Class cell can still override
+       it per row).
+       Adding someone who's already on the roster never creates a second entry: their existing
+       entry simply gains the classes you picked. Same when you add a driver mid-results from
+       another class's grid — they join that class rather than being duplicated.
+       If you already worked around this by adding a driver once per class, the roster shows a
+       **Combine** button on that row: it folds those entries into one multi-class entry and
+       moves every saved result across, each keeping the class it was scored in.
      - **Driver Pool** — create driver identities without assigning them to a season or series
        yet, ready to pull into any series (or into a race, mid-entry) later.
      - **Import Roster** — the season-rollover shortcut. Bulk-add every driver in the series, or
@@ -293,9 +321,24 @@ and `entries (season_id, team_id, class_id, user_id, number)` / `teams (season_i
 `results (race_id, season_id, entry_id, class_id, points_template_id)`. `users` holds player profiles; linking a
 roster entry to a user account is what feeds their public career stats.
 
+**Display names** live on the global driver doc: `drivers.display_name` (the overall override) and
+`drivers.game_names` — `[{ game_id, name }]`, one entry per game the driver is shown differently in.
+Every surface resolves a name through `lib/driverNames.js` (pure rules) and
+`lib/driverNamesServer.js` (the lookups): a page scoped to one game asks for that game's name and
+falls back to the overall one, while an all-games page asks only for the overall name — which is
+itself `display_name` → linked account's `display_name` → the pool driver's `name`. A game-mapped
+alias (`drivers.aliases[].game_id`) is still honoured as the per-game name when `game_names` has
+none, so setups made before this existed keep working. Only the *overall* name is denormalized onto
+roster entries (`entries.name`, cascaded on save by `lib/driverSync.js`); per-game names are applied
+at read time and never rewrite stored data.
+
 **Classes** are the optional fourth tier. A class belongs to one season; a roster entry points at
-one via `class_id`, and each saved result records the class the driver ran in *at the time*, so
-re-classing a driver mid-season never rewrites the class championships they already scored in. The
+one or more of them via `class_ids` (with `class_id` mirroring the first — the primary class — so
+everything written before multi-class still reads correctly; `entryClassIds()` in
+`lib/classFilter.js` is the one way to ask which classes an entry is in). A driver in several
+classes races each of them from that single entry. Each saved result records the class the driver
+ran in *at the time*, so re-classing a driver mid-season never rewrites the class championships
+they already scored in — and it's what keeps a multi-class driver's races in the right table. The
 stats engine resolves a result's class as "the class stamped on the result, else the driver's
 current entry class" — which is also why results saved before a season had classes still fall into
 the right class once drivers are assigned. Passing `class_id` to `/api/standings` or `/api/stats`
