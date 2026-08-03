@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useLeague } from "@/components/LeagueProvider";
+import { ShareGraphicButton, ShareGraphicModal } from "@/components/ShareGraphicModal";
+import { leagueLogos, specToGraphicTable } from "@/lib/shareGraphic";
 import { api } from "@/lib/api";
 import { formatStat } from "@/lib/standings";
 
@@ -100,11 +102,17 @@ function FieldSizeCard({ fieldSize, scopeLabel, loading }) {
   );
 }
 
+// The record holders as one line of plain text for the exporter — a tie lists
+// every holder, exactly as the card does.
+const holderNames = (holders, isTeams) =>
+  holders.map(h => (isTeams ? h.team_name : h.driver_name)).join(", ");
+
 export default function RecordsPage() {
   const league = useLeague();
   const { gameId, seriesId, seasonId, classId, className, game, series, season, raceClass, loading } = league ?? {};
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [sharing, setSharing] = useState(false);
   const [tab, setTab] = useState("drivers"); // "drivers" | "teams"
 
   // Scope + title mirror the /stats page exactly, driven by the shared
@@ -145,6 +153,18 @@ export default function RecordsPage() {
   const hasAny = records.some(r => r.holders.length);
   const count = (isTeams ? data?.team_rows?.length : data?.rows?.length) ?? 0;
 
+  // This page is a grid of cards rather than a table, so the graphic is the
+  // record book laid out as one: a row per category that actually has a holder.
+  // Uncrowned categories are left out — a column of em-dashes says nothing.
+  const held = records.filter(r => r.holders.length > 0);
+  const shareSpec = [
+    { key: "category", label: "Record", align: "left", locked: true, wrap: true, get: r => r.label },
+    { key: "value", label: isTeams ? "Team Best" : "Best", locked: true, get: r => formatStat(r.key, r.value) },
+    { key: "holder", label: isTeams ? "Team" : "Driver", align: "left", wrap: true, get: r => holderNames(r.holders, isTeams) },
+  ];
+  const shareTable = specToGraphicTable(shareSpec, held);
+  const avgField = data?.field_size?.avg_drivers_per_race;
+
   return (
     <section>
       <div className="page-title">
@@ -155,7 +175,29 @@ export default function RecordsPage() {
             {" · "}{data.seasons_counted} Season{data.seasons_counted === 1 ? "" : "s"}
           </span>
         )}
+        {held.length > 0 && <ShareGraphicButton onClick={() => setSharing(true)} />}
       </div>
+
+      <ShareGraphicModal
+        open={sharing}
+        onClose={() => setSharing(false)}
+        kind={isTeams ? "Team Records" : "Records"}
+        defaultTitle={`${active.title}${isTeams ? " · Teams" : ""}`}
+        subtitle={[game?.name, series?.name, season?.name, raceClass?.name].filter(Boolean).join(" · ")}
+        columns={shareTable.columns}
+        rows={shareTable.rows}
+        meta={[
+          { label: "Scope", value: scopeLabel, wide: true },
+          { label: isTeams ? "Teams" : "Drivers", value: count },
+          { label: "Seasons", value: data?.seasons_counted },
+          // The one figure on this page that nobody holds still belongs on the
+          // graphic — it's the context the records were set in.
+          { label: "Avg Drivers per Race", value: avgField != null ? avgField.toFixed(1) : null },
+        ]}
+        logos={leagueLogos({ league: league?.league, game, series, season })}
+        leagueName={league?.league?.name ?? ""}
+        leagueLogoUrl={league?.league?.logo_url ?? ""}
+      />
       <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.88rem" }}>
         The record holder in each category for the current scope. Use the Game / Series / Season / Class menus
         above to change scope (pick &quot;All&quot; to widen it).

@@ -8,8 +8,8 @@ import { useAuth } from "@/components/AuthProvider";
 import { RaceCreateModal } from "@/components/RaceCreateModal";
 import { SeasonCreateModal } from "@/components/SeasonCreateModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { ShareGraphicModal } from "@/components/ShareGraphicModal";
-import { leagueLogos } from "@/lib/shareGraphic";
+import { ShareGraphicButton, ShareGraphicModal } from "@/components/ShareGraphicModal";
+import { leagueLogos, specToGraphicTable } from "@/lib/shareGraphic";
 import { api } from "@/lib/api";
 import { formatRaceDate, isPastRaceDate, raceDateSortKey } from "@/lib/raceDate";
 import { racePerClassResults } from "@/lib/classFilter";
@@ -84,25 +84,6 @@ function personText(summary, classSummaries, field) {
 function carText(summary, classCars) {
   if (classCars?.length) return classCars.map(c => `${c.class_name}: ${c.car || "—"}`).join(" · ");
   return summary?.car || "—";
-}
-
-// The header button every exportable screen carries.
-function ShareGraphicButton({ onClick }) {
-  return (
-    <button className="btn btn-ghost" style={{ marginTop: 0, padding: "6px 12px", fontSize: "0.82rem" }} onClick={onClick}>
-      🖼 Share Graphic
-    </button>
-  );
-}
-
-// Turns a [{ key, label, align?, locked?, get }] spec into the modal's
-// columns/rows, the same way the race results page does. A calendar has no
-// finishing order, so no row is medalled.
-function toShareTable(spec, rows) {
-  return {
-    columns: spec.map(({ get, ...c }) => ({ align: "center", ...c })),
-    rows: rows.map(r => ({ cells: spec.map(c => c.get(r)) })),
-  };
 }
 
 export default function SchedulePage() {
@@ -215,7 +196,7 @@ function FeedSection({ title, icon, rows, kind }) {
       ? { key: "winner", label: "Winner", align: "left", wrap: true, get: r => personText(r.summary, r.class_summaries, "winner") }
       : { key: "car", label: "Car", align: "left", wrap: true, get: r => carText(r.summary || {}, r.class_cars) },
   ];
-  const shareTable = toShareTable(shareSpec, rows);
+  const shareTable = specToGraphicTable(shareSpec, rows);
   const scopeLabel = series?.name || game?.name || "All Games";
 
   return (
@@ -363,7 +344,7 @@ function SeasonSchedule() {
     { key: "winner", label: "Winner", align: "left", wrap: true, get: r => personText(r.summary, r.class_summaries, "winner") },
     { key: "drivers", label: "Drivers", get: r => r.summary?.num_drivers || "—" },
   ];
-  const shareTable = toShareTable(shareSpec, ordered);
+  const shareTable = specToGraphicTable(shareSpec, ordered);
   const scopeName = [season?.name, raceClass?.name].filter(Boolean).join(" · ");
 
   return (

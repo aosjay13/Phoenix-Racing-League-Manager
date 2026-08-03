@@ -92,6 +92,22 @@ function tableScale(n) {
   return { font: 12, head: 10, padY: 6, padX: 4, name: 150, wrapHead: true };
 }
 
+// The header button that opens the exporter. Every screen that can export one
+// carries the same control in the same place, so it reads as one feature
+// rather than a per-page affordance.
+export function ShareGraphicButton({ onClick, title }) {
+  return (
+    <button
+      className="btn btn-ghost"
+      style={{ marginTop: 0, padding: "6px 12px", fontSize: "0.82rem" }}
+      title={title || "Export this table as an image for Discord, X or Facebook"}
+      onClick={onClick}
+    >
+      🖼 Share Graphic
+    </button>
+  );
+}
+
 export function ShareGraphicModal({
   open, onClose, kind = "Graphic", defaultTitle = "", subtitle = "",
   columns = [], rows = [], logos = [], leagueName = "", leagueLogoUrl = "",

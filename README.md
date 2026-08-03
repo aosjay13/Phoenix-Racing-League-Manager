@@ -31,8 +31,9 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   scores its own isolated championship, with an optional combined overall title across the field,
   optionally its own race calendar, and optionally its own qualifying and race at events every
   class runs together — each class with its own pole, winner and field
-- 🖼 **Social graphic exporter** — on Standings, Stats, Race Results and the Schedule (a season's
-  calendar, or the cross-season Upcoming / Recent Results feeds). League name + logo branding, a
+- 🖼 **Social graphic exporter** — on Standings, Stats, Race Results, Skill Ratings, Records and the
+  Schedule (a season's calendar, or the cross-season Upcoming / Recent Results feeds). League name
+  + logo branding, a
   multi-select of *every* stat column the screen offers (with Select all / Clear / Reset), and full
   event metadata on results exports, so the downloaded PNG/JPG stands alone as a broadcast-style
   graphic
@@ -98,6 +99,10 @@ The app runs at `http://localhost:3000`.
 8. **Records** — the record holder in each category for the current scope, plus **Avg Drivers
    per Race**: the average field size across every completed race in scope. Empty and upcoming
    events are ignored, and a heat weekend counts its Feature field once rather than each heat.
+   **🖼 Share Graphic** posts the record book as one image — a row per category that has a holder
+   (ties list everyone), with the average field size carried in the header as context. It follows
+   the Drivers / Teams tab you're on. **Skill Ratings** exports the same way, medalling the top
+   three like the standings do.
 
 ### Sharing a direct link
 
@@ -392,8 +397,13 @@ only, so a season without classes doesn't produce an "Unclassified" row duplicat
 **The Share Graphic exporter** builds its own DOM node rather than screenshotting the live page, so
 an export never picks up the sidebar, edit buttons or any other UI furniture — only the headline,
 branding, event metadata and data table are drawn, at a fixed 1080px for a consistent feed-friendly
-output. `ShareGraphicModal` takes `columns` / `rows` (see `toGraphicTable` in `lib/shareGraphic.js`)
-plus an optional `meta` of `{ label, value, wide? }` facts.
+output. `ShareGraphicModal` takes `columns` / `rows` plus an optional `meta` of `{ label, value, wide? }`
+facts, and `ShareGraphicButton` is the header control that opens it. There are two builders in
+`lib/shareGraphic.js`: `toGraphicTable` for tables whose cells are plain stat lookups (Standings,
+Stats), and `specToGraphicTable` for tables whose cells are computed — a schedule's per-class
+winners, a Skill Rating trend, a record's list of tied holders. `specToGraphicTable` only medals
+the top three when given a `rankOf`, so a table with no ranking (a calendar, a record book) doesn't
+get a meaningless gold row.
 
 Cells sit on one line by default, which suits the numbers these tables are usually made of. A column
 that carries prose instead — an event name, a track, or the Schedule's "Pro: Ana · Am: Bo" pole and
