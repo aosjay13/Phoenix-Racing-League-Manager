@@ -1535,3 +1535,91 @@ tbody tr:hover {
   font-weight: 700;
   white-space: nowrap;
 }
+
+/* ── Backup & Restore (League Setup ▸ Data & Recovery) ─────────────────────
+   The import half is bordered in red on purpose: it is the one control on the
+   admin screen that can delete live data, and it should never be mistaken for
+   the export button sitting next to it. */
+.backup-danger-card {
+  border-color: rgba(230, 57, 70, 0.45);
+}
+
+/* Per-collection record counts, shown for the file being imported and again
+   for the result of the import. */
+.backup-counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px;
+}
+
+.backup-count {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  font-size: 0.8rem;
+}
+
+.backup-count-n {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-0);
+}
+
+.backup-count-label {
+  color: var(--ink-1);
+}
+
+.backup-count-removed {
+  color: var(--accent-red);
+  font-size: 0.72rem;
+}
+
+.backup-preview {
+  margin: 10px 0 14px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-surface);
+}
+
+/* History of export/restore runs, newest first. */
+.backup-log {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.backup-log-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--card);
+  font-size: 0.82rem;
+}
+
+.backup-log-kind {
+  flex-shrink: 0;
+  min-width: 108px;
+  font-weight: 600;
+  color: var(--ink-0);
+}
+
+.backup-log-kind.kind-scheduled { color: var(--accent-cyan); }
+.backup-log-kind.kind-restore   { color: var(--accent-gold); }
+
+.backup-log-when {
+  color: var(--ink-0);
+  font-variant-numeric: tabular-nums;
+}
+
+.backup-log-meta {
+  color: var(--ink-2);
+}

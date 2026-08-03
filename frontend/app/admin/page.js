@@ -4,6 +4,8 @@ import { useEffect, useState, useCallback } from "react";
 import { useLeague } from "@/components/LeagueProvider";
 import { AdminGate } from "@/components/AdminGate";
 import { LeagueSettings } from "@/components/LeagueSettings";
+import { BackupRestore } from "@/components/BackupRestore";
+import { useAuth } from "@/components/AuthProvider";
 import { ImageUpload } from "@/components/ImageUpload";
 import { TrackSelect } from "@/components/TrackSelect";
 import { api } from "@/lib/api";
@@ -77,6 +79,9 @@ const SECTIONS = [
   { key: "races",     label: "Races",           icon: "🏁", group: "structure", hint: "A season's calendar" },
   { key: "tracks",    label: "Tracks",          icon: "🏟", group: "library",   hint: "Shared venue database" },
   { key: "templates", label: "Points Templates", icon: "🔢", group: "library",  hint: "Reusable scoring structures" },
+  // Recovery tools. Owner-only — the whole row is hidden for the other staff
+  // roles, since only an Owner can export or import the database.
+  { key: "backup",    label: "Backup & Restore", icon: "💾", group: "data",     hint: "Export/import the entire app as JSON" },
 ];
 
 function toArray(str) {
@@ -88,6 +93,8 @@ function sessionsToArray(str) {
 }
 
 function AdminInner() {
+  const { role } = useAuth();
+  const isOwner = role === "owner";
   const league = useLeague();
   const { games, seriesList, seasons, gameId, seriesId, seasonId, game, series, season, refresh } = league;
   const [races, setRaces] = useState([]);
@@ -286,11 +293,28 @@ function AdminInner() {
             </button>
           ))}
         </div>
+        {isOwner && (
+          <>
+            <span className="setup-switch-label">Data &amp; Recovery</span>
+            <div className="setup-switch-row">
+              {SECTIONS.filter(s => s.group === "data").map(s => (
+                <button key={s.key} type="button" title={s.hint}
+                  className={`tab setup-switch-btn${section === s.key ? " active" : ""}`}
+                  onClick={() => setSection(s.key)}>
+                  <span aria-hidden="true">{s.icon}</span> {s.label}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
       <div className="setup-stage">
         {/* Multi-league: settings for the active league + Owner-only create/migrate. */}
         {section === "league" && <LeagueSettings />}
+
+        {/* Whole-application export/import, plus the weekly automatic backup. */}
+        {section === "backup" && <BackupRestore />}
 
         {section === "games" && (
         <Panel title="Games" step={1} sub="e.g. iRacing, F1 25, Gran Turismo 7">
