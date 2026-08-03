@@ -1,5 +1,6 @@
 // Helpers shared by the "Share Graphic" exporters on Standings / Stats / Race
-// Results. Keeps the per-page wiring to a couple of lines.
+// Results / Schedule / Skill Ratings / Records. Keeps the per-page wiring to a
+// couple of lines.
 
 import { formatStat } from "@/lib/standings";
 
@@ -21,6 +22,28 @@ export function leagueLogos({ league, game, series, season } = {}) {
 export function driverDisplayName(r) {
   const alias = r.game_alias && r.game_alias !== r.driver_name ? r.game_alias : null;
   return alias || r.driver_name;
+}
+
+// The other way to build the modal's { columns, rows }: from a spec of
+// [{ key, label, align?, locked?, wrap?, get }], where `get(row, i)` returns the
+// cell. Use this when the cells aren't plain stat lookups — a schedule's
+// per-class winners, a Skill Rating trend, a record's holder list — and
+// toGraphicTable below when they are.
+//
+// `rankOf` opts a table into medalling: return the row's finishing position and
+// the top three get their leading cell tinted. Omit it for tables with no
+// ranking at all (a calendar), where a gold row would be meaningless.
+export function specToGraphicTable(spec, rows, { rankOf } = {}) {
+  return {
+    columns: spec.map(({ get, ...col }) => ({ align: "center", ...col })),
+    rows: rows.map((r, i) => {
+      const rank = rankOf ? rankOf(r, i) : null;
+      return {
+        rank: rank > 0 && rank <= 3 ? rank : undefined,
+        cells: spec.map(c => c.get(r, i)),
+      };
+    }),
+  };
 }
 
 // Build the { columns, rows } payload the modal wants from a list of row objects
