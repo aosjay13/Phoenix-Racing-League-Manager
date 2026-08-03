@@ -1077,7 +1077,7 @@ export function SessionEditor({
           ✓ <strong>FL</strong>, <strong>HC</strong> and <strong>MLL</strong> tick themselves as you type:
           the quickest <strong>Best Lap</strong> takes Fastest Lap (one lap time entered is the fastest one),
           the biggest gain from <strong>Start</strong> to <strong>Fin</strong> takes Hard Charger (a tie goes to
-          whoever started furthest back), and the highest <strong>Led</strong> count takes Most Laps Led.
+          whoever finished highest), and the highest <strong>Led</strong> count takes Most Laps Led.
           Tick or untick any of them yourself and that one stops moving — your call sticks.
           These are stats either way; they only affect points if your season or points structure pays a bonus for them.
         </p>
@@ -1554,7 +1554,7 @@ function RowInputs({ row, idx, updateRow, updateFlag, updateRaceTime, updateInte
       <Check title="Fastest lap — ticked automatically for the quickest Best Lap time entered. Change it and it stays where you put it."
         value={row.fastest_lap} disabled={!hasDriver} onChange={v => updateFlag(idx, "fastest_lap", v)} />
       <Check title="Halfway-point leader" value={row.halfway_leader} disabled={!hasDriver} onChange={v => updateRow(idx, "halfway_leader", v)} />
-      <Check title="Hard charger — ticked automatically for the biggest gain from Start to Fin (ties go to whoever started furthest back). Change it and it stays where you put it."
+      <Check title="Hard charger — ticked automatically for the biggest gain from Start to Fin (ties go to whoever finished highest). Change it and it stays where you put it."
         value={row.hard_charger} disabled={!hasDriver} onChange={v => updateFlag(idx, "hard_charger", v)} />
       <Check title="Most laps led — ticked automatically for the highest Led count (a tie is shared). Change it and it stays where you put it."
         value={row.most_laps_led} disabled={!hasDriver} onChange={v => updateFlag(idx, "most_laps_led", v)} />
