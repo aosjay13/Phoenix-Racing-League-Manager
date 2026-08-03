@@ -7,13 +7,17 @@ import { AdminGate } from "@/components/AdminGate";
 import { ImageUpload } from "@/components/ImageUpload";
 import { SessionEditor } from "@/components/SessionEditor";
 import { TrackSelect } from "@/components/TrackSelect";
+import { RaceLengthField } from "@/components/RaceLengthField";
+import { LENGTH_LAPS, LENGTH_TIME } from "@/lib/raceLength";
 import { normalizedBuiltinTemplates } from "@/lib/pointsTemplates";
 import { carForRace, racePerClassResults, sessionClassScopes } from "@/lib/classFilter";
 import { api } from "@/lib/api";
 
 const BLANK_INFO = {
   name: "", track: "", track_id: "", date: "", round_number: "", track_logo_url: "", sessions: "Race",
-  total_laps: "", car: "", heat_format: false, heats: "", consolations: "", feature_name: "A-Main Feature",
+  // Distance: a lap count, or a duration for a race run to the clock.
+  length_type: LENGTH_LAPS, total_laps: "", race_minutes: "",
+  car: "", heat_format: false, heats: "", consolations: "", feature_name: "A-Main Feature",
   class_id: "", per_class_results: false,
 };
 
@@ -36,7 +40,9 @@ function RaceInfoTab({ race, season, classes = [], onSaved }) {
       round_number: String(race.round_number ?? ""),
       track_logo_url: race.track_logo_url || "",
       sessions: Array.isArray(race.sessions) && race.sessions.length ? race.sessions.join(", ") : "Race",
+      length_type: race.length_type === LENGTH_TIME ? LENGTH_TIME : LENGTH_LAPS,
       total_laps: race.total_laps != null ? String(race.total_laps) : "",
+      race_minutes: race.race_minutes ? String(race.race_minutes) : "",
       car: race.car || "",
       heat_format: !!race.heat_format,
       heats: Array.isArray(race.heats) ? race.heats.join(", ") : "",
@@ -77,7 +83,12 @@ function RaceInfoTab({ race, season, classes = [], onSaved }) {
         round_number: Number(form.round_number),
         track_logo_url: form.track_logo_url,
         sessions: sessions.length ? sessions : ["Race"],
-        total_laps: form.total_laps === "" ? 0 : Number(form.total_laps),
+        // Only the figure the chosen format uses is stored; the other is zeroed
+        // so a race never keeps a stale length from the format it was switched
+        // away from.
+        length_type: form.length_type === LENGTH_TIME ? LENGTH_TIME : LENGTH_LAPS,
+        total_laps: form.length_type === LENGTH_TIME || form.total_laps === "" ? 0 : Number(form.total_laps),
+        race_minutes: form.length_type !== LENGTH_TIME || form.race_minutes === "" ? 0 : Number(form.race_minutes),
         car: form.car,
         heat_format: !!form.heat_format,
         heats: form.heat_format ? (heats.length ? heats : ["Heat 1"]) : [],
@@ -154,12 +165,9 @@ function RaceInfoTab({ race, season, classes = [], onSaved }) {
             </label>
           </div>
         )}
-        <div className="field"><label>Total Race Laps</label>
-          <input type="number" min="0" value={form.total_laps} onChange={set("total_laps")} placeholder="e.g. 100" />
-          <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
-            Used to auto-count laps completed: lead-lap finishers get the full total, laps-down (e.g. 2L) and DNFs subtract from it.
-          </span>
-        </div>
+        <RaceLengthField idPrefix="edit_race_length"
+          lengthType={form.length_type} totalLaps={form.total_laps} raceMinutes={form.race_minutes}
+          onChange={patch => setForm(f => ({ ...f, ...patch }))} />
         <div className="field"><label>Car Type</label>
           <input value={form.car} onChange={set("car")} placeholder={classes.length ? "Leave blank to use the class's / season's car" : "Leave blank to use the season's car"} />
           <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>

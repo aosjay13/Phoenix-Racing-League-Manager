@@ -13,6 +13,7 @@ import { leagueLogos, specToGraphicTable } from "@/lib/shareGraphic";
 import { api } from "@/lib/api";
 import { formatRaceDate, isPastRaceDate, raceDateSortKey } from "@/lib/raceDate";
 import { racePerClassResults } from "@/lib/classFilter";
+import { LENGTH_TIME } from "@/lib/raceLength";
 
 // A driver cell that links to the profile when we can resolve one, else plain
 // text. Falls back to an em-dash for events with no recorded pole/winner yet.
@@ -79,6 +80,14 @@ function personText(summary, classSummaries, field) {
     return classSummaries.map(cs => `${cs.class_name}: ${cs[field]?.name || "—"}`).join(" · ");
   }
   return summary?.[field]?.name || "—";
+}
+
+// A row's Length as flat text, for the share graphic: a timed event reads
+// "45 Min (78 laps)", a lap race "100 Laps".
+function lengthText(summary) {
+  if (!summary?.length_label) return "—";
+  if (summary.length_type === LENGTH_TIME && summary.laps) return `${summary.length_label} (${summary.laps} laps)`;
+  return summary.length_label;
 }
 
 function carText(summary, classCars) {
@@ -338,7 +347,9 @@ function SeasonSchedule() {
     { key: "event", label: "Event", align: "left", locked: true, wrap: true, get: r => r.name },
     { key: "track", label: "Track", align: "left", wrap: true, get: r => r.track || "—" },
     ...(showClassCol ? [{ key: "class", label: "Class", align: "left", wrap: true, get: r => r.class_name || "All Classes" }] : []),
-    { key: "length", label: "Length", get: r => (r.summary?.laps ? `${r.summary.laps} Laps` : "—") },
+    // Timed events export as their clock ("45 Min") with the winner's lap count
+    // alongside; lap races export as the distance they ran.
+    { key: "length", label: "Length", get: r => lengthText(r.summary || {}) },
     { key: "car", label: "Car", align: "left", wrap: true, get: r => carText(r.summary || {}, r.class_cars) },
     { key: "pole", label: "Pole", align: "left", wrap: true, get: r => personText(r.summary, r.class_summaries, "pole") },
     { key: "winner", label: "Winner", align: "left", wrap: true, get: r => personText(r.summary, r.class_summaries, "winner") },
@@ -493,7 +504,11 @@ function SeasonSchedule() {
                       </td>
                     )}
                     <td style={{ whiteSpace: "nowrap" }}>
-                      {s.laps ? `${s.laps} Laps` : "—"}
+                      {s.length_label || "—"}
+                      {s.length_type === LENGTH_TIME && !!s.laps && (
+                        <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.72rem" }}
+                          title="Laps the winner completed before time expired">{s.laps} laps</span>
+                      )}
                       {s.laps_extended && (
                         <span title={`Scheduled ${s.scheduled_laps} laps — extended by a green-white-checkered / overtime finish`}
                           style={{ marginLeft: 5, fontSize: "0.7rem", color: "var(--accent-cyan)", fontWeight: 700 }}>GWC</span>

@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { formatStat } from "@/lib/standings";
 import { formatRaceDate } from "@/lib/raceDate";
+import { LENGTH_TIME } from "@/lib/raceLength";
 import { useLeague } from "@/components/LeagueProvider";
 
 // Links a pole/winner name to their driver profile when resolvable, else plain
@@ -280,7 +281,11 @@ export default function TrackProfilePage() {
                           <td style={{ textAlign: "left" }}>{w.season_name}</td>
                           <td style={{ whiteSpace: "nowrap" }}>{formatRaceDate(w.date, "short", "—")}</td>
                           <td style={{ whiteSpace: "nowrap" }}>
-                            {w.laps ? `${w.laps} Laps` : "—"}
+                            {w.length_label || "—"}
+                            {w.length_type === LENGTH_TIME && !!w.laps && (
+                              <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.72rem" }}
+                                title="Laps the winner completed before time expired">{w.laps} laps</span>
+                            )}
                             {w.laps_extended && (
                               <span title={`Scheduled ${w.scheduled_laps} laps — extended by a green-white-checkered / overtime finish`}
                                 style={{ marginLeft: 5, fontSize: "0.7rem", color: "var(--accent-cyan)", fontWeight: 700 }}>GWC</span>

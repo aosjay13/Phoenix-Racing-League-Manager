@@ -9,6 +9,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ShareGraphicModal } from "@/components/ShareGraphicModal";
 import { leagueLogos, driverDisplayName } from "@/lib/shareGraphic";
 import { formatRaceDate } from "@/lib/raceDate";
+import { raceLengthLabel } from "@/lib/raceLength";
 import { gapColumns, formatDelta, parseTime, parseLapsDown } from "@/lib/raceTime";
 import { carForRace, carsByClassForRace, classIdForScope, sessionClassScopes, soleCarForRace } from "@/lib/classFilter";
 import { readParam, setParam } from "@/lib/scopeLink";
@@ -236,6 +237,7 @@ export default function EventResultsPage() {
     { label: "Track", value: [event.track, data.track?.track_type, data.track?.length].filter(Boolean).join(" · "), wide: true },
     { label: "Series", value: [game?.name, series?.name].filter(Boolean).join(" · "), wide: true },
     { label: "Season", value: season?.name },
+    { label: "Length", value: raceLengthLabel(event) },
     { label: "Class", value: activeClass?.label },
     { label: "Session", value: tabName },
   ];
@@ -274,6 +276,8 @@ export default function EventResultsPage() {
             {formatRaceDate(event.date, "full", "Date TBA")}
             {season ? ` · ${season.name}` : ""}
             {headerCar ? ` · ${headerCar}` : ""}
+            {/* Scheduled distance: "100 Laps", or the clock on a timed event. */}
+            {raceLengthLabel(event) ? ` · ${raceLengthLabel(event)}` : ""}
           </p>
           {classCars.length > 0 && (
             <p style={{ margin: "4px 0 0", display: "flex", gap: 10, flexWrap: "wrap", fontSize: "0.82rem", color: "var(--ink-1)" }}>

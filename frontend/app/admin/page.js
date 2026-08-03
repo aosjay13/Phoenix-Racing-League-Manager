@@ -8,6 +8,8 @@ import { BackupRestore } from "@/components/BackupRestore";
 import { useAuth } from "@/components/AuthProvider";
 import { ImageUpload } from "@/components/ImageUpload";
 import { TrackSelect } from "@/components/TrackSelect";
+import { RaceLengthField } from "@/components/RaceLengthField";
+import { LENGTH_LAPS, LENGTH_TIME } from "@/lib/raceLength";
 import { api } from "@/lib/api";
 import { BONUS_TYPES } from "@/lib/standings";
 import { TRACK_TYPES } from "@/lib/trackTypes";
@@ -169,7 +171,9 @@ function AdminInner() {
 
   const blankRace = {
     name: "", track: "", track_id: "", date: "", round_number: "", track_logo_url: "", sessions: "Race", car: "",
-    total_laps: "", heat_format: false, heats: "", consolations: "", feature_name: "A-Main Feature",
+    // Distance: a lap count, or a duration for a race run to the clock.
+    length_type: LENGTH_LAPS, total_laps: "", race_minutes: "",
+    heat_format: false, heats: "", consolations: "", feature_name: "A-Main Feature",
     // Blank = shared by every class. Only settable while the season has
     // per-class schedules turned on.
     class_id: "",
@@ -534,10 +538,16 @@ function AdminInner() {
           <form onSubmit={e => {
             e.preventDefault();
             const heats = toArray(raceForm.heats);
+            const timed = raceForm.length_type === LENGTH_TIME;
             const body = {
               ...raceForm,
               sessions: sessionsToArray(raceForm.sessions),
-              total_laps: raceForm.total_laps === "" ? 0 : Number(raceForm.total_laps),
+              // Only the figure the chosen format uses is stored; the other is
+              // zeroed so a race never keeps a stale length from the format it
+              // was switched away from.
+              length_type: timed ? LENGTH_TIME : LENGTH_LAPS,
+              total_laps: timed || raceForm.total_laps === "" ? 0 : Number(raceForm.total_laps),
+              race_minutes: !timed || raceForm.race_minutes === "" ? 0 : Number(raceForm.race_minutes),
               heat_format: !!raceForm.heat_format,
               heats: raceForm.heat_format ? (heats.length ? heats : ["Heat 1"]) : [],
               consolations: raceForm.heat_format ? toArray(raceForm.consolations) : [],
@@ -571,12 +581,9 @@ function AdminInner() {
                   class&rsquo;s calendar alone.
                 </span></div>
             )}
-            <div className="field"><label>Total Race Laps</label>
-              <input type="number" min="0" disabled={!seasonId} value={raceForm.total_laps} placeholder="e.g. 100"
-                onChange={e => setRaceForm(f => ({ ...f, total_laps: e.target.value }))} />
-              <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
-                Used to auto-count laps completed: lead-lap finishers get the full total, laps-down (e.g. 2L) and DNFs subtract from it.
-              </span></div>
+            <RaceLengthField idPrefix="admin_race_length" disabled={!seasonId}
+              lengthType={raceForm.length_type} totalLaps={raceForm.total_laps} raceMinutes={raceForm.race_minutes}
+              onChange={patch => setRaceForm(f => ({ ...f, ...patch }))} />
             <div className="field"><label>Car Type</label>
               <input disabled={!seasonId} value={raceForm.car} placeholder={classes.length ? "Leave blank to use the class's / season's car" : "Leave blank to use the season's car"}
                 onChange={e => setRaceForm(f => ({ ...f, car: e.target.value }))} /></div>
@@ -630,7 +637,9 @@ function AdminInner() {
                   track_logo_url: r.track_logo_url || "",
                   sessions: Array.isArray(r.sessions) && r.sessions.length ? r.sessions.join(", ") : "Race",
                   car: r.car || "",
+                  length_type: r.length_type === LENGTH_TIME ? LENGTH_TIME : LENGTH_LAPS,
                   total_laps: r.total_laps != null ? String(r.total_laps) : "",
+                  race_minutes: r.race_minutes ? String(r.race_minutes) : "",
                   heat_format: !!r.heat_format,
                   heats: Array.isArray(r.heats) ? r.heats.join(", ") : "",
                   consolations: Array.isArray(r.consolations) ? r.consolations.join(", ") : "",

@@ -230,7 +230,12 @@ export const SPECS = {
              fields: { name: { required: true }, track: {}, track_id: {}, track_logo_url: {}, date: { dateOnly: true },
                        class_id: {}, per_class_results: { bool: true },
                        round_number: { number: true, required: true }, sessions: {},
-                       total_laps: { number: true }, car: {},
+                       // How this event's distance is measured: `length_type` is
+                       // "laps" (the default, and what every pre-toggle race reads
+                       // as) or "time". A lap race carries `total_laps`; a timed
+                       // race carries `race_minutes` and runs to the clock. See
+                       // lib/raceLength.js.
+                       length_type: {}, total_laps: { number: true }, race_minutes: { number: true }, car: {},
                        // Heat-racing weekend structure: when heat_format is on, `heats` and
                        // `consolations` are ordered lists of session names (each addable/removable
                        // from the event screen) feeding into one Feature session. `session_points`

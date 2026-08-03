@@ -225,6 +225,11 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
         laps: summary.laps,
         scheduled_laps: summary.scheduled_laps,
         laps_extended: summary.laps_extended,
+        // Distance as the calendar prints it — "45 Min" for a timed event,
+        // "100 Laps" for one run to a distance. See lib/raceLength.js.
+        length_type: summary.length_type,
+        scheduled_minutes: summary.scheduled_minutes,
+        length_label: summary.length_label,
         num_drivers: summary.num_drivers,
         pole: summary.pole,
       });
