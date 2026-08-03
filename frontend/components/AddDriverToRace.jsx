@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { ensureDriverId } from "@/lib/driverPool";
+import { entryClassIds } from "@/lib/classFilter";
 import { DriverCreateModal } from "@/components/DriverCreateModal";
 
 // Autocomplete for adding a driver mid race/qualifying entry: search the
@@ -48,10 +49,34 @@ export function AddDriverToRace({ seasonId, seriesName, existingNames, defaultCl
     setBusy(true);
     try {
       const driverId = await ensureDriverId({ driverId: candidate.driver_id, name: candidate.name, user_id: candidate.user_id });
-      const body = { name: candidate.name, team_id: "", season_id: seasonId, driver_id: driverId, class_id: defaultClassId || "" };
-      if (candidate.user_id) body.user_id = candidate.user_id;
-      const entry = await api("/api/entries", { method: "POST", body });
-      onCreated(entry);
+
+      // Reuse the driver's existing entry in this season if they already have
+      // one. Entering a class's own grid only lists that class's drivers, so
+      // someone already on the roster in another class looks absent here —
+      // creating a second entry for them is what used to leave the roster with
+      // the same name three times over. Instead, add this class to the entry
+      // they already have: one entry, several classes.
+      const seasonEntries = await api(`/api/entries?season_id=${seasonId}`);
+      const wanted = candidate.name.trim().toLowerCase();
+      const mine = seasonEntries.find(e =>
+        (driverId && e.driver_id === driverId) ||
+        (candidate.user_id && e.user_id === candidate.user_id) ||
+        String(e.name || "").trim().toLowerCase() === wanted);
+
+      if (mine) {
+        const have = entryClassIds(mine);
+        const entry = (defaultClassId && !have.includes(defaultClassId))
+          ? await api(`/api/entries/${mine.id}`, { method: "PATCH", body: { class_ids: [...have, defaultClassId] } })
+          : mine;
+        onCreated(entry);
+      } else {
+        const body = {
+          name: candidate.name, team_id: "", season_id: seasonId, driver_id: driverId,
+          class_ids: defaultClassId ? [defaultClassId] : [],
+        };
+        if (candidate.user_id) body.user_id = candidate.user_id;
+        onCreated(await api("/api/entries", { method: "POST", body }));
+      }
       setQuery("");
       setOpen(false);
     } catch (err) { onError(err.message); }

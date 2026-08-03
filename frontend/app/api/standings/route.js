@@ -8,7 +8,7 @@ import {
   resolveSeasonConfig,
 } from "@/lib/standings";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
-import { classIdsInSeason, fetchSeasonClasses, filterEntriesByClass, filterResultsByClass } from "@/lib/classServer";
+import { classIdsInSeason, entryClassIds, fetchSeasonClasses, filterEntriesByClass, filterResultsByClass } from "@/lib/classServer";
 import { fetchDriverNames } from "@/lib/driverNamesServer";
 
 // One season's championship tables.
@@ -68,12 +68,16 @@ export async function GET(request) {
   }
 
   // Tag every row with its class so the combined table can still show which
-  // class each driver belongs to.
+  // class each driver belongs to. A driver entered in several classes lists
+  // them all, with the primary one kept in `class_id` for anything that can
+  // only carry a single class.
   const classNameById = Object.fromEntries(classes.map(c => [c.id, c.name]));
   for (const r of drivers.rows) {
-    const cid = entriesById[r.entry_id]?.class_id || null;
-    r.class_id = cid;
-    r.class_name = cid ? (classNameById[cid] ?? null) : null;
+    const cids = entryClassIds(entriesById[r.entry_id]);
+    r.class_id = cids[0] || null;
+    r.class_ids = cids;
+    const names = cids.map(cid => classNameById[cid]).filter(Boolean);
+    r.class_name = names.length ? names.join(" · ") : null;
   }
 
   return NextResponse.json({

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
 import { fetchDriverNames } from "@/lib/driverNamesServer";
+import { entryClassIds } from "@/lib/classServer";
 
 export const dynamic = "force-dynamic";
 
@@ -87,7 +88,10 @@ export async function GET(request) {
         team_name: null,
         class_id: null,
         class_name: null,
+        class_ids: [],
+        class_names: [],
         entry_id: null,
+        entry_ids: [],
         season_id: null,
         series_entries: {},
       });
@@ -98,11 +102,24 @@ export async function GET(request) {
       bucket.user_id = entry.user_id ?? bucket.user_id;
       bucket.team_id = entry.team_id ?? bucket.team_id;
       bucket.team_name = entry.team_id ? teamName[entry.team_id] ?? bucket.team_name : bucket.team_name;
-      // Class is per-season, so the latest season in scope wins — matching how
-      // team/number resolve.
-      bucket.class_id = entry.class_id || null;
-      bucket.class_name = entry.class_id ? className[entry.class_id] ?? null : null;
+      // Classes are per-season, so the latest season in scope wins — matching
+      // how team/number resolve. A driver can race SEVERAL classes, so the row
+      // carries all of them; and because the same driver can still hold more
+      // than one entry in a season (the old one-entry-per-class workaround),
+      // the classes of every such entry are folded in rather than the last one
+      // seen silently winning.
+      if (bucket.season_id !== season.id) {
+        bucket.class_ids = [];
+        bucket.entry_ids = [];
+      }
+      for (const cid of entryClassIds(entry)) {
+        if (!bucket.class_ids.includes(cid)) bucket.class_ids.push(cid);
+      }
+      bucket.class_names = bucket.class_ids.map(cid => className[cid]).filter(Boolean);
+      bucket.class_id = bucket.class_ids[0] || null;
+      bucket.class_name = bucket.class_id ? className[bucket.class_id] ?? null : null;
       bucket.entry_id = entry.id;
+      if (!bucket.entry_ids.includes(entry.id)) bucket.entry_ids.push(entry.id);
       bucket.season_id = season.id;
       if (entry.number != null) {
         bucket.number = entry.number;
@@ -169,9 +186,17 @@ export async function GET(request) {
     number: showNumber ? d.number : null,
     team_id: d.team_id,
     team_name: d.team_name,
+    // Every class this driver races in the latest season in scope, plus the
+    // primary one on its own for callers that can only show a single class.
     class_id: d.class_id,
     class_name: d.class_name,
+    class_ids: d.class_ids,
+    class_names: d.class_names,
     entry_id: d.entry_id,
+    // Every entry this driver holds in that season. More than one means they
+    // were added once per class before a single entry could carry several —
+    // the roster offers to combine them (see /api/admin/entries/combine).
+    entry_ids: d.entry_ids,
     season_id: d.season_id,
     series_entries: d.series_entries,
   }));

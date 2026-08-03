@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { withAdmin, getRequestLeagueId } from "@/lib/serverAuth";
 import { recalcGameSkillRatings, gameIdForSeason } from "@/lib/skillRatingServer";
-import { classIdForScope, isClassScoped, resultInSessionClass } from "@/lib/classFilter";
+import { classIdForScope, isClassScoped, primaryClassId, resultInSessionClass } from "@/lib/classFilter";
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -31,11 +31,13 @@ async function sessionContext(raceId) {
 
 // class_id per roster entry, used to resolve the class of a result saved before
 // classes existed (or before this driver was classified) — the same fallback
-// classOfResult applies everywhere else.
+// classOfResult applies everywhere else. A driver entered in several classes
+// falls back to their primary one; a combined session's Class dropdown on the
+// row is how the other class gets recorded.
 async function classByEntryForSeason(seasonId) {
   if (!seasonId) return {};
   const snap = await db().collection("entries").where("season_id", "==", seasonId).get();
-  return Object.fromEntries(snap.docs.map(d => [d.id, { class_id: d.data().class_id || "" }]));
+  return Object.fromEntries(snap.docs.map(d => [d.id, { class_id: primaryClassId(d.data()) || "" }]));
 }
 
 // Docs that count as "this session". Qualifying is isolated by type, but all
