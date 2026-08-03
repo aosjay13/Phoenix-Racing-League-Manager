@@ -4,6 +4,24 @@ import { withAdmin, getUserRole, isEnvAdmin } from "@/lib/serverAuth";
 import { normalizeRole, roleLevel, canManage, ROLE_LABELS } from "@/lib/roles";
 import { syncEntryNamesForDriver } from "@/lib/driverSync";
 
+// The user doc an account would have received on its first verified request
+// (mirrors /api/users/me), built from its Firebase Auth record. Used when an
+// admin acts on an account that hasn't been through that flow yet.
+function seedProfile(authRecord) {
+  return {
+    display_name: authRecord.displayName || authRecord.email?.split("@")[0] || "Driver",
+    email: authRecord.email || null,
+    photo_url: authRecord.photoURL || null,
+    bio: "",
+    country: "",
+    number: null,
+    role: "player",
+    created_at: authRecord.metadata?.creationTime
+      ? new Date(authRecord.metadata.creationTime).toISOString()
+      : new Date().toISOString(),
+  };
+}
+
 // Admin-only: set a user's role within the staff hierarchy and/or (re)link their
 // statistical driver profile. Both changes flow through withAdmin, so the actor
 // is a verified staff member before anything is written.
@@ -25,7 +43,16 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
 
   const userRef = db().collection("users").doc(uid);
   const userDoc = await userRef.get();
-  if (!userDoc.exists) return NextResponse.json({ error: "User not found" }, { status: 404 });
+  // An account that signed up but never made a verified request has no user doc
+  // yet (see /api/users/me), and the dashboard now lists those from Firebase
+  // Auth. Seed the doc from the Auth record so an admin can set a role or link a
+  // driver before the player's first visit, instead of hitting a 404.
+  const authRecord = userDoc.exists ? null : await adminAuth().getUser(uid).catch(() => null);
+  if (!userDoc.exists && !authRecord) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+  const target = userDoc.exists ? userDoc.data() : seedProfile(authRecord);
+  if (!userDoc.exists) await userRef.set(target);
 
   const changed = {};
 
@@ -39,7 +66,7 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
     const dn = String(body.display_name).trim();
     if (!dn) return NextResponse.json({ error: "Display name can't be empty." }, { status: 400 });
     const actorRole = await getUserRole(admin);
-    const targetRole = isEnvAdmin(userDoc.data().email) ? "owner" : normalizeRole(userDoc.data().role || "player");
+    const targetRole = isEnvAdmin(target.email) ? "owner" : normalizeRole(target.role || "player");
     // Same hierarchy guard as role edits, except you may always rename yourself.
     if (uid !== admin.uid && !canManage(actorRole, targetRole)) {
       return NextResponse.json({ error: `You can't edit a ${ROLE_LABELS[targetRole]} — they rank at or above your role.` }, { status: 403 });
@@ -56,8 +83,8 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
   if (body.role !== undefined) {
     const newRole = normalizeRole(body.role);
     const actorRole = await getUserRole(admin);
-    const targetEnvAdmin = isEnvAdmin(userDoc.data().email);
-    const targetRole = targetEnvAdmin ? "owner" : normalizeRole(userDoc.data().role || "player");
+    const targetEnvAdmin = isEnvAdmin(target.email);
+    const targetRole = targetEnvAdmin ? "owner" : normalizeRole(target.role || "player");
 
     // Guard against self-lockout: nobody can change their own role.
     if (uid === admin.uid) {
@@ -119,7 +146,10 @@ export const DELETE = withAdmin(async (request, { params }, admin) => {
   }
   const userRef = db().collection("users").doc(uid);
   const userDoc = await userRef.get();
-  const email = userDoc.exists ? userDoc.data().email : null;
+  // Accounts with no user doc are deletable too (they're listed straight from
+  // Firebase Auth), so fall back to the Auth record for the guards below.
+  const authRecord = userDoc.exists ? null : await adminAuth().getUser(uid).catch(() => null);
+  const email = userDoc.exists ? userDoc.data().email : authRecord?.email || null;
   if (isEnvAdmin(email)) {
     return NextResponse.json({ error: "This account is a permanent Owner (set via ADMIN_EMAILS) and can't be deleted." }, { status: 400 });
   }

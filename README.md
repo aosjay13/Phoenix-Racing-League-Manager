@@ -171,9 +171,14 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
    switch between its three views, so nothing is stacked into one long scroll:
    - **Drivers** — the public directory of every driver profile (admins get Edit / Merge /
      Delete and **Sync names**; players can claim their own profile).
-   - **User Accounts** *(admin)* — every signed-in account: set its **role**, link it to the
-     driver profile it races as, rename it, delete it, and approve or deny pending profile
+   - **User Accounts** *(admin)* — every account that has signed up: set its **role**, link it to
+     the driver profile it races as, rename it, delete it, and approve or deny pending profile
      claims. The red badge on the Drivers nav item counts new signups + pending claims.
+     The roster is listed from Firebase Auth, so a signup appears here immediately, with a
+     **Status** pill saying where it stands — *Unverified* (hasn't clicked the emailed link yet)
+     or *Not opened yet* (verified, but hasn't returned to the app since, so its profile document
+     doesn't exist yet). Roles and driver links can be set on either; they're kept and applied
+     when the player next signs in.
    - **Roster & Teams** *(admin)* — select a **Series** in the top dropdowns to manage that
      series' roster:
      - **Teams** — create teams with logos.

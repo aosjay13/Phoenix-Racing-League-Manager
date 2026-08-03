@@ -30,6 +30,40 @@ function RoleBadge({ role, locked, title }) {
   );
 }
 
+// Where an account stands between signing up and being a usable league member.
+// The roster is listed from Firebase Auth, so accounts show up the moment they
+// sign up — these pills say why one isn't fully set up yet.
+function accountStatus(u) {
+  if (!u.auth_known) return null;   // couldn't read Auth — say nothing rather than guess
+  if (u.env_admin) return { label: "Active", tone: "ok", title: "Permanent Owner — exempt from email verification" };
+  if (!u.email_verified) {
+    return { label: "Unverified", tone: "warn", title: "Signed up but hasn't clicked the verification link yet — they can't use the league until they do." };
+  }
+  if (!u.has_profile) {
+    return { label: "Not opened yet", tone: "info", title: "Email verified, but they haven't returned to the app since. Their profile finishes setting itself up on their next visit — role and driver links you set now are kept." };
+  }
+  return { label: "Active", tone: "ok", title: "Verified and set up" };
+}
+
+const STATUS_TONE = {
+  ok: { bg: "transparent", fg: "var(--ink-2)", border: "1px solid var(--border)" },
+  warn: { bg: "var(--accent-amber, #ffb224)", fg: "#1a1205", border: "none" },
+  info: { bg: "var(--card-hover, #2a2a33)", fg: "var(--accent-cyan, #2ee6d6)", border: "1px solid var(--border-accent, #3a5bd0)" },
+};
+
+function StatusBadge({ status }) {
+  if (!status) return null;
+  const c = STATUS_TONE[status.tone] || STATUS_TONE.ok;
+  return (
+    <span title={status.title} style={{
+      display: "inline-block", padding: "3px 10px", borderRadius: 999, whiteSpace: "nowrap",
+      fontSize: "0.75rem", fontWeight: 600, background: c.bg, color: c.fg, border: c.border,
+    }}>
+      {status.label}
+    </span>
+  );
+}
+
 // One driver row is roughly this tall (padding + name + availability line +
 // separator), so ten of them is the list height we aim for.
 const DRIVER_ROW_H = 52;
@@ -292,12 +326,19 @@ export function UserAccountsManager() {
   // Roles this admin is allowed to hand out (never above their own level).
   const roleOptions = useMemo(() => assignableRoles(myRole), [myRole]);
   const staffCount = useMemo(() => (users || []).filter(u => roleLevel(u.role) >= roleLevel("statistician")).length, [users]);
+  // Accounts that exist but aren't fully set up — unverified, or verified and
+  // never opened again. Called out so a signup is never quietly missing.
+  const pendingCount = useMemo(
+    () => (users || []).filter(u => u.auth_known && !u.env_admin && (!u.email_verified || !u.has_profile)).length,
+    [users],
+  );
 
   return (
     <section>
       <div className="page-title"><h2>User Accounts</h2><span className="page-badge">Admin</span></div>
       <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.9rem", maxWidth: 720 }}>
-        Everyone who has signed in to the league. Assign each account a <strong>role</strong> —
+        Everyone who has signed up for the league — including accounts that haven&apos;t verified
+        their email yet, so a new signup is never missing from this list. Assign each account a <strong>role</strong> —
         Owner ▸ Admin ▸ Moderator ▸ Statistician all manage league data; Players don&apos;t —
         and link each account to the statistical <strong>Driver Profile</strong> it races as, so you always know who is who.
         You can only manage accounts ranked at or below your own role.
@@ -359,19 +400,21 @@ export function UserAccountsManager() {
       ) : users.length === 0 && !error ? (
         <div className="empty-state">
           <span className="empty-state-icon">👥</span>
-          <p>No users have signed in yet.</p>
+          <p>Nobody has signed up yet.</p>
         </div>
       ) : (
         <>
           <p style={{ fontSize: "0.8rem", color: "var(--ink-2)", margin: "12px 0 8px" }}>
             {users.length} account{users.length === 1 ? "" : "s"} · {staffCount} staff
+            {pendingCount > 0 && ` · ${pendingCount} not fully set up`}
           </p>
           <div className="table-wrap">
-              <table className="stats-table" style={{ width: "100%", minWidth: 820 }}>
+              <table className="stats-table" style={{ width: "100%", minWidth: 940 }}>
                 <thead>
                   <tr>
                     <th style={{ textAlign: "left" }}>Account</th>
                     <th style={{ textAlign: "left" }}>Email</th>
+                    <th style={{ textAlign: "center" }}>Status</th>
                     <th style={{ textAlign: "left", minWidth: 240 }}>Linked Driver Profile</th>
                     <th style={{ textAlign: "center", minWidth: 150 }}>Role</th>
                     <th style={{ textAlign: "center" }}>Manage</th>
@@ -414,6 +457,7 @@ export function UserAccountsManager() {
                           </span>
                         </td>
                         <td style={{ textAlign: "left", whiteSpace: "normal", color: "var(--ink-1)" }}>{u.email || <span style={{ color: "var(--ink-2)" }}>—</span>}</td>
+                        <td style={{ textAlign: "center" }}><StatusBadge status={accountStatus(u)} /></td>
                         <td style={{ textAlign: "left", whiteSpace: "normal" }}>
                           <DriverLinkSelect
                             drivers={drivers}
