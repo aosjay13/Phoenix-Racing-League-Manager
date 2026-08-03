@@ -12,6 +12,7 @@ import { classIdForScope, entriesEligibleForRace, entriesInSessionClass, isClass
 import { pointsFor, classConfigs, classScoresOwnPoints, configForTemplate, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
 import { applyAutoFlags, detectFlagLocks } from "@/lib/autoFlags";
 import { parseTime, formatTime, formatGap, formatDelta, parseDelta, parseLapsDown, deriveLaps } from "@/lib/raceTime";
+import { isTimedRace, scheduledLaps } from "@/lib/raceLength";
 
 const RESULT_FIELDS = ["finish_pos", "start_pos", "qual_time", "race_time", "interval", "fastest_lap_time", "laps", "laps_led", "incidents", "fastest_lap", "halfway_leader", "hard_charger", "most_laps_led", "provisional", "points_adjustment", "manual_points", "status", "class_id"];
 const BOOL_FIELDS = new Set(["fastest_lap", "halfway_leader", "hard_charger", "most_laps_led", "provisional"]);
@@ -337,7 +338,7 @@ export function SessionEditor({
       // finishing-order grid.
       const mains = existing.filter(r => !r.provisional);
       const provs = existing.filter(r => r.provisional);
-      const loaded = buildRows(entries, mains, race.total_laps, qp, sessionType);
+      const loaded = buildRows(entries, mains, scheduledLaps(race), qp, sessionType);
       // The gap columns aren't stored — they're recomputed from the saved lap
       // times each time the sheet opens.
       const built = sessionType === "qualifying" ? computeQualGaps(loaded) : loaded;
@@ -486,7 +487,10 @@ export function SessionEditor({
     });
   }
 
-  const totalLaps = Number(race?.total_laps) || null;
+  // The scheduled lap count laps-completed is auto-derived from. Null on a
+  // timed event — it has no scheduled distance to count down from, so laps are
+  // typed in per driver instead of being filled from the total.
+  const totalLaps = scheduledLaps(race);
 
   // Assigns/creates a driver into a specific slot, seeding Start from the
   // driver's Qualifying position for race-type sessions.
@@ -1076,6 +1080,12 @@ export function SessionEditor({
           whoever started furthest back), and the highest <strong>Led</strong> count takes Most Laps Led.
           Tick or untick any of them yourself and that one stops moving — your call sticks.
           These are stats either way; they only affect points if your season or points structure pays a bonus for them.
+        </p>
+      )}
+      {!isQual && isTimedRace(race) && (
+        <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.78rem" }}>
+          ⏱ This is a <strong>timed</strong> event, so there&rsquo;s no scheduled lap total to count down
+          from — enter each driver&rsquo;s <strong>Laps</strong> yourself.
         </p>
       )}
       <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.78rem" }}>
