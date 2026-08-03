@@ -218,6 +218,10 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
         season_id: seasonId,
         season_name: season.name,
         series_id: season.series_id ?? null,
+        // The game each past event was raced on. A venue's history can span
+        // several games (the same circuit in iRacing and in GT7), so the
+        // winners table leads with it.
+        game_id: season.game_id ?? null,
         driver_name: entry?.name ?? "Unknown",
         driver_id: entry?.driver_id ?? null,
         user_id: entry?.user_id ?? null,
@@ -261,13 +265,18 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
   }
   for (const w of winners) w.series_name = (w.series_id && seriesName[w.series_id]) || null;
 
-  // Resolve game names for the per-game record breakdown.
-  const gameIds = [...new Set([...Object.keys(recordByGame), ...Object.values(recordByClass).map(r => r.game_id)])];
+  // Resolve game names for the per-game record breakdown and the winners list.
+  const gameIds = [...new Set([
+    ...Object.keys(recordByGame),
+    ...Object.values(recordByClass).map(r => r.game_id),
+    ...winners.map(w => w.game_id),
+  ].filter(Boolean))];
   const gameName = {};
   if (gameIds.length) {
     const docs = await Promise.all(gameIds.map(id => db().collection("games").doc(id).get()));
     for (const doc of docs) if (doc.exists) gameName[doc.id] = doc.data().name;
   }
+  for (const w of winners) w.game_name = (w.game_id && gameName[w.game_id]) || null;
 
   const driverRows = Object.values(drivers)
     .map(d => ({

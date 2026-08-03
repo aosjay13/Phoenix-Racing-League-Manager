@@ -267,6 +267,7 @@ export default function TrackProfilePage() {
                     <thead>
                       <tr>
                         <th className="sticky-col" style={{ textAlign: "left" }}>Event</th>
+                        <th style={{ textAlign: "left" }}>Game</th>
                         <th style={{ textAlign: "left" }}>Series</th>
                         <th style={{ textAlign: "left" }}>Season</th>
                         <th>Date</th>
@@ -285,6 +286,7 @@ export default function TrackProfilePage() {
                               {w.round_number != null ? `R${w.round_number} · ` : ""}{w.race_name}
                             </Link>
                           </td>
+                          <td style={{ textAlign: "left" }}>{w.game_name || "—"}</td>
                           <td style={{ textAlign: "left" }}>{w.series_name || "—"}</td>
                           <td style={{ textAlign: "left" }}>{w.season_name}</td>
                           <td style={{ whiteSpace: "nowrap" }}>{formatRaceDate(w.date, "short", "—")}</td>
