@@ -26,9 +26,22 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     return onAuthStateChanged(clientAuth(), async (u) => {
-      setUser(u);
-      setEmailVerified(!!u?.emailVerified);
-      if (u) await refreshProfile();
+      let current = u;
+      // The cached user (and its ID token, good for an hour) still says
+      // "unverified" after the emailed link is clicked — Firebase doesn't push
+      // that change back to an open session. Re-pull the account and mint a
+      // fresh token so a page load is enough to notice, which also lets the
+      // /api/users/me call below create the user doc the admin roster reads.
+      if (u && !u.emailVerified) {
+        try {
+          await u.reload();
+          await u.getIdToken(true);
+          current = clientAuth().currentUser || u;
+        } catch { /* offline / token revoked — fall back to what we have */ }
+      }
+      setUser(current);
+      setEmailVerified(!!current?.emailVerified);
+      if (current) await refreshProfile();
       else setProfile(null);
       setLoading(false);
     });
