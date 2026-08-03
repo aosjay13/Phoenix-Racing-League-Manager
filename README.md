@@ -31,9 +31,11 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   scores its own isolated championship, with an optional combined overall title across the field,
   optionally its own race calendar, and optionally its own qualifying and race at events every
   class runs together — each class with its own pole, winner and field
-- 🖼 **Social graphic exporter** — league name + logo branding, a multi-select of *every* stat
-  column the screen offers (with Select all / Clear / Reset), and full event metadata on results
-  exports, so the downloaded PNG/JPG stands alone as a broadcast-style graphic
+- 🖼 **Social graphic exporter** — on Standings, Stats, Race Results and the Schedule (a season's
+  calendar, or the cross-season Upcoming / Recent Results feeds). League name + logo branding, a
+  multi-select of *every* stat column the screen offers (with Select all / Clear / Reset), and full
+  event metadata on results exports, so the downloaded PNG/JPG stands alone as a broadcast-style
+  graphic
 - ⬆ **Bulk roster import** — roll a whole roster into a new season in one click, from the series
   or a cloned past season, with duplicates skipped automatically
 - ⏱ **Fast race entry** — one grid per race, pre-filled with the roster; supports multiple
@@ -79,7 +81,9 @@ The app runs at `http://localhost:3000`.
 4. **Schedule** — the season's race calendar. Completed races are clickable and show full
    results. Admins get **+ New Race** here; on the cross-season feed (Season set to "All
    Seasons" with a series picked) there's a **+ New Season** button too, offering every option
-   League Setup does and dropping you onto the new season's empty calendar.
+   League Setup does and dropping you onto the new season's empty calendar. **🖼 Share Graphic**
+   exports the calendar as an image — the whole season's rounds, or (on the cross-season feed)
+   Upcoming and Recent Results as separate posts.
 5. **Standings** — driver and team championship tables for the selected season, with
    points, gaps to the leader, and per-category stats. Click any column header to sort. Level
    on points? The tie-breaker chain below decides, and every step of it is a column in the
@@ -390,6 +394,11 @@ an export never picks up the sidebar, edit buttons or any other UI furniture —
 branding, event metadata and data table are drawn, at a fixed 1080px for a consistent feed-friendly
 output. `ShareGraphicModal` takes `columns` / `rows` (see `toGraphicTable` in `lib/shareGraphic.js`)
 plus an optional `meta` of `{ label, value, wide? }` facts.
+
+Cells sit on one line by default, which suits the numbers these tables are usually made of. A column
+that carries prose instead — an event name, a track, or the Schedule's "Pro: Ana · Am: Bo" pole and
+winner cells — sets `wrap: true` and gets a capped width it breaks inside; without it a long string
+stretches the table past the card's fixed width and the last columns fall off the edge.
 
 Each screen passes its **full** column list and every one of them opens ticked, so the graphic starts
 out carrying all the data the screen shows; the picker switches off anything you don't want. Identity
