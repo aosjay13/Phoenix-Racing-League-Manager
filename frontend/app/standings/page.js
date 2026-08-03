@@ -8,6 +8,7 @@ import { useSortable } from "@/components/useSortable";
 import { ShareGraphicModal } from "@/components/ShareGraphicModal";
 import { leagueLogos, toGraphicTable } from "@/lib/shareGraphic";
 import { api } from "@/lib/api";
+import { readParam, setParam } from "@/lib/scopeLink";
 import { compareByTieBreakers, formatStat, TIE_BREAKER_SUMMARY } from "@/lib/standings";
 
 // The exporter offers every column the standings table shows; these are the
@@ -109,7 +110,16 @@ function formatCell(r, key) {
 export default function StandingsPage() {
   const { seasonId, season, game, series, league, classId, className, raceClass, classes, combinedChampionship } = useLeague();
   const { isAdmin } = useAuth();
+  // Which championship is showing rides in the URL too, so a link can point at
+  // the team standings rather than always opening on drivers.
   const [tab, setTab] = useState("drivers");
+  useEffect(() => {
+    if (readParam("tab") === "teams") setTab("teams");
+  }, []);
+  const chooseTab = t => {
+    setTab(t);
+    setParam("tab", t === "teams" ? "teams" : null);
+  };
   const [data, setData] = useState(null);
   const [adjusting, setAdjusting] = useState(null); // row being edited
   const [adjForm, setAdjForm] = useState({ points_adjustment: "0", adjustment_note: "" });
@@ -225,8 +235,8 @@ export default function StandingsPage() {
       </p>
 
       <div className="tab-row">
-        <button className={`tab${tab === "drivers" ? " active" : ""}`} onClick={() => setTab("drivers")}>Drivers</button>
-        <button className={`tab${tab === "teams" ? " active" : ""}`} onClick={() => setTab("teams")}>Teams</button>
+        <button className={`tab${tab === "drivers" ? " active" : ""}`} onClick={() => chooseTab("drivers")}>Drivers</button>
+        <button className={`tab${tab === "teams" ? " active" : ""}`} onClick={() => chooseTab("teams")}>Teams</button>
       </div>
 
       {!data ? (

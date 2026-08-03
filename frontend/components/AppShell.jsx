@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { useLeague } from "@/components/LeagueProvider";
+import { copyCurrentLink } from "@/lib/scopeLink";
 import { api } from "@/lib/api";
 
 // localStorage key + custom event shared with the User Accounts tab on the
@@ -182,6 +183,35 @@ function ContextSelectors() {
   );
 }
 
+// Copies the address of whatever is on screen. Because the scope selectors now
+// write themselves into the URL (see lib/scopeLink.js), that address opens the
+// exact page the sender was on — this season's standings, this class's stats,
+// this race's results — instead of dropping the reader on the front page to
+// hunt through the menus for it.
+function CopyLinkButton() {
+  const [state, setState] = useState("idle"); // idle | copied | failed
+
+  useEffect(() => {
+    if (state === "idle") return;
+    const t = setTimeout(() => setState("idle"), 2200);
+    return () => clearTimeout(t);
+  }, [state]);
+
+  async function copy() {
+    setState(await copyCurrentLink() ? "copied" : "failed");
+  }
+
+  return (
+    <button
+      className="btn btn-ghost copy-link-btn"
+      onClick={copy}
+      title="Copy a direct link to this page — it opens on the same league, game, series, season and class you're viewing"
+    >
+      {state === "copied" ? "✓ Link copied" : state === "failed" ? "Copy failed" : "🔗 Copy link"}
+    </button>
+  );
+}
+
 function UserChip() {
   const { user, profile, loading, signOut } = useAuth();
   if (loading) return null;
@@ -252,6 +282,7 @@ export function AppShell({ children }) {
           <div className="topbar-scope">
             <LeagueSwitcher />
             <ContextSelectors />
+            <CopyLinkButton />
           </div>
           <UserChip />
         </header>

@@ -11,6 +11,7 @@ import { leagueLogos, driverDisplayName } from "@/lib/shareGraphic";
 import { formatRaceDate } from "@/lib/raceDate";
 import { gapColumns, formatDelta, parseTime, parseLapsDown } from "@/lib/raceTime";
 import { carForRace, carsByClassForRace, classIdForScope, sessionClassScopes, soleCarForRace } from "@/lib/classFilter";
+import { readParam, setParam } from "@/lib/scopeLink";
 import { api } from "@/lib/api";
 
 function DriverCell({ r }) {
@@ -94,10 +95,23 @@ export default function EventResultsPage() {
       .then(d => {
         setData(d);
         const withResults = d.races.find(s => s.results.length);
-        setTab(prev => prev ?? (withResults ? withResults.name : (d.qualifying.length ? "__qual" : d.races[0]?.name ?? null)));
+        // A link may name the session it wants ("?session=Race 2", or
+        // "?session=Qualifying"); otherwise open on the first session that has
+        // results, as before.
+        const wanted = readParam("session");
+        const linked = wanted === "Qualifying" && d.qualifying.length
+          ? "__qual"
+          : d.races.find(s => s.name === wanted)?.name ?? null;
+        setTab(prev => prev ?? linked ?? (withResults ? withResults.name : (d.qualifying.length ? "__qual" : d.races[0]?.name ?? null)));
       })
       .catch(err => setError(err.message));
   useEffect(() => { load(); }, [id]);
+
+  // Keep the viewed session in the address bar, so copying the link shares the
+  // exact results table on screen rather than the event's default session.
+  useEffect(() => {
+    if (tab) setParam("session", tab === "__qual" ? "Qualifying" : tab);
+  }, [tab]);
 
   // Delete the whole event (race doc + every session's results); stats/points
   // recompute from results on read, so they scrub automatically.

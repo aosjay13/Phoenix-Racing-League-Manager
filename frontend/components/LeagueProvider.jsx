@@ -1,20 +1,43 @@
 "use client";
 
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
+import { usePathname } from "next/navigation";
 import { api } from "@/lib/api";
 import { getActiveLeagueId, setActiveLeagueId } from "@/lib/leagueClient";
+import { readScopeParams, writeScopeParams } from "@/lib/scopeLink";
 
 const LeagueContext = createContext(null);
 const STORAGE_KEY = "prlm-selection";
+
+// The scope carried in the URL, in the shape the saved-selection code expects.
+// This is what makes a copied link land on the same game/series/season/class
+// the sender was looking at: anything the link spells out wins over the
+// visitor's own saved selection, and anything it leaves out falls back to it.
+// The class travels by NAME (that's its cross-season identity — see the classes
+// effect below), so the id is cleared and re-resolved in the current scope.
+function urlSelection() {
+  const p = readScopeParams();
+  const out = {};
+  if (p.game !== undefined) out.gameId = p.game;
+  if (p.series !== undefined) out.seriesId = p.series;
+  if (p.season !== undefined) out.seasonId = p.season;
+  if (p.class !== undefined) { out.className = p.class; out.classId = ""; }
+  return out;
+}
 
 // Selection values: null = not initialized yet, "" = "All …" chosen by the
 // user, otherwise a document id. Pages that need one concrete season treat
 // "" the same as nothing selected.
 function loadSaved() {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"); } catch { return {}; }
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"); } catch { saved = {}; }
+  return { ...saved, ...urlSelection() };
 }
 
 export function LeagueProvider({ children }) {
+  // Only read so the scope params can be re-stamped after a navigation.
+  const pathname = usePathname();
+
   // Multi-league layer: the list of leagues and which one is active. leagueId
   // is null until the list has loaded and an active league is resolved; only
   // then do the (league-scoped) game/series/season fetches run.
@@ -54,7 +77,10 @@ export function LeagueProvider({ children }) {
       const list = await api("/api/leagues");
       setLeagues(list);
       setLeagueId(prev => {
-        const wanted = prev ?? getActiveLeagueId();
+        // A link that names its league opens in that league even if the visitor
+        // was last in a different one — otherwise every id in the link would
+        // resolve against the wrong league's data.
+        const wanted = prev ?? (readScopeParams().league || getActiveLeagueId());
         const chosen = list.find(l => l.id === wanted)?.id ?? list[0]?.id ?? "";
         setActiveLeagueId(chosen);
         return chosen;
@@ -74,6 +100,9 @@ export function LeagueProvider({ children }) {
     if (!id) return;
     setActiveLeagueId(id);
     try { localStorage.removeItem(STORAGE_KEY); } catch {}
+    // Drop the old league's ids out of the URL as well as out of storage —
+    // they'd otherwise be re-read as this league's opening selection.
+    writeScopeParams({ league: id, game: null, series: null, season: null, class: null });
     setLeagueId(id);
     setGames([]); setSeriesList([]); setSeasons([]); setClasses([]);
     setGameId(null); setSeriesId(null); setSeasonId(null); setClassId(null); setClassName(null);
@@ -173,6 +202,25 @@ export function LeagueProvider({ children }) {
     if (gameId === null) return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ gameId, seriesId, seasonId, classId, className }));
   }, [gameId, seriesId, seasonId, classId, className]);
+
+  // Mirror the resolved selection into the address bar, so the URL of any page
+  // is already the shareable link to what's on screen — no extra step, and
+  // nothing about the page itself changes. Held back until every level has
+  // settled (null = still resolving), so a half-resolved scope is never the
+  // thing someone copies. Re-stamped on every navigation as well, since moving
+  // between pages starts each one with a clean query string.
+  useEffect(() => {
+    if (gameId === null || seriesId === null || seasonId === null || className === null) return;
+    writeScopeParams({
+      league: leagueId || null,
+      game: gameId,
+      // A level only appears once its parent is a concrete choice; below an
+      // "All …" there is nothing left to name.
+      series: gameId ? seriesId : null,
+      season: gameId && seriesId ? seasonId : null,
+      class: classes.length ? className : null,
+    });
+  }, [leagueId, gameId, seriesId, seasonId, className, classes.length, pathname]);
 
   const value = {
     leagues, leagueId: leagueId ?? "",

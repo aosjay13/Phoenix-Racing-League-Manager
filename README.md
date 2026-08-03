@@ -95,6 +95,27 @@ The app runs at `http://localhost:3000`.
    per Race**: the average field size across every completed race in scope. Empty and upcoming
    events are ignored, and a heat weekend counts its Feature field once rather than each heat.
 
+### Sharing a direct link
+
+Every page is its own link. The Game/Series/Season/Class you're viewing is written into the
+address bar as you pick it, so the URL always describes what's on screen — and **🔗 Copy link**
+in the top bar copies it. Whoever opens it lands on exactly that view instead of on their own
+last selection with your menu path to retrace:
+
+| Link | Opens on |
+| --- | --- |
+| `/standings?league=…&game=…&series=…&season=…&class=GT3` | that season's GT3 championship |
+| `/standings?…&tab=teams` | the team standings rather than drivers |
+| `/races/<race-id>?session=Race+2` | that race weekend's Race 2 results |
+| `/races/<race-id>?session=Qualifying` | its qualifying results |
+| `/stats?…&season=all` | driver stats across every season of the series |
+
+The rules are the same everywhere: `season=all` (or `game=all`, `class=all`) is an explicit
+"All …", which is why a link to the all-time table stays on the all-time table. Anything the
+link leaves out falls back to the reader's own saved selection, so an old bare link like
+`/standings` behaves exactly as it always has. Driver, team and track pages
+(`/drivers/<id>`, `/teams/<name>`, `/tracks/<id>`) were already direct links and are unchanged.
+
 ### For league admins
 
 Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setup below).
