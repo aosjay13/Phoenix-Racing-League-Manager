@@ -441,10 +441,12 @@ a {
   padding-right: 132px;
 }
 
-/* Rows carrying a third action button (e.g. Drivers' Edit / Merge / Delete)
-   reserve extra space so the buttons never overlap the row's meta text. */
+/* Rows carrying a third action button (e.g. Drivers'/Tracks' Edit / Merge /
+   Delete) reserve extra space so the buttons never overlap the row's meta
+   text. The three buttons measure ~206px including the 12px right offset, so
+   this leaves a little slack for wider font rendering. */
 .list-row-wrap.wide .list-row {
-  padding-right: 210px;
+  padding-right: 228px;
 }
 
 .list-row-actions {

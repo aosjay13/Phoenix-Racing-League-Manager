@@ -185,6 +185,7 @@ export default function TracksPage() {
                         title={t.name}
                         subtitle={t.location || "—"}
                         meta={[{ label: "Length", value: t.length || "—" }]}
+                        actionsWide={isAdmin}
                         actions={isAdmin ? (
                           <>
                             <button type="button" className="btn btn-ghost" onClick={() => setEditing(t)}>Edit</button>
