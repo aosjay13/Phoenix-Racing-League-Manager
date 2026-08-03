@@ -400,6 +400,15 @@ re-scoring Pro's Feature leaves Amateur's alone, and clearing it hands that clas
 event-wide assignment rather than to nothing. A class's Qualifying is resolved the same way, so the
 qualifying bonus folded into a race result comes from *that class's* Qualifying structure.
 
+The grid *position* that bonus is paid on is per class too. One roster entry can race several
+classes at the same round, so "where did this driver qualify?" has one answer per class, and
+`buildQualPosMap` keys on race + entry + **class** to keep them apart (`qualPosFor` in
+`lib/standings.js` resolves a race result against its own class's Qualifying, falling back to the
+event's single combined Qualifying when a class didn't run one). Keying on race + entry alone
+silently kept whichever class was read last — invisible inside a class championship, where only that
+class's Qualifying is in scope, but wrong in the combined table where all of them are, which is what
+made a multi-class driver's class totals stop adding up to their overall total.
+
 **Which car goes with which class.** The car on track is a three-level fallback, most specific
 first: `races.car` (this one event runs something different) → `classes.car` (this class's machinery
 all season) → `seasons.car` (the season default, and the only level that existed before). All three

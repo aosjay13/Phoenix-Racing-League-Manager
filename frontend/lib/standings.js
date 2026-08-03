@@ -210,14 +210,45 @@ export function pointsFor(result, config, qualPos = null, qualConfig = null) {
   return pts;
 }
 
-// race_id|entry_id -> that driver's Qualifying finish position, from
-// whichever qualifying-type results are present in the given result set.
-export function buildQualPosMap(results) {
+// A driver's Qualifying finish position, per event — the number the qualifying
+// bonus (and the pole bonus) in pointsFor is scored off.
+//
+// Keyed by race + entry + class, because one roster entry can race SEVERAL
+// classes at the same event: at a split event each class runs its own
+// Qualifying, so "SuperRaptor_'s grid slot at round 4" has three different
+// answers and a race+entry key would keep only whichever was read last. That
+// collision is invisible inside a single class championship (only that class's
+// Qualifying is in the filtered set) but wrong in the combined table, where all
+// three are — which is exactly how a driver's class totals stopped adding up to
+// their overall total.
+//
+// The unscoped race|entry key is kept as a fallback for the ordinary case: one
+// combined Qualifying for the whole field, whose result may carry no class at
+// all (data written before classes existed). It's only set when that entry has
+// a SINGLE qualifying result at the event — with several, there is no
+// class-agnostic answer and guessing one is what caused the bug above.
+export function buildQualPosMap(results, entriesById = {}) {
   const map = {};
+  const byEntry = {};
   for (const r of results) {
-    if (r.session_type === "qualifying") map[`${r.race_id}|${r.entry_id}`] = Number(r.finish_pos);
+    if (r.session_type !== "qualifying") continue;
+    const pos = Number(r.finish_pos);
+    const key = `${r.race_id}|${r.entry_id}`;
+    map[`${key}|${classOfResult(r, entriesById) || ""}`] = pos;
+    (byEntry[key] ??= []).push(pos);
+  }
+  for (const [key, positions] of Object.entries(byEntry)) {
+    if (positions.length === 1) map[key] = positions[0];
   }
   return map;
+}
+
+// The Qualifying position a given result scores its grid bonus off: its own
+// class's Qualifying when that class ran one, else the event's single combined
+// Qualifying, else null (the driver never qualified).
+export function qualPosFor(map, result, entriesById = {}) {
+  const key = `${result.race_id}|${result.entry_id}`;
+  return map[`${key}|${classOfResult(result, entriesById) || ""}`] ?? map[key] ?? null;
 }
 
 // The Qualifying session's own points_template_id (or null for the season/class
@@ -254,20 +285,20 @@ export function qualTemplateFor(map, result, entriesById = {}) {
 export function makeScorer(results, { config, classes = [], entriesById = {}, templatesById = {} } = {}) {
   const byClass = classConfigs(config, classes);
   const baseFor = r => byClass[classOfResult(r, entriesById)] || config;
-  const qualPosMap = buildQualPosMap(results);
+  const qualPosMap = buildQualPosMap(results, entriesById);
   const qualTemplates = buildQualTemplateMap(results, entriesById);
 
   const configFor = r => configForTemplate(baseFor(r), templatesById[r.points_template_id]);
   const qualConfigFor = r => configForTemplate(baseFor(r), templatesById[qualTemplateFor(qualTemplates, r, entriesById)]);
-  const qualPosFor = r => qualPosMap[`${r.race_id}|${r.entry_id}`] ?? null;
+  const posFor = r => qualPosFor(qualPosMap, r, entriesById);
 
   return {
     qualPosMap,
-    qualPosFor,
+    qualPosFor: posFor,
     baseFor,
     configFor,
     qualConfigFor,
-    points: r => pointsFor(r, configFor(r), qualPosFor(r), qualConfigFor(r)),
+    points: r => pointsFor(r, configFor(r), posFor(r), qualConfigFor(r)),
   };
 }
 

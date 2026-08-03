@@ -63,7 +63,6 @@ export async function GET(request, { params }) {
 
   const raceResults = all.filter(r => !isQualifying(r));
   const qualResults = all.filter(r => isQualifying(r));
-  const qualPosMap = scorer.qualPosMap;
 
   // Race sessions: whatever the event declares (standard `sessions`, or for
   // heat-format events its heats/consolations/feature), plus any found in
@@ -81,9 +80,10 @@ export async function GET(request, { params }) {
     results: raceResults
       .filter(r => (r.session || declared[0]) === name)
       .map(r => {
-        const qp = qualPosMap[`${r.race_id}|${r.entry_id}`] ?? null;
         // Start = the driver's own saved start_pos, else their qualifying
-        // finishing position. Finish is scored/ordered independently of both.
+        // finishing position — their OWN class's Qualifying at a split event,
+        // which is what scorer.qualPosFor resolves.
+        const qp = scorer.qualPosFor(r);
         const start = r.start_pos != null ? Number(r.start_pos) : qp;
         return { ...joinEntry(r), start_pos: start, points: scorer.points(r) };
       })
