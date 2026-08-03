@@ -161,6 +161,14 @@ export default function TrackProfilePage() {
           <p style={{ marginTop: 8, color: "var(--ink-1)", fontSize: "0.9rem" }}>
             {[track.location, track.track_type, track.length].filter(Boolean).join(" · ") || "Venue"}
           </p>
+          {/* Names this venue was listed under before it was merged — so the
+              history below is accounted for when an admin wonders why races
+              they remember under an old spelling are here. */}
+          {track.merged_names?.length > 0 && (
+            <p style={{ marginTop: 4, color: "var(--ink-2)", fontSize: "0.82rem" }}>
+              Also raced as {track.merged_names.join(" · ")}
+            </p>
+          )}
           {track.notes && <p style={{ marginTop: 4, color: "var(--ink-2)", fontSize: "0.85rem" }}>{track.notes}</p>}
           {scopeNote && <p style={{ marginTop: 4, color: "var(--ink-2)", fontSize: "0.82rem" }}>{scopeNote}</p>}
         </div>
@@ -259,6 +267,7 @@ export default function TrackProfilePage() {
                     <thead>
                       <tr>
                         <th className="sticky-col" style={{ textAlign: "left" }}>Event</th>
+                        <th style={{ textAlign: "left" }}>Game</th>
                         <th style={{ textAlign: "left" }}>Series</th>
                         <th style={{ textAlign: "left" }}>Season</th>
                         <th>Date</th>
@@ -277,6 +286,7 @@ export default function TrackProfilePage() {
                               {w.round_number != null ? `R${w.round_number} · ` : ""}{w.race_name}
                             </Link>
                           </td>
+                          <td style={{ textAlign: "left" }}>{w.game_name || "—"}</td>
                           <td style={{ textAlign: "left" }}>{w.series_name || "—"}</td>
                           <td style={{ textAlign: "left" }}>{w.season_name}</td>
                           <td style={{ whiteSpace: "nowrap" }}>{formatRaceDate(w.date, "short", "—")}</td>
