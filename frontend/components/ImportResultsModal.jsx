@@ -67,7 +67,26 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
   // The roster this import can resolve to: the season's entries plus any driver
   // created from the review table without leaving the modal. Newly created
   // entries carry real ids, so a row assigned to one imports like any other.
-  const allEntries = useMemo(() => [...entries, ...extraEntries], [entries, extraEntries]);
+  //
+  // Deduplicated by entry id, because the two halves overlap. Creating a driver
+  // here does two things: it appends the new entry to `extraEntries` (so the row
+  // can be assigned to it immediately) and it asks the editor to refresh the
+  // season roster — which comes back from the server carrying that same entry
+  // and re-renders this modal with it in `entries`. Without the dedupe every
+  // driver created during one import showed up twice in the Roster driver
+  // dropdown (same name, same number, same id), which is only ever a display
+  // problem: one entry was created, and the duplicate is two references to it.
+  const allEntries = useMemo(() => {
+    const byId = new Map();
+    for (const e of [...entries, ...extraEntries]) {
+      const id = e.id ?? e.entry_id;
+      // Keyless entries can't be deduped or assigned to — keep them out rather
+      // than collapsing them all onto one another.
+      if (id == null) continue;
+      if (!byId.has(id)) byId.set(id, e);
+    }
+    return [...byId.values()];
+  }, [entries, extraEntries]);
   const sortedEntries = useMemo(
     () => [...allEntries].sort((a, b) => String(a.name).localeCompare(String(b.name))),
     [allEntries]
@@ -175,7 +194,8 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
 
   // Create a brand-new driver for an unresolved row, then assign the row to it.
   function handleDriverCreated(entry) {
-    setExtraEntries(prev => [...prev, entry]);
+    const id = entry.id ?? entry.entry_id;
+    setExtraEntries(prev => (prev.some(e => (e.id ?? e.entry_id) === id) ? prev : [...prev, entry]));
     if (createFor) setOverrides(o => ({ ...o, [createFor.idx]: entry.id }));
     onDriverCreated?.(entry); // add to the grid + refresh the season roster
     setCreateFor(null);
