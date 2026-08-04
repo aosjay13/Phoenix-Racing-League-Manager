@@ -29,7 +29,7 @@ const COLUMNS = [
   ["best_laps", "Best", false, "Best Laps (fastest laps)"],
   ["poles", "Poles"],
   ["avg_start", "Avg St", true, "Average Start"],
-  ["dnfs", "DNFs"],
+  ["dnfs", "DNFs", false, "Did Not Finish — retirements and disqualifications"],
   ["provisionals", "Prov", false, "Provisionals"],
   ["titles", "Titles", false, "Championships — season titles won, class titles included"],
 ];
@@ -50,7 +50,7 @@ const TEAM_COLUMNS = [
   ["best_laps", "Best", false, "Best Laps (fastest laps)"],
   ["poles", "Poles"],
   ["avg_start", "Avg St", true, "Average Start"],
-  ["dnfs", "DNFs"],
+  ["dnfs", "DNFs", false, "Did Not Finish — retirements and disqualifications"],
   ["titles", "Titles", false, "Championships — season titles won by this team's drivers, class titles included"],
 ];
 

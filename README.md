@@ -234,6 +234,12 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
    driver: finishing position, laps led, incidents, DNF/DNS status) and save — standings,
    stats, and every linked player's profile update immediately. Re-open and re-save a race
    any time to correct results; it overwrites cleanly.
+   The **Status** column decides how a row is counted. **DNS** ("did not start") is not
+   scored at all — no position points, no qualifying points, no bonuses — and counts toward
+   no stat: not a start, not a finish to average, not a pole or grid slot, not a DNF. The
+   driver stays on the grid as a record that they were entered. **DNF** and **DQ** are both
+   scored on their classified finishing position, and both add one to the driver's **DNFs**
+   total.
    On a race grid, three of the checkboxes fill themselves in from what you've already
    typed, so you don't have to work them out by eye: **FL** goes to the quickest Best Lap
    time (a single lap time entered is, trivially, the fastest one), **HC** to the biggest

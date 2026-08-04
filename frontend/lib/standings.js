@@ -44,6 +44,30 @@ export function parseMaybeJson(value, fallback) {
   }
 }
 
+// ── Result statuses ────────────────────────────────────────────────────────
+//
+// The Status column on a results grid is one of: Running (finished), DNF, DNS
+// or DQ. Two of them change how a result is treated everywhere:
+//
+//   • DNS — "did not start". The driver never took the green flag, so the
+//     result is not scored at all (pointsFor returns 0) and counts toward
+//     nothing: not a start, not a finishing position, not a grid slot, not a
+//     DNF. It stays on the grid as a record that they were entered.
+//   • DQ  — thrown out. Scored like any other classified result, but it counts
+//     toward the driver's DNF total the same way a retirement does: either way
+//     they didn't see the checkered flag legally.
+const statusOf = result => String(result?.status || "").toLowerCase();
+
+export function isDidNotStart(result) {
+  return statusOf(result) === "dns";
+}
+
+// Counts toward the DNFs stat — a retirement or a disqualification.
+export function isDnf(result) {
+  const s = statusOf(result);
+  return s === "dnf" || s === "dq";
+}
+
 // Resolve a season document into a full scoring config.
 export function resolveSeasonConfig(season = {}) {
   return {
@@ -186,6 +210,12 @@ export function decorateRaceBonuses(results) {
 // no override of its own, so a session-specific Qualifying points structure
 // actually reaches the standings total instead of being silently ignored.
 export function pointsFor(result, config, qualPos = null, qualConfig = null) {
+  // Did Not Start: the driver never took the green flag, so there is nothing to
+  // score — no position points, no qualifying points, no bonuses, and no
+  // per-result adjustment either. A no-show that still needs to cost the driver
+  // something is an entry-level points adjustment, not a scored result.
+  if (isDidNotStart(result)) return 0;
+
   // A per-result adjustment (penalties/corrections) is applied on top of the
   // scored points in every case — an admin can dock or add points without
   // touching the driver's finishing position. Negative = penalty.
@@ -236,6 +266,9 @@ export function buildQualPosMap(results, entriesById = {}) {
   const byEntry = {};
   for (const r of results) {
     if (r.session_type !== "qualifying") continue;
+    // A DNS in qualifying is no grid slot at all, so it pays no qualifying
+    // points in the race that follows.
+    if (isDidNotStart(r)) continue;
     const pos = Number(r.finish_pos);
     const key = `${r.race_id}|${r.entry_id}`;
     map[`${key}|${classOfResult(r, entriesById) || ""}`] = pos;
@@ -343,9 +376,11 @@ function statLine(results) {
   // qualifying run held purely for show (a grid set for visual purposes, an
   // exhibition hot-lap session) stays on the event page without touching
   // anyone's record. Provisional entries (drivers who didn't race) are excluded
-  // too — they earn points only, never stats.
-  const rs = results.filter(r => !isQualifying(r) && r.counts_stats !== false && !r.provisional);
-  const qs = results.filter(r => isQualifying(r) && r.counts_stats !== false);
+  // too — they earn points only, never stats. So are DNS rows: a driver who
+  // never took the green flag has no start, no finishing position to average
+  // and no lap count — the slot they were listed in is not a race they ran.
+  const rs = results.filter(r => !isQualifying(r) && r.counts_stats !== false && !r.provisional && !isDidNotStart(r));
+  const qs = results.filter(r => isQualifying(r) && r.counts_stats !== false && !isDidNotStart(r));
   // Provisionals are counted from the full race set, since `rs` now omits them.
   const provisionalCount = results.filter(r => !isQualifying(r) && r.provisional).length;
   const starts = rs.length;
@@ -370,7 +405,7 @@ function statLine(results) {
     qualifying_sessions: qs.length,
     avg_start: positions.length ? round2(positions.reduce((a, b) => a + b, 0) / positions.length) : null,
     start_sum: positions.reduce((a, b) => a + b, 0),
-    dnfs: rs.filter(r => r.status === "dnf").length,
+    dnfs: rs.filter(isDnf).length,
     provisionals: provisionalCount,
     incidents: sum(r => Number(r.incidents || 0)),
     best_finish: starts ? Math.min(...rs.map(r => r.finish_pos)) : null,
