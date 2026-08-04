@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { parseTable, mapHeaders, buildRows, MAPPABLE_FIELDS } from "@/lib/resultsImport";
+import { parseIracingResults, looksLikeIracingJson, segmentTable, defaultSegment } from "@/lib/iracingImport";
 import { DriverCreateModal } from "@/components/DriverCreateModal";
 import { aliasValues } from "@/lib/aliases";
 import { displayNameValues } from "@/lib/driverNames";
@@ -16,11 +17,22 @@ const statusChip = {
   unmatched: { bg: "rgba(248,81,73,0.18)", fg: "#f85149", label: "no match" },
 };
 
-// Smart results importer. Paste a table (SimRacerHub, a spreadsheet, …) or
-// upload a CSV (iRacing export, etc.); the parser detects the delimiter and
-// columns and fuzzy-matches driver names against this season's roster. The
-// admin can remap any column and resolve/skip individual drivers before
-// applying — nothing is saved until they Apply and then Save the grid.
+// Session-type labels for the iRacing segment picker, so a segment says which
+// grid it belongs in using the same words the editor's tabs do.
+const SEGMENT_TYPE_LABEL = {
+  qualifying: "Qualifying", heat: "Heat", consolation: "Consolation",
+  feature: "Feature", race: "Race", practice: "Practice",
+};
+
+// Smart results importer. Three sources, one review table:
+//   • paste a results table (SimRacerHub, a spreadsheet, any game)
+//   • upload a CSV export
+//   • upload iRacing's own results JSON — which carries the whole event
+//     (qualifying, heats, B-Main, Feature) in one file, so you pick which
+//     segment to import and repeat per session grid
+// Columns and driver names are detected either way; the admin can remap any
+// column and resolve/skip individual drivers before applying — nothing is saved
+// until they Apply and then Save the grid.
 export function ImportResultsModal({ session, sessionType, entries, seasonId, seriesName, onDriverCreated, onApply, onClose }) {
   const [text, setText] = useState("");
   const [parsed, setParsed] = useState(null);      // { headers, rows, delimiter }
@@ -29,6 +41,9 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
   const [extraEntries, setExtraEntries] = useState([]); // drivers created from this modal
   const [createFor, setCreateFor] = useState(null);     // { idx, name } while the create form is open
   const [dragActive, setDragActive] = useState(false);
+  const [iracing, setIracing] = useState(null);    // { event, segments } from an iRacing JSON
+  const [segmentKey, setSegmentKey] = useState("");// which segment of that event is loaded
+  const [source, setSource] = useState("");        // what was loaded, for the file chip
   const [aliasesByDriver, setAliasesByDriver] = useState({}); // driver_id -> [alias value strings]
   const fileRef = useRef(null);
 
@@ -65,6 +80,12 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
     [sortedEntries, aliasesByDriver]
   );
 
+  // The iRacing segment currently feeding the review table, if any.
+  const selectedSegment = useMemo(
+    () => iracing?.segments.find(s => s.key === segmentKey) || null,
+    [iracing, segmentKey]
+  );
+
   // Column count + labels for the mapping dropdowns.
   const columns = useMemo(() => {
     if (!parsed) return [];
@@ -79,26 +100,77 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
     [parsed, mapping, matchEntries, sessionType]
   );
 
-  function runParse(raw) {
-    const t = parseTable(raw);
+  // Load a parsed table into the review UI, re-deriving the column mapping.
+  function loadTable(t) {
     setParsed(t);
     setMapping(mapHeaders(t.headers, t.rows.slice(0, 8)));
     setOverrides({});
   }
 
-  function readFile(file) {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => { const raw = String(reader.result || ""); setText(raw); runParse(raw); };
-    reader.readAsText(file);
+  function reset() {
+    setText(""); setParsed(null); setMapping({}); setOverrides({});
+    setIracing(null); setSegmentKey(""); setSource("");
   }
 
-  function onFile(e) { readFile(e.target.files?.[0]); }
+  // Parse whatever was pasted or dropped. iRacing's results JSON is recognised
+  // first (it holds every segment of the event); anything else goes through the
+  // delimited-text parser.
+  function runParse(raw, label = "") {
+    const doc = parseIracingResults(raw);
+    if (doc?.segments?.length) {
+      const seg = defaultSegment(doc.segments, sessionType, session);
+      setIracing(doc);
+      setSegmentKey(seg?.key || "");
+      setSource(label || "iRacing results JSON");
+      loadTable(segmentTable(seg));
+      return;
+    }
+    setIracing(null); setSegmentKey(""); setSource(label);
+    loadTable(parseTable(raw));
+  }
+
+  // Switch which segment of a loaded iRacing event fills the review table.
+  function selectSegment(key) {
+    const seg = iracing?.segments.find(s => s.key === key);
+    if (!seg) return;
+    setSegmentKey(key);
+    loadTable(segmentTable(seg));
+  }
+
+  const readAsText = file => new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => resolve("");
+    reader.readAsText(file);
+  });
+
+  // Read one or more dropped/chosen files. Several iRacing JSONs (e.g. one saved
+  // per segment, or several subsessions of the same night) are merged into a
+  // single segment list — duplicates of the same session collapse. A CSV or
+  // pasted table still uses just the first file, as before.
+  async function readFiles(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    const texts = await Promise.all(files.map(readAsText));
+    const jsons = texts.filter(looksLikeIracingJson);
+    if (jsons.length) {
+      // Keep the (large) JSON out of the textarea — the parsed segments are all
+      // the UI needs from here on.
+      setText("");
+      const label = jsons.length > 1 ? `iRacing results JSON · ${jsons.length} files` : `iRacing results JSON · ${files[0].name}`;
+      runParse(jsons.length === 1 ? jsons[0] : `[${jsons.join(",")}]`, label);
+      return;
+    }
+    setText(texts[0]);
+    runParse(texts[0], files[0].name);
+  }
+
+  function onFile(e) { readFiles(e.target.files); }
   function onDrop(e) {
     e.preventDefault();
     setDragActive(false);
     const files = e.dataTransfer?.files;
-    if (files?.length) readFile(files[0]);
+    if (files?.length) readFiles(files);
   }
 
   // Create a brand-new driver for an unresolved row, then assign the row to it.
@@ -170,7 +242,8 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
         </div>
 
         <p style={{ margin: "6px 0 10px", fontSize: "0.82rem", color: "var(--ink-1)" }}>
-          Paste a results table (SimRacerHub, a spreadsheet, any game) or upload a CSV (e.g. an iRacing export).
+          Paste a results table (SimRacerHub, a spreadsheet, any game), upload a CSV, or upload iRacing&rsquo;s
+          results JSON — that one file holds every segment of the event, and you pick which to import.
           Columns and driver names are detected — review and adjust below, then Apply.
         </p>
 
@@ -191,16 +264,55 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
         >
           <div style={{ fontSize: "1.3rem", lineHeight: 1 }}>⬆</div>
           <div style={{ fontSize: "0.85rem", color: "var(--ink-0)", marginTop: 4 }}>
-            <strong>Drop a CSV here</strong> or click to browse
+            <strong>Drop a CSV or iRacing JSON here</strong> or click to browse
           </div>
           <div style={{ fontSize: "0.76rem", color: "var(--ink-2)", marginTop: 2 }}>
-            SimRacerHub / iRacing CSV — or paste a table below
+            SimRacerHub CSV · iRacing results JSON (all segments) — or paste a table below
           </div>
-          <input ref={fileRef} type="file" accept=".csv,.tsv,.txt,text/csv" style={{ display: "none" }} onChange={onFile} />
+          {source && (
+            <div style={{ fontSize: "0.76rem", color: "var(--ink-1)", marginTop: 6 }}>
+              Loaded: <strong>{source}</strong>
+            </div>
+          )}
+          <input ref={fileRef} type="file" multiple accept=".csv,.tsv,.txt,.json,text/csv,application/json" style={{ display: "none" }} onChange={onFile} />
         </div>
 
+        {iracing && (
+          <div style={{ border: "1.5px solid var(--border)", borderRadius: 10, padding: "10px 12px", marginBottom: 10, background: "var(--bg-elevated)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "baseline" }}>
+              <strong style={{ fontSize: "0.85rem" }}>iRacing event</strong>
+              <span style={{ fontSize: "0.76rem", color: "var(--ink-2)" }}>
+                {[iracing.event?.league_name || iracing.event?.series_name, iracing.event?.track,
+                  iracing.event?.subsession_id ? `subsession ${iracing.event.subsession_id}` : null]
+                  .filter(Boolean).join(" · ")}
+              </span>
+            </div>
+            <label style={{ display: "block", fontSize: "0.78rem", color: "var(--ink-1)", marginTop: 8 }}>
+              Race segment to import into <strong>{session}</strong>
+              <select value={segmentKey} onChange={e => selectSegment(e.target.value)} style={{ width: "100%", marginTop: 2 }}>
+                {iracing.segments.map(s => (
+                  <option key={s.key} value={s.key}>
+                    {s.name} — {SEGMENT_TYPE_LABEL[s.type] || s.type}, {s.driver_count} driver{s.driver_count === 1 ? "" : "s"}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {selectedSegment && selectedSegment.type !== sessionType && (
+              <p style={{ margin: "8px 0 0", fontSize: "0.78rem", color: "var(--accent-amber, #d29922)" }}>
+                ⚠ {selectedSegment.name} is {SEGMENT_TYPE_LABEL[selectedSegment.type] || selectedSegment.type} in
+                iRacing, but you&rsquo;re importing into the {SEGMENT_TYPE_LABEL[sessionType] || sessionType} grid
+                ({session}). Switch segments above if that isn&rsquo;t what you meant.
+              </p>
+            )}
+            <p style={{ margin: "8px 0 0", fontSize: "0.76rem", color: "var(--ink-2)" }}>
+              One segment at a time — apply and save this one, then reopen Smart Import on the next session and
+              pick its segment from the same file.
+            </p>
+          </div>
+        )}
+
         <label style={{ display: "block", fontSize: "0.8rem", color: "var(--ink-1)", margin: "2px 0 6px" }}>
-          Or paste comma- or tab-separated results
+          Or paste comma- or tab-separated results (or iRacing results JSON)
         </label>
         <textarea
           rows={12}
@@ -211,7 +323,7 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
         />
         <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
           <button type="button" className="btn btn-primary" style={{ marginTop: 0 }} disabled={!text.trim()} onClick={() => runParse(text)}>Parse</button>
-          {parsed && <button type="button" className="btn btn-ghost" style={{ marginTop: 0 }} onClick={() => { setText(""); setParsed(null); setMapping({}); setOverrides({}); }}>Clear</button>}
+          {parsed && <button type="button" className="btn btn-ghost" style={{ marginTop: 0 }} onClick={reset}>Clear</button>}
         </div>
 
         {parsed && (
