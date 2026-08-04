@@ -1564,7 +1564,8 @@ function RowInputs({ row, idx, updateRow, updateFlag, updateRaceTime, updateInte
       <input type="number" title="Points adjustment — penalty (−) or bonus (+). Applied on top of scored points without changing the finishing position."
         placeholder="0" value={row.points_adjustment} disabled={!hasDriver}
         {...gridProps("points_adjustment")} onChange={e => updateRow(idx, "points_adjustment", e.target.value)} style={{ textAlign: "center" }} />
-      <select value={row.status} disabled={!hasDriver} onChange={e => updateStatus(idx, e.target.value)}>
+      <select title="Status — DNS (did not start) scores nothing and counts toward no stat; DNF and DQ are both scored as classified finishes and both add to the driver's DNF total."
+        value={row.status} disabled={!hasDriver} onChange={e => updateStatus(idx, e.target.value)}>
         <option value="finished">Running</option>
         <option value="dnf">DNF</option>
         <option value="dns">DNS</option>
