@@ -10,7 +10,7 @@ import { ImportResultsModal } from "@/components/ImportResultsModal";
 import { NONE_TEMPLATE } from "@/lib/pointsTemplates";
 import { classIdForScope, entriesEligibleForRace, entriesInSessionClass, isClassScoped, resultInSessionClass } from "@/lib/classFilter";
 import { pointsFor, classConfigs, classScoresOwnPoints, configForTemplate, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
-import { applyAutoFlags, detectFlagLocks } from "@/lib/autoFlags";
+import { applyAutoFlags, detectFlagLocks, autoMostLapsLedSlot } from "@/lib/autoFlags";
 import { parseTime, formatTime, formatGap, formatDelta, parseDelta, parseLapsDown, deriveLaps } from "@/lib/raceTime";
 import { isTimedRace, scheduledLaps } from "@/lib/raceLength";
 
@@ -135,10 +135,13 @@ function buildRows(entries, existing, totalLaps, qualPos = {}, sessionType = "ra
   // deliberately cleared it (see detectFlagLocks).
   if (sessionType !== "qualifying") {
     const savedById = new Map(existing.map(r => [r.entry_id, r]));
-    const maxLed = Math.max(0, ...filled.map(r => Number(r.laps_led || 0)));
+    // Seeded with the same rule the live grid derives (one winner, ties to the
+    // better finish), so an old result opens on the pick the grid would make
+    // itself and stays free to follow later edits.
+    const ledSlot = autoMostLapsLedSlot(filled);
     for (const row of filled) {
       if (savedById.get(row.entry_id)?.most_laps_led == null) {
-        row.most_laps_led = maxLed > 0 && Number(row.laps_led || 0) === maxLed;
+        row.most_laps_led = row.slot_id === ledSlot;
       }
     }
   }
