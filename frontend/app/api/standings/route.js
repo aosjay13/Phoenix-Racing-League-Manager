@@ -9,6 +9,7 @@ import {
 } from "@/lib/standings";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
 import { classIdsInSeason, entryClassIds, fetchSeasonClasses, filterEntriesByClass, filterResultsByClass } from "@/lib/classServer";
+import { seasonChampions } from "@/lib/champions";
 import { fetchDriverNames } from "@/lib/driverNamesServer";
 
 // One season's championship tables.
@@ -80,9 +81,23 @@ export async function GET(request) {
     r.class_name = names.length ? names.join(" · ") : null;
   }
 
+  // Every crown this season handed out, so the standings screen can show who
+  // was actually credited — a class-by-class list plus the overall one, in the
+  // same order the classes are listed. Computed from the UNFILTERED season, and
+  // empty until the season is marked completed (nothing is awarded before
+  // then). Named from the roster entry, matching the tables above.
+  const champions = seasonChampions({ id: seasonId, ...season }, allResults, allEntries, config, templatesById, classes)
+    .map(c => ({
+      ...c,
+      driver_name: entriesById[c.entry_id]?.name ?? "Unknown",
+      driver_id: entriesById[c.entry_id]?.driver_id ?? null,
+      user_id: entriesById[c.entry_id]?.user_id ?? null,
+    }));
+
   return NextResponse.json({
     season: { id: seasonId, ...season },
     classes,
+    champions,
     class_id: classSel[0] || classId || null,
     class_name: className || null,
     // Whether this season also crowns ONE overall champion across every class.

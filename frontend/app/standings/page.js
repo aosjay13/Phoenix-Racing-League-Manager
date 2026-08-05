@@ -52,6 +52,30 @@ const TEAM_COLS = [
   ["drivers", "Drivers"],
 ];
 
+// Who this season crowned, once it's marked completed: one champion per class,
+// plus the outright one when the season runs an overall championship. Shown
+// here so the titles credited in career and team stats are visible at the
+// source — a three-class season with the overall on lists four champions.
+// Empty (and hidden) for a season still running.
+function SeasonChampions({ champions }) {
+  if (!champions.length) return null;
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginTop: 10 }}>
+      <span style={{ color: "var(--ink-1)", fontSize: "0.85rem" }}>
+        {champions.length === 1 ? "Champion:" : `Champions (${champions.length}):`}
+      </span>
+      {champions.map(c => (
+        <span key={`${c.kind}:${c.class_id ?? ""}:${c.entry_id}`} className="page-badge">
+          🏆 {c.kind === "overall" ? "Overall" : (c.class_name || "Class")} —{" "}
+          {(c.driver_id || c.user_id)
+            ? <Link href={`/drivers/${c.driver_id || c.user_id}`} style={{ color: "inherit" }}>{c.driver_name}</Link>
+            : c.driver_name}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function RankBadge({ rank }) {
   const cls = rank === 1 ? "rank-p1" : rank === 2 ? "rank-p2" : rank === 3 ? "rank-p3" : "rank-default";
   return <span className={`rank-badge ${cls}`}>{rank}</span>;
@@ -233,6 +257,8 @@ export default function StandingsPage() {
       <p style={{ marginTop: 4, color: "var(--ink-2)", fontSize: "0.8rem" }} title={`Ties are broken by ${TIE_BREAKER_SUMMARY}`}>
         Level on points? Ties break on {TIE_BREAKER_SUMMARY.toLowerCase()} — in that order.
       </p>
+
+      <SeasonChampions champions={data?.champions ?? []} />
 
       <div className="tab-row">
         <button className={`tab${tab === "drivers" ? " active" : ""}`} onClick={() => chooseTab("drivers")}>Drivers</button>

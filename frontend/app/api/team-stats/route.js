@@ -86,7 +86,7 @@ export async function GET(request) {
 
     // Every championship won on this team that season — class champions
     // included, and no overall champion at all when the season runs
-    // class-only titles. A dual crown (class + overall) is one championship.
+    // class-only titles. A dual crown (class + overall) is two championships.
     for (const [entryId, rec] of titlesByEntry(seasonChampions(season, results, entries, config, templatesById, seasonClasses))) {
       const champ = entriesById[entryId];
       if (!champ || !teamIds.has(champ.team_id)) continue;

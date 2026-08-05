@@ -308,8 +308,8 @@ export default function DriverProfilePage() {
         <>
           <div className="section-header"><h3>Championships</h3></div>
           <p style={{ marginTop: 0, color: "var(--ink-1)", fontSize: "0.85rem" }}>
-            Every season title won. A class championship counts the same as any other; winning a
-            class and the overall in one season is one championship, listed with both crowns.
+            Every season title won. A class championship counts the same as any other, and taking
+            both a class and the overall in one season is two championships — both crowns were won.
           </p>
           <div className="table-wrap">
             <table className="stats-table">
@@ -323,7 +323,7 @@ export default function DriverProfilePage() {
                       {t.overall && <span className="badge" style={{ marginRight: 6 }}>Overall</span>}
                       {t.class_names.map(c => <span key={c} className="badge" style={{ marginRight: 6 }}>{c}</span>)}
                       {t.overall && t.class_names.length > 0 && (
-                        <span style={{ color: "var(--ink-2)", fontSize: "0.76rem" }}>double crown — counts once</span>
+                        <span style={{ color: "var(--ink-2)", fontSize: "0.76rem" }}>double crown — counts twice</span>
                       )}
                     </td>
                   </tr>
