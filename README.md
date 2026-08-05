@@ -337,6 +337,12 @@ one championship, never in two at once. A result that *does* record its class (e
 saves) counts only there, and the results grid can stamp a whole session's rows with one class in a
 single step, which is what pins them for good.
 
+Because a result with no class scores on the **season's** points rather than the class's, the grid
+fills a blank Class cell with the class the rest of its rows are in — a driver whose roster entry
+carries no class (one created inline while entering results, say) would otherwise be the single row
+in a race paid a different rate per takedown than everyone around them. The filled-in class shows in
+the Class column before anything is saved, and any row still without one is called out above the grid.
+
 A class's points structure is an **override layer**, so a scale it leaves blank falls through to the
 season rather than scoring 0 (a season's blank does save as an explicit zero — there is nothing above
 it to inherit). This is what stops a class ticked purely to carry a takedown rate from wiping its
