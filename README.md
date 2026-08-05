@@ -346,7 +346,16 @@ bonus of 0 in an override layer **inherits** the level above rather than cancell
 paying 2 a takedown would otherwise be silently zeroed the moment its Race session used a saved
 template, or a class scored on its own points). Setting a session to **No Points** is the one
 structure whose zeros are taken literally, derby included. A derby *class* can also carry just the
-derby rates without overriding the season's race scale; the fields are likewise stored on every result (as zeros/falses), so the stats engine never
+derby rates without overriding the season's race scale.
+
+Because a rate set at the wrong level is indistinguishable from a broken feature, the results grid
+carries the rate itself: a **Derby points** bar above the grid states what this session pays for each
+derby stat — or warns, in gold, that nothing is set and the Points column will not move — and lets an
+admin set it inline, writing to the very structure that session scores on (the class being entered
+when that class is the derby one, otherwise the season). Saved results re-score the moment it lands,
+so nothing needs re-entering.
+
+The derby fields are likewise stored on every result (as zeros/falses), so the stats engine never
 has to ask what kind of series a result came from. What the flag actually gates is **visibility**:
 the results grid only grows the extra columns, the points editors only offer the extra values, and
 Standings/Stats only render the aggregated totals, while the viewer is scoped to a banger series,
