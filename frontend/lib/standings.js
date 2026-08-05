@@ -149,16 +149,48 @@ function hasTable(value) {
   return Object.keys(value).length > 0;
 }
 
+// A points table that pays nothing anywhere — `{ 1: 0 }`, which is what a blank
+// scale box saves as. Meaningful on a SEASON, which has nothing above it to
+// inherit from: blank there really does mean "score 0". On a CLASS it never is:
+// a class is an override layer, so a scale it doesn't set should fall through to
+// the season, exactly as its car and its bonuses do.
+function isZeroTable(value) {
+  if (!value) return true;
+  let obj = value;
+  if (typeof obj === "string") { try { obj = JSON.parse(obj); } catch { return true; } }
+  return !Object.values(obj || {}).some(v => Number(v || 0) !== 0);
+}
+
+// A class doc as an override layer: any scale that pays nothing is dropped, so
+// it inherits the season's instead of flattening it to zero.
+//
+// This is what stops a class from silently wiping out its drivers' finishing
+// points. Ticking "this class scores on its own points structure" to set (say) a
+// takedown rate, with the Race Points box left empty, used to store an all-zero
+// race scale — and an all-zero scale that OVERRIDES is a class where P1 scores
+// nothing. The bonuses are kept as they are: a bonus of 0 is a real setting, and
+// the derby ones already inherit through mergeBonuses.
+export function classOverride(cls) {
+  if (!cls) return cls;
+  return {
+    ...cls,
+    race_points: isZeroTable(cls.race_points) ? null : cls.race_points,
+    qual_points: isZeroTable(cls.qual_points) ? null : cls.qual_points,
+  };
+}
+
 // Does this class score on its own points structure, rather than the season's?
 export function classScoresOwnPoints(cls) {
-  return !!cls && (hasTable(cls.race_points) || hasTable(cls.qual_points) || hasTable(cls.bonus_points));
+  if (!cls) return false;
+  const own = classOverride(cls);
+  return hasTable(own.race_points) || hasTable(own.qual_points) || hasTable(cls.bonus_points);
 }
 
 // The base config a class's results are scored against: the season config with
 // the class's own structure laid over it, or the season config untouched when
 // the class doesn't define one.
 export function configForClass(baseConfig, cls) {
-  return classScoresOwnPoints(cls) ? configForTemplate(baseConfig, cls) : baseConfig;
+  return classScoresOwnPoints(cls) ? configForTemplate(baseConfig, classOverride(cls)) : baseConfig;
 }
 
 // class id -> that class's base config, for a whole season's class list.

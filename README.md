@@ -329,6 +329,12 @@ export/restore history shown on the Backup & Restore screen — restoring an old
 erase the record of every backup taken since) and `restore_uploads` (transient staging for a
 chunked import, deleted as soon as the import finishes).
 
+A class's points structure is an **override layer**, so a scale it leaves blank falls through to the
+season rather than scoring 0 (a season's blank does save as an explicit zero — there is nothing above
+it to inherit). This is what stops a class ticked purely to carry a takedown rate from wiping its
+drivers' finishing points, and an all-zero scale on an existing class doc is read as "inherit" for the
+same reason.
+
 **Demo Derby / Banger Racing** is one boolean, settable at three levels: `series.isBangerRacing`,
 `seasons.isBangerRacing` and `classes.isBangerRacing`. They add up rather than override — derby is
 on for anything at or under a flagged level, so a flagged series covers all its seasons and classes,

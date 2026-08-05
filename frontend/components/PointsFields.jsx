@@ -46,13 +46,17 @@ export function BangerBonusFields({ value, onPatch, disabled = false }) {
 // (comma-list strings + a bonus map of strings, straight off the inputs) and
 // `onPatch` takes a partial of that shape. See lib/seasonForm.js for the
 // serialization into what the API stores.
+// `inherits` marks a structure that sits ON TOP of another — a class over its
+// season. There, a blank scale falls through to the season rather than scoring
+// 0, which is what the labels say and what classFormToBody stores.
+//
 // `banger` adds the Demo Derby / Banger Racing bonus values (Takedowns,
 // Survival, Most Lethal — see lib/bangerRacing.js) to the bonus list. They're
 // stored in every points structure regardless, but only a banger series'
 // editors offer them, so an ordinary series' form is untouched.
 export function PointsFields({
   value, onPatch, templates = [], onTemplatesChanged,
-  disabled = false, onError, noPoints = false, blankWarning = "", banger = false,
+  disabled = false, onError, noPoints = false, blankWarning = "", banger = false, inherits = false,
 }) {
   const [templateId, setTemplateId] = useState("");
   const [qualTemplateId, setQualTemplateId] = useState("");
@@ -69,10 +73,18 @@ export function PointsFields({
     if (!builtin && !saved) return;
     let bonusSrc = builtin ? builtin.bonuses : (saved.bonus_points || {});
     if (typeof bonusSrc === "string") { try { bonusSrc = JSON.parse(bonusSrc); } catch { bonusSrc = {}; } }
+    // A template that says nothing about the derby bonuses leaves them alone,
+    // rather than resetting a takedown rate to 0 — the built-in racing
+    // templates predate the mode and would otherwise wipe it every time one is
+    // loaded. This mirrors how the scoring engine merges them (mergeBonuses).
+    const derbyKeys = new Set(BANGER_BONUS_TYPES.map(([k]) => k));
     onPatch({
       race_points: (builtin ? builtin.race : tableToList(saved.race_points)) || "",
       qual_points: (builtin ? builtin.qual : tableToList(saved.qual_points)) || "",
-      bonuses: Object.fromEntries(ALL_BONUS_TYPES.map(([k]) => [k, String(bonusSrc[k] ?? 0)])),
+      bonuses: Object.fromEntries(ALL_BONUS_TYPES.map(([k]) => {
+        if (derbyKeys.has(k) && !Number(bonusSrc[k] || 0)) return [k, String(value.bonuses?.[k] ?? 0)];
+        return [k, String(bonusSrc[k] ?? 0)];
+      })),
     });
   }
 
@@ -128,7 +140,7 @@ export function PointsFields({
         </div>
       </div>
 
-      <div className="field"><label>Race Points — comma-separated, 1st place first (blank = 0 points)</label>
+      <div className="field"><label>Race Points — comma-separated, 1st place first{inherits ? " (blank = use the season's)" : " (blank = 0 points)"}</label>
         <textarea rows={3} disabled={disabled} value={value.race_points}
           placeholder="350, 320, 300, 280, 260, 250, 240, …"
           onChange={e => onPatch({ race_points: e.target.value })} />
@@ -157,7 +169,7 @@ export function PointsFields({
         </span>
       </div>
 
-      <div className="field"><label>Qualifying Points — comma-separated, pole first (blank = 0 points)</label>
+      <div className="field"><label>Qualifying Points — comma-separated, pole first{inherits ? " (blank = use the season's)" : " (blank = 0 points)"}</label>
         <textarea rows={2} disabled={disabled} value={value.qual_points}
           placeholder="35, 32, 30, 28, 26, 25, …"
           onChange={e => onPatch({ qual_points: e.target.value })} />

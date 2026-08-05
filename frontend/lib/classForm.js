@@ -9,8 +9,8 @@
 // saves as an explicit zero rather than silently inheriting.
 
 import { BLANK_BONUSES } from "@/lib/seasonForm";
-import { ALL_BONUS_TYPES, BONUS_TYPES, classScoresOwnPoints } from "@/lib/standings";
-import { listToTableOrZero, tableToList } from "@/lib/pointsTemplates";
+import { ALL_BONUS_TYPES, BONUS_TYPES, classOverride, classScoresOwnPoints } from "@/lib/standings";
+import { listToTable, tableToList } from "@/lib/pointsTemplates";
 import { bangerBonusesOnly, hasBangerBonuses } from "@/lib/bangerRacing";
 
 export const BLANK_CLASS_FORM = {
@@ -37,7 +37,9 @@ export const BLANK_CLASS_FORM = {
 // blank scale boxes as an explicit all-zeros table, dropping the class to 0
 // points a finish. So the box follows a real scale or a traditional bonus only.
 function hasOwnScale(cls = {}) {
-  return !!tableToList(cls.race_points) || !!tableToList(cls.qual_points);
+  // An all-zero scale is not a scale (see classOverride) — it inherits.
+  const own = classOverride(cls);
+  return !!tableToList(own.race_points) || !!tableToList(own.qual_points);
 }
 
 function hasTraditionalBonus(cls = {}) {
@@ -87,8 +89,13 @@ export function classFormToBody(form, fallbackSortOrder = 0, { banger = false } 
     // structure the class used to have, rather than leaving it in place.
     ...(form.own_points
       ? {
-        race_points: listToTableOrZero(form.race_points),
-        qual_points: listToTableOrZero(form.qual_points),
+        // A blank scale on a CLASS means "inherit the season", not "score 0" —
+        // the class sits on top of one. (A season's blank does save as an
+        // explicit zero: there's nothing above it to fall through to.) Storing
+        // the zero here is what made a class ticked purely to carry a takedown
+        // rate score nothing for finishing position.
+        race_points: listToTable(form.race_points),
+        qual_points: listToTable(form.qual_points),
         bonus_points: Object.fromEntries(Object.entries(form.bonuses).map(([k, v]) => [k, Number(v || 0)])),
       }
       : { race_points: null, qual_points: null, bonus_points: derbyOnly }),

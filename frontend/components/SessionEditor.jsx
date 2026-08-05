@@ -1177,7 +1177,7 @@ export function SessionEditor({
                 ))}
                 <button className="btn btn-primary" type="button" style={{ marginTop: 0, padding: "4px 12px" }}
                   disabled={derbySaving} onClick={saveDerbyPoints}>
-                  {derbySaving ? "Saving…" : `Save to ${derbyTarget?.name || "season"}`}
+                  {derbySaving ? "Saving…" : `Save for all of ${derbyTarget?.name || "the season"}`}
                 </button>
                 <button className="btn btn-ghost" type="button" style={{ marginTop: 0, padding: "4px 10px" }}
                   disabled={derbySaving} onClick={() => setDerbyEdit(null)}>Cancel</button>
@@ -1204,7 +1204,7 @@ export function SessionEditor({
                 </span>
                 {onDerbyPointsSave && derbyTarget && (
                   <button className="btn btn-ghost" type="button" style={{ marginTop: 0, padding: "4px 12px" }}
-                    title={`Set what each derby stat is worth. Saved to ${derbyTarget.kind === "class" ? `the ${derbyTarget.name} class` : `the ${derbyTarget.name} season`} — the structure this grid scores on.`}
+                    title={`Set what each derby stat is worth. Saved to the ${derbyTarget.name} season, so it applies to every race in it — not just this one.`}
                     onClick={() => setDerbyEdit(Object.fromEntries(
                       BANGER_STATS.map(stat => [stat.bonus.key, String(Number(config.bonuses?.[stat.bonus.key] || 0))])
                     ))}>
@@ -1215,7 +1215,7 @@ export function SessionEditor({
             )}
             {onDerbyPointsSave && derbyTarget && (
               <span style={{ fontSize: "0.74rem", color: "var(--ink-2)" }}>
-                saved to {derbyTarget.kind === "class" ? `the ${derbyTarget.name} class` : `${derbyTarget.name}`}
+                set once for {derbyTarget.name} — applies to every race in it
               </span>
             )}
           </div>

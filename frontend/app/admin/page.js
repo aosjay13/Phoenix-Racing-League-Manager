@@ -575,8 +575,7 @@ function AdminInner() {
                 {showClassPoints && (
                   <PointsFields value={classForm} onPatch={patchClassForm} templates={templates}
                     onTemplatesChanged={loadTemplates} disabled={!seasonId} onError={msg => showToast("error", msg)}
-                    noPoints={scoresNoPoints(classForm)} banger={bangerSeason || !!classForm.isBangerRacing}
-                    blankWarning="⚠ Blank scores 0 for every finishing position in this class — load a template above, or untick the box to score on the season's points." />
+                    noPoints={false} inherits banger={bangerSeason || !!classForm.isBangerRacing} />
                 )}
               </>
             )}
