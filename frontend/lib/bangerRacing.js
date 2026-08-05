@@ -107,6 +107,23 @@ export const BANGER_BONUS_TYPES = BANGER_STATS.map(s => [s.bonus.key, s.bonus.la
 export const BANGER_STAT_COLUMNS = BANGER_STATS.map(s => [s.stat.key, s.stat.header, false, s.stat.label]);
 export const BANGER_STAT_KEYS = BANGER_STATS.map(s => s.stat.key);
 
+// Where the derby columns sit in a stats/standings table: immediately LEFT of
+// Best Laps, so they read as part of the racing stats rather than as a stray
+// block pushed off the right-hand end of the table. Every screen that shows
+// them inserts through this, so they land in the same place on each.
+const BANGER_COLUMNS_BEFORE = "best_laps";
+
+// `cols` in, `cols` out, in the [key, header, lowerIsBetter, fullName] shape
+// both tables use. Returns the list untouched when `on` is false — which is the
+// isolation rule (see isBangerScope) — and appends rather than dropping them if
+// a table has no Best Laps column to anchor to.
+export function withBangerColumns(cols = [], on = false) {
+  if (!on) return cols;
+  const at = cols.findIndex(([key]) => key === BANGER_COLUMNS_BEFORE);
+  if (at < 0) return [...cols, ...BANGER_STAT_COLUMNS];
+  return [...cols.slice(0, at), ...BANGER_STAT_COLUMNS, ...cols.slice(at)];
+}
+
 // A blank set of banger fields for a fresh results row (grid state is strings
 // for numbers, booleans for flags — matching the rest of the editor).
 export function blankBangerRow() {

@@ -8,7 +8,7 @@ import { ShareGraphicModal } from "@/components/ShareGraphicModal";
 import { leagueLogos, toGraphicTable } from "@/lib/shareGraphic";
 import { api } from "@/lib/api";
 import { compareByTieBreakers, formatStat } from "@/lib/standings";
-import { BANGER_STAT_COLUMNS } from "@/lib/bangerRacing";
+import { withBangerColumns } from "@/lib/bangerRacing";
 
 // The exporter offers EVERY column this screen shows; these are just the ones
 // ticked when it opens — a readable subset, since fifteen columns at once makes
@@ -72,10 +72,8 @@ export default function StatsPage() {
   // where a takedown count means nothing. See lib/bangerRacing.js.
   const showBanger = !!seriesId && !!isBangerRacing;
   const baseColumns = tab === "teams" ? TEAM_COLUMNS : COLUMNS;
-  const columns = useMemo(
-    () => (showBanger ? [...baseColumns, ...BANGER_STAT_COLUMNS] : baseColumns),
-    [baseColumns, showBanger]
-  );
+  // Slotted in just left of Best Laps, among the rest of the race stats.
+  const columns = useMemo(() => withBangerColumns(baseColumns, showBanger), [baseColumns, showBanger]);
   const activeRows = tab === "teams" ? data?.team_rows : data?.rows;
   const lowIsBetter = useMemo(() => columns.filter(c => c[2]).map(c => c[0]), [columns]);
   const { sorted: rows, clickSort, arrow } = useSortable(activeRows, tab === "teams" ? "points" : "wins", lowIsBetter, compareByTieBreakers);

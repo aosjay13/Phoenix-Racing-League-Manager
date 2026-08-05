@@ -10,7 +10,7 @@ import { leagueLogos, toGraphicTable } from "@/lib/shareGraphic";
 import { api } from "@/lib/api";
 import { readParam, setParam } from "@/lib/scopeLink";
 import { compareByTieBreakers, formatStat, TIE_BREAKER_SUMMARY } from "@/lib/standings";
-import { BANGER_STAT_COLUMNS } from "@/lib/bangerRacing";
+import { withBangerColumns } from "@/lib/bangerRacing";
 
 // The exporter offers every column the standings table shows; these are the
 // ones ticked when it opens — a feed-friendly set, since the full table has too
@@ -205,12 +205,13 @@ export default function StandingsPage() {
     ? [...DRIVER_COLS.slice(0, 4), ["class_name", "Class", false, true], ...DRIVER_COLS.slice(4)]
     : DRIVER_COLS;
   // Demo Derby / Banger Racing stats (Takedowns, Survival, Most Lethal) are
-  // meaningless outside the series that races them, so they're appended here
-  // and ONLY here — this table is always scoped to one season, hence to one
-  // series, and `isBangerRacing` is that series' flag. The Overall and per-Game
-  // stats views never reach this code. See lib/bangerRacing.js.
-  const driverCols = isBangerRacing ? [...baseDriverCols, ...BANGER_STAT_COLUMNS] : baseDriverCols;
-  const teamCols = isBangerRacing ? [...TEAM_COLS, ...BANGER_STAT_COLUMNS] : TEAM_COLS;
+  // meaningless outside the series that races them, so they're added here and
+  // ONLY here — this table is always scoped to one season, hence to one series
+  // or class, and `isBangerRacing` is that scope's flag. The Overall and
+  // per-Game stats views never reach this code. They slot in just left of Best
+  // Laps, among the rest of the race stats. See lib/bangerRacing.js.
+  const driverCols = withBangerColumns(baseDriverCols, isBangerRacing);
+  const teamCols = withBangerColumns(TEAM_COLS, isBangerRacing);
 
   const shareNameKey = tab === "teams" ? "team" : "driver_name";
   // Every column on screen is offered in the exporter's stat picker.
