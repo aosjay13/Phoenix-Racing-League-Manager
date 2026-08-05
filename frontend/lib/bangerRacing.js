@@ -34,6 +34,7 @@ export const BANGER_STATS = [
   {
     key: "takedowns",
     type: "number",
+    name: "Takedowns",
     header: "TD",
     title: "Takedowns — cars this driver put out of the event. Paid per takedown by the points structure.",
     width: "62px",
@@ -43,6 +44,7 @@ export const BANGER_STATS = [
   {
     key: "survival_bonus",
     type: "bool",
+    name: "Survival Bonus",
     header: "SUR",
     title: "Survival bonus — the driver who survived the longest. Worth whatever the points structure pays for it.",
     width: "38px",
@@ -52,6 +54,7 @@ export const BANGER_STATS = [
   {
     key: "most_lethal",
     type: "bool",
+    name: "Most Lethal",
     header: "LTH",
     title: "Most lethal — the driver with the most takedowns. Ticks itself for the highest Takedowns count; change it and your call sticks.",
     width: "38px",
@@ -149,6 +152,19 @@ export function bangerBonusesOnly(bonuses = {}) {
 // Does this bonus map actually pay for anything derby-related?
 export function hasBangerBonuses(bonuses = {}) {
   return BANGER_BONUS_TYPES.some(([k]) => Number(bonuses[k] || 0) !== 0);
+}
+
+// What this session actually pays for each derby stat, as [{ name, rate, per }]
+// — `per` marks a counted stat (paid per unit) rather than a one-off flag. The
+// results editor prints this above the grid so an admin can see the rates in
+// force where they're entering the numbers, instead of finding out from the
+// standings days later that they were all zero.
+export function bangerRates(bonuses = {}) {
+  return BANGER_STATS.map(s => ({
+    name: s.name,
+    rate: Number(bonuses[s.bonus.key] || 0),
+    per: s.type === "number",
+  }));
 }
 
 // Points a result earns from its banger stats, under a resolved bonus map. A

@@ -11,7 +11,7 @@ import { NONE_TEMPLATE } from "@/lib/pointsTemplates";
 import { classIdForScope, entriesEligibleForRace, entriesInSessionClass, isClassScoped, resultInSessionClass } from "@/lib/classFilter";
 import { pointsFor, classConfigs, classScoresOwnPoints, configForTemplate, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
 import { applyAutoFlags, detectFlagLocks, autoMostLapsLedSlot } from "@/lib/autoFlags";
-import { BANGER_BOOL_FIELDS, BANGER_RESULT_FIELDS, BANGER_STATS, bangerGridStyle, blankBangerRow } from "@/lib/bangerRacing";
+import { BANGER_BOOL_FIELDS, BANGER_RESULT_FIELDS, BANGER_STATS, bangerGridStyle, bangerRates, blankBangerRow, hasBangerBonuses } from "@/lib/bangerRacing";
 import { parseTime, formatTime, formatGap, formatDelta, parseDelta, parseLapsDown, deriveLaps } from "@/lib/raceTime";
 import { isTimedRace, scheduledLaps } from "@/lib/raceLength";
 
@@ -794,6 +794,23 @@ export function SessionEditor({
     : (sessionPoints["Qualifying"] || "");
   const qualTemplate = useMemo(() => templateFor(qualTemplateId), [templates, qualTemplateId]);
 
+  // What this session pays for each derby stat, resolved through the same
+  // season → class → session-template chain the Points column scores on.
+  //
+  // A combined grid has to look at every class as well as the scope itself: the
+  // derby rates often live on the ONE banger class of an otherwise ordinary
+  // season, so reading the season's structure alone would report "no derby
+  // points" over a grid that scores them perfectly well.
+  const derbyConfigs = scoped
+    ? [config]
+    : [config, ...classes.map(c => configForTemplate(baseFor(c.id), template))];
+  const payingConfigs = derbyConfigs.filter(c => hasBangerBonuses(c.bonuses));
+  const derbyPays = payingConfigs.length > 0;
+  const derbyRates = bangerRates((payingConfigs[0] || config).bonuses);
+  // Several classes paying different rates — say so rather than quoting one
+  // class's numbers over the whole field.
+  const derbyVaries = new Set(payingConfigs.map(c => JSON.stringify(bangerRates(c.bonuses)))).size > 1;
+
   // A row's own configs. Scoped grids are all one class; a combined grid scores
   // each row under the class on that row.
   const configForRow = row => (scoped ? config : configForTemplate(baseFor(row.class_id || ""), template));
@@ -1107,13 +1124,53 @@ export function SessionEditor({
         </p>
       )}
       {isBangerRacing && (
-        <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.78rem" }}>
-          💥 This is a <strong>Demo Derby / Banger Racing</strong> series, so each row also records{" "}
-          <strong>TD</strong> (takedowns), <strong>SUR</strong> (survived the longest) and{" "}
-          <strong>LTH</strong> (most lethal — most takedowns, ticked automatically off the TD column).
-          What each is worth is set in this session&rsquo;s points structure; the Points column updates
-          as you type. These stats show on this series&rsquo; Standings and Stats only.
-        </p>
+        <>
+          <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.78rem" }}>
+            💥 This is a <strong>Demo Derby / Banger Racing</strong> {sessionType === "qualifying" ? "session" : "event"}, so each row also
+            records <strong>TD</strong> (takedowns), <strong>SUR</strong> (survived the longest) and{" "}
+            <strong>LTH</strong> (most lethal — most takedowns, ticked automatically off the TD column).
+            These stats show on this series&rsquo; Standings and Stats only.
+          </p>
+          {/* What the numbers being typed are actually WORTH, right where
+              they're typed. A derby that silently scores nothing — because no
+              rate was ever set, or the session doesn't award points at all — is
+              indistinguishable from a broken one until the standings come out,
+              so both cases say so here instead. */}
+          {derbyPays ? (
+            <p style={{ marginTop: 0, color: "var(--ink-1)", fontSize: "0.8rem" }}>
+              💰 <strong>{session}</strong> pays{" "}
+              {derbyRates.map((r, i) => (
+                <span key={r.name}>
+                  {i > 0 && " · "}
+                  <strong>{r.name}</strong> {r.rate ? `${r.rate} pts${r.per ? " each" : ""}` : "nothing"}
+                </span>
+              ))}
+              {derbyVaries ? " — classes with their own derby rates score on theirs" : ""}.
+              Change it with <strong>⚙ Edit Points Structure</strong> above, or on the season / class points.
+            </p>
+          ) : (
+            <p style={{ marginTop: 0, color: "var(--accent-gold, #e2b714)", fontSize: "0.82rem" }}>
+              ⚠ <strong>No derby points are set for {session}.</strong> Takedowns, Survival and Most Lethal
+              are still recorded as stats, but they score <strong>0</strong> — the Points column below
+              won&rsquo;t move as you type them. Set what each is worth in{" "}
+              <strong>⚙ Edit Points Structure</strong> above, or in this{" "}
+              {classOwnPoints ? "class's" : "season's"} <strong>Points &amp; Bonuses</strong> on League Setup.
+            </p>
+          )}
+          {isQual && (
+            <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.78rem" }}>
+              ℹ Qualifying never awards championship points, so derby stats entered here are recorded as
+              stats only. Enter the ones that should score on the race session.
+            </p>
+          )}
+          {!isQual && showPointsToggle && !pointsOn && (
+            <p style={{ marginTop: 0, color: "var(--accent-gold, #e2b714)", fontSize: "0.82rem" }}>
+              ⚠ <strong>{session} isn&rsquo;t awarding championship points</strong> — the
+              &ldquo;Award Championship Points&rdquo; switch above is off, so nothing entered here reaches
+              the standings, derby bonuses included.
+            </p>
+          )}
+        </>
       )}
       {!isQual && isTimedRace(race) && (
         <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.78rem" }}>
