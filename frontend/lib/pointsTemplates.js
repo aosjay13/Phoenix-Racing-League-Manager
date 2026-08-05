@@ -1,4 +1,5 @@
 // Comma-list ⇄ points-table helpers, plus built-in real-world templates.
+import { BANGER_BONUS_TYPES } from "@/lib/bangerRacing";
 
 // "40, 35, 34" → { 1: 40, 2: 35, 3: 34 }
 export function listToTable(str) {
@@ -75,17 +76,31 @@ export const BUILTIN_TEMPLATES = [
   },
 ];
 
+// The id of the pseudo-template below. Scoring treats it specially — it is the
+// one structure whose zeros are meant literally, right down to the Demo Derby
+// bonuses (see mergeBonuses in lib/standings.js) — so the check lives here
+// rather than as a bare "none" string in the engine.
+export const NO_POINTS_ID = "none";
+
+export function isNoPointsTemplate(template) {
+  return !!template && template.id === NO_POINTS_ID;
+}
+
 // Pseudo-template that zeroes a session out entirely: position 1 is explicit
 // so parseMaybeJson doesn't fall back to the season default, every other
 // position resolves through `?? 0`, and every bonus is explicitly 0 so
-// nothing leaks in from the base config. Assign its id ("none") to a session
-// to award no points there.
+// nothing leaks in from the base config — the derby bonuses included, since
+// "no points" has to mean no points for a demolition derby too. Assign its id
+// ("none") to a session to award no points there.
 export const NONE_TEMPLATE = {
-  id: "none",
+  id: NO_POINTS_ID,
   name: "No Points — all drivers score 0",
   race_points: { 1: 0 },
   qual_points: { 1: 0 },
-  bonus_points: { best_lap: 0, most_laps_led: 0, lead_a_lap: 0, halfway_point: 0, hard_charger: 0 },
+  bonus_points: {
+    best_lap: 0, most_laps_led: 0, lead_a_lap: 0, halfway_point: 0, hard_charger: 0,
+    ...Object.fromEntries(BANGER_BONUS_TYPES.map(([k]) => [k, 0])),
+  },
 };
 
 // BUILTIN_TEMPLATES use comma-list strings (race/qual/bonuses); saved

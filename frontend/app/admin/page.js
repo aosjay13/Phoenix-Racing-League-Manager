@@ -220,6 +220,15 @@ function AdminInner() {
   }, [seasonId]);
   useEffect(loadClasses, [loadClasses]);
 
+  // Where the derby bonus values are offered. The season's Points & Bonuses
+  // takes them whenever ANYTHING in this season's scope races derby — including
+  // a season that only runs ONE banger class, which otherwise had nowhere above
+  // the class to set a rate. The class form takes them for a derby class, and
+  // reads its own in-progress switch so ticking it reveals the fields at once.
+  // (A derby season's own switch is handled inside <SeasonForm> the same way.)
+  const bangerSeasonScope = bangerSeason || classes.some(isBangerDoc);
+  const classBanger = bangerSeason || !!classForm.isBangerRacing;
+
   // Whether this season lets each class run its own calendar. Gates the Class
   // field on the race form — with it off, every race stays shared.
   const perClassSchedules = !!season?.per_class_schedules;
@@ -426,7 +435,7 @@ function AdminInner() {
               templates={templates} onTemplatesChanged={loadTemplates}
               disabled={!seriesId} defaultPointsOpen={!!editIds.season}
               onError={msg => showToast("error", msg)}
-              banger={bangerSeries}
+              banger={bangerSeasonScope}
             />
 
             <span style={{ display: "block" }}>
@@ -478,7 +487,7 @@ function AdminInner() {
           </p>
           <form onSubmit={e => {
             e.preventDefault();
-            const body = classFormToBody(classForm, classes.length);
+            const body = classFormToBody(classForm, classes.length, { banger: classBanger });
             if (!editIds.class) body.season_id = seasonId;
             save("/api/classes", body, editIds.class, () => {
               setClassForm(blankClass);
@@ -548,6 +557,15 @@ function AdminInner() {
               </label>
             </div>
 
+            {/* A derby class that ISN'T overriding the season's whole points
+                structure still needs somewhere to set what a takedown is worth,
+                so the derby values stand alone here. With "own points" on they
+                move inside that structure instead (below), where the rest of
+                the class's scale is. */}
+            {classBanger && !classForm.own_points && (
+              <BangerBonusFields value={classForm} onPatch={patchClassForm} disabled={!seasonId} />
+            )}
+
             {classForm.own_points && (
               <>
                 <button type="button" className="btn btn-ghost" style={{ marginTop: 4 }}
@@ -577,13 +595,13 @@ function AdminInner() {
             )}
             {classes.map(c => (
               <ItemRow key={c.id} name={c.name}
-                meta={[carForClass(season, c), classScoresOwnPoints(c) ? "own points" : null,
+                meta={[carForClass(season, c), classToForm(c).own_points ? "own points" : null,
                        isBangerDoc(c) ? "💥 banger racing" : null].filter(Boolean).join(" · ")}
                 editing={editIds.class === c.id}
                 onEdit={() => {
                   setEditId("class", c.id);
                   setClassForm(classToForm(c));
-                  setShowClassPoints(classScoresOwnPoints(c));
+                  setShowClassPoints(classToForm(c).own_points);
                 }}
                 onDelete={async () => {
                   if (!confirm(`Delete class "${c.name}"? Its drivers keep every stat they've scored — they just become unclassified.${classScoresOwnPoints(c) ? " Its own points structure goes with it, so their results re-score on the season's points." : ""}`)) return;

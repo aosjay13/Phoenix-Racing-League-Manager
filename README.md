@@ -341,7 +341,12 @@ every results row of that series' events also stores `takedowns` (a count), `sur
 `most_lethal` (flags), and every points structure — season, class or points template — can pay a
 `takedown` rate plus a `survival_bonus` / `most_lethal` value through its `bonus_points` map. Those
 bonuses live in *every* structure and default to 0, so an ordinary series scores exactly as it did
-before; the fields are likewise stored on every result (as zeros/falses), so the stats engine never
+before — and because every structure stores them whether or not its editor showed them, a derby
+bonus of 0 in an override layer **inherits** the level above rather than cancelling it (a season
+paying 2 a takedown would otherwise be silently zeroed the moment its Race session used a saved
+template, or a class scored on its own points). Setting a session to **No Points** is the one
+structure whose zeros are taken literally, derby included. A derby *class* can also carry just the
+derby rates without overriding the season's race scale; the fields are likewise stored on every result (as zeros/falses), so the stats engine never
 has to ask what kind of series a result came from. What the flag actually gates is **visibility**:
 the results grid only grows the extra columns, the points editors only offer the extra values, and
 Standings/Stats only render the aggregated totals, while the viewer is scoped to a banger series,

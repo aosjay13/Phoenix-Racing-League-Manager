@@ -122,6 +122,18 @@ export function bangerFieldsForSave(row = {}) {
     [s.key, s.type === "bool" ? !!row[s.key] : Number(row[s.key] || 0)]));
 }
 
+// Just the derby bonus values out of a form's bonus map, as numbers. Used to
+// store derby bonuses on a class that runs the mode without giving it a whole
+// points structure of its own — see classFormToBody in lib/classForm.js.
+export function bangerBonusesOnly(bonuses = {}) {
+  return Object.fromEntries(BANGER_BONUS_TYPES.map(([k]) => [k, Number(bonuses[k] || 0)]));
+}
+
+// Does this bonus map actually pay for anything derby-related?
+export function hasBangerBonuses(bonuses = {}) {
+  return BANGER_BONUS_TYPES.some(([k]) => Number(bonuses[k] || 0) !== 0);
+}
+
 // Points a result earns from its banger stats, under a resolved bonus map. A
 // counted stat pays its rate per unit; a flag pays its value once. Zero for
 // every ordinary racing result, since those bonuses default to 0 and the

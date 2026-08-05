@@ -1,5 +1,6 @@
 import { classOfResult } from "@/lib/classFilter";
 import { BANGER_BONUS_TYPES, BANGER_STAT_KEYS, bangerPoints, bangerStatLine, blankBangerTotals } from "@/lib/bangerRacing";
+import { isNoPointsTemplate } from "@/lib/pointsTemplates";
 
 // Default points tables mirror the PRA spreadsheet:
 // race: P1 350, P2 320, P3 300, P4 280, P5 260, then -10 per position (min 10)
@@ -97,8 +98,32 @@ export function configForTemplate(baseConfig, template) {
     dropWeeks: baseConfig.dropWeeks,
     racePoints: parseMaybeJson(template.race_points, baseConfig.racePoints),
     qualPoints: parseMaybeJson(template.qual_points, baseConfig.qualPoints),
-    bonuses: { ...baseConfig.bonuses, ...parseMaybeJson(template.bonus_points, {}) },
+    bonuses: mergeBonuses(baseConfig.bonuses, parseMaybeJson(template.bonus_points, {}), template),
   };
+}
+
+// Lay one structure's bonuses over another's.
+//
+// A traditional bonus overrides outright, zero included: a session that pays
+// nothing for the fastest lap is a real thing to configure, and every editor
+// shows all five values, so a 0 there was typed by someone.
+//
+// The Demo Derby bonuses work the other way round: a 0 (or a missing value)
+// INHERITS the level above instead of cancelling it. They're a property of the
+// mode rather than of one session's scale, and every structure stores all of
+// them whether or not its editor offered them — so a season paying 2 a takedown
+// was silently zeroed the moment its Race session used any saved template, or
+// the moment a class scored on its own points. Inheriting is also the answer
+// admins expect: they set the derby rate once for the series/season/class, not
+// again in every template. To pay no derby points at all in a session, set it
+// to "No Points" — the one structure whose zeros are taken literally.
+function mergeBonuses(base = {}, override = {}, template = null) {
+  const merged = { ...base, ...override };
+  if (isNoPointsTemplate(template)) return merged;
+  for (const [key] of BANGER_BONUS_TYPES) {
+    if (!Number(override[key] || 0)) merged[key] = Number(base[key] || 0);
+  }
+  return merged;
 }
 
 // ── Per-class points structures ────────────────────────────────────────────

@@ -9,8 +9,9 @@
 // saves as an explicit zero rather than silently inheriting.
 
 import { BLANK_BONUSES } from "@/lib/seasonForm";
-import { ALL_BONUS_TYPES, classScoresOwnPoints } from "@/lib/standings";
+import { ALL_BONUS_TYPES, BONUS_TYPES, classScoresOwnPoints } from "@/lib/standings";
 import { listToTableOrZero, tableToList } from "@/lib/pointsTemplates";
+import { bangerBonusesOnly, hasBangerBonuses } from "@/lib/bangerRacing";
 
 export const BLANK_CLASS_FORM = {
   name: "",
@@ -28,6 +29,23 @@ export const BLANK_CLASS_FORM = {
   bonuses: { ...BLANK_BONUSES },
 };
 
+// A class that carries ONLY derby bonus values (see classFormToBody) does have
+// a structure as far as the scoring engine is concerned — that's how its
+// takedown rate reaches the results — but it is NOT the "own points structure"
+// the form's checkbox means: everything else still comes from the season. Read
+// back as own_points it would tick that box, and the next save would write the
+// blank scale boxes as an explicit all-zeros table, dropping the class to 0
+// points a finish. So the box follows a real scale or a traditional bonus only.
+function hasOwnScale(cls = {}) {
+  return !!tableToList(cls.race_points) || !!tableToList(cls.qual_points);
+}
+
+function hasTraditionalBonus(cls = {}) {
+  let b = cls.bonus_points || {};
+  if (typeof b === "string") { try { b = JSON.parse(b); } catch { b = {}; } }
+  return BONUS_TYPES.some(([k]) => Number(b[k] || 0) !== 0);
+}
+
 // A saved class doc → form state.
 export function classToForm(cls = {}) {
   let bonusSrc = cls.bonus_points || {};
@@ -39,7 +57,7 @@ export function classToForm(cls = {}) {
     car: cls.car || "",
     sort_order: cls.sort_order != null ? String(cls.sort_order) : "",
     isBangerRacing: !!cls.isBangerRacing,
-    own_points: classScoresOwnPoints(cls),
+    own_points: classScoresOwnPoints(cls) && (hasOwnScale(cls) || hasTraditionalBonus(cls)),
     race_points: tableToList(cls.race_points),
     qual_points: tableToList(cls.qual_points),
     bonuses: Object.fromEntries(ALL_BONUS_TYPES.map(([k]) => [k, String(bonusSrc[k] ?? 0)])),
@@ -48,7 +66,16 @@ export function classToForm(cls = {}) {
 
 // Form state → the POST/PATCH body. `fallbackSortOrder` is where a class with
 // no explicit display order lands (the end of the list).
-export function classFormToBody(form, fallbackSortOrder = 0) {
+//
+// `banger` — this class runs Demo Derby / Banger Racing — lets a class carry
+// JUST the derby bonus values without a full points structure: paying 2 a
+// takedown for the Banger class alone shouldn't force an admin to override the
+// season's whole race scale as well. Everything else still falls through to the
+// season, since only `bonus_points` is set (see configForClass).
+export function classFormToBody(form, fallbackSortOrder = 0, { banger = false } = {}) {
+  const derbyOnly = banger && !form.own_points && hasBangerBonuses(form.bonuses)
+    ? bangerBonusesOnly(form.bonuses)
+    : null;
   return {
     name: form.name,
     color: form.color,
@@ -64,7 +91,7 @@ export function classFormToBody(form, fallbackSortOrder = 0) {
         qual_points: listToTableOrZero(form.qual_points),
         bonus_points: Object.fromEntries(Object.entries(form.bonuses).map(([k, v]) => [k, Number(v || 0)])),
       }
-      : { race_points: null, qual_points: null, bonus_points: null }),
+      : { race_points: null, qual_points: null, bonus_points: derbyOnly }),
   };
 }
 
