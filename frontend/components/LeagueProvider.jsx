@@ -47,6 +47,13 @@ export function LeagueProvider({ children }) {
   const [games, setGames] = useState([]);
   const [seriesList, setSeriesList] = useState([]);
   const [seasons, setSeasons] = useState([]);
+  // Which parent each of those lists was actually loaded for. The tiers settle
+  // one at a time — pick a new Series and `seriesId` changes immediately while
+  // `seasons`/`seasonId` still describe the series you just left — so anything
+  // that reads across tiers (the Class menu) needs to know whether they've
+  // caught up yet. null = nothing loaded for any parent.
+  const [seriesForGame, setSeriesForGame] = useState(null);
+  const [seasonsForSeries, setSeasonsForSeries] = useState(null);
   // The fourth tier: the selected season's classes ("Pro"/"Amateur", GT3/LMP2…).
   // Empty for a season that doesn't run classes, in which case the Class
   // dropdown hides itself entirely.
@@ -67,6 +74,9 @@ export function LeagueProvider({ children }) {
   // depending on classId would re-fetch the list every time a class is picked.
   const classIdRef = useRef(classId);
   useEffect(() => { classIdRef.current = classId; }, [classId]);
+  // Sequence number for the classes fetch, so an earlier request that lands
+  // late can't overwrite the current scope's menu.
+  const classReqRef = useRef(0);
 
   // Load the league list and resolve the active league. Runs before anything
   // scoped so the X-League-Id header is set (via localStorage) by the time
@@ -105,6 +115,7 @@ export function LeagueProvider({ children }) {
     writeScopeParams({ league: id, game: null, series: null, season: null, class: null });
     setLeagueId(id);
     setGames([]); setSeriesList([]); setSeasons([]); setClasses([]);
+    setSeriesForGame(null); setSeasonsForSeries(null);
     setGameId(null); setSeriesId(null); setSeasonId(null); setClassId(null); setClassName(null);
     setLoading(true);
     setVersion(v => v + 1);
@@ -129,11 +140,12 @@ export function LeagueProvider({ children }) {
 
   useEffect(() => {
     if (gameId === null) return;
-    if (!gameId) { setSeriesList([]); setSeriesId(""); return; }
+    if (!gameId) { setSeriesList([]); setSeriesForGame(""); setSeriesId(""); return; }
     const saved = loadSaved();
     api(`/api/series?game_id=${gameId}`)
       .then(s => {
         setSeriesList(s);
+        setSeriesForGame(gameId);
         setSeriesId(prev => {
           const current = prev === null ? saved.seriesId : prev;
           if (current === "" && prev !== null) return "";
@@ -141,16 +153,17 @@ export function LeagueProvider({ children }) {
           return prev === null && saved.seriesId === "" ? "" : (s[0]?.id ?? "");
         });
       })
-      .catch(() => setSeriesList([]));
+      .catch(() => { setSeriesList([]); setSeriesForGame(gameId); });
   }, [gameId, version]);
 
   useEffect(() => {
     if (seriesId === null) return;
-    if (!seriesId) { setSeasons([]); setSeasonId(""); return; }
+    if (!seriesId) { setSeasons([]); setSeasonsForSeries(""); setSeasonId(""); return; }
     const saved = loadSaved();
     api(`/api/seasons?series_id=${seriesId}`)
       .then(s => {
         setSeasons(s);
+        setSeasonsForSeries(seriesId);
         setSeasonId(prev => {
           const current = prev === null ? saved.seasonId : prev;
           if (current === "" && prev !== null) return "";
@@ -158,7 +171,7 @@ export function LeagueProvider({ children }) {
           return prev === null && saved.seasonId === "" ? "" : (s[s.length - 1]?.id ?? "");
         });
       })
-      .catch(() => setSeasons([]));
+      .catch(() => { setSeasons([]); setSeasonsForSeries(seriesId); });
   }, [seriesId, version]);
 
   // Classes are available at EVERY scope, not just inside one season. A class
@@ -174,6 +187,27 @@ export function LeagueProvider({ children }) {
   const season = seasons.find(s => s.id === seasonId) || null;
   useEffect(() => {
     if (gameId === null || seriesId === null || seasonId === null) return;
+    // The menu must never show a scope you aren't in. Two things used to let it:
+    //
+    //   • The tiers settle one at a time. Picking a different Series changes
+    //     `seriesId` at once, but `seasonId` still points at the season of the
+    //     series you left until the seasons refetch lands — so asking for
+    //     "?season_id=<old season>" answered with the OLD series' classes.
+    //   • Those requests overlap. A scope change fires this effect twice (once
+    //     on the half-settled ids, once on the settled ones) and the responses
+    //     can land in either order, so a stale answer could win.
+    //
+    // Hold off while the lists below still describe a different parent, and let
+    // only the newest request write. Meanwhile the menu is emptied, which is
+    // "All Classes" with nothing else to pick — the right answer for a game,
+    // series or season that runs no classes, and for the moment in between.
+    const settled = seriesForGame === gameId && seasonsForSeries === seriesId;
+    const seq = ++classReqRef.current;
+    if (!settled) {
+      setClasses(prev => (prev.length ? [] : prev));
+      setClassId(prev => (prev ? "" : prev));
+      return;
+    }
     const saved = loadSaved();
     const qs = seasonId ? `?season_id=${seasonId}`
       : seriesId ? `?series_id=${seriesId}`
@@ -181,6 +215,7 @@ export function LeagueProvider({ children }) {
       : "";
     api(`/api/classes${qs}`)
       .then(list => {
+        if (seq !== classReqRef.current) return;   // a newer scope has taken over
         setClasses(list);
         setClassName(prevName => {
           const wantName = prevName === null ? (saved.className || "") : prevName;
@@ -192,9 +227,12 @@ export function LeagueProvider({ children }) {
           return match ? match.name : "";
         });
       })
-      .catch(() => { setClasses([]); setClassId(""); setClassName(""); });
+      .catch(() => {
+        if (seq !== classReqRef.current) return;
+        setClasses([]); setClassId(""); setClassName("");
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameId, seriesId, seasonId, version]);
+  }, [gameId, seriesId, seasonId, seriesForGame, seasonsForSeries, version]);
 
   const raceClass = classes.find(c => c.id === classId) || null;
 
