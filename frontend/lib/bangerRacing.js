@@ -14,7 +14,7 @@
 //
 // The metrics themselves are always stored and always aggregated (a stat that
 // exists only when someone is looking at it can't be trusted); it's the
-// FRONTEND that enforces visibility — see isBangerSeries() and the column
+// FRONTEND that enforces visibility — see isBangerScope() and the column
 // guards in app/standings/page.js and app/stats/page.js.
 //
 // ── Adding another banger bonus ────────────────────────────────────────────
@@ -60,12 +60,36 @@ export const BANGER_STATS = [
   },
 ];
 
-// Is this series a Demo Derby / Banger Racing series? The single check every
-// visibility guard in the app runs — pass it the series doc from the league
-// context (null/undefined at "All Series" and above, which is exactly the
-// scope these stats must stay out of).
-export function isBangerSeries(series) {
-  return !!(series && series.isBangerRacing);
+// ── Where the flag lives ───────────────────────────────────────────────────
+//
+// `isBangerRacing` can be set at THREE levels — a series, one of its seasons,
+// or a single class within a season — because a league doesn't always run
+// derby at series level: a season can be a one-off derby year, and a season can
+// run a Banger class alongside ordinary racing classes.
+//
+// The levels don't override each other, they add up: derby is on for anything
+// at or under a flagged level. A flagged series means every season and class in
+// it; a flagged season means every class in it; a flagged class means that
+// class alone, whatever the season above it says.
+
+// Does this one doc (a series, a season or a class) carry the flag?
+export function isBangerDoc(doc) {
+  return !!(doc && doc.isBangerRacing);
+}
+
+// Is the scope being viewed (or entered) a Demo Derby / Banger Racing context?
+// This is the single check every visibility guard runs.
+//
+//   • Any of series / season / cls flagged → yes, for the reasons above.
+//   • No single class picked, but the field being shown CONTAINS a banger class
+//     → yes: part of that table races derby, so its stats belong on it.
+//   • Nothing flagged → no. Callers pass no series at all above series level
+//     ("All Series", a Game view, the league-wide Overall), so those scopes can
+//     never answer yes — which is the isolation rule.
+export function isBangerScope({ series = null, season = null, cls = null, classes = [] } = {}) {
+  if (isBangerDoc(series) || isBangerDoc(season) || isBangerDoc(cls)) return true;
+  if (!cls && Array.isArray(classes) && classes.some(isBangerDoc)) return true;
+  return false;
 }
 
 // The per-result fields, split by shape — used by the results editor's row

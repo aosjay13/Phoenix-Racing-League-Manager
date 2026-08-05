@@ -168,7 +168,13 @@ export const SPECS = {
              // P1 and field — instead of one combined grid. It's only the
              // default for new events; each event carries its own
              // `per_class_results` (see SPECS.races) and can differ.
+             //
+             // `isBangerRacing` runs THIS season as Demo Derby / Banger Racing
+             // even when the series around it is ordinary racing — a one-off
+             // derby year. It adds to the series flag rather than overriding it
+             // (see lib/bangerRacing.js), and a single class can carry it too.
              fields: { name: { required: true }, game_id: {}, logo_url: {}, status: { default: "active" },
+                       isBangerRacing: { bool: true, default: false },
                        drop_weeks: { number: true, default: 0 }, points_scale: {}, car: {},
                        race_points: {}, qual_points: {}, bonus_points: {},
                        combined_championship: { bool: true, default: true },
@@ -192,8 +198,15 @@ export const SPECS = {
   // what it sets, and all three left unset (the default) means the class scores
   // on the season's points exactly as it always did. See classScoresOwnPoints /
   // configForClass in lib/standings.js.
+  //
+  // `isBangerRacing` makes THIS class a Demo Derby / Banger Racing class, which
+  // is how a season runs a Banger class alongside ordinary racing ones: only
+  // this class's results capture takedowns/survival/most-lethal, and only its
+  // standings show them. A flagged series or season already covers every class
+  // under it — see lib/bangerRacing.js.
   classes: { collection: "classes", parentField: "season_id", sortField: "sort_order",
              fields: { name: { required: true }, color: {}, description: {}, car: {},
+                       isBangerRacing: { bool: true, default: false },
                        race_points: {}, qual_points: {}, bonus_points: {},
                        sort_order: { number: true, default: 0 } } },
   teams:   { collection: "teams", parentField: "season_id", sortField: "name",

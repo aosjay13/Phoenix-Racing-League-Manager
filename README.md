@@ -31,11 +31,13 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   scores its own isolated championship, with an optional combined overall title across the field,
   optionally its own race calendar, and optionally its own qualifying and race at events every
   class runs together — each class with its own pole, winner and field
-- 💥 **Demo Derby / Banger Racing mode** — flag a series as banger racing and its events capture
+- 💥 **Demo Derby / Banger Racing mode** — flag a **series, a single season, or one class** as banger racing and its events capture
   **Takedowns**, a **Survival Bonus** (survived the longest) and a **Most Lethal Bonus** (most
   takedowns) on every results row, each worth whatever the points structure pays — points *per*
   takedown, plus a one-off value for each bonus. The stats show on that series' Standings and Stats
-  only: never in the Overall or per-Game views, where a takedown count means nothing
+  only: never in the Overall or per-Game views, where a takedown count means nothing. Flag a class
+  and a season can run a Banger class alongside its ordinary racing ones — only that class's grid,
+  points and championship carry the derby stats
 - 🖼 **Social graphic exporter** — on Standings, Stats, Race Results, Skill Ratings, Records and the
   Schedule (a season's calendar, or the cross-season Upcoming / Recent Results feeds). League name
   + logo branding, a
@@ -327,7 +329,14 @@ export/restore history shown on the Backup & Restore screen — restoring an old
 erase the record of every backup taken since) and `restore_uploads` (transient staging for a
 chunked import, deleted as soon as the import finishes).
 
-**Demo Derby / Banger Racing** is one boolean on the series: `series.isBangerRacing`. With it on,
+**Demo Derby / Banger Racing** is one boolean, settable at three levels: `series.isBangerRacing`,
+`seasons.isBangerRacing` and `classes.isBangerRacing`. They add up rather than override — derby is
+on for anything at or under a flagged level, so a flagged series covers all its seasons and classes,
+a flagged season covers its classes (a one-off derby year in an ordinary series), and a flagged
+class covers itself alone (a Banger class racing alongside ordinary ones). `isBangerScope()` in
+`lib/bangerRacing.js` is the single resolver every guard calls; a view of a whole season also counts
+as banger when the field it shows contains a banger class, while picking one of that season's
+*ordinary* classes does not. With it on,
 every results row of that series' events also stores `takedowns` (a count), `survival_bonus` and
 `most_lethal` (flags), and every points structure — season, class or points template — can pay a
 `takedown` rate plus a `survival_bonus` / `most_lethal` value through its `bonus_points` map. Those
@@ -335,8 +344,9 @@ bonuses live in *every* structure and default to 0, so an ordinary series scores
 before; the fields are likewise stored on every result (as zeros/falses), so the stats engine never
 has to ask what kind of series a result came from. What the flag actually gates is **visibility**:
 the results grid only grows the extra columns, the points editors only offer the extra values, and
-Standings/Stats only render the aggregated totals, while the viewer is scoped to a banger series —
-which is why the Overall and per-Game stats views can never show them. Every part of it (the grid
+Standings/Stats only render the aggregated totals, while the viewer is scoped to a banger series,
+season or class — the resolver is forced to `false` above series level, which is why the Overall and
+per-Game stats views can never show them. Every part of it (the grid
 column, the stored field, the bonus value, the scoring, the aggregated stat and the standings
 column) is generated from one list in `lib/bangerRacing.js`, so another derby bonus is one entry in
 that list and nothing else.

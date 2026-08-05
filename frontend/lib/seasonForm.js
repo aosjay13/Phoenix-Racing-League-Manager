@@ -26,6 +26,9 @@ export const BLANK_SEASON_FORM = {
   combined_championship: true,
   per_class_schedules: false,
   per_class_results: false,
+  // Demo Derby / Banger Racing for this season alone — a derby year inside an
+  // ordinary series. Adds to the series' own flag; see lib/bangerRacing.js.
+  isBangerRacing: false,
   bonuses: { ...BLANK_BONUSES },
 };
 
@@ -45,6 +48,7 @@ export function seasonToForm(season = {}) {
     combined_championship: season.combined_championship !== false,
     per_class_schedules: !!season.per_class_schedules,
     per_class_results: !!season.per_class_results,
+    isBangerRacing: !!season.isBangerRacing,
     bonuses: Object.fromEntries(ALL_BONUS_TYPES.map(([k]) => [k, String(bonusSrc[k] ?? 0)])),
   };
 }

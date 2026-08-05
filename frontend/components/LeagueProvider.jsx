@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { api } from "@/lib/api";
 import { getActiveLeagueId, setActiveLeagueId } from "@/lib/leagueClient";
 import { readScopeParams, writeScopeParams } from "@/lib/scopeLink";
-import { isBangerSeries } from "@/lib/bangerRacing";
+import { isBangerScope } from "@/lib/bangerRacing";
 
 const LeagueContext = createContext(null);
 const STORAGE_KEY = "prlm-selection";
@@ -285,10 +285,18 @@ export function LeagueProvider({ children }) {
     // A season only crowns one overall champion across its classes when the
     // admin left the combined championship on (the default).
     combinedChampionship: season?.combined_championship !== false,
-    // Is the SELECTED series a Demo Derby / Banger Racing series? False at
-    // "All Series" and above, which is exactly what keeps the derby stats out
-    // of the Overall and per-Game views — see lib/bangerRacing.js.
-    isBangerRacing: isBangerSeries(seriesList.find(s => s.id === seriesId) || null),
+    // Is the current scope a Demo Derby / Banger Racing one? The flag can sit on
+    // the series, the season or a single class, and a scope counts as banger if
+    // anything at or under the deepest selection carries it — a season with one
+    // Banger class included, since part of that table races derby. Forced false
+    // above series level, which is what keeps the derby stats out of the
+    // Overall and per-Game views. See lib/bangerRacing.js.
+    isBangerRacing: !!seriesId && isBangerScope({
+      series: seriesList.find(s => s.id === seriesId) || null,
+      season,
+      cls: raceClass,
+      classes,
+    }),
     loading,
     refresh,
   };

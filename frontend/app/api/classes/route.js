@@ -68,6 +68,10 @@ export async function GET(request) {
     // set even if the first one didn't.
     if (Number(c.sort_order || 0) < Number(row.sort_order || 0)) row.sort_order = c.sort_order;
     if (!row.car && c.car) row.car = c.car;
+    // A class name raced as Demo Derby / Banger Racing in ANY season of the
+    // scope reads as banger across it, so a wider view doesn't lose the mode
+    // just because the first season met didn't run it that way.
+    if (c.isBangerRacing) row.isBangerRacing = true;
     if (!row.color && c.color) row.color = c.color;
   }
   return NextResponse.json(sortClasses([...byName.values()]));
