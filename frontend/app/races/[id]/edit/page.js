@@ -305,6 +305,9 @@ function UnifiedEditInner() {
   // grid this screen has always shown.
   const classProps = {
     classes,
+    // The series this event belongs to — the top of the points chain, so the
+    // grid's Points column resolves exactly as the standings do.
+    series,
     sessionClass: perClassResults ? scope : null,
     sessionClassName: perClassResults ? scopeName : "",
     // Demo Derby / Banger Racing can be flagged on the series, on this season,

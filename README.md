@@ -343,6 +343,17 @@ carries no class (one created inline while entering results, say) would otherwis
 in a race paid a different rate per takedown than everyone around them. The filled-in class shows in
 the Class column before anything is saved, and any row still without one is called out above the grid.
 
+### Where points are configured
+
+    series (the league default) → season → class → the session's points template
+
+Each level overrides only what it actually sets, so a league configures its points **once** on the
+series and adjusts a season or a class only where they genuinely differ. A series that sets nothing
+changes nothing: the season stays the top of the chain and its blank scale still means "score 0",
+exactly as before series points existed. The moment a series *does* define a structure, a season
+becomes an override layer like a class — a scale it leaves blank falls through to the series rather
+than zeroing the field.
+
 A class's points structure is an **override layer**, so a scale it leaves blank falls through to the
 season rather than scoring 0 (a season's blank does save as an explicit zero — there is nothing above
 it to inherit). This is what stops a class ticked purely to carry a takedown rate from wiping its

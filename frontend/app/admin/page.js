@@ -19,8 +19,9 @@ import { carForClass } from "@/lib/classFilter";
 import { SeasonForm } from "@/components/SeasonForm";
 import { BangerBonusFields, PointsFields } from "@/components/PointsFields";
 import { BLANK_SEASON_FORM, scoresNoPoints, seasonFormToBody, seasonToForm } from "@/lib/seasonForm";
+import { BLANK_SERIES_FORM, seriesFormToBody, seriesToForm } from "@/lib/seriesForm";
 import { BLANK_CLASS_FORM, classFormToBody, classToForm, seasonPointsAsClassFields } from "@/lib/classForm";
-import { classScoresOwnPoints } from "@/lib/standings";
+import { classScoresOwnPoints, definesPoints } from "@/lib/standings";
 import { isBangerDoc } from "@/lib/bangerRacing";
 
 function Panel({ title, sub, step, muted, children }) {
@@ -88,8 +89,6 @@ const SECTIONS = [
   { key: "backup",    label: "Backup & Restore", icon: "💾", group: "data",     hint: "Export/import the entire app as JSON" },
 ];
 
-const BLANK_SERIES_FORM = { name: "", logo_url: "", isBangerRacing: false };
-
 function toArray(str) {
   return String(str || "").split(",").map(s => s.trim()).filter(Boolean);
 }
@@ -120,6 +119,8 @@ function AdminInner() {
   // `isBangerRacing` turns this series into a Demo Derby / Banger Racing series
   // — see lib/bangerRacing.js and the toggle in the Series panel below.
   const [seriesForm, setSeriesForm] = useState(BLANK_SERIES_FORM);
+  const [showSeriesPoints, setShowSeriesPoints] = useState(false);
+  const patchSeriesForm = patch => setSeriesForm(f => ({ ...f, ...(typeof patch === "function" ? patch(f) : patch) }));
   const [editIds, setEditIds] = useState({ game: null, series: null, season: null, class: null, race: null, track: null, template: null });
   const setEditId = (type, id) => setEditIds(ids => ({ ...ids, [type]: id }));
   // The season's own fields live in the shared <SeasonForm> (and lib/seasonForm.js),
@@ -371,8 +372,9 @@ function AdminInner() {
         <Panel title="Series" step={2} muted={!gameId} sub={gameId ? `In ${game?.name}` : "Select a game above first"}>
           <form onSubmit={e => {
             e.preventDefault();
-            save("/api/series", editIds.series ? seriesForm : { ...seriesForm, game_id: gameId }, editIds.series,
-              () => { setSeriesForm(BLANK_SERIES_FORM); setEditId("series", null); });
+            const body = seriesFormToBody(seriesForm);
+            save("/api/series", editIds.series ? body : { ...body, game_id: gameId }, editIds.series,
+              () => { setSeriesForm(BLANK_SERIES_FORM); setShowSeriesPoints(false); setEditId("series", null); });
           }}>
             <div className="field"><label>Series Name</label>
               <input required disabled={!gameId} value={seriesForm.name} onChange={e => setSeriesForm(f => ({ ...f, name: e.target.value }))} placeholder="Asphalt Assault Series" /></div>
@@ -400,17 +402,43 @@ function AdminInner() {
               </label>
             </div>
 
+            {/* The series' points are the league DEFAULT: every season in it
+                scores on these unless the season (or one of its classes)
+                overrides them. Left blank the series sets nothing and each
+                season keeps its own points, exactly as before. */}
+            <button type="button" className="btn btn-ghost" style={{ marginTop: 14 }}
+              onClick={() => setShowSeriesPoints(v => !v)}>
+              {showSeriesPoints ? "▾" : "▸"} Default Points &amp; Bonuses for this series
+            </button>
+            {showSeriesPoints && (
+              <>
+                <p style={{ margin: "8px 0 0", fontSize: "0.78rem", color: "var(--ink-2)", maxWidth: 640 }}>
+                  Set once here and every season in {series?.name || "this series"} scores on it. A season
+                  can override any part of it, and a class can override the season — each level only changes
+                  what it actually sets. Leave these blank and nothing changes: seasons keep their own points.
+                </p>
+                <PointsFields value={seriesForm} onPatch={patchSeriesForm} templates={templates}
+                  onTemplatesChanged={loadTemplates} disabled={!gameId} onError={msg => showToast("error", msg)}
+                  seriesLevel banger={!!seriesForm.isBangerRacing} />
+              </>
+            )}
+
             <button className="btn btn-primary" type="submit" disabled={!gameId}>{editIds.series ? "Save Changes" : "Add Series"}</button>
             {editIds.series && (
               <button className="btn btn-ghost" type="button" style={{ marginLeft: 8 }}
-                onClick={() => { setEditId("series", null); setSeriesForm(BLANK_SERIES_FORM); }}>Cancel</button>
+                onClick={() => { setEditId("series", null); setSeriesForm(BLANK_SERIES_FORM); setShowSeriesPoints(false); }}>Cancel</button>
             )}
           </form>
           <div style={{ marginTop: 16 }}>
             {seriesList.map(s => <ItemRow key={s.id} logo={s.logo_url} name={s.name}
-              meta={isBangerDoc(s) ? "💥 Demo Derby / Banger Racing" : null}
+              meta={[isBangerDoc(s) ? "💥 Demo Derby / Banger Racing" : null,
+                     definesPoints(s) ? "default points set" : null].filter(Boolean).join(" · ")}
               editing={editIds.series === s.id}
-              onEdit={() => { setEditId("series", s.id); setSeriesForm({ name: s.name, logo_url: s.logo_url || "", isBangerRacing: !!s.isBangerRacing }); }}
+              onEdit={() => {
+                setEditId("series", s.id);
+                setSeriesForm(seriesToForm(s));
+                setShowSeriesPoints(definesPoints(s));
+              }}
               onDelete={() => remove(`/api/series/${s.id}`, `Delete series "${s.name}"?`)} />)}
           </div>
         </Panel>
@@ -449,7 +477,8 @@ function AdminInner() {
           <div style={{ marginTop: 16 }}>
             {seasons.map(s => (
               <ItemRow key={s.id} logo={s.logo_url} name={s.name} editing={editIds.season === s.id}
-                meta={isBangerDoc(s) ? "💥 Demo Derby / Banger Racing" : null}
+                meta={[isBangerDoc(s) ? "💥 Demo Derby / Banger Racing" : null,
+                     definesPoints(s) ? "default points set" : null].filter(Boolean).join(" · ")}
                 onEdit={() => {
                   setEditId("season", s.id);
                   setSeasonForm(seasonToForm(s));

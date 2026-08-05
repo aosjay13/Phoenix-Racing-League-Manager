@@ -14,6 +14,7 @@ import { bangerPoints, bangerStatLine, hasBangerBonuses } from "@/lib/bangerRaci
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
 import { classIdsInSeason, classNamesFor, entryClassIds, entryClassIdsOrdered, fetchSeasonClasses, filterEntriesByClass, filterResultsByClass, orderEntryClasses } from "@/lib/classServer";
 import { seasonChampions } from "@/lib/champions";
+import { fetchSeriesForSeason } from "@/lib/seriesServer";
 import { fetchDriverNames } from "@/lib/driverNamesServer";
 
 // One season's championship tables.
@@ -61,7 +62,11 @@ export async function GET(request) {
   const entries = filterEntriesByClass(allEntries, classSel);
   const results = filterResultsByClass(allResults, classSel, entriesById);
 
-  const config = resolveSeasonConfig(season);
+  // The series is the top of the points chain: its structure is the default
+  // this season (and each of its classes) overrides. A series that sets nothing
+  // leaves the season exactly as it scored before.
+  const series = await fetchSeriesForSeason(season);
+  const config = resolveSeasonConfig(season, series);
   // `classes` lets a class scoring on its own points structure total under it —
   // in its own championship and in the combined table alike.
   const drivers = calculateStandings(results, entries, teams, config, templatesById, classes);

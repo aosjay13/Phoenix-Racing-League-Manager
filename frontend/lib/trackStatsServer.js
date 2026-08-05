@@ -1,4 +1,5 @@
 import { db } from "@/lib/firebase";
+import { fetchSeriesByIds } from "@/lib/seriesServer";
 import {
   aggregateCareerStats,
   decorateRaceBonuses,
@@ -139,10 +140,13 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
       { ...mk(), game_id: gameId, class_name: className });
   };
 
+  // Each season scores on its SERIES' points unless it overrides them.
+  const seriesById = await fetchSeriesByIds(loopSeasonIds.map(id => seasonsById[id]?.series_id));
+
   for (const seasonId of loopSeasonIds) {
     const season = seasonsById[seasonId];
     if (!season) continue;
-    const config = resolveSeasonConfig(season);
+    const config = resolveSeasonConfig(season, seriesById[season.series_id] || null);
     const gameId = season.game_id || null;
 
     const [entriesSnap, resultsSnap, racesSnap, seasonClasses] = await Promise.all([

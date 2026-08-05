@@ -141,8 +141,19 @@ export const SPECS = {
   // the points structures grow a bonus value for each, and Standings/Stats show
   // their totals — but ONLY while the viewer is scoped to this series. Off (the
   // default) the series behaves exactly as every series did before.
+  // `race_points` / `qual_points` / `bonus_points` are the series' points
+  // structure — the DEFAULT every season in it scores on, in the same shape a
+  // season, a class and a points template use:
+  //
+  //     series (default) → season → class → the session's template
+  //
+  // Each level overrides only what it sets, so a league configures its points
+  // once here and adjusts a season or a class where they genuinely differ.
+  // Leaving them unset (the default) changes nothing: the season stays the top
+  // of the chain, exactly as before series points existed.
   series:  { collection: "series", parentField: "game_id", sortField: "name",
              fields: { name: { required: true }, logo_url: {}, description: {},
+                       race_points: {}, qual_points: {}, bonus_points: {},
                        isBangerRacing: { bool: true, default: false } } },
   seasons: { collection: "seasons", parentField: "series_id", sortField: "created_at",
              // `car` is the free-text car/model this season races (e.g. "NASCAR

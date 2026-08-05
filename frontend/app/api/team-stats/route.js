@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
+import { fetchSeriesByIds } from "@/lib/seriesServer";
 import { getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
 import {
   aggregateCareerStats,
@@ -32,6 +33,8 @@ export async function GET(request) {
   // merge their results into one profile.
   const seasonsSnap = await scopeByLeague(db().collection("seasons"), getRequestLeagueId(request)).get();
   const seasons = seasonsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  // Each season scores on its SERIES' points unless it overrides them.
+  const seriesById = await fetchSeriesByIds(seasons.map(s => s.series_id));
 
   const all = [];                 // every scored result for the team
   const drivers = {};             // driverKey -> { driver_name, user_id, results, titles }
@@ -56,7 +59,7 @@ export async function GET(request) {
     if (teamMeta.logo_url) logo_url = teamMeta.logo_url;
     if (teamMeta.color) color = teamMeta.color;
 
-    const config = resolveSeasonConfig(season);
+    const config = resolveSeasonConfig(season, seriesById[season.series_id] || null);
     const entries = entriesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
     const entriesById = Object.fromEntries(entries.map(e => [e.id, e]));
     const racesById = Object.fromEntries(racesSnap.docs.map(d => [d.id, d.data()]));

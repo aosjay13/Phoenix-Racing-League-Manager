@@ -1,4 +1,5 @@
 import { db } from "@/lib/firebase";
+import { fetchSeriesByIds } from "@/lib/seriesServer";
 import {
   aggregateCareerStats,
   decorateRaceBonuses,
@@ -44,11 +45,13 @@ export async function buildCareerProfile({ driverId = null, userId = null }) {
   const titleList = [];     // one row per season won, newest resolved by caller
   let totalTitles = 0;
   const templatesById = await fetchTemplatesById();
+  // Each season scores on its SERIES' points unless it overrides them.
+  const seriesById = await fetchSeriesByIds(Object.values(seasons).map(s => s.series_id));
 
   for (const seasonId of seasonIds) {
     const season = seasons[seasonId];
     if (!season) continue;
-    const config = resolveSeasonConfig(season);
+    const config = resolveSeasonConfig(season, seriesById[season.series_id] || null);
     const gameId = season.game_id || "unknown";
     const myEntryIds = new Set(myEntries.filter(e => e.season_id === seasonId).map(e => e.id));
 

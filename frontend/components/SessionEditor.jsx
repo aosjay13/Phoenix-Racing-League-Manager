@@ -294,7 +294,7 @@ export function SessionEditor({
   onSessionPointsChange, onTemplatesChanged,
   sessionStats = {}, onSessionStatsChange, sessionPointsEnabled = {}, onSessionPointsEnabledChange,
   canAddSession = false, onAddSession, onRemoveSession, onRenameSession,
-  initialSession, onEntriesChanged, seriesName, classes = [],
+  initialSession, onEntriesChanged, seriesName, series = null, classes = [],
   sessionClass = null, sessionClassName = "",
   isBangerRacing = false, derbyTarget = null, onDerbyPointsSave = null,
 }) {
@@ -790,12 +790,15 @@ export function SessionEditor({
 
   // ── Points structure ─────────────────────────────────────────────────────
   //
-  // Three layers, most specific last: the season's points, the CLASS's own
-  // structure when it scores on one, then the template assigned to this
-  // session. Switching class in the bar above swaps the middle layer, so the
+  // Four layers, most specific last: the SERIES' default points, the season's
+  // own, the CLASS's structure when it scores on one, then the template
+  // assigned to this session. Switching class in the bar above swaps the middle layer, so the
   // Points column (and the modal below it) re-reads the moment you change
   // class — exactly the way it already re-reads when you change session.
-  const seasonConfig = useMemo(() => resolveSeasonConfig(season || {}), [season]);
+  // series (the league default) → season → class → this session's template.
+  // The same chain the standings score on, so the Points column here and the
+  // championship there can never disagree.
+  const seasonConfig = useMemo(() => resolveSeasonConfig(season || {}, series), [season, series]);
   const classBase = useMemo(() => classConfigs(seasonConfig, classes), [seasonConfig, classes]);
   // The base config for a class id: its own structure, else the season's. On a
   // combined grid this is asked per ROW, since a driver's points come from the

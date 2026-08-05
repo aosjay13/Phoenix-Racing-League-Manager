@@ -4,6 +4,7 @@ import { decorateRaceBonuses, isQualifying, makeScorer, resolveSeasonConfig } fr
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
 import { fetchDriverNames } from "@/lib/driverNamesServer";
 import { fetchSeasonClasses, classOfResult, racePerClassResults } from "@/lib/classServer";
+import { fetchSeriesForSeason } from "@/lib/seriesServer";
 
 // Full detail for one event: a dedicated qualifying session plus every race
 // session (including heat/consolation/feature sessions for heat-format
@@ -24,7 +25,8 @@ export async function GET(request, { params }) {
   ]);
 
   const season = seasonDoc.exists ? { id: seasonDoc.id, ...seasonDoc.data() } : null;
-  const config = resolveSeasonConfig(season || {});
+  const series = await fetchSeriesForSeason(season);
+  const config = resolveSeasonConfig(season || {}, series);
   const entriesById = Object.fromEntries(entriesSnap.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
   const teamsById = Object.fromEntries(teamsSnap.docs.map(d => [d.id, d.data()]));
   const all = decorateRaceBonuses(resultsSnap.docs.map(d => d.data()));

@@ -77,13 +77,33 @@ export function isDnf(result) {
   return s === "dnf" || s === "dq";
 }
 
-// Resolve a season document into a full scoring config.
-export function resolveSeasonConfig(season = {}) {
+// ── The scoring chain ──────────────────────────────────────────────────────
+//
+//   series (the league default) → season → class → the session's template
+//
+// Each level only overrides what it actually sets, so points are configured
+// once at the top and adjusted where a season or a class genuinely differs.
+//
+// A SERIES that defines no structure changes nothing: the season is then the
+// top of the chain, and its blank scale still means "score 0" exactly as it
+// always did — there is nothing above it to inherit from. The moment a series
+// DOES define one, the season becomes an override layer like a class: a scale
+// it leaves blank falls through to the series rather than zeroing the field.
+// (`points_scale` is the legacy name for a season's race scale.)
+export function resolveSeasonConfig(season = {}, series = null) {
+  const fromSeries = definesPoints(series);
+  const base = {
+    racePoints: fromSeries ? parseMaybeJson(series.race_points, DEFAULT_RACE_POINTS) : DEFAULT_RACE_POINTS,
+    qualPoints: fromSeries ? parseMaybeJson(series.qual_points, DEFAULT_QUAL_POINTS) : DEFAULT_QUAL_POINTS,
+    bonuses: { ...DEFAULT_BONUSES, ...(fromSeries ? parseMaybeJson(series.bonus_points, {}) : {}) },
+  };
+  const layer = fromSeries ? structureOverride(season) : season;
   return {
+    // Drop weeks are a season's own rule; a series has no say in them.
     dropWeeks: Number(season.drop_weeks || 0),
-    racePoints: parseMaybeJson(season.race_points ?? season.points_scale, DEFAULT_RACE_POINTS),
-    qualPoints: parseMaybeJson(season.qual_points, DEFAULT_QUAL_POINTS),
-    bonuses: { ...DEFAULT_BONUSES, ...parseMaybeJson(season.bonus_points, {}) },
+    racePoints: parseMaybeJson(layer.race_points ?? layer.points_scale, base.racePoints),
+    qualPoints: parseMaybeJson(layer.qual_points, base.qualPoints),
+    bonuses: mergeBonuses(base.bonuses, parseMaybeJson(layer.bonus_points, {}), null),
   };
 }
 
@@ -161,8 +181,9 @@ function isZeroTable(value) {
   return !Object.values(obj || {}).some(v => Number(v || 0) !== 0);
 }
 
-// A class doc as an override layer: any scale that pays nothing is dropped, so
-// it inherits the season's instead of flattening it to zero.
+// Any doc used as an override LAYER — a season over its series, a class over its
+// season: a scale that pays nothing is dropped, so it inherits from above
+// instead of flattening everything below it to zero.
 //
 // This is what stops a class from silently wiping out its drivers' finishing
 // points. Ticking "this class scores on its own points structure" to set (say) a
@@ -170,13 +191,35 @@ function isZeroTable(value) {
 // race scale — and an all-zero scale that OVERRIDES is a class where P1 scores
 // nothing. The bonuses are kept as they are: a bonus of 0 is a real setting, and
 // the derby ones already inherit through mergeBonuses.
-export function classOverride(cls) {
-  if (!cls) return cls;
+export function structureOverride(doc) {
+  if (!doc) return doc;
   return {
-    ...cls,
-    race_points: isZeroTable(cls.race_points) ? null : cls.race_points,
-    qual_points: isZeroTable(cls.qual_points) ? null : cls.qual_points,
+    ...doc,
+    race_points: isZeroTable(doc.race_points) ? null : doc.race_points,
+    qual_points: isZeroTable(doc.qual_points) ? null : doc.qual_points,
   };
+}
+
+// The class layer, by its own name — a class is just the override layer one
+// level below the season.
+export const classOverride = structureOverride;
+
+// Does this doc define a points structure of its own — anything for a level
+// below it to inherit? Used to decide whether a SERIES is acting as the league
+// default (see resolveSeasonConfig): a series that sets nothing leaves every
+// season scoring exactly as it did before series-level points existed.
+export function definesPoints(doc) {
+  if (!doc) return false;
+  const own = structureOverride(doc);
+  if (hasTable(own.race_points) || hasTable(own.qual_points)) return true;
+  // Bonuses count only when one of them actually PAYS something. Every editor
+  // writes the whole bonus map, so a structure nobody has filled in still
+  // arrives as a full set of zeros — and treating that as "defines points"
+  // would turn every season below it into an override layer, where a blank
+  // season scale stops meaning "score 0" and starts inheriting. A series with
+  // nothing set has to leave the levels below it exactly as they were.
+  const bonuses = parseMaybeJson(doc.bonus_points, {});
+  return Object.values(bonuses).some(v => Number(v || 0) !== 0);
 }
 
 // Does this class score on its own points structure, rather than the season's?

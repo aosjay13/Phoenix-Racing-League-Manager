@@ -16,6 +16,7 @@ import { crownsInScope, seasonChampions, titlesByEntry } from "@/lib/champions";
 import { finalSessionName } from "@/lib/raceSummaryServer";
 import { isPastRaceDate, raceDateSortKey, toDateOnly, todayDateString } from "@/lib/raceDate";
 import { fetchDriverNames, gameIdForScope } from "@/lib/driverNamesServer";
+import { fetchSeriesByIds } from "@/lib/seriesServer";
 
 export const dynamic = "force-dynamic";
 
@@ -89,8 +90,12 @@ async function buildStats(seasons, classId = "", className = "", gameId = null) 
   const fieldSizes = [];
   const templatesById = await fetchTemplatesById();
 
+  // Every series in scope, read once — each season scores on its series'
+  // structure unless it overrides it.
+  const seriesById = await fetchSeriesByIds(seasons.map(s => s.series_id));
+
   for (const season of seasons) {
-    const config = resolveSeasonConfig(season);
+    const config = resolveSeasonConfig(season, seriesById[season.series_id] || null);
     const [entriesSnap, resultsSnap, racesSnap, teamsSnap, seasonClasses] = await Promise.all([
       db().collection("entries").where("season_id", "==", season.id).get(),
       db().collection("results").where("season_id", "==", season.id).get(),

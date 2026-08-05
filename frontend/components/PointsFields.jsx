@@ -57,7 +57,12 @@ export function BangerBonusFields({ value, onPatch, disabled = false }) {
 export function PointsFields({
   value, onPatch, templates = [], onTemplatesChanged,
   disabled = false, onError, noPoints = false, blankWarning = "", banger = false, inherits = false,
+  seriesLevel = false,
 }) {
+  // How a blank scale reads at this level: a class inherits its season, a
+  // series simply sets nothing (its seasons keep their own), and a season —
+  // the only level with nothing above it by default — scores 0.
+  const blankMeans = seriesLevel ? " (blank = seasons keep their own)" : inherits ? " (blank = use the season's)" : " (blank = 0 points)";
   const [templateId, setTemplateId] = useState("");
   const [qualTemplateId, setQualTemplateId] = useState("");
   const [templateName, setTemplateName] = useState("");
@@ -140,7 +145,7 @@ export function PointsFields({
         </div>
       </div>
 
-      <div className="field"><label>Race Points — comma-separated, 1st place first{inherits ? " (blank = use the season's)" : " (blank = 0 points)"}</label>
+      <div className="field"><label>Race Points — comma-separated, 1st place first{blankMeans}</label>
         <textarea rows={3} disabled={disabled} value={value.race_points}
           placeholder="350, 320, 300, 280, 260, 250, 240, …"
           onChange={e => onPatch({ race_points: e.target.value })} />
@@ -169,7 +174,7 @@ export function PointsFields({
         </span>
       </div>
 
-      <div className="field"><label>Qualifying Points — comma-separated, pole first{inherits ? " (blank = use the season's)" : " (blank = 0 points)"}</label>
+      <div className="field"><label>Qualifying Points — comma-separated, pole first{blankMeans}</label>
         <textarea rows={2} disabled={disabled} value={value.qual_points}
           placeholder="35, 32, 30, 28, 26, 25, …"
           onChange={e => onPatch({ qual_points: e.target.value })} />
