@@ -15,6 +15,7 @@ export {
   entryInClassSet,
   classNamesFor,
   orderClassIds,
+  orderEntryClasses,
   normalizeClassIds,
   primaryClassId,
   classIdsInSeason,

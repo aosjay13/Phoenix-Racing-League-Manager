@@ -331,10 +331,11 @@ chunked import, deleted as soon as the import finishes).
 
 A driver's classes are listed, everywhere they appear, in the **season's own class order**
 (`sort_order`, then name — the order the Class menu shows), rather than the order an admin happened
-to tick them in. That order is also what resolves a result that records no class of its own: such a
-result counts toward every class its driver races, so a driver entered in two classes can't be listed
-in one championship and silently missing from the other. A result that *does* record its class (every
-result the grid saves) still counts only there.
+to tick them in. That order is also what resolves a result that records no class of its own: it counts toward the
+driver's **primary** class — the first of theirs in that order — so one result is always in exactly
+one championship, never in two at once. A result that *does* record its class (every result the grid
+saves) counts only there, and the results grid can stamp a whole session's rows with one class in a
+single step, which is what pins them for good.
 
 A class's points structure is an **override layer**, so a scale it leaves blank falls through to the
 season rather than scoring 0 (a season's blank does save as an explicit zero — there is nothing above

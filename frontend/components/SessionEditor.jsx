@@ -9,7 +9,7 @@ import { PointsEditorModal } from "@/components/PointsEditorModal";
 import { ImportResultsModal } from "@/components/ImportResultsModal";
 import { NONE_TEMPLATE } from "@/lib/pointsTemplates";
 import { classIdForScope, entriesEligibleForRace, entriesInSessionClass, isClassScoped, resultInSessionClass } from "@/lib/classFilter";
-import { pointsFor, classConfigs, classScoresOwnPoints, configForTemplate, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
+import { pointsFor, pointsBreakdown, classConfigs, classScoresOwnPoints, configForTemplate, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
 import { applyAutoFlags, detectFlagLocks, autoMostLapsLedSlot } from "@/lib/autoFlags";
 import { BANGER_BOOL_FIELDS, BANGER_RESULT_FIELDS, BANGER_STATS, bangerRates, blankBangerRow, hasBangerBonuses } from "@/lib/bangerRacing";
 import { parseTime, formatTime, formatGap, formatDelta, parseDelta, parseLapsDown, deriveLaps } from "@/lib/raceTime";
@@ -531,6 +531,17 @@ export function SessionEditor({
   function clearSlot(idx) {
     setRows(prev => prev.map((r, i) => (i === idx ? { ...makeRow(r.finish_pos), slot_id: r.slot_id } : r)));
   }
+  // Put every filled row in one class. A whole event usually belongs to a
+  // single class, and stamping the class ONTO the results is what pins them
+  // there for good: a result that records its class is never resolved by
+  // fallback, so it can't drift into another class's championship when a driver
+  // races more than one. Setting it row by row does the same thing — this is
+  // just the whole-grid version.
+  function setClassForAll(classId) {
+    if (!classId) return;
+    setRows(prev => prev.map(r => (r.entry_id ? { ...r, class_id: classId } : r)));
+  }
+
   function addSlot() {
     setRows(prev => [...prev, makeRow(prev.length + 1)]);
   }
@@ -844,6 +855,10 @@ export function SessionEditor({
   const rowPoints = row => (!row.entry_id ? "" : sessionType === "qualifying"
     ? Number(configForRow(row).qualPoints[row.finish_pos] ?? 0)
     : pointsFor(row, configForRow(row), qualPos[row.entry_id] ?? null, qualConfigForRow(row)));
+  // …and the arithmetic behind it, on hover: every term that made the number,
+  // so a total that looks wrong can be read rather than reverse-engineered.
+  const rowPointsTitle = row => (!row.entry_id || sessionType === "qualifying" ? undefined
+    : pointsBreakdown(row, configForRow(row), qualPos[row.entry_id] ?? null, qualConfigForRow(row)));
 
   // ── Provisional points auto-fill ─────────────────────────────────────────
   //
@@ -1085,6 +1100,19 @@ export function SessionEditor({
             </button>
           </div>
         )}
+        {hasClasses && (
+          <div className="field" style={{ maxWidth: 260, margin: 0 }}>
+            <label>Class for every row</label>
+            <select defaultValue="" onChange={e => { setClassForAll(e.target.value); e.target.value = ""; }}>
+              <option value="">Set all rows to…</option>
+              {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            <span style={{ fontSize: "0.75rem", color: "var(--ink-2)" }}>
+              Stamps the class onto each result, which is what keeps it in that class&rsquo;s
+              championship for good. Save after setting it.
+            </span>
+          </div>
+        )}
         {(showStatsToggle || showPointsToggle) && (
           <div style={{ display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap" }}>
             {showStatsToggle && (
@@ -1276,7 +1304,7 @@ export function SessionEditor({
             {rows.map((row, idx) => (
               <RowInputs key={row.slot_id} row={row} idx={idx} updateRow={updateRow} updateFlag={updateFlag}
                 updateRaceTime={updateRaceTime} updateInterval={updateInterval} updateStatus={updateStatus}
-                autoFocus={row.entry_id === justAddedId} points={rowPoints(row)}
+                autoFocus={row.entry_id === justAddedId} points={rowPoints(row)} pointsTitle={rowPointsTitle(row)}
                 classes={classes} hasClasses={hasClasses} isBangerRacing={isBangerRacing}
                 dragging={dragIndex === idx} dragOver={overIndex === idx && dragIndex !== idx}
                 onDragStart={() => handleDragStart(idx)} onDragOver={e => handleDragOver(idx, e)} onDrop={() => handleDrop(idx)} onDragEnd={handleDragEnd}
@@ -1690,7 +1718,7 @@ function BangerCells({ row, idx, updateRow, updateFlag, gridProps }) {
   );
 }
 
-function RowInputs({ row, idx, updateRow, updateFlag, updateRaceTime, updateInterval, updateStatus, autoFocus, points, classes = [], hasClasses, isBangerRacing, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, available, onAssign, onClear, onRequestCreate, onPasteColumn }) {
+function RowInputs({ row, idx, updateRow, updateFlag, updateRaceTime, updateInterval, updateStatus, autoFocus, points, pointsTitle, classes = [], hasClasses, isBangerRacing, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, available, onAssign, onClear, onRequestCreate, onPasteColumn }) {
   const hasDriver = !!row.entry_id;
   const isLeader = Number(row.finish_pos) === 1;
   // Shared per-cell wiring: column/row tags, Enter-to-next-row, and column
@@ -1741,7 +1769,7 @@ function RowInputs({ row, idx, updateRow, updateFlag, updateRaceTime, updateInte
         <option value="dns">DNS</option>
         <option value="dq">DQ</option>
       </select>
-      <div className="points-cell" style={{ textAlign: "center", fontWeight: 600 }}>{points}</div>
+      <div className="points-cell" title={pointsTitle} style={{ textAlign: "center", fontWeight: 600, cursor: pointsTitle ? "help" : undefined }}>{points}</div>
       <RemoveButton row={row} onRemove={onRemove} />
     </>
   );

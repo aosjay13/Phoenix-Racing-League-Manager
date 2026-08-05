@@ -11,7 +11,7 @@ import {
   resolveSeasonConfig,
 } from "@/lib/standings";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
-import { classIdsInSeason, fetchSeasonClasses, filterEntriesByClass, filterRacesByClass, filterResultsByClass } from "@/lib/classServer";
+import { classIdsInSeason, fetchSeasonClasses, filterEntriesByClass, filterRacesByClass, filterResultsByClass, orderEntryClasses } from "@/lib/classServer";
 import { crownsInScope, seasonChampions, titlesByEntry } from "@/lib/champions";
 import { finalSessionName } from "@/lib/raceSummaryServer";
 import { isPastRaceDate, raceDateSortKey, toDateOnly, todayDateString } from "@/lib/raceDate";
@@ -99,7 +99,12 @@ async function buildStats(seasons, classId = "", className = "", gameId = null) 
       fetchSeasonClasses(season.id),
     ]);
     const allEntries = entriesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-    const allEntriesById = Object.fromEntries(allEntries.map(e => [e.id, e]));
+    // Ordered the same way the standings do it, so a result with no class of
+    // its own resolves to the same class on both screens.
+    const allEntriesById = orderEntryClasses(
+      Object.fromEntries(allEntries.map(e => [e.id, e])),
+      seasonClasses,
+    );
     // A class filter narrows the field before anything is scored, so a class
     // view shows that class's own points, wins and averages — not a slice of
     // the overall table. `classSel` is this season's OWN docs for the selected

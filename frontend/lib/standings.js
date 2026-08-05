@@ -1,5 +1,5 @@
 import { classOfResult } from "@/lib/classFilter";
-import { BANGER_BONUS_TYPES, BANGER_STAT_KEYS, bangerPoints, bangerStatLine, blankBangerTotals } from "@/lib/bangerRacing";
+import { BANGER_BONUS_TYPES, BANGER_STATS, BANGER_STAT_KEYS, bangerPoints, bangerStatLine, blankBangerTotals } from "@/lib/bangerRacing";
 import { isNoPointsTemplate } from "@/lib/pointsTemplates";
 
 // Default points tables mirror the PRA spreadsheet:
@@ -312,6 +312,63 @@ export function pointsFor(result, config, qualPos = null, qualConfig = null) {
   pts += Number(result.bonus_points || 0) - Number(result.penalty_points || 0);
   pts += adjustment;
   return pts;
+}
+
+// The same arithmetic pointsFor does, itemised — "P1 100 · Fastest Lap 5 ·
+// Takedowns 4 x 2 = 8 · Most Lethal 10". Shown on the results grid's Points
+// cell so a total that looks wrong can be read term by term, instead of an
+// admin having to work backwards from one number through four layers of points
+// structure. Returns [] for a result that scores nothing at all.
+export function explainPoints(result, config, qualPos = null, qualConfig = null) {
+  if (isDidNotStart(result)) return [{ label: "DNS — did not start", value: 0 }];
+  const parts = [];
+  const adjustment = Number(result.points_adjustment || 0);
+  if (result.provisional && result.manual_points != null && result.manual_points !== "") {
+    parts.push({ label: "Provisional entry", value: Number(result.manual_points || 0) });
+    if (adjustment) parts.push({ label: "Adjustment", value: adjustment });
+    return parts;
+  }
+  const { racePoints, bonuses } = config;
+  const qualPoints = (qualConfig || config).qualPoints;
+  const finish = Number(racePoints[result.finish_pos] ?? 0);
+  parts.push({ label: `P${result.finish_pos || "—"} finish`, value: finish });
+  if (qualPos != null) parts.push({ label: `Qualified P${qualPos}`, value: Number(qualPoints[qualPos] ?? 0) });
+  const flag = (on, label, key) => {
+    const value = Number(bonuses[key] || 0);
+    if (on && value) parts.push({ label, value });
+  };
+  flag(result.fastest_lap, "Fastest lap", "best_lap");
+  flag(result.is_most_laps_led, "Most laps led", "most_laps_led");
+  flag(Number(result.laps_led || 0) > 0, "Led a lap", "lead_a_lap");
+  flag(result.halfway_leader, "Halfway leader", "halfway_point");
+  flag(result.hard_charger, "Hard charger", "hard_charger");
+  for (const stat of BANGER_STATS) {
+    const rate = Number(bonuses[stat.bonus.key] || 0);
+    if (stat.type === "bool") {
+      if (result[stat.key] && rate) parts.push({ label: stat.name, value: rate });
+      continue;
+    }
+    const count = Number(result[stat.key] || 0);
+    if (!count) continue;
+    parts.push({
+      label: rate ? `${stat.name} ${count} x ${rate}` : `${stat.name} ${count} x 0 — no rate set`,
+      value: count * rate,
+    });
+  }
+  const extra = Number(result.bonus_points || 0);
+  const penalty = Number(result.penalty_points || 0);
+  if (extra) parts.push({ label: "Bonus points", value: extra });
+  if (penalty) parts.push({ label: "Penalty points", value: -penalty });
+  if (adjustment) parts.push({ label: "Adjustment", value: adjustment });
+  return parts;
+}
+
+// `explainPoints` as one line of text, for a cell's tooltip.
+export function pointsBreakdown(result, config, qualPos = null, qualConfig = null) {
+  const parts = explainPoints(result, config, qualPos, qualConfig);
+  if (!parts.length) return "Scores 0";
+  const total = parts.reduce((a, p) => a + Number(p.value || 0), 0);
+  return `${parts.map(p => `${p.label}: ${p.value >= 0 ? "+" : ""}${p.value}`).join("\n")}\n────────\nTotal: ${total}`;
 }
 
 // A driver's Qualifying finish position, per event — the number the qualifying

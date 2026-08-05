@@ -12,7 +12,7 @@ import {
 } from "@/lib/standings";
 import { bangerPoints, bangerStatLine, hasBangerBonuses } from "@/lib/bangerRacing";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
-import { classIdsInSeason, classNamesFor, entryClassIds, entryClassIdsOrdered, fetchSeasonClasses, filterEntriesByClass, filterResultsByClass } from "@/lib/classServer";
+import { classIdsInSeason, classNamesFor, entryClassIds, entryClassIdsOrdered, fetchSeasonClasses, filterEntriesByClass, filterResultsByClass, orderEntryClasses } from "@/lib/classServer";
 import { seasonChampions } from "@/lib/champions";
 import { fetchDriverNames } from "@/lib/driverNamesServer";
 
@@ -44,7 +44,13 @@ export async function GET(request) {
 
   const season = seasonDoc.data();
   const allEntries = entriesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-  const entriesById = Object.fromEntries(allEntries.map(e => [e.id, e]));
+  // Put every entry's classes into the season's order first, so a result that
+  // records no class of its own resolves to a stable primary class (see
+  // orderEntryClasses) instead of whichever class was ticked first.
+  const entriesById = orderEntryClasses(
+    Object.fromEntries(allEntries.map(e => [e.id, e])),
+    classes,
+  );
   const teams = teamsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
   const racesById = Object.fromEntries(racesSnap.docs.map(d => [d.id, d.data()]));
   const allResults = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById));

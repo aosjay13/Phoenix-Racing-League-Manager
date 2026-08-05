@@ -60,6 +60,17 @@ export function orderClassIds(ids = [], classes = []) {
   });
 }
 
+// An entries map with every entry's classes put into the season's order, so
+// "primary class" (the first of them) is a stable, meaningful answer rather
+// than whichever class happened to be ticked first. Routes normalize the roster
+// through this once, before anything resolves a result's class.
+export function orderEntryClasses(entriesById = {}, classes = []) {
+  return Object.fromEntries(Object.entries(entriesById).map(([id, entry]) => {
+    const class_ids = orderClassIds(entryClassIds(entry), classes);
+    return [id, { ...entry, class_ids, class_id: class_ids[0] || "" }];
+  }));
+}
+
 // Every class this entry races, in the season's display order.
 export function entryClassIdsOrdered(entry, classes = []) {
   return orderClassIds(entryClassIds(entry), classes);
@@ -129,33 +140,27 @@ export function filterEntriesByClass(entries, selection) {
 // Results inside a class selection.
 //
 // A result that RECORDS its class answers for itself — that's every result the
-// grid saves, and it's exact even if the driver is re-classed later.
+// grid saves, and it stays exact even if the driver is re-classed later.
 //
-// A result with no class recorded (saved before classes existed, or on a grid
-// where the Class cell was left blank) falls back to the driver's classes —
-// ALL of them, the same test filterEntriesByClass applies to the driver
-// themselves. Falling back to only their PRIMARY class is what made a driver
-// who races two classes appear in one class's standings and vanish from the
-// other, despite being on the roster for both: their unstamped results resolved
-// to whichever class happened to be first in their list. Where a driver races
-// several classes and the result doesn't say which one it was run in, there is
-// no answer to prefer — counting it in each class they race is the reading that
-// doesn't silently lose them.
+// A result with no class recorded (saved before classes existed, or before its
+// driver was put in one) falls back to the driver's PRIMARY class: the first of
+// their classes in the season's own order — see orderEntryClasses, which is
+// what makes "first" mean something rather than being whichever class an admin
+// ticked first.
+//
+// One result, one class. Counting an unstamped result toward every class its
+// driver races looks like it rescues a multi-class driver, but it puts the SAME
+// result in two championships at once — the same race showing up in Banger
+// Racing and in Demo Derby. A race was run in one class; where the record
+// doesn't say which, the driver's primary class is the one answer that keeps
+// each result in exactly one table. To place them exactly, set the Class column
+// on the results grid and re-save: that stamps each result for good.
 export function filterResultsByClass(results, selection, entriesById = {}) {
   const set = classIdSet(selection);
   if (!set) return results;
-  return results.filter(r => {
-    const stamped = String(r.class_id ?? "").trim();
-    if (stamped) return set.has(stamped);
-    return entryInClassSet(entriesById[r.entry_id], set);
-  });
+  return results.filter(r => set.has(classOfResult(r, entriesById)));
 }
 
-// Does this event belong on the given class's calendar? An event with no
-// `class_id` is SHARED — every class runs it — which is every event in a season
-// whose per_class_schedules toggle is off, and the default for new events even
-// when it's on. An event pinned to a class appears only on that class's
-// schedule. Viewing "All Classes" (falsy classId) shows the whole calendar.
 export function raceInClass(race, selection) {
   const set = classIdSet(selection);
   if (!set) return true;
