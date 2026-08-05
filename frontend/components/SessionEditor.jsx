@@ -11,7 +11,7 @@ import { NONE_TEMPLATE } from "@/lib/pointsTemplates";
 import { classIdForScope, entriesEligibleForRace, entriesInSessionClass, isClassScoped, resultInSessionClass } from "@/lib/classFilter";
 import { pointsFor, classConfigs, classScoresOwnPoints, configForTemplate, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
 import { applyAutoFlags, detectFlagLocks, autoMostLapsLedSlot } from "@/lib/autoFlags";
-import { BANGER_BOOL_FIELDS, BANGER_RESULT_FIELDS, BANGER_STATS, bangerGridStyle, bangerRates, blankBangerRow, hasBangerBonuses } from "@/lib/bangerRacing";
+import { BANGER_BOOL_FIELDS, BANGER_RESULT_FIELDS, BANGER_STATS, bangerRates, blankBangerRow, hasBangerBonuses } from "@/lib/bangerRacing";
 import { parseTime, formatTime, formatGap, formatDelta, parseDelta, parseLapsDown, deriveLaps } from "@/lib/raceTime";
 import { isTimedRace, scheduledLaps } from "@/lib/raceLength";
 
@@ -1255,8 +1255,7 @@ export function SessionEditor({
       ) : sessionType === "qualifying" ? (
         <div style={{ overflowX: "auto" }}>
           <p style={{ margin: "0 0 8px", color: "var(--ink-2)", fontSize: "0.78rem" }}>Drag ⠿ to reorder.</p>
-          <div className={`qual-grid${hasClasses ? " has-class" : ""}${isBangerRacing ? " has-banger" : ""}`}
-            style={bangerGridStyle(isBangerRacing)}>
+          <div className={`qual-grid${hasClasses ? " has-class" : ""}${isBangerRacing ? " has-banger" : ""}`}>
             {["", "Pos", "Driver", ...(hasClasses ? ["Class"] : []), "Qual Time", "To Lead", "Gap", ...bangerHeaders, pointsLabel, ""].map((h, i) => <span className="grid-header" key={h || i}>{h}</span>)}
             {rows.map((row, idx) => (
               <QualRow key={row.slot_id} row={row} idx={idx} updateRow={updateRow} updateFlag={updateFlag} onGapBlur={normalizeQualGaps} autoFocus={row.entry_id === justAddedId} points={rowPoints(row)}
@@ -1270,8 +1269,7 @@ export function SessionEditor({
       ) : (
         <div style={{ overflowX: "auto" }}>
           <p style={{ margin: "0 0 8px", color: "var(--ink-2)", fontSize: "0.78rem" }}>Drag ⠿ to reorder — finishing positions renumber automatically.</p>
-          <div className={`result-grid result-grid-wide${hasClasses ? " has-class" : ""}${isBangerRacing ? " has-banger" : ""}`}
-            style={bangerGridStyle(isBangerRacing)}>
+          <div className={`result-grid result-grid-wide${hasClasses ? " has-class" : ""}${isBangerRacing ? " has-banger" : ""}`}>
             {["", "Fin", "Start", "Driver", ...(hasClasses ? ["Class"] : []), "Race Time", "Int", "Best Lap", "Laps", "Led", "Inc", "FL", "½", "HC", "MLL", ...bangerHeaders, "Adj", "Status", pointsLabel, ""].map((h, i) => (
               <span className="grid-header" key={h || i}>{h}</span>
             ))}

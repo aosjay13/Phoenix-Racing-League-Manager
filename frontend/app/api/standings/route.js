@@ -5,8 +5,11 @@ import {
   calculateTeamStandings,
   decorateRaceBonuses,
   decorateSessionFlags,
+  isQualifying,
+  makeScorer,
   resolveSeasonConfig,
 } from "@/lib/standings";
+import { bangerPoints, bangerStatLine } from "@/lib/bangerRacing";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
 import { classIdsInSeason, entryClassIds, fetchSeasonClasses, filterEntriesByClass, filterResultsByClass } from "@/lib/classServer";
 import { seasonChampions } from "@/lib/champions";
@@ -57,6 +60,22 @@ export async function GET(request) {
   const drivers = calculateStandings(results, entries, teams, config, templatesById, classes);
   const teamRows = calculateTeamStandings(drivers.rows, teams);
 
+  // ── Are the derby stats actually paying? ─────────────────────────────────
+  //
+  // Recorded takedowns/bonuses that award nothing is the one Demo Derby failure
+  // an admin can't see: the columns fill in, the totals don't move, and nothing
+  // says why. So the answer is computed here, from the SAME scorer the totals
+  // come from — how many derby stats are on the board, and how many points they
+  // actually paid — and the screen turns it into a warning. No guessing at which
+  // level a rate should have been set: if it paid 0, it paid 0.
+  const scoringResults = results.filter(r => !isQualifying(r) && r.counts_points !== false);
+  const derbyScorer = makeScorer(results, { config, classes, entriesById, templatesById });
+  const derbyLine = bangerStatLine(scoringResults);
+  const derby = {
+    stats_recorded: Object.values(derbyLine).reduce((a, n) => a + Number(n || 0), 0),
+    points_awarded: scoringResults.reduce((a, r) => a + bangerPoints(r, derbyScorer.configFor(r).bonuses), 0),
+  };
+
   // Contextual name rendering: on this game's standings, surface the name each
   // driver is shown under IN THIS GAME when they've set one. The season carries
   // its game_id; resolve every pooled driver's name for that game (see
@@ -104,6 +123,8 @@ export async function GET(request) {
     // Defaults to true (and is meaningless without classes, where the whole
     // field is a single championship anyway).
     combined_championship: season.combined_championship !== false,
+    // Derby accounting for this scope — see above.
+    derby,
     drop_weeks: drivers.drop_weeks,
     drivers: drivers.rows,
     teams: teamRows,

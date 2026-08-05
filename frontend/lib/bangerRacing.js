@@ -221,18 +221,12 @@ export function blankBangerTotals() {
   return Object.fromEntries(BANGER_STAT_KEYS.map(k => [k, 0]));
 }
 
-// The results-grid column widths for the banger stats, as a grid-template
-// fragment. Fed to the grid through the --banger-cols custom property so the
-// base column layout stays in globals.css — see .result-grid-wide.
-export const BANGER_GRID_COLUMNS = BANGER_STATS.map(s => s.width).join(" ");
-export const BANGER_GRID_WIDTH = BANGER_STATS.reduce((a, s) => a + parseInt(s.width, 10) + 8, 0);
-
-// The style object that opens those columns up on a grid container. Spread onto
-// the grid's `style` when the series is a banger series; an empty object
-// otherwise, leaving the CSS layout exactly as it is for everyone else.
-export function bangerGridStyle(on) {
-  return on ? { "--banger-cols": BANGER_GRID_COLUMNS, "--banger-extra": `${BANGER_GRID_WIDTH}px` } : {};
-}
+// NOTE: the results-grid column widths for these stats live in globals.css
+// (.result-grid-wide.has-banger / .qual-grid.has-banger). Adding a stat above
+// means adding its width there too — spelled out rather than injected from
+// here, because an empty CSS custom property is legal but not universally
+// honoured, and a browser that drops it would invalidate the grid layout for
+// every results grid in the app, derby or not.
 
 // Slot that recorded the most takedowns — the automatic Most Lethal pick. Ties
 // go to whoever finished highest, so the bonus lands on exactly one car (the

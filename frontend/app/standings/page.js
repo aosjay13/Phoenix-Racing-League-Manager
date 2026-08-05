@@ -151,6 +151,7 @@ export default function StandingsPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [sharing, setSharing] = useState(false);
+  const [loadError, setLoadError] = useState(null);
 
   // The Class dropdown in the top bar scopes the whole table: a class shows that
   // class's own isolated championship (its own points, ranks, and gaps), while
@@ -158,8 +159,15 @@ export default function StandingsPage() {
   const load = useCallback(() => {
     if (!seasonId) { setData(null); return; }
     const qs = `season_id=${seasonId}${classId ? `&class_id=${classId}&class_name=${encodeURIComponent(className)}` : ""}`;
-    api(`/api/standings?${qs}`).then(setData).catch(() => setData(null));
-  }, [seasonId, classId]);
+    setLoadError(null);
+    // A failed load used to be swallowed, leaving the page on its skeleton
+    // forever — indistinguishable from "this class has no standings". Say what
+    // went wrong instead, so a broken scope is reportable rather than just
+    // blank.
+    api(`/api/standings?${qs}`)
+      .then(d => { setData(d); setLoadError(null); })
+      .catch(err => { setData(null); setLoadError(err.message || "Failed to load standings."); });
+  }, [seasonId, classId, className]);
 
   useEffect(load, [load]);
 
@@ -275,7 +283,27 @@ export default function StandingsPage() {
         <button className={`tab${tab === "teams" ? " active" : ""}`} onClick={() => chooseTab("teams")}>Teams</button>
       </div>
 
-      {!data ? (
+      {/* Derby stats on the board that scored nothing: the rates are unset (or
+          set at a level this season doesn't read), which is otherwise invisible
+          — the columns fill in and the totals simply don't move. */}
+      {isBangerRacing && data?.derby?.stats_recorded > 0 && data?.derby?.points_awarded === 0 && (
+        <p style={{ marginTop: 8, color: "var(--accent-gold, #e2b714)", fontSize: "0.85rem" }}>
+          ⚠ <strong>Derby stats are being recorded but scoring nothing.</strong> This season has{" "}
+          {data.derby.stats_recorded} takedown/bonus{data.derby.stats_recorded === 1 ? "" : "es"} on the board and they
+          have awarded <strong>0 points</strong> — no derby rate is set for the sessions they were entered in.
+          Open the event&rsquo;s results tab and use <strong>＋ Set derby points</strong> above the grid
+          (or set Points per Takedown in this season&rsquo;s Points &amp; Bonuses). Existing results re-score
+          the moment it&rsquo;s saved.
+        </p>
+      )}
+
+      {loadError ? (
+        <div className="empty-state">
+          <span className="empty-state-icon">⚠</span>
+          <p>Standings failed to load{className ? ` for ${className}` : ""}.</p>
+          <p style={{ fontSize: "0.85rem", color: "var(--ink-2)", margin: 0 }}>{loadError}</p>
+        </div>
+      ) : !data ? (
         <div className="skeleton" style={{ height: 240, marginTop: 18 }} />
       ) : rows.length === 0 ? (
         <div className="empty-state">

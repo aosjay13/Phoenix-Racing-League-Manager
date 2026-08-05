@@ -1299,28 +1299,33 @@ tbody tr:hover {
 
 /* ── Wide race-entry grid ────────────────────── */
 .result-grid-wide {
-  grid-template-columns: 22px 66px 66px minmax(150px, 1fr) 96px 84px 92px 72px 72px 70px 34px 34px 34px 38px var(--banger-cols) 74px 96px 64px 34px;
-  min-width: calc(1280px + var(--banger-extra));
+  grid-template-columns: 22px 66px 66px minmax(150px, 1fr) 96px 84px 92px 72px 72px 70px 34px 34px 34px 38px 74px 96px 64px 34px;
+  min-width: 1280px;
   align-items: center;
 }
 
 /* Multi-class seasons get an extra Class column right after Driver, so a
    driver's class can be set (or corrected) as results are entered. */
 .result-grid-wide.has-class {
-  grid-template-columns: 22px 66px 66px minmax(150px, 1fr) 108px 96px 84px 92px 72px 72px 70px 34px 34px 34px 38px var(--banger-cols) 74px 96px 64px 34px;
-  min-width: calc(1400px + var(--banger-extra));
+  grid-template-columns: 22px 66px 66px minmax(150px, 1fr) 108px 96px 84px 92px 72px 72px 70px 34px 34px 34px 38px 74px 96px 64px 34px;
+  min-width: 1400px;
 }
 
 /* ── Demo Derby / Banger Racing ───────────────
-   A banger series' grids carry one extra column per banger stat (Takedowns,
-   Survival, Most Lethal — see lib/bangerRacing.js). The widths are handed in
-   through --banger-cols by the editor rather than hard-coded here, so adding a
-   banger stat needs no CSS change; both variables are empty/zero by default,
-   which is every ordinary series' grid, unchanged. */
-.result-grid,
-.qual-grid {
-  --banger-cols: ;
-  --banger-extra: 0px;
+   A banger grid carries three extra columns after MLL: Takedowns, Survival and
+   Most Lethal (62px + 38px + 38px, matching BANGER_STATS in lib/bangerRacing.js
+   — add a stat there and add its width here). Spelled out per combination
+   rather than injected through a custom property: an empty custom property is
+   legal CSS but not universally honoured, and a browser that drops it would
+   invalidate grid-template-columns for EVERY results grid, derby or not. */
+.result-grid-wide.has-banger {
+  grid-template-columns: 22px 66px 66px minmax(150px, 1fr) 96px 84px 92px 72px 72px 70px 34px 34px 34px 38px 62px 38px 38px 74px 96px 64px 34px;
+  min-width: 1470px;
+}
+
+.result-grid-wide.has-class.has-banger {
+  grid-template-columns: 22px 66px 66px minmax(150px, 1fr) 108px 96px 84px 92px 72px 72px 70px 34px 34px 34px 38px 62px 38px 38px 74px 96px 64px 34px;
+  min-width: 1590px;
 }
 
 /* The banger columns read as their own group, so an admin scanning a wide grid
@@ -1470,16 +1475,27 @@ tbody tr:hover {
 /* ⠿ · Pos · Driver · [Class] · Qual Time · To Lead · Gap · Pts · ✕ */
 .qual-grid {
   display: grid;
-  grid-template-columns: 22px 70px minmax(160px, 1fr) 140px 100px 100px var(--banger-cols) 80px 34px;
+  grid-template-columns: 22px 70px minmax(160px, 1fr) 140px 100px 100px 80px 34px;
   gap: 8px;
   align-items: center;
-  min-width: calc(720px + var(--banger-extra));
+  min-width: 720px;
   margin-bottom: 16px;
 }
 
 .qual-grid.has-class {
-  grid-template-columns: 22px 70px minmax(160px, 1fr) 108px 140px 100px 100px var(--banger-cols) 80px 34px;
-  min-width: calc(840px + var(--banger-extra));
+  grid-template-columns: 22px 70px minmax(160px, 1fr) 108px 140px 100px 100px 80px 34px;
+  min-width: 840px;
+}
+
+/* …and with the three derby columns, which sit before the points cell. */
+.qual-grid.has-banger {
+  grid-template-columns: 22px 70px minmax(160px, 1fr) 140px 100px 100px 62px 38px 38px 80px 34px;
+  min-width: 910px;
+}
+
+.qual-grid.has-class.has-banger {
+  grid-template-columns: 22px 70px minmax(160px, 1fr) 108px 140px 100px 100px 62px 38px 38px 80px 34px;
+  min-width: 1030px;
 }
 
 .qual-grid select {
