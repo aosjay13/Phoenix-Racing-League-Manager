@@ -9,7 +9,7 @@
 // saves as an explicit zero rather than silently inheriting.
 
 import { BLANK_BONUSES } from "@/lib/seasonForm";
-import { BONUS_TYPES, classScoresOwnPoints } from "@/lib/standings";
+import { ALL_BONUS_TYPES, classScoresOwnPoints } from "@/lib/standings";
 import { listToTableOrZero, tableToList } from "@/lib/pointsTemplates";
 
 export const BLANK_CLASS_FORM = {
@@ -37,7 +37,7 @@ export function classToForm(cls = {}) {
     own_points: classScoresOwnPoints(cls),
     race_points: tableToList(cls.race_points),
     qual_points: tableToList(cls.qual_points),
-    bonuses: Object.fromEntries(BONUS_TYPES.map(([k]) => [k, String(bonusSrc[k] ?? 0)])),
+    bonuses: Object.fromEntries(ALL_BONUS_TYPES.map(([k]) => [k, String(bonusSrc[k] ?? 0)])),
   };
 }
 
@@ -71,6 +71,6 @@ export function seasonPointsAsClassFields(season = {}) {
   return {
     race_points: tableToList(season.race_points ?? season.points_scale),
     qual_points: tableToList(season.qual_points),
-    bonuses: Object.fromEntries(BONUS_TYPES.map(([k]) => [k, String(bonusSrc[k] ?? 0)])),
+    bonuses: Object.fromEntries(ALL_BONUS_TYPES.map(([k]) => [k, String(bonusSrc[k] ?? 0)])),
   };
 }

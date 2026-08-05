@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { api } from "@/lib/api";
 import { getActiveLeagueId, setActiveLeagueId } from "@/lib/leagueClient";
 import { readScopeParams, writeScopeParams } from "@/lib/scopeLink";
+import { isBangerSeries } from "@/lib/bangerRacing";
 
 const LeagueContext = createContext(null);
 const STORAGE_KEY = "prlm-selection";
@@ -284,6 +285,10 @@ export function LeagueProvider({ children }) {
     // A season only crowns one overall champion across its classes when the
     // admin left the combined championship on (the default).
     combinedChampionship: season?.combined_championship !== false,
+    // Is the SELECTED series a Demo Derby / Banger Racing series? False at
+    // "All Series" and above, which is exactly what keeps the derby stats out
+    // of the Overall and per-Game views — see lib/bangerRacing.js.
+    isBangerRacing: isBangerSeries(seriesList.find(s => s.id === seriesId) || null),
     loading,
     refresh,
   };

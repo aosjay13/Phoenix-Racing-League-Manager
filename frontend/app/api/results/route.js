@@ -3,6 +3,7 @@ import { db } from "@/lib/firebase";
 import { withAdmin, getRequestLeagueId } from "@/lib/serverAuth";
 import { recalcGameSkillRatings, gameIdForSeason } from "@/lib/skillRatingServer";
 import { classIdForScope, isClassScoped, primaryClassId, resultInSessionClass } from "@/lib/classFilter";
+import { bangerFieldsForSave } from "@/lib/bangerRacing";
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -143,6 +144,12 @@ export const POST = withAdmin(async (request, ctx, user) => {
       // saved before this field existed.
       most_laps_led: !!row.most_laps_led,
       provisional: !!row.provisional,
+      // Demo Derby / Banger Racing stats (takedowns, survival bonus, most
+      // lethal). Written for every result — zeros/falses outside a banger
+      // series, which score nothing and aggregate to nothing — so the stats
+      // engine never has to ask what kind of series a result came from. See
+      // lib/bangerRacing.js.
+      ...bangerFieldsForSave(row),
       bonus_points: Number(row.bonus_points || 0),
       penalty_points: Number(row.penalty_points || 0),
       // Signed per-result adjustment (penalties/corrections), applied on top of

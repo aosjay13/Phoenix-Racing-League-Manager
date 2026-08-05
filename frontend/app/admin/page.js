@@ -12,15 +12,16 @@ import { RaceLengthField } from "@/components/RaceLengthField";
 import { TrackMergeModal } from "@/components/TrackMergeModal";
 import { LENGTH_LAPS, LENGTH_TIME } from "@/lib/raceLength";
 import { api } from "@/lib/api";
-import { BONUS_TYPES } from "@/lib/standings";
+import { ALL_BONUS_TYPES, BONUS_TYPES } from "@/lib/standings";
 import { TRACK_TYPES } from "@/lib/trackTypes";
 import { listToTableOrZero, tableToList } from "@/lib/pointsTemplates";
 import { carForClass } from "@/lib/classFilter";
 import { SeasonForm } from "@/components/SeasonForm";
-import { PointsFields } from "@/components/PointsFields";
+import { BangerBonusFields, PointsFields } from "@/components/PointsFields";
 import { BLANK_SEASON_FORM, scoresNoPoints, seasonFormToBody, seasonToForm } from "@/lib/seasonForm";
 import { BLANK_CLASS_FORM, classFormToBody, classToForm, seasonPointsAsClassFields } from "@/lib/classForm";
 import { classScoresOwnPoints } from "@/lib/standings";
+import { isBangerSeries } from "@/lib/bangerRacing";
 
 function Panel({ title, sub, step, muted, children }) {
   return (
@@ -87,6 +88,8 @@ const SECTIONS = [
   { key: "backup",    label: "Backup & Restore", icon: "💾", group: "data",     hint: "Export/import the entire app as JSON" },
 ];
 
+const BLANK_SERIES_FORM = { name: "", logo_url: "", isBangerRacing: false };
+
 function toArray(str) {
   return String(str || "").split(",").map(s => s.trim()).filter(Boolean);
 }
@@ -100,6 +103,10 @@ function AdminInner() {
   const isOwner = role === "owner";
   const league = useLeague();
   const { games, seriesList, seasons, gameId, seriesId, seasonId, game, series, season, refresh } = league;
+  // Is the series currently selected in the top bar a Demo Derby / Banger
+  // Racing series? Gates the derby bonus values in the season and class points
+  // editors below — the series toggle itself is in the Series panel.
+  const bangerSeries = isBangerSeries(series);
   const [races, setRaces] = useState([]);
   const [toast, setToast] = useState(null);
   // Which setup screen is open. Starts on Games — the top of the hierarchy an
@@ -107,7 +114,9 @@ function AdminInner() {
   const [section, setSection] = useState("games");
 
   const [gameForm, setGameForm] = useState({ name: "", logo_url: "" });
-  const [seriesForm, setSeriesForm] = useState({ name: "", logo_url: "" });
+  // `isBangerRacing` turns this series into a Demo Derby / Banger Racing series
+  // — see lib/bangerRacing.js and the toggle in the Series panel below.
+  const [seriesForm, setSeriesForm] = useState(BLANK_SERIES_FORM);
   const [editIds, setEditIds] = useState({ game: null, series: null, season: null, class: null, race: null, track: null, template: null });
   const setEditId = (type, id) => setEditIds(ids => ({ ...ids, [type]: id }));
   // The season's own fields live in the shared <SeasonForm> (and lib/seasonForm.js),
@@ -117,7 +126,7 @@ function AdminInner() {
   const [templates, setTemplates] = useState([]);
   const blankTemplate = {
     name: "", race_points: "", qual_points: "",
-    bonuses: Object.fromEntries(BONUS_TYPES.map(([k]) => [k, "0"])),
+    bonuses: Object.fromEntries(ALL_BONUS_TYPES.map(([k]) => [k, "0"])),
   };
   const [templateForm, setTemplateForm] = useState(blankTemplate);
 
@@ -136,7 +145,7 @@ function AdminInner() {
       name: t.name || "",
       race_points: tableToList(t.race_points),
       qual_points: tableToList(t.qual_points),
-      bonuses: Object.fromEntries(BONUS_TYPES.map(([k]) => [k, String(bonusSrc[k] ?? 0)])),
+      bonuses: Object.fromEntries(ALL_BONUS_TYPES.map(([k]) => [k, String(bonusSrc[k] ?? 0)])),
     });
   }
 
@@ -351,20 +360,45 @@ function AdminInner() {
           <form onSubmit={e => {
             e.preventDefault();
             save("/api/series", editIds.series ? seriesForm : { ...seriesForm, game_id: gameId }, editIds.series,
-              () => { setSeriesForm({ name: "", logo_url: "" }); setEditId("series", null); });
+              () => { setSeriesForm(BLANK_SERIES_FORM); setEditId("series", null); });
           }}>
             <div className="field"><label>Series Name</label>
               <input required disabled={!gameId} value={seriesForm.name} onChange={e => setSeriesForm(f => ({ ...f, name: e.target.value }))} placeholder="Asphalt Assault Series" /></div>
             <ImageUpload label="Series Logo" kind="series-logo" value={seriesForm.logo_url} onUploaded={url => setSeriesForm(f => ({ ...f, logo_url: url }))} />
+
+            {/* Demo Derby / Banger Racing. The one switch behind the whole mode:
+                it adds the derby stats to this series' results grids, the derby
+                bonuses to its points structures, and their totals to ITS
+                standings and stats — and nowhere else. */}
+            <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
+              <input type="checkbox" id="series_banger_racing" disabled={!gameId}
+                checked={!!seriesForm.isBangerRacing}
+                onChange={e => setSeriesForm(f => ({ ...f, isBangerRacing: e.target.checked }))}
+                style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+              <label htmlFor="series_banger_racing" style={{ margin: 0 }}>
+                Demo Derby / Banger Racing Mode
+                <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
+                  Off (default): an ordinary racing series. On: every event in this series captures{" "}
+                  <strong>Takedowns</strong>, a <strong>Survival Bonus</strong> (whoever survived longest)
+                  and a <strong>Most Lethal Bonus</strong> (most takedowns) on each results row, and its
+                  points structures gain a value for each — points per takedown, and a one-off value for
+                  each bonus. These stats show on <strong>this series&rsquo;</strong> Standings and Stats
+                  only: they never appear in the Overall or per-Game views, where they&rsquo;d mean nothing.
+                </span>
+              </label>
+            </div>
+
             <button className="btn btn-primary" type="submit" disabled={!gameId}>{editIds.series ? "Save Changes" : "Add Series"}</button>
             {editIds.series && (
               <button className="btn btn-ghost" type="button" style={{ marginLeft: 8 }}
-                onClick={() => { setEditId("series", null); setSeriesForm({ name: "", logo_url: "" }); }}>Cancel</button>
+                onClick={() => { setEditId("series", null); setSeriesForm(BLANK_SERIES_FORM); }}>Cancel</button>
             )}
           </form>
           <div style={{ marginTop: 16 }}>
-            {seriesList.map(s => <ItemRow key={s.id} logo={s.logo_url} name={s.name} editing={editIds.series === s.id}
-              onEdit={() => { setEditId("series", s.id); setSeriesForm({ name: s.name, logo_url: s.logo_url || "" }); }}
+            {seriesList.map(s => <ItemRow key={s.id} logo={s.logo_url} name={s.name}
+              meta={isBangerSeries(s) ? "💥 Demo Derby / Banger Racing" : null}
+              editing={editIds.series === s.id}
+              onEdit={() => { setEditId("series", s.id); setSeriesForm({ name: s.name, logo_url: s.logo_url || "", isBangerRacing: !!s.isBangerRacing }); }}
               onDelete={() => remove(`/api/series/${s.id}`, `Delete series "${s.name}"?`)} />)}
           </div>
         </Panel>
@@ -389,6 +423,7 @@ function AdminInner() {
               templates={templates} onTemplatesChanged={loadTemplates}
               disabled={!seriesId} defaultPointsOpen={!!editIds.season}
               onError={msg => showToast("error", msg)}
+              banger={bangerSeries}
             />
 
             <span style={{ display: "block" }}>
@@ -495,7 +530,7 @@ function AdminInner() {
                 {showClassPoints && (
                   <PointsFields value={classForm} onPatch={patchClassForm} templates={templates}
                     onTemplatesChanged={loadTemplates} disabled={!seasonId} onError={msg => showToast("error", msg)}
-                    noPoints={scoresNoPoints(classForm)}
+                    noPoints={scoresNoPoints(classForm)} banger={bangerSeries}
                     blankWarning="⚠ Blank scores 0 for every finishing position in this class — load a template above, or untick the box to score on the season's points." />
                 )}
               </>
@@ -761,6 +796,12 @@ function AdminInner() {
                     onChange={e => setTemplateForm(f => ({ ...f, bonuses: { ...f.bonuses, [key]: e.target.value } }))} /></div>
               ))}
             </div>
+            {/* Templates are a shared library rather than a series' own points,
+                so the derby values are always offered here — a template built
+                for a Banger Racing series can carry them and be assigned to any
+                of its sessions. They score nothing anywhere else. */}
+            <BangerBonusFields value={templateForm}
+              onPatch={patch => setTemplateForm(f => ({ ...f, ...patch }))} />
             <button className="btn btn-primary" type="submit">{editIds.template ? "Save Changes" : "Add Template"}</button>
             {editIds.template && (
               <button className="btn btn-ghost" type="button" style={{ marginLeft: 8 }}

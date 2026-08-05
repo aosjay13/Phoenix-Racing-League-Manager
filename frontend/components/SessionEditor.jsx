@@ -11,11 +11,16 @@ import { NONE_TEMPLATE } from "@/lib/pointsTemplates";
 import { classIdForScope, entriesEligibleForRace, entriesInSessionClass, isClassScoped, resultInSessionClass } from "@/lib/classFilter";
 import { pointsFor, classConfigs, classScoresOwnPoints, configForTemplate, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
 import { applyAutoFlags, detectFlagLocks, autoMostLapsLedSlot } from "@/lib/autoFlags";
+import { BANGER_BOOL_FIELDS, BANGER_RESULT_FIELDS, BANGER_STATS, bangerGridStyle, blankBangerRow } from "@/lib/bangerRacing";
 import { parseTime, formatTime, formatGap, formatDelta, parseDelta, parseLapsDown, deriveLaps } from "@/lib/raceTime";
 import { isTimedRace, scheduledLaps } from "@/lib/raceLength";
 
-const RESULT_FIELDS = ["finish_pos", "start_pos", "qual_time", "race_time", "interval", "fastest_lap_time", "laps", "laps_led", "incidents", "fastest_lap", "halfway_leader", "hard_charger", "most_laps_led", "provisional", "points_adjustment", "manual_points", "status", "class_id"];
-const BOOL_FIELDS = new Set(["fastest_lap", "halfway_leader", "hard_charger", "most_laps_led", "provisional"]);
+// Every field a saved result can restore into a grid row. The banger fields
+// (Takedowns, Survival, Most Lethal) are always in the list: they're stored on
+// every result, and a row only ever SHOWS them in a Demo Derby / Banger Racing
+// series — see lib/bangerRacing.js.
+const RESULT_FIELDS = ["finish_pos", "start_pos", "qual_time", "race_time", "interval", "fastest_lap_time", "laps", "laps_led", "incidents", "fastest_lap", "halfway_leader", "hard_charger", "most_laps_led", "provisional", "points_adjustment", "manual_points", "status", "class_id", ...BANGER_RESULT_FIELDS];
+const BOOL_FIELDS = new Set(["fastest_lap", "halfway_leader", "hard_charger", "most_laps_led", "provisional", ...BANGER_BOOL_FIELDS]);
 
 // Each grid row is a *finishing position* — it may or may not yet have a
 // driver assigned. `entry_id === null` is an empty slot (rendered with a
@@ -57,6 +62,10 @@ function makeRow(position) {
     // driver is assigned, and saved onto the result so the class championships
     // stay historically correct if they're re-classed later.
     class_id: "",
+    // Demo Derby / Banger Racing stats (Takedowns, Survival, Most Lethal).
+    // Carried on every row — they're stored on every result — but only
+    // RENDERED for a banger series. See lib/bangerRacing.js.
+    ...blankBangerRow(),
   };
 }
 
@@ -266,6 +275,13 @@ const LABELS = { qualifying: "Qualifying", race: "Race", heat: "Heat", consolati
 // race, not copied onto every other session, so Average Start and Poles are
 // always computed from Qualifying results alone.
 //
+// `isBangerRacing` comes from the SERIES this event belongs to: with it on the
+// grid grows one extra column per Demo Derby / Banger Racing stat (Takedowns,
+// Survival Bonus, Most Lethal Bonus — all defined in lib/bangerRacing.js, so
+// adding another needs no change here), and the points structure editor opened
+// from this screen offers a value for each. Off — every ordinary series — the
+// grid is exactly what it always was.
+//
 // `sessionClass` scopes the whole editor to ONE class of a split event (see
 // lib/classFilter.js): the grid loads and saves only that class's results, the
 // driver picker offers only that class's drivers, and finishing positions run
@@ -280,6 +296,7 @@ export function SessionEditor({
   canAddSession = false, onAddSession, onRemoveSession, onRenameSession,
   initialSession, onEntriesChanged, seriesName, classes = [],
   sessionClass = null, sessionClassName = "",
+  isBangerRacing = false,
 }) {
   const names = sessionNames.length ? sessionNames : [LABELS[sessionType] || "Session"];
   const namesKey = names.join("|");
@@ -944,6 +961,10 @@ export function SessionEditor({
   // season keeps the grid exactly as it was. A grid already scoped to one class
   // doesn't need it either — every row in it is that class by definition.
   const hasClasses = classes.length > 0 && !scoped;
+  // One header per banger stat, generated from the stat list — the grid, the
+  // row inputs and these headers all read the same definitions, so a new banger
+  // bonus appears in all three at once.
+  const bangerHeaders = isBangerRacing ? BANGER_STATS.map(s => s.header) : [];
 
   const rowCommon = (row, idx) => ({
     available: availableFor(row),
@@ -1085,6 +1106,15 @@ export function SessionEditor({
           These are stats either way; they only affect points if your season or points structure pays a bonus for them.
         </p>
       )}
+      {isBangerRacing && (
+        <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.78rem" }}>
+          💥 This is a <strong>Demo Derby / Banger Racing</strong> series, so each row also records{" "}
+          <strong>TD</strong> (takedowns), <strong>SUR</strong> (survived the longest) and{" "}
+          <strong>LTH</strong> (most lethal — most takedowns, ticked automatically off the TD column).
+          What each is worth is set in this session&rsquo;s points structure; the Points column updates
+          as you type. These stats show on this series&rsquo; Standings and Stats only.
+        </p>
+      )}
       {!isQual && isTimedRace(race) && (
         <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.78rem" }}>
           ⏱ This is a <strong>timed</strong> event, so there&rsquo;s no scheduled lap total to count down
@@ -1106,11 +1136,12 @@ export function SessionEditor({
       ) : sessionType === "qualifying" ? (
         <div style={{ overflowX: "auto" }}>
           <p style={{ margin: "0 0 8px", color: "var(--ink-2)", fontSize: "0.78rem" }}>Drag ⠿ to reorder.</p>
-          <div className={`qual-grid${hasClasses ? " has-class" : ""}`}>
-            {["", "Pos", "Driver", ...(hasClasses ? ["Class"] : []), "Qual Time", "To Lead", "Gap", pointsLabel, ""].map((h, i) => <span className="grid-header" key={h || i}>{h}</span>)}
+          <div className={`qual-grid${hasClasses ? " has-class" : ""}${isBangerRacing ? " has-banger" : ""}`}
+            style={bangerGridStyle(isBangerRacing)}>
+            {["", "Pos", "Driver", ...(hasClasses ? ["Class"] : []), "Qual Time", "To Lead", "Gap", ...bangerHeaders, pointsLabel, ""].map((h, i) => <span className="grid-header" key={h || i}>{h}</span>)}
             {rows.map((row, idx) => (
-              <QualRow key={row.slot_id} row={row} idx={idx} updateRow={updateRow} onGapBlur={normalizeQualGaps} autoFocus={row.entry_id === justAddedId} points={rowPoints(row)}
-                classes={classes} hasClasses={hasClasses}
+              <QualRow key={row.slot_id} row={row} idx={idx} updateRow={updateRow} updateFlag={updateFlag} onGapBlur={normalizeQualGaps} autoFocus={row.entry_id === justAddedId} points={rowPoints(row)}
+                classes={classes} hasClasses={hasClasses} isBangerRacing={isBangerRacing}
                 dragging={dragIndex === idx} dragOver={overIndex === idx && dragIndex !== idx}
                 onDragStart={() => handleDragStart(idx)} onDragOver={e => handleDragOver(idx, e)} onDrop={() => handleDrop(idx)} onDragEnd={handleDragEnd}
                 {...rowCommon(row, idx)} />
@@ -1120,15 +1151,16 @@ export function SessionEditor({
       ) : (
         <div style={{ overflowX: "auto" }}>
           <p style={{ margin: "0 0 8px", color: "var(--ink-2)", fontSize: "0.78rem" }}>Drag ⠿ to reorder — finishing positions renumber automatically.</p>
-          <div className={`result-grid result-grid-wide${hasClasses ? " has-class" : ""}`}>
-            {["", "Fin", "Start", "Driver", ...(hasClasses ? ["Class"] : []), "Race Time", "Int", "Best Lap", "Laps", "Led", "Inc", "FL", "½", "HC", "MLL", "Adj", "Status", pointsLabel, ""].map((h, i) => (
+          <div className={`result-grid result-grid-wide${hasClasses ? " has-class" : ""}${isBangerRacing ? " has-banger" : ""}`}
+            style={bangerGridStyle(isBangerRacing)}>
+            {["", "Fin", "Start", "Driver", ...(hasClasses ? ["Class"] : []), "Race Time", "Int", "Best Lap", "Laps", "Led", "Inc", "FL", "½", "HC", "MLL", ...bangerHeaders, "Adj", "Status", pointsLabel, ""].map((h, i) => (
               <span className="grid-header" key={h || i}>{h}</span>
             ))}
             {rows.map((row, idx) => (
               <RowInputs key={row.slot_id} row={row} idx={idx} updateRow={updateRow} updateFlag={updateFlag}
                 updateRaceTime={updateRaceTime} updateInterval={updateInterval} updateStatus={updateStatus}
                 autoFocus={row.entry_id === justAddedId} points={rowPoints(row)}
-                classes={classes} hasClasses={hasClasses}
+                classes={classes} hasClasses={hasClasses} isBangerRacing={isBangerRacing}
                 dragging={dragIndex === idx} dragOver={overIndex === idx && dragIndex !== idx}
                 onDragStart={() => handleDragStart(idx)} onDragOver={e => handleDragOver(idx, e)} onDrop={() => handleDrop(idx)} onDragEnd={handleDragEnd}
                 {...rowCommon(row, idx)} />
@@ -1206,7 +1238,7 @@ export function SessionEditor({
         <PointsEditorModal
           session={session} sessionType={sessionType} value={templateId}
           templates={templates} baseConfig={baseConfig} baseLabel={baseLabel}
-          classLabel={scoped ? sessionClassName : ""}
+          classLabel={scoped ? sessionClassName : ""} banger={isBangerRacing}
           onAssign={assignSessionPoints} onTemplatesChanged={onTemplatesChanged}
           onClose={() => setPointsModal(false)}
         />
@@ -1521,7 +1553,27 @@ function ClassCell({ row, idx, classes, updateRow }) {
   );
 }
 
-function RowInputs({ row, idx, updateRow, updateFlag, updateRaceTime, updateInterval, updateStatus, autoFocus, points, classes = [], hasClasses, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, available, onAssign, onClear, onRequestCreate, onPasteColumn }) {
+// The Demo Derby / Banger Racing cells for one row — a numeric input for a
+// counted stat (Takedowns), a checkbox for a bonus flag (Survival, Most
+// Lethal). Generated from BANGER_STATS, so a new banger stat needs no edit
+// here. `updateFlag` is used for the flags so hand-ticking one hands it to the
+// admin for the session, exactly like FL/HC/MLL.
+function BangerCells({ row, idx, updateRow, updateFlag, gridProps }) {
+  const hasDriver = !!row.entry_id;
+  return (
+    <>
+      {BANGER_STATS.map(stat => (stat.type === "bool" ? (
+        <Check key={stat.key} title={stat.title} value={!!row[stat.key]} disabled={!hasDriver}
+          onChange={v => (updateFlag ? updateFlag(idx, stat.key, v) : updateRow(idx, stat.key, v))} />
+      ) : (
+        <input key={stat.key} type="number" min="0" title={stat.title} value={row[stat.key] ?? "0"} disabled={!hasDriver}
+          {...gridProps(stat.key)} onChange={e => updateRow(idx, stat.key, e.target.value)} />
+      )))}
+    </>
+  );
+}
+
+function RowInputs({ row, idx, updateRow, updateFlag, updateRaceTime, updateInterval, updateStatus, autoFocus, points, classes = [], hasClasses, isBangerRacing, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, available, onAssign, onClear, onRequestCreate, onPasteColumn }) {
   const hasDriver = !!row.entry_id;
   const isLeader = Number(row.finish_pos) === 1;
   // Shared per-cell wiring: column/row tags, Enter-to-next-row, and column
@@ -1561,6 +1613,7 @@ function RowInputs({ row, idx, updateRow, updateFlag, updateRaceTime, updateInte
         value={row.hard_charger} disabled={!hasDriver} onChange={v => updateFlag(idx, "hard_charger", v)} />
       <Check title="Most laps led — ticked automatically for the highest Led count (a tie is shared). Change it and it stays where you put it."
         value={row.most_laps_led} disabled={!hasDriver} onChange={v => updateFlag(idx, "most_laps_led", v)} />
+      {isBangerRacing && <BangerCells row={row} idx={idx} updateRow={updateRow} updateFlag={updateFlag} gridProps={gridProps} />}
       <input type="number" title="Points adjustment — penalty (−) or bonus (+). Applied on top of scored points without changing the finishing position."
         placeholder="0" value={row.points_adjustment} disabled={!hasDriver}
         {...gridProps("points_adjustment")} onChange={e => updateRow(idx, "points_adjustment", e.target.value)} style={{ textAlign: "center" }} />
@@ -1577,7 +1630,7 @@ function RowInputs({ row, idx, updateRow, updateFlag, updateRaceTime, updateInte
   );
 }
 
-function QualRow({ row, idx, updateRow, onGapBlur, autoFocus, points, classes = [], hasClasses, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, available, onAssign, onClear, onRequestCreate, onPasteColumn }) {
+function QualRow({ row, idx, updateRow, updateFlag, onGapBlur, autoFocus, points, classes = [], hasClasses, isBangerRacing, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, available, onAssign, onClear, onRequestCreate, onPasteColumn }) {
   const hasDriver = !!row.entry_id;
   const isPole = Number(row.finish_pos) === 1;
   const gridProps = field => ({
@@ -1603,6 +1656,7 @@ function QualRow({ row, idx, updateRow, onGapBlur, autoFocus, points, classes = 
       <input placeholder={isPole ? "—" : "+0.087"} value={isPole ? "" : (row.qual_gap ?? "")} disabled={!hasDriver || isPole}
         title="Gap to the car one position up. Type it and the lap time fills itself from that car's time."
         {...gridProps("qual_gap")} onBlur={onGapBlur} onChange={e => updateRow(idx, "qual_gap", e.target.value)} />
+      {isBangerRacing && <BangerCells row={row} idx={idx} updateRow={updateRow} updateFlag={updateFlag} gridProps={gridProps} />}
       <div className="points-cell" style={{ textAlign: "center", fontWeight: 600 }}>{points}</div>
       <RemoveButton row={row} onRemove={onRemove} />
     </>

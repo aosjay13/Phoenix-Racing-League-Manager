@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { Modal } from "@/components/Modal";
 import { api } from "@/lib/api";
-import { BONUS_TYPES } from "@/lib/standings";
+import { ALL_BONUS_TYPES, BONUS_TYPES } from "@/lib/standings";
+import { BangerBonusFields } from "@/components/PointsFields";
 import { listToTableOrZero, tableToList } from "@/lib/pointsTemplates";
 
 const isBuiltin = id => String(id).startsWith("builtin-");
@@ -11,7 +12,7 @@ const isBuiltin = id => String(id).startsWith("builtin-");
 function bonusesToStrings(src) {
   let b = src || {};
   if (typeof b === "string") { try { b = JSON.parse(b); } catch { b = {}; } }
-  return Object.fromEntries(BONUS_TYPES.map(([k]) => [k, String(b[k] ?? 0)]));
+  return Object.fromEntries(ALL_BONUS_TYPES.map(([k]) => [k, String(b[k] ?? 0)]));
 }
 
 // The editable comma-list view of whatever points system `value` points at:
@@ -45,9 +46,12 @@ const monoBox = {
 // caller through season → class, and `baseLabel` names it — so on a class's
 // session the default option reads "Pro points" and shows Pro's structure,
 // not the season's.
+// `banger` (the session's series is a Demo Derby / Banger Racing series) adds
+// the banger bonus values to the structure below, so a session can pay its own
+// rate per takedown just as it can its own points per position.
 export function PointsEditorModal({
   session, sessionType, value, templates, baseConfig, baseLabel = "Season default",
-  classLabel = "", onAssign, onTemplatesChanged, onClose,
+  classLabel = "", banger = false, onAssign, onTemplatesChanged, onClose,
 }) {
   const [selection, setSelection] = useState(value || "");
   const [fields, setFields] = useState(() => fieldsFor(value || "", templates, baseConfig));
@@ -147,6 +151,9 @@ export function PointsEditorModal({
                   onChange={e => edit({ bonuses: { ...fields.bonuses, [key]: e.target.value } })} /></div>
             ))}
           </div>
+          {banger && (
+            <BangerBonusFields value={fields} onPatch={patch => edit(patch)} />
+          )}
         </>
       )}
 

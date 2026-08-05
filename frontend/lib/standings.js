@@ -1,4 +1,5 @@
 import { classOfResult } from "@/lib/classFilter";
+import { BANGER_BONUS_TYPES, BANGER_STAT_KEYS, bangerPoints, bangerStatLine, blankBangerTotals } from "@/lib/bangerRacing";
 
 // Default points tables mirror the PRA spreadsheet:
 // race: P1 350, P2 320, P3 300, P4 280, P5 260, then -10 per position (min 10)
@@ -32,7 +33,14 @@ export const BONUS_TYPES = [
   ["hard_charger", "Hard Charger Bonus"],
 ];
 
-export const DEFAULT_BONUSES = Object.fromEntries(BONUS_TYPES.map(([k]) => [k, 0]));
+// Every bonus a points structure can carry: the traditional racing ones above,
+// plus the Demo Derby / Banger Racing ones (see lib/bangerRacing.js). Banger
+// bonuses live in every structure — they default to 0, so an ordinary series is
+// scored exactly as before — but only a banger series' editors SHOW them, and
+// only banger results can be worth anything under them.
+export const ALL_BONUS_TYPES = [...BONUS_TYPES, ...BANGER_BONUS_TYPES];
+
+export const DEFAULT_BONUSES = Object.fromEntries(ALL_BONUS_TYPES.map(([k]) => [k, 0]));
 
 export function parseMaybeJson(value, fallback) {
   if (!value) return fallback;
@@ -239,6 +247,11 @@ export function pointsFor(result, config, qualPos = null, qualConfig = null) {
   if (Number(result.laps_led || 0) > 0) pts += Number(bonuses.lead_a_lap || 0);
   if (result.halfway_leader) pts += Number(bonuses.halfway_point || 0);
   if (result.hard_charger) pts += Number(bonuses.hard_charger || 0);
+  // Demo Derby / Banger Racing bonuses: takedowns paid per car put out, plus
+  // the survival and most-lethal flags. Zero for an ordinary racing result —
+  // those bonuses default to 0 and the fields to 0/false — so this costs a
+  // traditional series nothing and needs no knowledge of the series here.
+  pts += bangerPoints(result, bonuses);
   pts += Number(result.bonus_points || 0) - Number(result.penalty_points || 0);
   pts += adjustment;
   return pts;
@@ -409,6 +422,11 @@ function statLine(results) {
     provisionals: provisionalCount,
     incidents: sum(r => Number(r.incidents || 0)),
     best_finish: starts ? Math.min(...rs.map(r => r.finish_pos)) : null,
+    // Demo Derby / Banger Racing totals (takedowns, survival bonuses, most
+    // lethal awards). Aggregated for every driver — they're just zeros outside
+    // a banger series — and rendered ONLY on a screen scoped to a banger
+    // series; see lib/bangerRacing.js for why the isolation lives in the views.
+    ...bangerStatLine(rs),
   };
 }
 
@@ -575,6 +593,9 @@ export function calculateTeamStandings(driverRows, teams = []) {
       // averages, which would weight a one-race driver like a full-season one.
       top10: 0, best_laps: 0, laps_led: 0,
       starts: 0, finish_sum: 0, qualifying_sessions: 0, start_sum: 0,
+      // Banger totals, summed like any other count. Shown only on a banger
+      // series' team standings.
+      ...blankBangerTotals(),
     });
     t.points += row.adjusted_points;
     t.wins += row.wins;
@@ -588,6 +609,7 @@ export function calculateTeamStandings(driverRows, teams = []) {
     t.finish_sum += row.finish_sum;
     t.qualifying_sessions += row.qualifying_sessions;
     t.start_sum += row.start_sum;
+    for (const k of BANGER_STAT_KEYS) t[k] += Number(row[k] || 0);
     t.drivers += 1;
   }
   for (const t of Object.values(byTeam)) {

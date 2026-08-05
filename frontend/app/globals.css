@@ -1299,16 +1299,35 @@ tbody tr:hover {
 
 /* ── Wide race-entry grid ────────────────────── */
 .result-grid-wide {
-  grid-template-columns: 22px 66px 66px minmax(150px, 1fr) 96px 84px 92px 72px 72px 70px 34px 34px 34px 38px 74px 96px 64px 34px;
-  min-width: 1280px;
+  grid-template-columns: 22px 66px 66px minmax(150px, 1fr) 96px 84px 92px 72px 72px 70px 34px 34px 34px 38px var(--banger-cols) 74px 96px 64px 34px;
+  min-width: calc(1280px + var(--banger-extra));
   align-items: center;
 }
 
 /* Multi-class seasons get an extra Class column right after Driver, so a
    driver's class can be set (or corrected) as results are entered. */
 .result-grid-wide.has-class {
-  grid-template-columns: 22px 66px 66px minmax(150px, 1fr) 108px 96px 84px 92px 72px 72px 70px 34px 34px 34px 38px 74px 96px 64px 34px;
-  min-width: 1400px;
+  grid-template-columns: 22px 66px 66px minmax(150px, 1fr) 108px 96px 84px 92px 72px 72px 70px 34px 34px 34px 38px var(--banger-cols) 74px 96px 64px 34px;
+  min-width: calc(1400px + var(--banger-extra));
+}
+
+/* ── Demo Derby / Banger Racing ───────────────
+   A banger series' grids carry one extra column per banger stat (Takedowns,
+   Survival, Most Lethal — see lib/bangerRacing.js). The widths are handed in
+   through --banger-cols by the editor rather than hard-coded here, so adding a
+   banger stat needs no CSS change; both variables are empty/zero by default,
+   which is every ordinary series' grid, unchanged. */
+.result-grid,
+.qual-grid {
+  --banger-cols: ;
+  --banger-extra: 0px;
+}
+
+/* The banger columns read as their own group, so an admin scanning a wide grid
+   can see where the derby stats start. */
+.result-grid.has-banger .grid-header,
+.qual-grid.has-banger .grid-header {
+  white-space: nowrap;
 }
 
 /* ── Stats table ─────────────────────────────── */
@@ -1451,16 +1470,16 @@ tbody tr:hover {
 /* ⠿ · Pos · Driver · [Class] · Qual Time · To Lead · Gap · Pts · ✕ */
 .qual-grid {
   display: grid;
-  grid-template-columns: 22px 70px minmax(160px, 1fr) 140px 100px 100px 80px 34px;
+  grid-template-columns: 22px 70px minmax(160px, 1fr) 140px 100px 100px var(--banger-cols) 80px 34px;
   gap: 8px;
   align-items: center;
-  min-width: 720px;
+  min-width: calc(720px + var(--banger-extra));
   margin-bottom: 16px;
 }
 
 .qual-grid.has-class {
-  grid-template-columns: 22px 70px minmax(160px, 1fr) 108px 140px 100px 100px 80px 34px;
-  min-width: 840px;
+  grid-template-columns: 22px 70px minmax(160px, 1fr) 108px 140px 100px 100px var(--banger-cols) 80px 34px;
+  min-width: calc(840px + var(--banger-extra));
 }
 
 .qual-grid select {
@@ -1634,4 +1653,47 @@ tbody tr:hover {
 
 .backup-log-meta {
   color: var(--ink-2);
+}
+
+/* ── Demo Derby / Banger Racing points block ──
+   The banger bonus values, wherever a points structure is edited (a season, a
+   class, a session's template, the shared template library). Boxed and badged
+   so it reads as a mode-specific group rather than more racing bonuses. */
+.banger-bonus-block {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-gold, #e2b714);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+}
+
+.banger-bonus-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.banger-bonus-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 12px;
+}
+
+@media (max-width: 640px) {
+  .banger-bonus-grid { grid-template-columns: 1fr; }
+}
+
+.banger-chip {
+  align-self: flex-start;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--accent-gold, #e2b714);
+  background: rgba(226, 183, 20, 0.12);
+  border: 1px solid rgba(226, 183, 20, 0.3);
 }

@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { Modal } from "@/components/Modal";
 import { SeasonForm } from "@/components/SeasonForm";
 import { BLANK_SEASON_FORM, seasonFormToBody } from "@/lib/seasonForm";
+import { isBangerSeries } from "@/lib/bangerRacing";
 
 // Sentinel for the "start a brand new one" choice in the game / series pickers.
 const NEW = "__new__";
@@ -144,6 +145,9 @@ export function SeasonCreateModal({ gameId, games = [], seriesId, seriesName, se
           value={form} onChange={setForm}
           templates={templates} onTemplatesChanged={loadTemplates}
           onError={setError}
+          // The derby bonuses belong to the series the season is going into —
+          // a season created under a Banger Racing series can set them here.
+          banger={isBangerSeries(seriesOptions.find(s => s.id === (seriesId || pickedSeries)) || null)}
         />
         {error && <p style={{ color: "#e5484d", fontSize: "0.85rem" }}>{error}</p>}
         <button className="btn btn-primary" type="submit" disabled={busy || !form.name.trim() || !gameReady || !seriesReady}>

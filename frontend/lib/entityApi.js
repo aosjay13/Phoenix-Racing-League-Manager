@@ -135,8 +135,15 @@ export function makeDocRoutes({ collection, fields, normalize = null }) {
 export const SPECS = {
   games:   { collection: "games", parentField: null, sortField: "name",
              fields: { name: { required: true }, logo_url: {}, description: {} } },
+  // `isBangerRacing` flags the series as Demo Derby / Banger Racing. It turns on
+  // the mode-specific stats (Takedowns, Survival Bonus, Most Lethal Bonus — see
+  // lib/bangerRacing.js): the results grids of its events grow inputs for them,
+  // the points structures grow a bonus value for each, and Standings/Stats show
+  // their totals — but ONLY while the viewer is scoped to this series. Off (the
+  // default) the series behaves exactly as every series did before.
   series:  { collection: "series", parentField: "game_id", sortField: "name",
-             fields: { name: { required: true }, logo_url: {}, description: {} } },
+             fields: { name: { required: true }, logo_url: {}, description: {},
+                       isBangerRacing: { bool: true, default: false } } },
   seasons: { collection: "seasons", parentField: "series_id", sortField: "created_at",
              // `car` is the free-text car/model this season races (e.g. "NASCAR
              // Next Gen", "GT3"). It's the season-wide default; a race can

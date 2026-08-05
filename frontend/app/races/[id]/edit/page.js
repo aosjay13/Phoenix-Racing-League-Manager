@@ -11,6 +11,7 @@ import { RaceLengthField } from "@/components/RaceLengthField";
 import { LENGTH_LAPS, LENGTH_TIME } from "@/lib/raceLength";
 import { normalizedBuiltinTemplates } from "@/lib/pointsTemplates";
 import { carForRace, racePerClassResults, sessionClassScopes } from "@/lib/classFilter";
+import { isBangerSeries } from "@/lib/bangerRacing";
 import { api } from "@/lib/api";
 
 const BLANK_INFO = {
@@ -220,6 +221,10 @@ function UnifiedEditInner() {
   const [season, setSeason] = useState(null);
   const [seasonId, setSeasonId] = useState(null);
   const [seriesName, setSeriesName] = useState("");
+  // The series this event belongs to, fetched for its name and — the reason it's
+  // kept whole rather than just its name — its Demo Derby / Banger Racing flag,
+  // which decides whether the grids below carry the banger stat columns.
+  const [series, setSeries] = useState(null);
   const [entries, setEntries] = useState([]);
   // This screen is reached by race id, so its season can differ from whatever
   // the top-bar dropdowns have selected — read the classes off THIS race's
@@ -249,7 +254,8 @@ function UnifiedEditInner() {
         if (!cancelled) setTemplates([...normalizedBuiltinTemplates(), ...saved]);
         if (ev.season?.game_id && ev.season?.series_id) {
           const seriesList = await api(`/api/series?game_id=${ev.season.game_id}`);
-          if (!cancelled) setSeriesName(seriesList.find(s => s.id === ev.season.series_id)?.name ?? "");
+          const found = seriesList.find(s => s.id === ev.season.series_id) || null;
+          if (!cancelled) { setSeries(found); setSeriesName(found?.name ?? ""); }
         }
       } catch (err) {
         if (!cancelled) setError(err.message);
@@ -279,6 +285,9 @@ function UnifiedEditInner() {
     classes,
     sessionClass: perClassResults ? scope : null,
     sessionClassName: perClassResults ? scopeName : "",
+    // Demo Derby / Banger Racing is a property of the SERIES, so every session
+    // of every event in it captures the derby stats — see lib/bangerRacing.js.
+    isBangerRacing: isBangerSeries(series),
   };
 
   const heatFormat = !!race?.heat_format;

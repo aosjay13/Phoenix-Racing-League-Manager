@@ -22,8 +22,13 @@
 // per-flag, so hand-placing the Hard Charger doesn't freeze Fastest Lap.
 
 import { parseTime } from "@/lib/raceTime";
+import { autoMostLethalSlot } from "@/lib/bangerRacing";
 
-export const AUTO_FLAG_FIELDS = ["fastest_lap", "hard_charger", "most_laps_led"];
+//   • Most Lethal — the Demo Derby / Banger Racing counterpart: whoever
+//                   recorded the most takedowns. Only ever true on a banger
+//                   series' grid, since nowhere else has takedowns to count,
+//                   and overridable in exactly the same way as the three above.
+export const AUTO_FLAG_FIELDS = ["fastest_lap", "hard_charger", "most_laps_led", "most_lethal"];
 
 // Didn't take the green flag / was thrown out — never an auto Hard Charger,
 // however flattering the arithmetic looks. A DNF still counts: they raced, and
@@ -89,10 +94,12 @@ function autoFlags(rows) {
   const fastest = autoFastestLapSlot(rows);
   const charger = autoHardChargerSlot(rows);
   const led = autoMostLapsLedSlot(rows);
+  const lethal = autoMostLethalSlot(rows);
   return row => ({
     fastest_lap: row.slot_id === fastest,
     hard_charger: row.slot_id === charger,
     most_laps_led: row.slot_id === led,
+    most_lethal: row.slot_id === lethal,
   });
 }
 

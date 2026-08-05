@@ -8,6 +8,7 @@ import { ShareGraphicModal } from "@/components/ShareGraphicModal";
 import { leagueLogos, toGraphicTable } from "@/lib/shareGraphic";
 import { api } from "@/lib/api";
 import { compareByTieBreakers, formatStat } from "@/lib/standings";
+import { BANGER_STAT_COLUMNS } from "@/lib/bangerRacing";
 
 // The exporter offers EVERY column this screen shows; these are just the ones
 // ticked when it opens — a readable subset, since fifteen columns at once makes
@@ -58,13 +59,23 @@ const teamHref = name => `/teams/${encodeURIComponent(name)}`;
 
 export default function StatsPage() {
   const league = useLeague();
-  const { gameId, seriesId, seasonId, classId, className, game, series, season, raceClass, classes, league: activeLeague, loading } = league ?? {};
+  const { gameId, seriesId, seasonId, classId, className, game, series, season, raceClass, classes, league: activeLeague, loading, isBangerRacing } = league ?? {};
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [tab, setTab] = useState("drivers"); // "drivers" | "teams"
   const [sharing, setSharing] = useState(false);
 
-  const columns = tab === "teams" ? TEAM_COLUMNS : COLUMNS;
+  // Demo Derby / Banger Racing stats appear ONLY inside a banger series: with a
+  // Series (or one of its Seasons) selected AND that series flagged as banger
+  // racing. `isBangerRacing` is false at "All Series", which is precisely what
+  // keeps these columns out of the Overall (league-wide) and per-Game views,
+  // where a takedown count means nothing. See lib/bangerRacing.js.
+  const showBanger = !!seriesId && !!isBangerRacing;
+  const baseColumns = tab === "teams" ? TEAM_COLUMNS : COLUMNS;
+  const columns = useMemo(
+    () => (showBanger ? [...baseColumns, ...BANGER_STAT_COLUMNS] : baseColumns),
+    [baseColumns, showBanger]
+  );
   const activeRows = tab === "teams" ? data?.team_rows : data?.rows;
   const lowIsBetter = useMemo(() => columns.filter(c => c[2]).map(c => c[0]), [columns]);
   const { sorted: rows, clickSort, arrow } = useSortable(activeRows, tab === "teams" ? "points" : "wins", lowIsBetter, compareByTieBreakers);
@@ -108,6 +119,7 @@ export default function StatsPage() {
     <section>
       <div className="page-title">
         <h2>{active.title}</h2>
+        {showBanger && <span className="page-badge">💥 Demo Derby / Banger Racing</span>}
         {data && (
           <span className="page-badge">
             {tab === "teams"
@@ -153,6 +165,7 @@ export default function StatsPage() {
         Use the Game / Series / Season{classes?.length ? " / Class" : ""} menus above to change scope
         (pick &quot;All&quot; to widen it). Click any column to sort; gold cells mark the category leader.
         {className && ` Showing ${className} drivers only.`}
+        {showBanger && " Takedowns, Survival and Most Lethal are this series' Demo Derby stats — they only show while a Banger Racing series is selected."}
       </p>
 
       <div className="tab-row">

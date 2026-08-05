@@ -10,6 +10,7 @@ import { leagueLogos, toGraphicTable } from "@/lib/shareGraphic";
 import { api } from "@/lib/api";
 import { readParam, setParam } from "@/lib/scopeLink";
 import { compareByTieBreakers, formatStat, TIE_BREAKER_SUMMARY } from "@/lib/standings";
+import { BANGER_STAT_COLUMNS } from "@/lib/bangerRacing";
 
 // The exporter offers every column the standings table shows; these are the
 // ones ticked when it opens — a feed-friendly set, since the full table has too
@@ -132,7 +133,7 @@ function formatCell(r, key) {
 }
 
 export default function StandingsPage() {
-  const { seasonId, season, game, series, league, classId, className, raceClass, classes, combinedChampionship } = useLeague();
+  const { seasonId, season, game, series, league, classId, className, raceClass, classes, combinedChampionship, isBangerRacing } = useLeague();
   const { isAdmin } = useAuth();
   // Which championship is showing rides in the URL too, so a link can point at
   // the team standings rather than always opening on drivers.
@@ -200,16 +201,23 @@ export default function StandingsPage() {
   const heading = `Standings · ${season?.name ?? ""}${className ? ` · ${className}` : ""}`;
   // In the combined view, surface which class each driver runs in; inside a
   // single class the column would be the same value on every row.
-  const driverCols = classes.length > 0 && !classId
+  const baseDriverCols = classes.length > 0 && !classId
     ? [...DRIVER_COLS.slice(0, 4), ["class_name", "Class", false, true], ...DRIVER_COLS.slice(4)]
     : DRIVER_COLS;
+  // Demo Derby / Banger Racing stats (Takedowns, Survival, Most Lethal) are
+  // meaningless outside the series that races them, so they're appended here
+  // and ONLY here — this table is always scoped to one season, hence to one
+  // series, and `isBangerRacing` is that series' flag. The Overall and per-Game
+  // stats views never reach this code. See lib/bangerRacing.js.
+  const driverCols = isBangerRacing ? [...baseDriverCols, ...BANGER_STAT_COLUMNS] : baseDriverCols;
+  const teamCols = isBangerRacing ? [...TEAM_COLS, ...BANGER_STAT_COLUMNS] : TEAM_COLS;
 
   const shareNameKey = tab === "teams" ? "team" : "driver_name";
   // Every column on screen is offered in the exporter's stat picker.
   const shareCols = [
     ["rank", "Pos"],
     [shareNameKey, tab === "teams" ? "Team" : "Driver"],
-    ...(tab === "teams" ? TEAM_COLS : driverCols).filter(([key]) => key !== shareNameKey),
+    ...(tab === "teams" ? teamCols : driverCols).filter(([key]) => key !== shareNameKey),
   ];
   const shareTable = toGraphicTable(shareCols, rows, {
     nameKey: shareNameKey,
@@ -220,6 +228,7 @@ export default function StandingsPage() {
     <section>
       <div className="page-title">
         <h2>{heading}</h2>
+        {isBangerRacing && <span className="page-badge">💥 Demo Derby / Banger Racing</span>}
         {className && <span className="page-badge">{className} Championship</span>}
         {!className && classes.length > 0 && (
           <span className="page-badge">{combinedChampionship ? "Overall · All Classes" : "All Classes · Unofficial"}</span>
@@ -313,7 +322,7 @@ export default function StandingsPage() {
         />
       ) : (
         <SortableTable
-          cols={TEAM_COLS}
+          cols={teamCols}
           rows={rows}
           defaultKey="rank"
           nameKey="team"

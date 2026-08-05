@@ -14,9 +14,12 @@ import { scoresNoPoints } from "@/lib/seasonForm";
 // call belong to the caller, which knows whether it's creating or editing.
 // State lives in the caller too (`value` / `onChange`) so the caller can seed
 // it from an existing season — see lib/seasonForm.js for the shape.
+// `banger` — the series this season belongs to is a Demo Derby / Banger Racing
+// series — adds the derby bonus values (points per takedown, survival, most
+// lethal) to the Points & Bonuses block. See lib/bangerRacing.js.
 export function SeasonForm({
   value, onChange, templates = [], onTemplatesChanged,
-  disabled = false, defaultPointsOpen = false, onError,
+  disabled = false, defaultPointsOpen = false, onError, banger = false,
 }) {
   const [showPoints, setShowPoints] = useState(defaultPointsOpen);
 
@@ -106,7 +109,7 @@ export function SeasonForm({
 
       {showPoints && (
         <PointsFields value={value} onPatch={set} templates={templates} onTemplatesChanged={onTemplatesChanged}
-          disabled={disabled} onError={onError} noPoints={noPoints} />
+          disabled={disabled} onError={onError} noPoints={noPoints} banger={banger} />
       )}
     </>
   );
