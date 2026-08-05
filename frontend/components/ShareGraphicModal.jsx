@@ -402,6 +402,59 @@ export function ShareGraphicModal({
 }
 
 // The captured node. Fixed 1080px wide for a consistent, feed-friendly output.
+// A logo drawn at its native aspect ratio inside a fixed box.
+//
+// `objectFit: contain` would do this in the browser, but html2canvas ignores
+// object-fit and paints the image to whatever width/height the element carries
+// — so a wide (or tall) logo came out stretched to a square in the exported
+// PNG. Instead we read the image's natural size on load and set explicit pixel
+// dimensions that already match its ratio: the element's box IS the letterboxed
+// size, so the browser and html2canvas agree and nothing is distorted.
+//
+// maxW/maxH bound the box; the logo is scaled down to fit inside both and is
+// never scaled up past its natural size, keeping the small form factor the
+// header and footer were designed around.
+function FittedLogo({ src, maxW, maxH, radius }) {
+  const [natural, setNatural] = useState(null);
+
+  // Reset when the picked logo changes, so a new image never renders at the
+  // previous one's dimensions for a frame.
+  useEffect(() => { setNatural(null); }, [src]);
+
+  // Bails out when the size is unchanged: the ref callback below re-runs on
+  // every render, and returning a fresh object each time would loop forever.
+  function measure(el) {
+    if (!el?.complete || !el.naturalWidth) return;
+    const w = el.naturalWidth, h = el.naturalHeight;
+    setNatural(prev => (prev && prev.w === w && prev.h === h ? prev : { w, h }));
+  }
+
+  const fit = (() => {
+    if (!natural || !natural.w || !natural.h) return { width: maxW, height: maxH };
+    const scale = Math.min(maxW / natural.w, maxH / natural.h, 1);
+    return { width: Math.round(natural.w * scale), height: Math.round(natural.h * scale) };
+  })();
+
+  return (
+    // crossOrigin lets html2canvas rasterize a remotely-hosted logo when its
+    // host sends CORS headers (Firebase Storage URLs do).
+    <img
+      src={src} alt="" crossOrigin="anonymous"
+      // A cached image can finish loading before React attaches onLoad, so also
+      // measure on mount when the element reports itself already complete.
+      ref={measure}
+      onLoad={e => measure(e.currentTarget)}
+      style={{
+        width: fit.width, height: fit.height, objectFit: "contain",
+        borderRadius: radius, flexShrink: 0,
+        // Until the natural size is known the box is the full square; keeping
+        // it invisible avoids a one-frame stretched flash on slow loads.
+        visibility: natural ? "visible" : "hidden",
+      }}
+    />
+  );
+}
+
 // Exported so the layout can be rendered and screenshotted outside the app.
 // The league's name is the eyebrow above the headline; its logo anchors the
 // footer, so league branding frames the graphic without fighting the headline or
@@ -430,11 +483,10 @@ export function GraphicCard({ cardRef, theme: t, title, subtitle, logo, leagueNa
           <div style={{ fontSize: 42, fontWeight: 800, lineHeight: 1.08, letterSpacing: "-0.01em" }}>{title}</div>
           {subtitle && <div style={{ fontSize: 19, color: t.muted, marginTop: 8, fontWeight: 500 }}>{subtitle}</div>}
         </div>
-        {logo && (
-          // crossOrigin lets html2canvas rasterize a remotely-hosted logo when
-          // its host sends CORS headers (Firebase Storage URLs do).
-          <img src={logo} alt="" crossOrigin="anonymous" style={{ height: 96, width: 96, objectFit: "contain", borderRadius: 12, flexShrink: 0 }} />
-        )}
+        {/* Bounded by height so a wide banner logo can spread sideways (up to
+            half the card) without ever growing taller than the square it used
+            to occupy. */}
+        {logo && <FittedLogo src={logo} maxW={280} maxH={96} radius={12} />}
       </div>
 
       {/* Event metadata — the context that makes a results graphic readable on
@@ -522,10 +574,7 @@ export function GraphicCard({ cardRef, theme: t, title, subtitle, logo, leagueNa
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, marginTop: 20, fontSize: 14, color: t.faint }}>
         <span>{totalRows > shownCount ? `Top ${shownCount} of ${totalRows}` : `${totalRows} shown`}</span>
         <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {leagueLogo && (
-            <img src={leagueLogo} alt="" crossOrigin="anonymous"
-              style={{ height: 34, width: 34, objectFit: "contain", borderRadius: 7, flexShrink: 0 }} />
-          )}
+          {leagueLogo && <FittedLogo src={leagueLogo} maxW={110} maxH={34} radius={7} />}
           <span style={{ fontWeight: 600, color: league ? t.muted : t.faint }}>
             {league || "Phoenix Racing League Manager"}
           </span>
