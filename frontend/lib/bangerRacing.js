@@ -167,23 +167,23 @@ export function bangerRates(bonuses = {}) {
   }));
 }
 
-// Which points structure a derby rate typed into the results editor should be
-// written to — the one that actually scores the session in front of you:
+// Which points structure a derby rate typed into the results editor is written
+// to. The answer is always the SEASON, and that is deliberate.
 //
-//   • the class being entered, on a split event whose class runs derby;
-//   • the season, when derby is on at season level or above;
-//   • the season's ONE derby class, when that's the only thing running derby
-//     (an ordinary season with a Banger class in it);
-//   • otherwise the season, which is where a rate does the most good.
+// A rate on a class only reaches results that are actually stamped with that
+// class. A league that flags a Banger class but enters its results on a shared
+// grid — drivers unclassified, or the row's Class cell left blank — has results
+// that belong to no class, so a class-level rate pays them nothing, silently,
+// which is precisely the "takedowns don't count" failure this control exists to
+// prevent.
 //
-// Returns { kind: "class" | "season", id, name }.
-export function derbyPointsTarget({ season = null, classes = [], sessionClassId = "", seasonLevel = false } = {}) {
-  const scoped = sessionClassId ? classes.find(c => c.id === sessionClassId) : null;
-  if (scoped && isBangerDoc(scoped)) return { kind: "class", id: scoped.id, name: scoped.name };
-  if (!seasonLevel) {
-    const derbyClasses = classes.filter(isBangerDoc);
-    if (derbyClasses.length === 1) return { kind: "class", id: derbyClasses[0].id, name: derbyClasses[0].name };
-  }
+// A season-level rate has neither problem: it applies to every result in the
+// season however it is classed, and it cannot leak into ordinary racing,
+// because a rate is only ever multiplied by stats an ordinary result doesn't
+// have (no takedowns, no survival, no most-lethal → nothing to pay for). Where
+// two derby classes genuinely need different rates, that's what the class's own
+// points structure in League Setup is for.
+export function derbyPointsTarget({ season = null } = {}) {
   return { kind: "season", id: season?.id ?? null, name: season?.name ?? "Season" };
 }
 

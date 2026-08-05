@@ -351,9 +351,18 @@ derby rates without overriding the season's race scale.
 Because a rate set at the wrong level is indistinguishable from a broken feature, the results grid
 carries the rate itself: a **Derby points** bar above the grid states what this session pays for each
 derby stat — or warns, in gold, that nothing is set and the Points column will not move — and lets an
-admin set it inline, writing to the very structure that session scores on (the class being entered
-when that class is the derby one, otherwise the season). Saved results re-score the moment it lands,
-so nothing needs re-entering.
+admin set it inline. It always writes to the **season**, deliberately: a rate on a class only reaches
+results stamped with that class, so a league that flags a Banger class but enters its results on a
+shared grid (drivers unclassified, or the row's Class cell left blank) records takedowns that a
+class-level rate pays nothing for. A season rate applies however the results are classed and can't
+leak into ordinary racing, since it is only ever multiplied by stats an ordinary result doesn't have.
+Saved results re-score the moment it lands, so nothing needs re-entering.
+
+Standings audits this for itself: it reports how many derby stats are on the board for the scope and
+how many points they actually awarded (from the same scorer the totals come from), and says so when
+stats are recorded but nothing scored — naming the class, when a class pays but the results aren't
+recorded in it. An empty class championship explains itself the same way, rather than reading as
+"no results yet".
 
 The derby fields are likewise stored on every result (as zeros/falses), so the stats engine never
 has to ask what kind of series a result came from. What the flag actually gates is **visibility**:

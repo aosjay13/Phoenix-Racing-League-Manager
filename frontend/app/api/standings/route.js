@@ -7,9 +7,10 @@ import {
   decorateSessionFlags,
   isQualifying,
   makeScorer,
+  parseMaybeJson,
   resolveSeasonConfig,
 } from "@/lib/standings";
-import { bangerPoints, bangerStatLine } from "@/lib/bangerRacing";
+import { bangerPoints, bangerStatLine, hasBangerBonuses } from "@/lib/bangerRacing";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
 import { classIdsInSeason, entryClassIds, fetchSeasonClasses, filterEntriesByClass, filterResultsByClass } from "@/lib/classServer";
 import { seasonChampions } from "@/lib/champions";
@@ -74,6 +75,14 @@ export async function GET(request) {
   const derby = {
     stats_recorded: Object.values(derbyLine).reduce((a, n) => a + Number(n || 0), 0),
     points_awarded: scoringResults.reduce((a, r) => a + bangerPoints(r, derbyScorer.configFor(r).bonuses), 0),
+    // Whether the SEASON itself pays, and which classes do. A class rate only
+    // reaches results recorded in that class, so "the Banger class pays but
+    // nothing scored" is a different problem from "nothing is set anywhere" —
+    // and the fix is different too.
+    season_pays: hasBangerBonuses(config.bonuses),
+    paying_classes: classes
+      .filter(c => hasBangerBonuses(parseMaybeJson(c.bonus_points, {})))
+      .map(c => c.name),
   };
 
   // Contextual name rendering: on this game's standings, surface the name each
@@ -125,6 +134,17 @@ export async function GET(request) {
     combined_championship: season.combined_championship !== false,
     // Derby accounting for this scope — see above.
     derby,
+    // Why a class championship is empty, when it is. A class only collects the
+    // results actually recorded IN it, so a season whose drivers were never
+    // assigned to a class (or whose results were entered on a shared grid with
+    // the Class cell left blank) has a full season table and an empty class one
+    // — with nothing on screen to say which of the two it is.
+    class_scope: classSel.length ? {
+      entries_in_class: entries.length,
+      results_in_class: results.filter(r => !isQualifying(r)).length,
+      season_entries: allEntries.length,
+      season_results: allResults.filter(r => !isQualifying(r)).length,
+    } : null,
     drop_weeks: drivers.drop_weeks,
     drivers: drivers.rows,
     teams: teamRows,

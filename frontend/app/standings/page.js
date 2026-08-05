@@ -290,10 +290,24 @@ export default function StandingsPage() {
         <p style={{ marginTop: 8, color: "var(--accent-gold, #e2b714)", fontSize: "0.85rem" }}>
           ⚠ <strong>Derby stats are being recorded but scoring nothing.</strong> This season has{" "}
           {data.derby.stats_recorded} takedown/bonus{data.derby.stats_recorded === 1 ? "" : "es"} on the board and they
-          have awarded <strong>0 points</strong> — no derby rate is set for the sessions they were entered in.
-          Open the event&rsquo;s results tab and use <strong>＋ Set derby points</strong> above the grid
-          (or set Points per Takedown in this season&rsquo;s Points &amp; Bonuses). Existing results re-score
-          the moment it&rsquo;s saved.
+          have awarded <strong>0 points</strong>.{" "}
+          {data.derby.paying_classes?.length && !data.derby.season_pays ? (
+            <>
+              The <strong>{data.derby.paying_classes.join(" / ")}</strong> class
+              {data.derby.paying_classes.length === 1 ? " pays" : "es pay"} for derby stats, but these results
+              aren&rsquo;t recorded in {data.derby.paying_classes.length === 1 ? "it" : "them"} — a class&rsquo;s
+              points only reach results that carry that class. Either set the rate on the{" "}
+              <strong>season</strong> (＋ Set derby points above the results grid — it applies however the
+              results are classed), or set the Class column on each row and re-save the session.
+            </>
+          ) : (
+            <>
+              No derby rate is set for the sessions they were entered in. Open the event&rsquo;s results tab and
+              use <strong>＋ Set derby points</strong> above the grid (or set Points per Takedown in this
+              season&rsquo;s Points &amp; Bonuses).
+            </>
+          )}{" "}
+          Existing results re-score the moment it&rsquo;s saved.
         </p>
       )}
 
@@ -308,7 +322,24 @@ export default function StandingsPage() {
       ) : rows.length === 0 ? (
         <div className="empty-state">
           <span className="empty-state-icon">🏆</span>
-          <p>No results yet for this season.</p>
+          {/* An empty CLASS table with a non-empty season behind it is not "no
+              results yet" — it's results that were never recorded in this
+              class. Say which, and how to fix it. */}
+          {data.class_scope && data.class_scope.season_results > 0 ? (
+            <>
+              <p>No results are recorded in {className || "this class"} yet.</p>
+              <p style={{ fontSize: "0.85rem", color: "var(--ink-2)", margin: 0, maxWidth: 560 }}>
+                {season?.name ?? "This season"} has {data.class_scope.season_results} result
+                {data.class_scope.season_results === 1 ? "" : "s"}, but none of them are in this class
+                {data.class_scope.entries_in_class === 0
+                  ? " — and no drivers are assigned to it. Assign them on Drivers ▸ Roster & Teams"
+                  : `, even though ${data.class_scope.entries_in_class} driver${data.class_scope.entries_in_class === 1 ? " is" : "s are"} assigned to it. Set the Class column on each row of the results grid`}
+                , then re-save the session. The class championship fills in from the class recorded on each result.
+              </p>
+            </>
+          ) : (
+            <p>No results yet for this season.</p>
+          )}
         </div>
       ) : tab === "drivers" ? (
         <SortableTable
