@@ -187,7 +187,7 @@ async function buildStats(seasons, classId = "", className = "", gameId = null) 
     // league-wide view counts every crown. That's what carries a class
     // championship up into a driver's global tally instead of losing it to
     // whoever led the combined table. A driver who wins both their class and
-    // the overall in one season still scores a single championship.
+    // the overall in one season scores both — two championships were decided.
     const crowns = crownsInScope(
       seasonChampions(season, decorated, allEntries, config, templatesById, seasonClasses),
       classSel.length ? classSel : classId,

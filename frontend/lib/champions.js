@@ -18,9 +18,13 @@
 //     `combined_championship` toggle is on. Switched off, the combined table is
 //     explicitly unofficial, so no overall champion is awarded, displayed or
 //     counted — the class winners are the only champions that season.
-//   • Winning both a class and the overall in the same season is ONE
-//     championship, not two. The crowns are still recorded individually so a
-//     profile can show the dual victory; they just don't inflate the tally.
+//   • Every crown counts. A season running three classes with the overall
+//     championship switched on crowns FOUR champions — one per class, plus the
+//     outright one — and all four are tracked. When the same driver takes both
+//     their class and the overall that's two titles to their name, because two
+//     championships were won; collapsing them to one used to make the overall
+//     title vanish from the records in exactly the case where it's most often
+//     won, since the outright leader is usually a class winner too.
 
 import { calculateStandings } from "@/lib/standings";
 import { classIdSet, filterEntriesByClass, filterResultsByClass } from "@/lib/classFilter";
@@ -55,18 +59,18 @@ export function seasonChampions(season, results, entries, config, templatesById 
   return crowns;
 }
 
-// Collapse a season's crowns to what each competitor actually scores:
-// entry_id -> { titles, overall, class_names[] }. `titles` is always 1 — a
-// driver who takes their class AND the overall in the same season has one
-// championship to their name, with both crowns listed so the achievement is
-// still visible.
+// Group a season's crowns by who won them:
+// entry_id -> { titles, overall, class_names[] }. `titles` is how many crowns
+// that competitor took, so a driver who wins their class AND the overall in the
+// same season scores two — two championships were decided, and both belong on
+// their record.
 //
-// Entries are per season, so keying on entry_id is keying on driver-season;
-// this is what stops a dual crown counting twice.
+// Entries are per season, so keying on entry_id is keying on driver-season.
 export function titlesByEntry(crowns) {
   const byEntry = new Map();
   for (const c of crowns) {
-    const rec = byEntry.get(c.entry_id) ?? { titles: 1, overall: false, class_names: [] };
+    const rec = byEntry.get(c.entry_id) ?? { titles: 0, overall: false, class_names: [] };
+    rec.titles += 1;
     if (c.kind === "overall") rec.overall = true;
     else if (c.class_name) rec.class_names.push(c.class_name);
     byEntry.set(c.entry_id, rec);

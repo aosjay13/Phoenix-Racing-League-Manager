@@ -97,8 +97,8 @@ export async function buildCareerProfile({ driverId = null, userId = null }) {
     // Championships. Every crown the season handed out is considered — each
     // class's champion as well as the overall one, and no overall at all when
     // the season runs class-only titles — then narrowed to this driver. A
-    // driver who won both their class and the overall in one season scores one
-    // championship, with both crowns recorded so the profile can show it.
+    // driver who won both their class and the overall in one season scores
+    // two, with both crowns recorded so the profile can show which they were.
     const mineRec = [...titlesByEntry(seasonChampions(season, seasonResults, seasonEntries, config, templatesById, seasonClasses))]
       .find(([entryId]) => myEntryIds.has(entryId))?.[1];
     if (mineRec) {

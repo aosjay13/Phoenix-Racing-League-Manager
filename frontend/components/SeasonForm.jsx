@@ -53,7 +53,8 @@ export function SeasonForm({
           Enable Overall Championship
           <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
             For a season split into classes: also crown ONE overall champion across the whole
-            field, on top of each class&rsquo;s own championship. Turn it off for class-only
+            field, on top of each class&rsquo;s own championship — three classes with this on
+            crowns four champions, and all four are tracked as titles. Turn it off for class-only
             championships — the combined &ldquo;All Classes&rdquo; table stays viewable, just
             flagged as unofficial. No effect on a season without classes.
           </span>
