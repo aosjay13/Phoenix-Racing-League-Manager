@@ -144,6 +144,15 @@ export async function GET(request) {
       results_in_class: results.filter(r => !isQualifying(r)).length,
       season_entries: allEntries.length,
       season_results: allResults.filter(r => !isQualifying(r)).length,
+      // Drivers in the season who are in NO class at all — the ones an admin
+      // can drop into this class in one action to populate its championship
+      // (see /api/admin/entries/assign-class). Their existing results come with
+      // them: a result with no class of its own resolves through its driver's
+      // roster class.
+      unclassified_entries: allEntries.filter(e => entryClassIds(e).length === 0).length,
+      // The concrete class doc this scope resolved to, so the screen can act on
+      // it (the selection travels by name across seasons).
+      class_id: classSel[0] || null,
     } : null,
     drop_weeks: drivers.drop_weeks,
     drivers: drivers.rows,

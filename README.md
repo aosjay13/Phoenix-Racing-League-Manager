@@ -362,7 +362,10 @@ Standings audits this for itself: it reports how many derby stats are on the boa
 how many points they actually awarded (from the same scorer the totals come from), and says so when
 stats are recorded but nothing scored — naming the class, when a class pays but the results aren't
 recorded in it. An empty class championship explains itself the same way, rather than reading as
-"no results yet".
+"no results yet" — and, for the usual cause (drivers who were never put in the class), offers a
+one-click **Add the N unclassified drivers to <class>** action. Their existing results come with them,
+since a result carrying no class of its own scores in its driver's roster class, so the championship
+fills in with the season's history rather than starting from the next race.
 
 The derby fields are likewise stored on every result (as zeros/falses), so the stats engine never
 has to ask what kind of series a result came from. What the flag actually gates is **visibility**:

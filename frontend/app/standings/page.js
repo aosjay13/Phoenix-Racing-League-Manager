@@ -152,6 +152,7 @@ export default function StandingsPage() {
   const [error, setError] = useState(null);
   const [sharing, setSharing] = useState(false);
   const [loadError, setLoadError] = useState(null);
+  const [assigning, setAssigning] = useState(false);
 
   // The Class dropdown in the top bar scopes the whole table: a class shows that
   // class's own isolated championship (its own points, ranks, and gaps), while
@@ -170,6 +171,30 @@ export default function StandingsPage() {
   }, [seasonId, classId, className]);
 
   useEffect(load, [load]);
+
+  // Put the season's unclassified drivers into the class being viewed, so its
+  // championship stops being empty. Their existing results come with them —
+  // a result carrying no class of its own scores in its driver's roster class —
+  // so the table fills in with the season's history, not just future races.
+  async function assignUnclassified() {
+    const scope = data?.class_scope;
+    if (!scope?.class_id) return;
+    if (!confirm(`Add the ${scope.unclassified_entries} driver${scope.unclassified_entries === 1 ? "" : "s"} who aren't in any class to ${className}? Their results so far count toward this class's championship straight away. Drivers already in another class are left alone.`)) return;
+    setAssigning(true);
+    setError(null);
+    try {
+      const res = await api("/api/admin/entries/assign-class", {
+        method: "POST",
+        body: { season_id: seasonId, class_id: scope.class_id, scope: "unclassified" },
+      });
+      if (!res.assigned) setError("Nothing to assign — every driver is already in a class.");
+      load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setAssigning(false);
+    }
+  }
 
   function openAdjust(row) {
     setAdjusting(row);
@@ -332,10 +357,22 @@ export default function StandingsPage() {
                 {season?.name ?? "This season"} has {data.class_scope.season_results} result
                 {data.class_scope.season_results === 1 ? "" : "s"}, but none of them are in this class
                 {data.class_scope.entries_in_class === 0
-                  ? " — and no drivers are assigned to it. Assign them on Drivers ▸ Roster & Teams"
-                  : `, even though ${data.class_scope.entries_in_class} driver${data.class_scope.entries_in_class === 1 ? " is" : "s are"} assigned to it. Set the Class column on each row of the results grid`}
-                , then re-save the session. The class championship fills in from the class recorded on each result.
+                  ? " — and no drivers are assigned to it."
+                  : `, even though ${data.class_scope.entries_in_class} driver${data.class_scope.entries_in_class === 1 ? " is" : "s are"} assigned to it. Set the Class column on the results grid and re-save the session.`}
+                {" "}A class championship ranks the results recorded in it, and a result with no class of its
+                own counts in its driver&rsquo;s class — so putting the drivers in the class brings their
+                results with them.
               </p>
+              {/* The whole fix, as one button: the alternative is editing every
+                  driver on the roster by hand to reach the same state. */}
+              {isAdmin && data.class_scope.unclassified_entries > 0 && (
+                <button className="btn btn-primary" style={{ marginTop: 12 }} disabled={assigning} onClick={assignUnclassified}>
+                  {assigning
+                    ? "Adding…"
+                    : `＋ Add the ${data.class_scope.unclassified_entries} unclassified driver${data.class_scope.unclassified_entries === 1 ? "" : "s"} to ${className}`}
+                </button>
+              )}
+              {error && <p style={{ color: "#e5484d", fontSize: "0.85rem" }}>{error}</p>}
             </>
           ) : (
             <p>No results yet for this season.</p>
