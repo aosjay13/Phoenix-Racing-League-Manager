@@ -12,7 +12,7 @@ import {
 } from "@/lib/standings";
 import { bangerPoints, bangerStatLine, hasBangerBonuses } from "@/lib/bangerRacing";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
-import { classIdsInSeason, entryClassIds, fetchSeasonClasses, filterEntriesByClass, filterResultsByClass } from "@/lib/classServer";
+import { classIdsInSeason, classNamesFor, entryClassIds, entryClassIdsOrdered, fetchSeasonClasses, filterEntriesByClass, filterResultsByClass } from "@/lib/classServer";
 import { seasonChampions } from "@/lib/champions";
 import { fetchDriverNames } from "@/lib/driverNamesServer";
 
@@ -100,12 +100,15 @@ export async function GET(request) {
   // class each driver belongs to. A driver entered in several classes lists
   // them all, with the primary one kept in `class_id` for anything that can
   // only carry a single class.
-  const classNameById = Object.fromEntries(classes.map(c => [c.id, c.name]));
+  // Every driver lists their classes in the SEASON's order (the order the Class
+  // menu shows), so the column reads the same way on every row instead of
+  // following whatever order each entry happened to be saved with.
   for (const r of drivers.rows) {
-    const cids = entryClassIds(entriesById[r.entry_id]);
+    const entry = entriesById[r.entry_id];
+    const cids = entryClassIdsOrdered(entry, classes);
     r.class_id = cids[0] || null;
     r.class_ids = cids;
-    const names = cids.map(cid => classNameById[cid]).filter(Boolean);
+    const names = classNamesFor(entry, classes);
     r.class_name = names.length ? names.join(" · ") : null;
   }
 

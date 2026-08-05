@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
 import { fetchDriverNames } from "@/lib/driverNamesServer";
-import { entryClassIds } from "@/lib/classServer";
+import { entryClassIds, orderClassIds } from "@/lib/classServer";
 
 export const dynamic = "force-dynamic";
 
@@ -69,6 +69,12 @@ export async function GET(request) {
     ]);
     const teamName = Object.fromEntries(teamsSnap.docs.map(d => [d.id, d.data().name]));
     const className = Object.fromEntries(classesSnap.docs.map(d => [d.id, d.data().name]));
+    // The season's classes in their display order (sort_order, then name), so a
+    // driver's classes list the same way on every row — see orderClassIds.
+    const seasonClasses = classesSnap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (Number(a.sort_order || 0) - Number(b.sort_order || 0)) ||
+        String(a.name || "").localeCompare(String(b.name || "")));
 
     for (const doc of entriesSnap.docs) {
       const entry = { id: doc.id, ...doc.data() };
@@ -115,6 +121,7 @@ export async function GET(request) {
       for (const cid of entryClassIds(entry)) {
         if (!bucket.class_ids.includes(cid)) bucket.class_ids.push(cid);
       }
+      bucket.class_ids = orderClassIds(bucket.class_ids, seasonClasses);
       bucket.class_names = bucket.class_ids.map(cid => className[cid]).filter(Boolean);
       bucket.class_id = bucket.class_ids[0] || null;
       bucket.class_name = bucket.class_id ? className[bucket.class_id] ?? null : null;

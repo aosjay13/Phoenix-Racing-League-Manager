@@ -39,6 +39,38 @@ export function entryClassIds(entry) {
   return one ? [one] : [];
 }
 
+// ── One canonical class order ──────────────────────────────────────────────
+//
+// A driver's `class_ids` are stored in the order an admin happened to tick them,
+// so left raw they render differently on every driver ("Pro · Am" here, "Am ·
+// Pro" there) — and, worse, the FIRST of them is the driver's "primary" class,
+// which is what an unstamped result falls back to. Arbitrary order therefore
+// meant an arbitrary answer to "which class did this count in".
+//
+// So both are resolved through the season's own class order (`sort_order`, then
+// name — the order the Class menu shows), which is the one order a league has
+// deliberately set. Ids belonging to no known class keep their relative order at
+// the end rather than being dropped, so nothing disappears from a stale list.
+export function orderClassIds(ids = [], classes = []) {
+  const rank = new Map(classes.map((c, i) => [c.id, i]));
+  return [...normalizeClassIds(ids)].sort((a, b) => {
+    const ra = rank.has(a) ? rank.get(a) : Infinity;
+    const rb = rank.has(b) ? rank.get(b) : Infinity;
+    return ra - rb;
+  });
+}
+
+// Every class this entry races, in the season's display order.
+export function entryClassIdsOrdered(entry, classes = []) {
+  return orderClassIds(entryClassIds(entry), classes);
+}
+
+// Their names, in that same order — what a Class column renders.
+export function classNamesFor(entry, classes = []) {
+  const byId = new Map(classes.map(c => [c.id, c.name]));
+  return entryClassIdsOrdered(entry, classes).map(id => byId.get(id)).filter(Boolean);
+}
+
 // The entry's primary class — the one thing a single-class field can show (a
 // standings row's Class column, an unstamped result's class). Null when the
 // driver is unclassified.
@@ -94,10 +126,29 @@ export function filterEntriesByClass(entries, selection) {
 
 // Narrow results to a class selection, judged by classOfResult so a result
 // saved before the driver was classified still resolves through their entry.
+// Results inside a class selection.
+//
+// A result that RECORDS its class answers for itself — that's every result the
+// grid saves, and it's exact even if the driver is re-classed later.
+//
+// A result with no class recorded (saved before classes existed, or on a grid
+// where the Class cell was left blank) falls back to the driver's classes —
+// ALL of them, the same test filterEntriesByClass applies to the driver
+// themselves. Falling back to only their PRIMARY class is what made a driver
+// who races two classes appear in one class's standings and vanish from the
+// other, despite being on the roster for both: their unstamped results resolved
+// to whichever class happened to be first in their list. Where a driver races
+// several classes and the result doesn't say which one it was run in, there is
+// no answer to prefer — counting it in each class they race is the reading that
+// doesn't silently lose them.
 export function filterResultsByClass(results, selection, entriesById = {}) {
   const set = classIdSet(selection);
   if (!set) return results;
-  return results.filter(r => set.has(classOfResult(r, entriesById)));
+  return results.filter(r => {
+    const stamped = String(r.class_id ?? "").trim();
+    if (stamped) return set.has(stamped);
+    return entryInClassSet(entriesById[r.entry_id], set);
+  });
 }
 
 // Does this event belong on the given class's calendar? An event with no
