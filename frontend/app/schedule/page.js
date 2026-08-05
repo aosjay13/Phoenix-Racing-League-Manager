@@ -105,7 +105,7 @@ export default function SchedulePage() {
 // ── Master feed across seasons (no single season selected) ─────────────────
 
 function GlobalSchedule() {
-  const { gameId, seriesId, game, series, setSeasonId, refresh } = useLeague();
+  const { gameId, seriesId, game, series, seriesList, setSeriesId, setSeasonId, refresh } = useLeague();
   const { isAdmin } = useAuth();
   const [rows, setRows] = useState(null);
   const [showCreateSeason, setShowCreateSeason] = useState(false);
@@ -133,8 +133,11 @@ function GlobalSchedule() {
 
   const scopeLabel = series?.name || game?.name || "All Games";
   // A season belongs to one series, so a new one can only be started once a
-  // concrete series is picked — at "All Series" there's nothing to hang it on.
-  const canCreateSeason = isAdmin && !!seriesId;
+  // concrete game is picked — at "All Games" there's nothing to hang it on. The
+  // series itself can be chosen (or created) inside the dialog, which is what
+  // lets a game with no series and no seasons at all be started from here
+  // instead of dead-ending on an empty calendar.
+  const canCreateSeason = isAdmin && !!gameId;
 
   return (
     <section>
@@ -144,7 +147,7 @@ function GlobalSchedule() {
         {canCreateSeason && (
           <div style={{ marginLeft: "auto" }}>
             <button className="btn btn-primary" style={{ marginTop: 0 }}
-              title={`Start a new season in ${series?.name ?? "this series"}`}
+              title={`Start a new season in ${series?.name ?? game?.name ?? "this game"}`}
               onClick={() => setShowCreateSeason(true)}>
               + New Season
             </button>
@@ -159,14 +162,15 @@ function GlobalSchedule() {
 
       {showCreateSeason && (
         <SeasonCreateModal
-          gameId={gameId} seriesId={seriesId} seriesName={series?.name}
+          gameId={gameId} seriesId={seriesId} seriesName={series?.name} seriesList={seriesList}
           onClose={() => setShowCreateSeason(false)}
-          onCreated={season => {
+          onCreated={(season, newSeriesId) => {
             setShowCreateSeason(false);
-            // Pull the new season into the league selector, then select it — the
-            // page re-renders as that season's own (empty) calendar, ready for
-            // its first race.
+            // Pull the new season (and its series, when the dialog made one)
+            // into the league selector, then select it — the page re-renders as
+            // that season's own (empty) calendar, ready for its first race.
             refresh();
+            if (newSeriesId !== seriesId) setSeriesId(newSeriesId);
             setSeasonId(season.id);
           }}
         />
@@ -175,7 +179,17 @@ function GlobalSchedule() {
       {rows == null ? (
         <div className="skeleton" style={{ height: 240, marginTop: 16 }} />
       ) : upcoming.length === 0 && archive.length === 0 ? (
-        <div className="empty-state"><span className="empty-state-icon">📅</span><p>No races scheduled yet in this scope.</p></div>
+        <div className="empty-state">
+          <span className="empty-state-icon">📅</span>
+          <p>No races scheduled yet in this scope.</p>
+          {/* Nothing here means nothing to click — so the way out of an empty
+              scope sits in the empty state itself, not only up in the header. */}
+          {canCreateSeason && (
+            <button className="btn btn-primary" onClick={() => setShowCreateSeason(true)}>
+              + New Season
+            </button>
+          )}
+        </div>
       ) : (
         <>
           <FeedSection title="Upcoming" icon="🟢" rows={upcoming} kind="upcoming" />
