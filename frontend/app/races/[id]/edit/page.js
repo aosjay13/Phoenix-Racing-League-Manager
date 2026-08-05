@@ -11,7 +11,7 @@ import { RaceLengthField } from "@/components/RaceLengthField";
 import { LENGTH_LAPS, LENGTH_TIME } from "@/lib/raceLength";
 import { normalizedBuiltinTemplates } from "@/lib/pointsTemplates";
 import { carForRace, racePerClassResults, sessionClassScopes } from "@/lib/classFilter";
-import { isBangerScope } from "@/lib/bangerRacing";
+import { derbyPointsTarget, isBangerDoc, isBangerScope } from "@/lib/bangerRacing";
 import { api } from "@/lib/api";
 
 const BLANK_INFO = {
@@ -279,6 +279,46 @@ function UnifiedEditInner() {
   const scopeName = scopes.find(s => s.value === scope)?.label ?? "";
   // The car this class runs, resolved through class → season, for the bar below.
   const scopeCar = carForRace(race, season, classes.find(c => c.id === scope));
+  // ── Demo Derby rates, set from the results grid ───────────────────────────
+  //
+  // Which structure a rate typed above the grid is written to: the class being
+  // entered when that class is the derby one, otherwise the season. It's the
+  // same structure the grid scores on, so a rate set there is a rate that pays
+  // — the failure mode of setting it at a level the session never reads simply
+  // can't happen from here.
+  const seasonLevelDerby = isBangerDoc(series) || isBangerDoc(season);
+  const derbyTarget = useMemo(
+    () => derbyPointsTarget({
+      season, classes,
+      sessionClassId: perClassResults ? scope : "",
+      seasonLevel: seasonLevelDerby,
+    }),
+    [season, classes, perClassResults, scope, seasonLevelDerby]
+  );
+
+  // Merge the new rates into that structure's existing bonuses (never replacing
+  // the map, which would drop the traditional bonuses) and refresh the local
+  // copy so the Points column re-scores immediately.
+  const saveDerbyPoints = useCallback(async (values) => {
+    if (!derbyTarget?.id) throw new Error("No season selected for this event.");
+    if (derbyTarget.kind === "class") {
+      const cls = classes.find(c => c.id === derbyTarget.id) || {};
+      let current = cls.bonus_points || {};
+      if (typeof current === "string") { try { current = JSON.parse(current); } catch { current = {}; } }
+      const updated = await api(`/api/classes/${derbyTarget.id}`, {
+        method: "PATCH", body: { bonus_points: { ...current, ...values } },
+      });
+      setClasses(list => list.map(c => (c.id === derbyTarget.id ? { ...c, ...updated } : c)));
+      return;
+    }
+    let current = season?.bonus_points || {};
+    if (typeof current === "string") { try { current = JSON.parse(current); } catch { current = {}; } }
+    const updated = await api(`/api/seasons/${derbyTarget.id}`, {
+      method: "PATCH", body: { bonus_points: { ...current, ...values } },
+    });
+    setSeason(s => ({ ...s, ...updated }));
+  }, [derbyTarget, classes, season]);
+
   // Props every SessionEditor on this screen shares: null scope = the combined
   // grid this screen has always shown.
   const classProps = {
@@ -296,6 +336,9 @@ function UnifiedEditInner() {
       cls: perClassResults ? classes.find(c => c.id === scope) || null : null,
       classes,
     }),
+    // Where a derby rate typed above the grid is saved, and how.
+    derbyTarget,
+    onDerbyPointsSave: saveDerbyPoints,
   };
 
   const heatFormat = !!race?.heat_format;

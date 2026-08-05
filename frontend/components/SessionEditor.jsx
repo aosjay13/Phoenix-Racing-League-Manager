@@ -296,7 +296,7 @@ export function SessionEditor({
   canAddSession = false, onAddSession, onRemoveSession, onRenameSession,
   initialSession, onEntriesChanged, seriesName, classes = [],
   sessionClass = null, sessionClassName = "",
-  isBangerRacing = false,
+  isBangerRacing = false, derbyTarget = null, onDerbyPointsSave = null,
 }) {
   const names = sessionNames.length ? sessionNames : [LABELS[sessionType] || "Session"];
   const namesKey = names.join("|");
@@ -333,6 +333,10 @@ export function SessionEditor({
   const [pointsModal, setPointsModal] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [createFor, setCreateFor] = useState(null); // { slotId, name } while the inline-create modal is open
+  // Demo Derby rates being edited from the bar above the grid, keyed by bonus
+  // (e.g. { takedown: "2" }). Null while nothing is being edited.
+  const [derbyEdit, setDerbyEdit] = useState(null);
+  const [derbySaving, setDerbySaving] = useState(false);
 
   function showToast(type, msg) {
     setToast({ type, msg });
@@ -874,6 +878,27 @@ export function SessionEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provRows, lastFinishPos, config, template, sessionType, loading, scoped]);
 
+  // Write the derby rates typed above the grid to the structure that scores this
+  // session (see derbyPointsTarget) and re-score the Points column with them.
+  // The whole point of it living here is that "what a takedown is worth" is set
+  // in the same place the takedowns are typed, against the same structure the
+  // grid scores on — no hunting through League Setup for the right level.
+  async function saveDerbyPoints() {
+    if (!onDerbyPointsSave || !derbyEdit) return;
+    setDerbySaving(true);
+    try {
+      await onDerbyPointsSave(Object.fromEntries(
+        Object.entries(derbyEdit).map(([k, v]) => [k, Number(v || 0)])
+      ));
+      setDerbyEdit(null);
+      showToast("success", `Derby points saved to ${derbyTarget?.name || "this season"}. The Points column has re-scored.`);
+    } catch (err) {
+      showToast("error", err.message);
+    } finally {
+      setDerbySaving(false);
+    }
+  }
+
   async function handleSave() {
     const filled = rows.filter(r => r.entry_id && r.finish_pos !== "");
     const provReady = provRows.filter(r => r.entry_id);
@@ -1136,27 +1161,64 @@ export function SessionEditor({
               rate was ever set, or the session doesn't award points at all — is
               indistinguishable from a broken one until the standings come out,
               so both cases say so here instead. */}
-          {derbyPays ? (
-            <p style={{ marginTop: 0, color: "var(--ink-1)", fontSize: "0.8rem" }}>
-              💰 <strong>{session}</strong> pays{" "}
-              {derbyRates.map((r, i) => (
-                <span key={r.name}>
-                  {i > 0 && " · "}
-                  <strong>{r.name}</strong> {r.rate ? `${r.rate} pts${r.per ? " each" : ""}` : "nothing"}
+          {/* What a takedown is worth, set where the takedowns are typed. It
+              writes to the structure this grid actually scores on, so there is
+              no way to set the rate somewhere the session doesn't read. */}
+          <div className={`banger-rate-bar${derbyPays ? "" : " is-unset"}`}>
+            <span className="banger-chip">💥 Derby points</span>
+            {derbyEdit ? (
+              <>
+                {BANGER_STATS.map(stat => (
+                  <label key={stat.key} className="banger-rate-field">
+                    {stat.name}{stat.type === "number" ? " (each)" : ""}
+                    <input type="number" min="0" value={derbyEdit[stat.bonus.key] ?? "0"}
+                      onChange={e => setDerbyEdit(f => ({ ...f, [stat.bonus.key]: e.target.value }))} />
+                  </label>
+                ))}
+                <button className="btn btn-primary" type="button" style={{ marginTop: 0, padding: "4px 12px" }}
+                  disabled={derbySaving} onClick={saveDerbyPoints}>
+                  {derbySaving ? "Saving…" : `Save to ${derbyTarget?.name || "season"}`}
+                </button>
+                <button className="btn btn-ghost" type="button" style={{ marginTop: 0, padding: "4px 10px" }}
+                  disabled={derbySaving} onClick={() => setDerbyEdit(null)}>Cancel</button>
+              </>
+            ) : (
+              <>
+                <span style={{ fontSize: "0.82rem", color: derbyPays ? "var(--ink-1)" : "var(--accent-gold, #e2b714)" }}>
+                  {derbyPays ? (
+                    <>
+                      {derbyRates.map((r, i) => (
+                        <span key={r.name}>
+                          {i > 0 && " · "}
+                          <strong>{r.name}</strong> {r.rate ? `${r.rate} pt${r.rate === 1 ? "" : "s"}${r.per ? " each" : ""}` : "0"}
+                        </span>
+                      ))}
+                      {derbyVaries ? " — classes with their own derby rates score on theirs" : ""}
+                    </>
+                  ) : (
+                    <>
+                      ⚠ <strong>Nothing is set</strong>, so takedowns and both bonuses score{" "}
+                      <strong>0</strong> — the Points column won&rsquo;t move as you type them.
+                    </>
+                  )}
                 </span>
-              ))}
-              {derbyVaries ? " — classes with their own derby rates score on theirs" : ""}.
-              Change it with <strong>⚙ Edit Points Structure</strong> above, or on the season / class points.
-            </p>
-          ) : (
-            <p style={{ marginTop: 0, color: "var(--accent-gold, #e2b714)", fontSize: "0.82rem" }}>
-              ⚠ <strong>No derby points are set for {session}.</strong> Takedowns, Survival and Most Lethal
-              are still recorded as stats, but they score <strong>0</strong> — the Points column below
-              won&rsquo;t move as you type them. Set what each is worth in{" "}
-              <strong>⚙ Edit Points Structure</strong> above, or in this{" "}
-              {classOwnPoints ? "class's" : "season's"} <strong>Points &amp; Bonuses</strong> on League Setup.
-            </p>
-          )}
+                {onDerbyPointsSave && derbyTarget && (
+                  <button className="btn btn-ghost" type="button" style={{ marginTop: 0, padding: "4px 12px" }}
+                    title={`Set what each derby stat is worth. Saved to ${derbyTarget.kind === "class" ? `the ${derbyTarget.name} class` : `the ${derbyTarget.name} season`} — the structure this grid scores on.`}
+                    onClick={() => setDerbyEdit(Object.fromEntries(
+                      BANGER_STATS.map(stat => [stat.bonus.key, String(Number(config.bonuses?.[stat.bonus.key] || 0))])
+                    ))}>
+                    {derbyPays ? "✎ Change" : "＋ Set derby points"}
+                  </button>
+                )}
+              </>
+            )}
+            {onDerbyPointsSave && derbyTarget && (
+              <span style={{ fontSize: "0.74rem", color: "var(--ink-2)" }}>
+                saved to {derbyTarget.kind === "class" ? `the ${derbyTarget.name} class` : `${derbyTarget.name}`}
+              </span>
+            )}
+          </div>
           {isQual && (
             <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.78rem" }}>
               ℹ Qualifying never awards championship points, so derby stats entered here are recorded as

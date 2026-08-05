@@ -1697,3 +1697,44 @@ tbody tr:hover {
   background: rgba(226, 183, 20, 0.12);
   border: 1px solid rgba(226, 183, 20, 0.3);
 }
+
+/* ── Demo Derby rate bar ──────────────────────
+   "What is a takedown worth here?", answered and editable directly above the
+   results grid. Gold-flagged when nothing is set, because a derby that scores
+   nothing looks exactly like a broken one until the standings come out. */
+.banger-rate-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-gold, #e2b714);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+}
+
+.banger-rate-bar.is-unset {
+  border-color: rgba(226, 183, 20, 0.45);
+}
+
+.banger-rate-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--ink-1);
+  white-space: nowrap;
+}
+
+.banger-rate-field input {
+  width: 72px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  color: var(--ink-0);
+  font-size: 0.85rem;
+}

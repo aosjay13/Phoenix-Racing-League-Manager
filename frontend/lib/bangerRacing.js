@@ -167,6 +167,26 @@ export function bangerRates(bonuses = {}) {
   }));
 }
 
+// Which points structure a derby rate typed into the results editor should be
+// written to — the one that actually scores the session in front of you:
+//
+//   • the class being entered, on a split event whose class runs derby;
+//   • the season, when derby is on at season level or above;
+//   • the season's ONE derby class, when that's the only thing running derby
+//     (an ordinary season with a Banger class in it);
+//   • otherwise the season, which is where a rate does the most good.
+//
+// Returns { kind: "class" | "season", id, name }.
+export function derbyPointsTarget({ season = null, classes = [], sessionClassId = "", seasonLevel = false } = {}) {
+  const scoped = sessionClassId ? classes.find(c => c.id === sessionClassId) : null;
+  if (scoped && isBangerDoc(scoped)) return { kind: "class", id: scoped.id, name: scoped.name };
+  if (!seasonLevel) {
+    const derbyClasses = classes.filter(isBangerDoc);
+    if (derbyClasses.length === 1) return { kind: "class", id: derbyClasses[0].id, name: derbyClasses[0].name };
+  }
+  return { kind: "season", id: season?.id ?? null, name: season?.name ?? "Season" };
+}
+
 // Points a result earns from its banger stats, under a resolved bonus map. A
 // counted stat pays its rate per unit; a flag pays its value once. Zero for
 // every ordinary racing result, since those bonuses default to 0 and the
