@@ -21,7 +21,7 @@ import { BangerBonusFields, PointsFields } from "@/components/PointsFields";
 import { BLANK_SEASON_FORM, scoresNoPoints, seasonFormToBody, seasonToForm } from "@/lib/seasonForm";
 import { BLANK_CLASS_FORM, classFormToBody, classToForm, seasonPointsAsClassFields } from "@/lib/classForm";
 import { classScoresOwnPoints } from "@/lib/standings";
-import { isBangerSeries } from "@/lib/bangerRacing";
+import { isBangerDoc } from "@/lib/bangerRacing";
 
 function Panel({ title, sub, step, muted, children }) {
   return (
@@ -103,10 +103,13 @@ function AdminInner() {
   const isOwner = role === "owner";
   const league = useLeague();
   const { games, seriesList, seasons, gameId, seriesId, seasonId, game, series, season, refresh } = league;
-  // Is the series currently selected in the top bar a Demo Derby / Banger
-  // Racing series? Gates the derby bonus values in the season and class points
-  // editors below — the series toggle itself is in the Series panel.
-  const bangerSeries = isBangerSeries(series);
+  // Demo Derby / Banger Racing can be set at series, season or class level (see
+  // lib/bangerRacing.js). `bangerSeries` covers everything under the selected
+  // series; `bangerSeason` adds the selected season's own flag. Each form below
+  // also reads its OWN in-progress switch, so ticking one reveals that level's
+  // derby bonuses straight away rather than after a save.
+  const bangerSeries = isBangerDoc(series);
+  const bangerSeason = bangerSeries || isBangerDoc(season);
   const [races, setRaces] = useState([]);
   const [toast, setToast] = useState(null);
   // Which setup screen is open. Starts on Games — the top of the hierarchy an
@@ -396,7 +399,7 @@ function AdminInner() {
           </form>
           <div style={{ marginTop: 16 }}>
             {seriesList.map(s => <ItemRow key={s.id} logo={s.logo_url} name={s.name}
-              meta={isBangerSeries(s) ? "💥 Demo Derby / Banger Racing" : null}
+              meta={isBangerDoc(s) ? "💥 Demo Derby / Banger Racing" : null}
               editing={editIds.series === s.id}
               onEdit={() => { setEditId("series", s.id); setSeriesForm({ name: s.name, logo_url: s.logo_url || "", isBangerRacing: !!s.isBangerRacing }); }}
               onDelete={() => remove(`/api/series/${s.id}`, `Delete series "${s.name}"?`)} />)}
@@ -437,6 +440,7 @@ function AdminInner() {
           <div style={{ marginTop: 16 }}>
             {seasons.map(s => (
               <ItemRow key={s.id} logo={s.logo_url} name={s.name} editing={editIds.season === s.id}
+                meta={isBangerDoc(s) ? "💥 Demo Derby / Banger Racing" : null}
                 onEdit={() => {
                   setEditId("season", s.id);
                   setSeasonForm(seasonToForm(s));
@@ -504,6 +508,29 @@ function AdminInner() {
               <input disabled={!seasonId} value={classForm.description} placeholder="Optional — e.g. Top split, invite only"
                 onChange={e => setClassForm(f => ({ ...f, description: e.target.value }))} /></div>
 
+            {/* Demo Derby / Banger Racing for this class alone — the case where
+                a season runs a Banger class alongside ordinary racing ones.
+                Hidden when the series or season above already runs derby, since
+                this class does too and the switch would be a no-op. */}
+            {!bangerSeason && (
+              <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
+                <input type="checkbox" id="class_banger_racing" disabled={!seasonId}
+                  checked={!!classForm.isBangerRacing}
+                  onChange={e => setClassForm(f => ({ ...f, isBangerRacing: e.target.checked }))}
+                  style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+                <label htmlFor="class_banger_racing" style={{ margin: 0 }}>
+                  Demo Derby / Banger Racing Class
+                  <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
+                    Off (default): an ordinary racing class. On: <strong>this class</strong> races demo
+                    derby while the rest of {season?.name ?? "the season"} races normally — its results
+                    capture Takedowns, the Survival Bonus and the Most Lethal Bonus, its points structure
+                    can pay for each, and its championship shows the totals. The other classes are
+                    untouched, and the stats stay out of the Overall and per-Game stats views entirely.
+                  </span>
+                </label>
+              </div>
+            )}
+
             <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
               <input type="checkbox" id="class_own_points" disabled={!seasonId} checked={!!classForm.own_points}
                 onChange={e => toggleOwnPoints(e.target.checked)}
@@ -530,7 +557,7 @@ function AdminInner() {
                 {showClassPoints && (
                   <PointsFields value={classForm} onPatch={patchClassForm} templates={templates}
                     onTemplatesChanged={loadTemplates} disabled={!seasonId} onError={msg => showToast("error", msg)}
-                    noPoints={scoresNoPoints(classForm)} banger={bangerSeries}
+                    noPoints={scoresNoPoints(classForm)} banger={bangerSeason || !!classForm.isBangerRacing}
                     blankWarning="⚠ Blank scores 0 for every finishing position in this class — load a template above, or untick the box to score on the season's points." />
                 )}
               </>
@@ -550,7 +577,8 @@ function AdminInner() {
             )}
             {classes.map(c => (
               <ItemRow key={c.id} name={c.name}
-                meta={[carForClass(season, c), classScoresOwnPoints(c) ? "own points" : null].filter(Boolean).join(" · ")}
+                meta={[carForClass(season, c), classScoresOwnPoints(c) ? "own points" : null,
+                       isBangerDoc(c) ? "💥 banger racing" : null].filter(Boolean).join(" · ")}
                 editing={editIds.class === c.id}
                 onEdit={() => {
                   setEditId("class", c.id);

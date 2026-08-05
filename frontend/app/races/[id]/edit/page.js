@@ -11,7 +11,7 @@ import { RaceLengthField } from "@/components/RaceLengthField";
 import { LENGTH_LAPS, LENGTH_TIME } from "@/lib/raceLength";
 import { normalizedBuiltinTemplates } from "@/lib/pointsTemplates";
 import { carForRace, racePerClassResults, sessionClassScopes } from "@/lib/classFilter";
-import { isBangerSeries } from "@/lib/bangerRacing";
+import { isBangerScope } from "@/lib/bangerRacing";
 import { api } from "@/lib/api";
 
 const BLANK_INFO = {
@@ -285,9 +285,17 @@ function UnifiedEditInner() {
     classes,
     sessionClass: perClassResults ? scope : null,
     sessionClassName: perClassResults ? scopeName : "",
-    // Demo Derby / Banger Racing is a property of the SERIES, so every session
-    // of every event in it captures the derby stats — see lib/bangerRacing.js.
-    isBangerRacing: isBangerSeries(series),
+    // Demo Derby / Banger Racing can be flagged on the series, on this season,
+    // or on a single class. On a split event the answer is the class being
+    // entered; on a combined grid it's the season's field as a whole, so a
+    // season with one Banger class shows the derby columns on the shared grid
+    // it enters that class in. See lib/bangerRacing.js.
+    isBangerRacing: isBangerScope({
+      series,
+      season,
+      cls: perClassResults ? classes.find(c => c.id === scope) || null : null,
+      classes,
+    }),
   };
 
   const heatFormat = !!race?.heat_format;

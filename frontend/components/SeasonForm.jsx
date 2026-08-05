@@ -21,6 +21,11 @@ export function SeasonForm({
   value, onChange, templates = [], onTemplatesChanged,
   disabled = false, defaultPointsOpen = false, onError, banger = false,
 }) {
+  // `banger` here means the SERIES runs derby, which already covers every
+  // season in it; the season's own switch below is for a derby season inside an
+  // ordinary series. Either one opens the derby bonus values.
+  const seriesBanger = banger;
+  const bangerOn = banger || !!value.isBangerRacing;
   const [showPoints, setShowPoints] = useState(defaultPointsOpen);
 
   const set = patch => onChange(f => ({ ...f, ...patch }));
@@ -98,6 +103,27 @@ export function SeasonForm({
         </label>
       </div>
 
+      {/* Demo Derby / Banger Racing for this season. Hidden when the series
+          around it already runs derby — every season in it does, so a season
+          switch there would only be a switch that does nothing. */}
+      {!seriesBanger && (
+        <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
+          <input type="checkbox" id="season_banger_racing" disabled={disabled}
+            checked={!!value.isBangerRacing} onChange={check("isBangerRacing")}
+            style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+          <label htmlFor="season_banger_racing" style={{ margin: 0 }}>
+            Demo Derby / Banger Racing Season
+            <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
+              Runs <strong>this season</strong> as demo derby even though the series around it is
+              ordinary racing — every event in it records Takedowns, the Survival Bonus and the
+              Most Lethal Bonus, and the points below gain a value for each. For a season where
+              only <em>some</em> of the field races derby, leave this off and flag the{" "}
+              <strong>class</strong> instead.
+            </span>
+          </label>
+        </div>
+      )}
+
       <button type="button" className="btn btn-ghost" style={{ marginTop: 14 }} onClick={() => setShowPoints(v => !v)}>
         {showPoints ? "▾" : "▸"} Points &amp; Bonuses
       </button>
@@ -109,7 +135,7 @@ export function SeasonForm({
 
       {showPoints && (
         <PointsFields value={value} onPatch={set} templates={templates} onTemplatesChanged={onTemplatesChanged}
-          disabled={disabled} onError={onError} noPoints={noPoints} banger={banger} />
+          disabled={disabled} onError={onError} noPoints={noPoints} banger={bangerOn} />
       )}
     </>
   );
