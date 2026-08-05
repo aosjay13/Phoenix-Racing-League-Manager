@@ -9,7 +9,10 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ShareGraphicModal } from "@/components/ShareGraphicModal";
 import { leagueLogos, driverDisplayName } from "@/lib/shareGraphic";
 import { formatRaceDate } from "@/lib/raceDate";
+import { raceLengthLabel } from "@/lib/raceLength";
+import { gapColumns, formatDelta, parseTime, parseLapsDown } from "@/lib/raceTime";
 import { carForRace, carsByClassForRace, classIdForScope, sessionClassScopes, soleCarForRace } from "@/lib/classFilter";
+import { readParam, setParam } from "@/lib/scopeLink";
 import { api } from "@/lib/api";
 
 function DriverCell({ r }) {
@@ -31,6 +34,26 @@ function DriverCell({ r }) {
 
 function statusLabel(s) {
   return s === "finished" ? "Running" : (s || "").toUpperCase();
+}
+
+// A gap cell: seconds → "+0.312", or an em-dash when there's nothing to
+// measure (the row on top, or a driver with no time).
+const gapCell = sec => (sec == null ? "—" : formatDelta(sec));
+
+// Elapsed race time per row, in finishing order, for the gap columns. Uses the
+// stored Race Time where there is one and otherwise reconstructs it from the
+// leader's time plus the stored interval — which is what lets results entered
+// before these columns existed show gaps too. A driver laps down (interval
+// "2L") or without either value has no comparable time at all.
+function raceTimesInOrder(rows) {
+  const leader = parseTime(rows[0]?.race_time);
+  return rows.map(r => {
+    const t = parseTime(r.race_time);
+    if (t != null) return t;
+    if (parseLapsDown(r.interval) != null) return null;
+    const behind = parseTime(r.interval);
+    return behind != null && leader != null ? leader + behind : null;
+  });
 }
 
 // Coloured +/- SR change a driver earned in this race.
@@ -73,10 +96,23 @@ export default function EventResultsPage() {
       .then(d => {
         setData(d);
         const withResults = d.races.find(s => s.results.length);
-        setTab(prev => prev ?? (withResults ? withResults.name : (d.qualifying.length ? "__qual" : d.races[0]?.name ?? null)));
+        // A link may name the session it wants ("?session=Race 2", or
+        // "?session=Qualifying"); otherwise open on the first session that has
+        // results, as before.
+        const wanted = readParam("session");
+        const linked = wanted === "Qualifying" && d.qualifying.length
+          ? "__qual"
+          : d.races.find(s => s.name === wanted)?.name ?? null;
+        setTab(prev => prev ?? linked ?? (withResults ? withResults.name : (d.qualifying.length ? "__qual" : d.races[0]?.name ?? null)));
       })
       .catch(err => setError(err.message));
   useEffect(() => { load(); }, [id]);
+
+  // Keep the viewed session in the address bar, so copying the link shares the
+  // exact results table on screen rather than the event's default session.
+  useEffect(() => {
+    if (tab) setParam("session", tab === "__qual" ? "Qualifying" : tab);
+  }, [tab]);
 
   // Delete the whole event (race doc + every session's results); stats/points
   // recompute from results on read, so they scrub automatically.
@@ -142,44 +178,55 @@ export default function EventResultsPage() {
   const showSr = finishers.some(r => r.sr_delta != null);
   const sof = event.strength_of_field;
 
+  // Gap columns, worked out from the times on the results themselves — so every
+  // session already in the database gets them without being re-entered.
+  const qualRows = inClass(qualifying);
+  const qualGaps = gapColumns(qualRows.map(r => parseTime(r.qual_time)));
+  const raceGaps = gapColumns(raceTimesInOrder(finishers));
+
   // Shareable graphic for the currently-viewed session (Qualifying or a race).
   const eventDate = event.date ? formatRaceDate(event.date, "long", null) : null;
   const sharingQual = tab === "__qual";
   const sessionLabel = [activeClass?.label, sharingQual ? "Qualifying" : (tab || "Results")].filter(Boolean).join(" · ");
-  const shareSource = sharingQual ? inClass(qualifying) : finishers;
+  const shareSource = sharingQual ? qualRows : finishers;
   // The exporter offers every column this results table shows, so any of them
-  // can go on the graphic. `on: false` marks the ones that start unticked —
-  // Pos/Driver are locked on since a row is unreadable without them, and the
-  // rest default to a feed-friendly headline set.
+  // can go on the graphic — including the derived gap columns. Pos/Driver are
+  // locked on, since a row is unreadable without them; everything else is
+  // ticked by default and one click away from being switched off.
+  // `get` receives the row and its index, the index being what the gap columns
+  // are keyed on.
   const shareSpec = sharingQual
     ? [
         { key: "pos", label: "Pos", align: "center", locked: true, get: r => r.position },
         { key: "driver", label: "Driver", align: "left", locked: true, get: driverDisplayName },
         { key: "team", label: "Team", align: "left", get: r => r.team ?? "—" },
         { key: "qual_time", label: "Qual Time", get: r => r.qual_time || "—" },
+        { key: "qual_to_lead", label: "To Lead", get: (r, i) => gapCell(qualGaps[i]?.toLead) },
+        { key: "qual_gap", label: "Gap", get: (r, i) => gapCell(qualGaps[i]?.gap) },
         { key: "points", label: "Pts", get: r => r.qual_points },
       ]
     : [
         { key: "pos", label: "Pos", align: "center", locked: true, get: r => r.finish_pos },
         { key: "driver", label: "Driver", align: "left", locked: true, get: driverDisplayName },
         { key: "team", label: "Team", align: "left", get: r => r.team ?? "—" },
-        { key: "start", label: "Start", on: false, get: r => r.start_pos ?? "—" },
-        { key: "race_time", label: "Race Time", on: false, get: r => (r.finish_pos === 1 ? (r.race_time || "—") : "—") },
-        { key: "interval", label: "Int", on: false, get: r => (r.finish_pos === 1 ? "—" : (r.interval || r.race_time || "—")) },
+        { key: "start", label: "Start", get: r => r.start_pos ?? "—" },
+        { key: "race_time", label: "Race Time", get: r => (r.finish_pos === 1 ? (r.race_time || "—") : "—") },
+        { key: "interval", label: "Int", get: r => (r.finish_pos === 1 ? "—" : (r.interval || r.race_time || "—")) },
+        { key: "gap", label: "Gap", get: (r, i) => gapCell(raceGaps[i]?.gap) },
         { key: "best_lap", label: "Best Lap", get: r => r.fastest_lap_time || "—" },
-        { key: "laps", label: "Laps", on: false, get: r => r.laps ?? "—" },
-        { key: "laps_led", label: "Led", on: false, get: r => r.laps_led ?? 0 },
-        { key: "incidents", label: "Inc", on: false, get: r => r.incidents ?? 0 },
-        { key: "status", label: "Status", on: false, get: r => statusLabel(r.status) },
+        { key: "laps", label: "Laps", get: r => r.laps ?? "—" },
+        { key: "laps_led", label: "Led", get: r => r.laps_led ?? 0 },
+        { key: "incidents", label: "Inc", get: r => r.incidents ?? 0 },
+        { key: "status", label: "Status", get: r => statusLabel(r.status) },
         { key: "points", label: "Pts", get: r => r.points },
-        ...(showSr ? [{ key: "sr_delta", label: "SR ±", on: false, get: r => (r.sr_delta == null ? "—" : (r.sr_delta > 0 ? `+${r.sr_delta}` : r.sr_delta)) }] : []),
+        ...(showSr ? [{ key: "sr_delta", label: "SR ±", get: r => (r.sr_delta == null ? "—" : (r.sr_delta > 0 ? `+${r.sr_delta}` : r.sr_delta)) }] : []),
       ];
   const shareColumns = shareSpec.map(({ get, ...c }) => ({ align: "center", ...c }));
-  const shareRows = shareSource.map(r => {
+  const shareRows = shareSource.map((r, i) => {
     const pos = sharingQual ? r.position : r.finish_pos;
     return {
       rank: pos > 0 && pos <= 3 ? pos : undefined,
-      cells: shareSpec.map(c => c.get(r)),
+      cells: shareSpec.map(c => c.get(r, i)),
     };
   });
   // Event context carried into the image, so a results graphic stands alone
@@ -190,6 +237,7 @@ export default function EventResultsPage() {
     { label: "Track", value: [event.track, data.track?.track_type, data.track?.length].filter(Boolean).join(" · "), wide: true },
     { label: "Series", value: [game?.name, series?.name].filter(Boolean).join(" · "), wide: true },
     { label: "Season", value: season?.name },
+    { label: "Length", value: raceLengthLabel(event) },
     { label: "Class", value: activeClass?.label },
     { label: "Session", value: tabName },
   ];
@@ -228,6 +276,8 @@ export default function EventResultsPage() {
             {formatRaceDate(event.date, "full", "Date TBA")}
             {season ? ` · ${season.name}` : ""}
             {headerCar ? ` · ${headerCar}` : ""}
+            {/* Scheduled distance: "100 Laps", or the clock on a timed event. */}
+            {raceLengthLabel(event) ? ` · ${raceLengthLabel(event)}` : ""}
           </p>
           {classCars.length > 0 && (
             <p style={{ margin: "4px 0 0", display: "flex", gap: 10, flexWrap: "wrap", fontSize: "0.82rem", color: "var(--ink-1)" }}>
@@ -339,10 +389,16 @@ export default function EventResultsPage() {
           )}
           <table className="stats-table">
             <thead>
-              <tr><th>Pos</th><th style={{ textAlign: "left" }}>Driver</th><th style={{ textAlign: "left" }}>Team</th><th>Qual Time</th><th>Points</th></tr>
+              <tr>
+                <th>Pos</th><th style={{ textAlign: "left" }}>Driver</th><th style={{ textAlign: "left" }}>Team</th>
+                <th>Qual Time</th>
+                <th title="Gap to pole">To Lead</th>
+                <th title="Gap to the car one position up">Gap</th>
+                <th>Points</th>
+              </tr>
             </thead>
             <tbody>
-              {inClass(qualifying).map(r => (
+              {qualRows.map((r, i) => (
                 <tr key={r.entry_id}>
                   <td>
                     <span className={`rank-badge ${r.position === 1 ? "rank-p1" : "rank-default"}`}>{r.position}</span>
@@ -351,6 +407,8 @@ export default function EventResultsPage() {
                   <td className="driver-name-cell" style={{ textAlign: "left" }}><DriverCell r={r} /></td>
                   <td style={{ textAlign: "left", color: "var(--ink-1)" }}>{r.team ?? "—"}</td>
                   <td>{r.qual_time || "—"}</td>
+                  <td style={{ color: "var(--ink-1)" }}>{gapCell(qualGaps[i]?.toLead)}</td>
+                  <td style={{ color: "var(--ink-1)" }}>{gapCell(qualGaps[i]?.gap)}</td>
                   <td className="points-cell">{r.qual_points}</td>
                 </tr>
               ))}
@@ -376,12 +434,15 @@ export default function EventResultsPage() {
             <thead>
               <tr>
                 <th>Pos</th><th title="Starting position">Start</th><th style={{ textAlign: "left" }}>Driver</th><th style={{ textAlign: "left" }}>Team</th>
-                <th>Race Time</th><th>Int</th><th>Best Lap</th><th>Laps</th><th>Led</th><th>Inc</th><th>Status</th><th>Points</th>
+                <th>Race Time</th>
+                <th title="Gap to the winner">Int</th>
+                <th title="Gap to the car one position up">Gap</th>
+                <th>Best Lap</th><th>Laps</th><th>Led</th><th>Inc</th><th>Status</th><th>Points</th>
                 {showSr && <th title="Skill Rating change from this race">SR ±</th>}
               </tr>
             </thead>
             <tbody>
-              {finishers.map(r => (
+              {finishers.map((r, i) => (
                 <tr key={r.entry_id}>
                   <td>
                     <span className={`rank-badge ${r.finish_pos === 1 ? "rank-p1" : r.finish_pos === 2 ? "rank-p2" : r.finish_pos === 3 ? "rank-p3" : "rank-default"}`}>
@@ -396,6 +457,7 @@ export default function EventResultsPage() {
                   <td style={{ textAlign: "left", color: "var(--ink-1)" }}>{r.team ?? "—"}</td>
                   <td>{r.finish_pos === 1 ? (r.race_time || "—") : "—"}</td>
                   <td>{r.finish_pos === 1 ? "—" : (r.interval || r.race_time || "—")}</td>
+                  <td style={{ color: "var(--ink-1)" }}>{gapCell(raceGaps[i]?.gap)}</td>
                   <td>{r.fastest_lap_time || "—"}</td>
                   <td>{r.laps ?? "—"}</td>
                   <td>{r.laps_led ?? 0}</td>

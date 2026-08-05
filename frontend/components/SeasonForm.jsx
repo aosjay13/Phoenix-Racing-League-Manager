@@ -14,9 +14,12 @@ import { scoresNoPoints } from "@/lib/seasonForm";
 // call belong to the caller, which knows whether it's creating or editing.
 // State lives in the caller too (`value` / `onChange`) so the caller can seed
 // it from an existing season — see lib/seasonForm.js for the shape.
+// `banger` — the series this season belongs to is a Demo Derby / Banger Racing
+// series — adds the derby bonus values (points per takedown, survival, most
+// lethal) to the Points & Bonuses block. See lib/bangerRacing.js.
 export function SeasonForm({
   value, onChange, templates = [], onTemplatesChanged,
-  disabled = false, defaultPointsOpen = false, onError,
+  disabled = false, defaultPointsOpen = false, onError, banger = false,
 }) {
   const [showPoints, setShowPoints] = useState(defaultPointsOpen);
 
@@ -53,7 +56,8 @@ export function SeasonForm({
           Enable Overall Championship
           <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
             For a season split into classes: also crown ONE overall champion across the whole
-            field, on top of each class&rsquo;s own championship. Turn it off for class-only
+            field, on top of each class&rsquo;s own championship — three classes with this on
+            crowns four champions, and all four are tracked as titles. Turn it off for class-only
             championships — the combined &ldquo;All Classes&rdquo; table stays viewable, just
             flagged as unofficial. No effect on a season without classes.
           </span>
@@ -105,7 +109,7 @@ export function SeasonForm({
 
       {showPoints && (
         <PointsFields value={value} onPatch={set} templates={templates} onTemplatesChanged={onTemplatesChanged}
-          disabled={disabled} onError={onError} noPoints={noPoints} />
+          disabled={disabled} onError={onError} noPoints={noPoints} banger={banger} />
       )}
     </>
   );

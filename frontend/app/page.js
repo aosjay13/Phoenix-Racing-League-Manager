@@ -108,7 +108,9 @@ export default function DashboardPage() {
     { href: "/stats", icon: "📊", label: "Stats", sub: "Career totals & records" },
     { href: "/schedule", icon: "📅", label: "Schedule", sub: "Season calendar" },
     { href: "/drivers", icon: "🏎", label: "Drivers", sub: "Player profiles" },
-    ...(isAdmin ? [{ href: "/race-entry", icon: "⏱", label: "Enter Results", sub: "Submit finish positions" }] : []),
+    // Results are entered from the event itself now — the Schedule's ⏱ button
+    // opens the event's results grid.
+    ...(isAdmin ? [{ href: "/schedule", icon: "⏱", label: "Enter Results", sub: "Pick an event on the Schedule" }] : []),
   ];
 
   return (
@@ -147,7 +149,7 @@ export default function DashboardPage() {
       </div>
       <div className="quick-links">
         {quickLinks.map(card => (
-          <Link href={card.href} key={card.href}>
+          <Link href={card.href} key={card.label}>
             <div className="quick-card">
               <span className="quick-card-icon">{card.icon}</span>
               <strong>{card.label}</strong>

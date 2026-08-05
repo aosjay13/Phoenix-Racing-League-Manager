@@ -21,12 +21,14 @@ import { createPortal } from "react-dom";
 //   defaultTitle  – pre-filled headline (editable by the user)
 //   subtitle      – muted meta line under the title (series · season · date …)
 //   columns       – [{ key?, label, align?, locked? }]  (align: "left"|"center"|"right")
-//                   locked columns can't be switched off in "Displayed Stats".
+//                   every column starts ticked in "Displayed Stats"; locked ones
+//                   can't be switched off at all.
 //   rows          – [{ cells: (string|number)[], rank? }]  cells.length === columns.length
 //                   rank (1..3) tints the row's leading cell gold/silver/bronze.
 //   logos         – [{ label, url }] logos the user can drop into the header.
 //   leagueName    – pre-fills the League Name field (from League Settings)
-//   leagueLogoUrl – pre-fills the League Logo picker (from League Settings)
+//   leagueLogoUrl – offered as "League Settings logo" in the League Logo picker.
+//                   Both logo pickers start on None — a logo is opt-in.
 
 const THEMES = {
   dark: {
@@ -65,10 +67,11 @@ const ROW_OPTIONS = [10, 15, 20, 30];
 // callers that pass hand-built column lists without a `key`.
 const colKey = (c, i) => c.key ?? `${c.label}-${i}`;
 
-// The columns a screen wants switched off when the exporter opens. A column
-// with no `on` flag is on, so callers that don't opt in behave as before.
-function defaultHidden(columns) {
-  return new Set(columns.map((c, i) => (c.locked || c.on !== false ? null : colKey(c, i))).filter(Boolean));
+// Every column a screen offers starts ticked — the graphic opens showing all
+// of the data, and anything unwanted is one click away in "Displayed Stats".
+// (The table scales its type down as columns are added, see tableScale.)
+function defaultHidden() {
+  return new Set();
 }
 
 // The graphic is a fixed 1080px wide, so the more columns are on, the less room
@@ -89,6 +92,22 @@ function tableScale(n) {
   return { font: 12, head: 10, padY: 6, padX: 4, name: 150, wrapHead: true };
 }
 
+// The header button that opens the exporter. Every screen that can export one
+// carries the same control in the same place, so it reads as one feature
+// rather than a per-page affordance.
+export function ShareGraphicButton({ onClick, title }) {
+  return (
+    <button
+      className="btn btn-ghost"
+      style={{ marginTop: 0, padding: "6px 12px", fontSize: "0.82rem" }}
+      title={title || "Export this table as an image for Discord, X or Facebook"}
+      onClick={onClick}
+    >
+      🖼 Share Graphic
+    </button>
+  );
+}
+
 export function ShareGraphicModal({
   open, onClose, kind = "Graphic", defaultTitle = "", subtitle = "",
   columns = [], rows = [], logos = [], leagueName = "", leagueLogoUrl = "",
@@ -104,14 +123,14 @@ export function ShareGraphicModal({
   const [logoIdx, setLogoIdx] = useState(-1);     // index into `logos`, or -1 = none
   const [uploadedLogo, setUploadedLogo] = useState(null); // data URL from a file upload
   const [league, setLeague] = useState(leagueName);
-  const [leagueLogo, setLeagueLogo] = useState(leagueLogoUrl || "");
+  // Logos start off — a plain graphic is the common case, and both pickers
+  // still offer the league/series/track logos (and an upload) a click away.
+  const [leagueLogo, setLeagueLogo] = useState("");
   const [uploadedLeagueLogo, setUploadedLeagueLogo] = useState(null);
   const [limit, setLimit] = useState(() => (rows.length > 15 ? 15 : rows.length || 15));
-  // Column keys the user has switched OFF. Seeded from each column's `on` flag
-  // so a screen with fifteen stats opens on a readable headline set rather than
-  // an unreadably wide table — every column is still one click away in the
-  // stat picker.
-  const [hidden, setHidden] = useState(() => defaultHidden(columns));
+  // Column keys the user has switched OFF. Starts empty: the graphic opens with
+  // every stat the screen offers already on it.
+  const [hidden, setHidden] = useState(() => defaultHidden());
   const [pickerOpen, setPickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -125,10 +144,10 @@ export function ShareGraphicModal({
       setLimit(rows.length > 15 ? 15 : rows.length || 15);
       setUploadedLogo(null);
       setUploadedLeagueLogo(null);
-      setLogoIdx(logos.length ? 0 : -1);
+      setLogoIdx(-1);
       setLeague(leagueName);
-      setLeagueLogo(leagueLogoUrl || "");
-      setHidden(defaultHidden(columns));
+      setLeagueLogo("");
+      setHidden(defaultHidden());
       setPickerOpen(false);
       setError(null);
     }
@@ -331,9 +350,6 @@ export function ShareGraphicModal({
                       onClick={() => setHidden(new Set())}>Select all</button>
                     <button type="button" className="btn btn-ghost" style={{ marginTop: 0, padding: "3px 12px", fontSize: "0.78rem" }}
                       onClick={() => setHidden(new Set(columns.map((c, i) => (c.locked ? null : colKey(c, i))).filter(Boolean)))}>Clear</button>
-                    <button type="button" className="btn btn-ghost" style={{ marginTop: 0, padding: "3px 12px", fontSize: "0.78rem" }}
-                      title="Back to the columns this screen starts with"
-                      onClick={() => setHidden(defaultHidden(columns))}>Reset</button>
                     <span style={{ marginLeft: "auto", alignSelf: "center", fontSize: "0.76rem", color: "var(--ink-2)" }}>
                       {shownColumns.length}/{columns.length}
                     </span>
@@ -386,6 +402,59 @@ export function ShareGraphicModal({
 }
 
 // The captured node. Fixed 1080px wide for a consistent, feed-friendly output.
+// A logo drawn at its native aspect ratio inside a fixed box.
+//
+// `objectFit: contain` would do this in the browser, but html2canvas ignores
+// object-fit and paints the image to whatever width/height the element carries
+// — so a wide (or tall) logo came out stretched to a square in the exported
+// PNG. Instead we read the image's natural size on load and set explicit pixel
+// dimensions that already match its ratio: the element's box IS the letterboxed
+// size, so the browser and html2canvas agree and nothing is distorted.
+//
+// maxW/maxH bound the box; the logo is scaled down to fit inside both and is
+// never scaled up past its natural size, keeping the small form factor the
+// header and footer were designed around.
+function FittedLogo({ src, maxW, maxH, radius }) {
+  const [natural, setNatural] = useState(null);
+
+  // Reset when the picked logo changes, so a new image never renders at the
+  // previous one's dimensions for a frame.
+  useEffect(() => { setNatural(null); }, [src]);
+
+  // Bails out when the size is unchanged: the ref callback below re-runs on
+  // every render, and returning a fresh object each time would loop forever.
+  function measure(el) {
+    if (!el?.complete || !el.naturalWidth) return;
+    const w = el.naturalWidth, h = el.naturalHeight;
+    setNatural(prev => (prev && prev.w === w && prev.h === h ? prev : { w, h }));
+  }
+
+  const fit = (() => {
+    if (!natural || !natural.w || !natural.h) return { width: maxW, height: maxH };
+    const scale = Math.min(maxW / natural.w, maxH / natural.h, 1);
+    return { width: Math.round(natural.w * scale), height: Math.round(natural.h * scale) };
+  })();
+
+  return (
+    // crossOrigin lets html2canvas rasterize a remotely-hosted logo when its
+    // host sends CORS headers (Firebase Storage URLs do).
+    <img
+      src={src} alt="" crossOrigin="anonymous"
+      // A cached image can finish loading before React attaches onLoad, so also
+      // measure on mount when the element reports itself already complete.
+      ref={measure}
+      onLoad={e => measure(e.currentTarget)}
+      style={{
+        width: fit.width, height: fit.height, objectFit: "contain",
+        borderRadius: radius, flexShrink: 0,
+        // Until the natural size is known the box is the full square; keeping
+        // it invisible avoids a one-frame stretched flash on slow loads.
+        visibility: natural ? "visible" : "hidden",
+      }}
+    />
+  );
+}
+
 // Exported so the layout can be rendered and screenshotted outside the app.
 // The league's name is the eyebrow above the headline; its logo anchors the
 // footer, so league branding frames the graphic without fighting the headline or
@@ -414,11 +483,10 @@ export function GraphicCard({ cardRef, theme: t, title, subtitle, logo, leagueNa
           <div style={{ fontSize: 42, fontWeight: 800, lineHeight: 1.08, letterSpacing: "-0.01em" }}>{title}</div>
           {subtitle && <div style={{ fontSize: 19, color: t.muted, marginTop: 8, fontWeight: 500 }}>{subtitle}</div>}
         </div>
-        {logo && (
-          // crossOrigin lets html2canvas rasterize a remotely-hosted logo when
-          // its host sends CORS headers (Firebase Storage URLs do).
-          <img src={logo} alt="" crossOrigin="anonymous" style={{ height: 96, width: 96, objectFit: "contain", borderRadius: 12, flexShrink: 0 }} />
-        )}
+        {/* Bounded by height so a wide banner logo can spread sideways (up to
+            half the card) without ever growing taller than the square it used
+            to occupy. */}
+        {logo && <FittedLogo src={logo} maxW={280} maxH={96} radius={12} />}
       </div>
 
       {/* Event metadata — the context that makes a results graphic readable on
@@ -473,14 +541,27 @@ export function GraphicCard({ cardRef, theme: t, title, subtitle, logo, leagueNa
             <tr key={ri} style={{ background: ri % 2 ? t.stripe : "transparent" }}>
               {r.cells.map((cell, ci) => {
                 const medal = ci === 0 && r.rank ? MEDAL[r.rank] : null;
-                return (
+                  // A column of prose (an event name, a track, "Pro: Ana ·
+                  // Am: Bo") can be far wider than the numbers these tables
+                  // usually hold, and the card is a fixed 1080px — left on one
+                  // line it pushes the last columns out past the frame. `wrap`
+                  // lets such a column break onto a second line inside a capped
+                  // width instead. Numeric columns stay on one line as before.
+                  const wrap = !!columns[ci]?.wrap;
+                  return (
                   <td key={columns[ci]?.key ?? ci} style={{
                     textAlign: columns[ci]?.align || (ci === 0 ? "left" : "center"),
                     padding: `${sz.padY - 1}px ${sz.padX}px`, borderBottom: `1px solid ${t.border}`,
                     fontWeight: ci === 0 ? 700 : 500,
                     color: medal || (ci === 0 ? t.ink : t.muted),
-                    fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap",
-                    maxWidth: ci === 0 ? sz.name : undefined, overflow: "hidden", textOverflow: "ellipsis",
+                    fontVariantNumeric: "tabular-nums",
+                    whiteSpace: wrap ? "normal" : "nowrap",
+                    lineHeight: wrap ? 1.25 : undefined,
+                    // overflowWrap (not wordBreak): breaks between words, and
+                    // only ever mid-word for a single word too long to fit at
+                    // all — so "Spa-Francorchamps" stays intact.
+                    overflowWrap: wrap ? "break-word" : undefined,
+                    maxWidth: wrap || ci === 0 ? sz.name : undefined, overflow: "hidden", textOverflow: "ellipsis",
                   }}>{cell === null || cell === undefined || cell === "" ? "—" : cell}</td>
                 );
               })}
@@ -493,10 +574,7 @@ export function GraphicCard({ cardRef, theme: t, title, subtitle, logo, leagueNa
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, marginTop: 20, fontSize: 14, color: t.faint }}>
         <span>{totalRows > shownCount ? `Top ${shownCount} of ${totalRows}` : `${totalRows} shown`}</span>
         <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {leagueLogo && (
-            <img src={leagueLogo} alt="" crossOrigin="anonymous"
-              style={{ height: 34, width: 34, objectFit: "contain", borderRadius: 7, flexShrink: 0 }} />
-          )}
+          {leagueLogo && <FittedLogo src={leagueLogo} maxW={110} maxH={34} radius={7} />}
           <span style={{ fontWeight: 600, color: league ? t.muted : t.faint }}>
             {league || "Phoenix Racing League Manager"}
           </span>

@@ -441,10 +441,12 @@ a {
   padding-right: 132px;
 }
 
-/* Rows carrying a third action button (e.g. Drivers' Edit / Merge / Delete)
-   reserve extra space so the buttons never overlap the row's meta text. */
+/* Rows carrying a third action button (e.g. Drivers'/Tracks' Edit / Merge /
+   Delete) reserve extra space so the buttons never overlap the row's meta
+   text. The three buttons measure ~206px including the 12px right offset, so
+   this leaves a little slack for wider font rendering. */
 .list-row-wrap.wide .list-row {
-  padding-right: 210px;
+  padding-right: 228px;
 }
 
 .list-row-actions {
@@ -994,6 +996,16 @@ tbody tr:hover {
 
 /* The global League switcher sits ahead of the game/series/season selectors and
    is set apart with an accent + divider so it reads as the top-level scope. */
+/* Sits at the end of the scope cluster, aligned with the selects rather than
+   their labels, so it reads as "share this scope". */
+.copy-link-btn {
+  margin-top: 0;
+  padding: 7px 12px;
+  font-size: 0.82rem;
+  white-space: nowrap;
+  align-self: flex-end;
+}
+
 .league-switcher { padding-right: 12px; border-right: 1px solid var(--border); }
 .league-switcher label { color: var(--accent-cyan); }
 .league-switcher select { font-weight: 600; }
@@ -1180,6 +1192,45 @@ tbody tr:hover {
   color: var(--ink-2);
 }
 
+/* League Setup screen switcher: one button per setup form, so only the screen
+   being worked on is on the page (instead of every form stacked into one long
+   scroll). Shares the .tab pill look with the rest of the app. */
+.setup-switch {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 22px 0 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+}
+
+.setup-switch-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.setup-switch-label:not(:first-child) { margin-top: 10px; }
+
+.setup-switch-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.setup-switch-btn { white-space: nowrap; }
+
+/* The one open setup screen. Capped so full-width forms stay readable on a
+   wide monitor. */
+.setup-stage {
+  margin-top: 16px;
+  max-width: 900px;
+}
+
 /* Numbered step chip on a structure panel's heading. */
 .setup-panel-head {
   display: flex;
@@ -1248,16 +1299,35 @@ tbody tr:hover {
 
 /* ── Wide race-entry grid ────────────────────── */
 .result-grid-wide {
-  grid-template-columns: 22px 66px 66px minmax(150px, 1fr) 96px 84px 92px 72px 72px 70px 34px 34px 34px 38px 74px 96px 64px 34px;
-  min-width: 1280px;
+  grid-template-columns: 22px 66px 66px minmax(150px, 1fr) 96px 84px 92px 72px 72px 70px 34px 34px 34px 38px var(--banger-cols) 74px 96px 64px 34px;
+  min-width: calc(1280px + var(--banger-extra));
   align-items: center;
 }
 
 /* Multi-class seasons get an extra Class column right after Driver, so a
    driver's class can be set (or corrected) as results are entered. */
 .result-grid-wide.has-class {
-  grid-template-columns: 22px 66px 66px minmax(150px, 1fr) 108px 96px 84px 92px 72px 72px 70px 34px 34px 34px 38px 74px 96px 64px 34px;
-  min-width: 1400px;
+  grid-template-columns: 22px 66px 66px minmax(150px, 1fr) 108px 96px 84px 92px 72px 72px 70px 34px 34px 34px 38px var(--banger-cols) 74px 96px 64px 34px;
+  min-width: calc(1400px + var(--banger-extra));
+}
+
+/* ── Demo Derby / Banger Racing ───────────────
+   A banger series' grids carry one extra column per banger stat (Takedowns,
+   Survival, Most Lethal — see lib/bangerRacing.js). The widths are handed in
+   through --banger-cols by the editor rather than hard-coded here, so adding a
+   banger stat needs no CSS change; both variables are empty/zero by default,
+   which is every ordinary series' grid, unchanged. */
+.result-grid,
+.qual-grid {
+  --banger-cols: ;
+  --banger-extra: 0px;
+}
+
+/* The banger columns read as their own group, so an admin scanning a wide grid
+   can see where the derby stats start. */
+.result-grid.has-banger .grid-header,
+.qual-grid.has-banger .grid-header {
+  white-space: nowrap;
 }
 
 /* ── Stats table ─────────────────────────────── */
@@ -1397,18 +1467,19 @@ tbody tr:hover {
 .schedule-table td { vertical-align: middle; }
 
 /* ── Qualifying entry grid ───────────────────── */
+/* ⠿ · Pos · Driver · [Class] · Qual Time · To Lead · Gap · Pts · ✕ */
 .qual-grid {
   display: grid;
-  grid-template-columns: 22px 70px minmax(160px, 1fr) 140px 80px 34px;
+  grid-template-columns: 22px 70px minmax(160px, 1fr) 140px 100px 100px var(--banger-cols) 80px 34px;
   gap: 8px;
   align-items: center;
-  min-width: 520px;
+  min-width: calc(720px + var(--banger-extra));
   margin-bottom: 16px;
 }
 
 .qual-grid.has-class {
-  grid-template-columns: 22px 70px minmax(160px, 1fr) 108px 140px 80px 34px;
-  min-width: 640px;
+  grid-template-columns: 22px 70px minmax(160px, 1fr) 108px 140px 100px 100px var(--banger-cols) 80px 34px;
+  min-width: calc(840px + var(--banger-extra));
 }
 
 .qual-grid select {
@@ -1494,4 +1565,135 @@ tbody tr:hover {
   font-size: 0.78rem;
   font-weight: 700;
   white-space: nowrap;
+}
+
+/* ── Backup & Restore (League Setup ▸ Data & Recovery) ─────────────────────
+   The import half is bordered in red on purpose: it is the one control on the
+   admin screen that can delete live data, and it should never be mistaken for
+   the export button sitting next to it. */
+.backup-danger-card {
+  border-color: rgba(230, 57, 70, 0.45);
+}
+
+/* Per-collection record counts, shown for the file being imported and again
+   for the result of the import. */
+.backup-counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px;
+}
+
+.backup-count {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  font-size: 0.8rem;
+}
+
+.backup-count-n {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-0);
+}
+
+.backup-count-label {
+  color: var(--ink-1);
+}
+
+.backup-count-removed {
+  color: var(--accent-red);
+  font-size: 0.72rem;
+}
+
+.backup-preview {
+  margin: 10px 0 14px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-surface);
+}
+
+/* History of export/restore runs, newest first. */
+.backup-log {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.backup-log-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--card);
+  font-size: 0.82rem;
+}
+
+.backup-log-kind {
+  flex-shrink: 0;
+  min-width: 108px;
+  font-weight: 600;
+  color: var(--ink-0);
+}
+
+.backup-log-kind.kind-scheduled { color: var(--accent-cyan); }
+.backup-log-kind.kind-restore   { color: var(--accent-gold); }
+
+.backup-log-when {
+  color: var(--ink-0);
+  font-variant-numeric: tabular-nums;
+}
+
+.backup-log-meta {
+  color: var(--ink-2);
+}
+
+/* ── Demo Derby / Banger Racing points block ──
+   The banger bonus values, wherever a points structure is edited (a season, a
+   class, a session's template, the shared template library). Boxed and badged
+   so it reads as a mode-specific group rather than more racing bonuses. */
+.banger-bonus-block {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-gold, #e2b714);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+}
+
+.banger-bonus-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.banger-bonus-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 12px;
+}
+
+@media (max-width: 640px) {
+  .banger-bonus-grid { grid-template-columns: 1fr; }
+}
+
+.banger-chip {
+  align-self: flex-start;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--accent-gold, #e2b714);
+  background: rgba(226, 183, 20, 0.12);
+  border: 1px solid rgba(226, 183, 20, 0.3);
 }

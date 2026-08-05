@@ -2,9 +2,36 @@
 
 import { useState } from "react";
 import { api } from "@/lib/api";
-import { BONUS_TYPES } from "@/lib/standings";
+import { ALL_BONUS_TYPES, BONUS_TYPES } from "@/lib/standings";
+import { BANGER_BONUS_TYPES } from "@/lib/bangerRacing";
 import { BUILTIN_TEMPLATES, tableToList } from "@/lib/pointsTemplates";
 import { pointsFormToTemplate } from "@/lib/seasonForm";
+
+// The Demo Derby / Banger Racing bonus values, as their own labelled block —
+// rendered inside any points-structure editor that belongs to a banger series
+// (a season, a class, a session's template, or the shared template library).
+// The fields are generated from BANGER_BONUS_TYPES, so adding a new banger
+// bonus in lib/bangerRacing.js adds it here with no change to this file.
+export function BangerBonusFields({ value, onPatch, disabled = false }) {
+  return (
+    <div className="banger-bonus-block">
+      <div className="banger-bonus-head">
+        <span className="banger-chip">💥 Demo Derby / Banger Racing</span>
+        <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
+          Paid on top of finishing position. Takedowns pay <strong>per car</strong> put out; the
+          two bonuses pay once to the driver who earns them.
+        </span>
+      </div>
+      <div className="banger-bonus-grid">
+        {BANGER_BONUS_TYPES.map(([key, label]) => (
+          <div className="field" key={key}><label>{label}</label>
+            <input type="number" min="0" disabled={disabled} value={value.bonuses[key] ?? "0"}
+              onChange={e => onPatch({ bonuses: { ...value.bonuses, [key]: e.target.value } })} /></div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 // One points structure, as an editable block of fields: the template loader,
 // the race scale, the qualifying scale (with its own loader, so qualifying can
@@ -19,9 +46,13 @@ import { pointsFormToTemplate } from "@/lib/seasonForm";
 // (comma-list strings + a bonus map of strings, straight off the inputs) and
 // `onPatch` takes a partial of that shape. See lib/seasonForm.js for the
 // serialization into what the API stores.
+// `banger` adds the Demo Derby / Banger Racing bonus values (Takedowns,
+// Survival, Most Lethal — see lib/bangerRacing.js) to the bonus list. They're
+// stored in every points structure regardless, but only a banger series'
+// editors offer them, so an ordinary series' form is untouched.
 export function PointsFields({
   value, onPatch, templates = [], onTemplatesChanged,
-  disabled = false, onError, noPoints = false, blankWarning = "",
+  disabled = false, onError, noPoints = false, blankWarning = "", banger = false,
 }) {
   const [templateId, setTemplateId] = useState("");
   const [qualTemplateId, setQualTemplateId] = useState("");
@@ -41,7 +72,7 @@ export function PointsFields({
     onPatch({
       race_points: (builtin ? builtin.race : tableToList(saved.race_points)) || "",
       qual_points: (builtin ? builtin.qual : tableToList(saved.qual_points)) || "",
-      bonuses: Object.fromEntries(BONUS_TYPES.map(([k]) => [k, String(bonusSrc[k] ?? 0)])),
+      bonuses: Object.fromEntries(ALL_BONUS_TYPES.map(([k]) => [k, String(bonusSrc[k] ?? 0)])),
     });
   }
 
@@ -129,7 +160,12 @@ export function PointsFields({
       <div className="field"><label>Qualifying Points — comma-separated, pole first (blank = 0 points)</label>
         <textarea rows={2} disabled={disabled} value={value.qual_points}
           placeholder="35, 32, 30, 28, 26, 25, …"
-          onChange={e => onPatch({ qual_points: e.target.value })} /></div>
+          onChange={e => onPatch({ qual_points: e.target.value })} />
+        {/* There's no Pole Bonus field any more — it paid for the same result as
+            the first number here, so a season with both scored a pole twice. */}
+        <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
+          Pole is position 1 of this list — set what a pole is worth here; there is no separate pole bonus.
+        </span></div>
 
       {BONUS_TYPES.map(([key, label]) => (
         <div className="field" key={key}><label>{label}</label>
@@ -137,7 +173,11 @@ export function PointsFields({
             onChange={e => onPatch({ bonuses: { ...value.bonuses, [key]: e.target.value } })} /></div>
       ))}
 
-      <div className="field">
+      {banger && (
+        <BangerBonusFields value={value} onPatch={onPatch} disabled={disabled} />
+      )}
+
+      <div className="field" style={{ marginTop: 4 }}>
         <label>Save Current Setup as Template</label>
         <div style={{ display: "flex", gap: 8 }}>
           <input value={templateName} disabled={disabled} onChange={e => setTemplateName(e.target.value)}

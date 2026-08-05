@@ -8,7 +8,9 @@ import { useSortable } from "@/components/useSortable";
 import { ShareGraphicModal } from "@/components/ShareGraphicModal";
 import { leagueLogos, toGraphicTable } from "@/lib/shareGraphic";
 import { api } from "@/lib/api";
+import { readParam, setParam } from "@/lib/scopeLink";
 import { compareByTieBreakers, formatStat, TIE_BREAKER_SUMMARY } from "@/lib/standings";
+import { BANGER_STAT_COLUMNS } from "@/lib/bangerRacing";
 
 // The exporter offers every column the standings table shows; these are the
 // ones ticked when it opens — a feed-friendly set, since the full table has too
@@ -50,6 +52,30 @@ const TEAM_COLS = [
   ["avg_finish", "Avg Finish", true],
   ["drivers", "Drivers"],
 ];
+
+// Who this season crowned, once it's marked completed: one champion per class,
+// plus the outright one when the season runs an overall championship. Shown
+// here so the titles credited in career and team stats are visible at the
+// source — a three-class season with the overall on lists four champions.
+// Empty (and hidden) for a season still running.
+function SeasonChampions({ champions }) {
+  if (!champions.length) return null;
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginTop: 10 }}>
+      <span style={{ color: "var(--ink-1)", fontSize: "0.85rem" }}>
+        {champions.length === 1 ? "Champion:" : `Champions (${champions.length}):`}
+      </span>
+      {champions.map(c => (
+        <span key={`${c.kind}:${c.class_id ?? ""}:${c.entry_id}`} className="page-badge">
+          🏆 {c.kind === "overall" ? "Overall" : (c.class_name || "Class")} —{" "}
+          {(c.driver_id || c.user_id)
+            ? <Link href={`/drivers/${c.driver_id || c.user_id}`} style={{ color: "inherit" }}>{c.driver_name}</Link>
+            : c.driver_name}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 function RankBadge({ rank }) {
   const cls = rank === 1 ? "rank-p1" : rank === 2 ? "rank-p2" : rank === 3 ? "rank-p3" : "rank-default";
@@ -107,9 +133,18 @@ function formatCell(r, key) {
 }
 
 export default function StandingsPage() {
-  const { seasonId, season, game, series, league, classId, className, raceClass, classes, combinedChampionship } = useLeague();
+  const { seasonId, season, game, series, league, classId, className, raceClass, classes, combinedChampionship, isBangerRacing } = useLeague();
   const { isAdmin } = useAuth();
+  // Which championship is showing rides in the URL too, so a link can point at
+  // the team standings rather than always opening on drivers.
   const [tab, setTab] = useState("drivers");
+  useEffect(() => {
+    if (readParam("tab") === "teams") setTab("teams");
+  }, []);
+  const chooseTab = t => {
+    setTab(t);
+    setParam("tab", t === "teams" ? "teams" : null);
+  };
   const [data, setData] = useState(null);
   const [adjusting, setAdjusting] = useState(null); // row being edited
   const [adjForm, setAdjForm] = useState({ points_adjustment: "0", adjustment_note: "" });
@@ -166,16 +201,23 @@ export default function StandingsPage() {
   const heading = `Standings · ${season?.name ?? ""}${className ? ` · ${className}` : ""}`;
   // In the combined view, surface which class each driver runs in; inside a
   // single class the column would be the same value on every row.
-  const driverCols = classes.length > 0 && !classId
+  const baseDriverCols = classes.length > 0 && !classId
     ? [...DRIVER_COLS.slice(0, 4), ["class_name", "Class", false, true], ...DRIVER_COLS.slice(4)]
     : DRIVER_COLS;
+  // Demo Derby / Banger Racing stats (Takedowns, Survival, Most Lethal) are
+  // meaningless outside the series that races them, so they're appended here
+  // and ONLY here — this table is always scoped to one season, hence to one
+  // series, and `isBangerRacing` is that series' flag. The Overall and per-Game
+  // stats views never reach this code. See lib/bangerRacing.js.
+  const driverCols = isBangerRacing ? [...baseDriverCols, ...BANGER_STAT_COLUMNS] : baseDriverCols;
+  const teamCols = isBangerRacing ? [...TEAM_COLS, ...BANGER_STAT_COLUMNS] : TEAM_COLS;
 
   const shareNameKey = tab === "teams" ? "team" : "driver_name";
   // Every column on screen is offered in the exporter's stat picker.
   const shareCols = [
     ["rank", "Pos"],
     [shareNameKey, tab === "teams" ? "Team" : "Driver"],
-    ...(tab === "teams" ? TEAM_COLS : driverCols).filter(([key]) => key !== shareNameKey),
+    ...(tab === "teams" ? teamCols : driverCols).filter(([key]) => key !== shareNameKey),
   ];
   const shareTable = toGraphicTable(shareCols, rows, {
     nameKey: shareNameKey,
@@ -186,6 +228,7 @@ export default function StandingsPage() {
     <section>
       <div className="page-title">
         <h2>{heading}</h2>
+        {isBangerRacing && <span className="page-badge">💥 Demo Derby / Banger Racing</span>}
         {className && <span className="page-badge">{className} Championship</span>}
         {!className && classes.length > 0 && (
           <span className="page-badge">{combinedChampionship ? "Overall · All Classes" : "All Classes · Unofficial"}</span>
@@ -202,7 +245,7 @@ export default function StandingsPage() {
         onClose={() => setSharing(false)}
         kind="Standings"
         defaultTitle={`${season?.name ?? "Championship"}${className ? ` ${className}` : ""} Standings`}
-        subtitle={[series?.name, className, tab === "teams" ? "Team Championship" : "Driver Championship"].filter(Boolean).join(" · ")}
+        subtitle={[game?.name, series?.name, className, tab === "teams" ? "Team Championship" : "Driver Championship"].filter(Boolean).join(" · ")}
         columns={shareTable.columns}
         rows={shareTable.rows}
         logos={leagueLogos({ league, game, series, season })}
@@ -224,9 +267,11 @@ export default function StandingsPage() {
         Level on points? Ties break on {TIE_BREAKER_SUMMARY.toLowerCase()} — in that order.
       </p>
 
+      <SeasonChampions champions={data?.champions ?? []} />
+
       <div className="tab-row">
-        <button className={`tab${tab === "drivers" ? " active" : ""}`} onClick={() => setTab("drivers")}>Drivers</button>
-        <button className={`tab${tab === "teams" ? " active" : ""}`} onClick={() => setTab("teams")}>Teams</button>
+        <button className={`tab${tab === "drivers" ? " active" : ""}`} onClick={() => chooseTab("drivers")}>Drivers</button>
+        <button className={`tab${tab === "teams" ? " active" : ""}`} onClick={() => chooseTab("teams")}>Teams</button>
       </div>
 
       {!data ? (
@@ -277,7 +322,7 @@ export default function StandingsPage() {
         />
       ) : (
         <SortableTable
-          cols={TEAM_COLS}
+          cols={teamCols}
           rows={rows}
           defaultKey="rank"
           nameKey="team"

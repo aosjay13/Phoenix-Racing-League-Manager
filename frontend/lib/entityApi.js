@@ -2,6 +2,24 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { withAdmin, getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
 import { toDateOnly } from "@/lib/raceDate";
+import { normalizeClassIds } from "@/lib/classFilter";
+
+// A roster entry's classes are stored twice on purpose: `class_ids` is the real
+// list (a driver can race several classes in one season) and `class_id` mirrors
+// the first of them, so every reader written before multi-class — and every
+// result stamped from an entry — still resolves. Whichever half a caller sends,
+// this derives the other so the two can never drift apart.
+function normalizeEntryClasses(patch) {
+  if (patch.class_ids !== undefined) {
+    const ids = normalizeClassIds(patch.class_ids);
+    return { class_ids: ids, class_id: ids[0] || "" };
+  }
+  if (patch.class_id !== undefined) {
+    const id = String(patch.class_id ?? "").trim();
+    return { class_id: id, class_ids: id ? [id] : [] };
+  }
+  return null;
+}
 
 // Coerce/validate one field value against its spec. Returns { value } or
 // { error }. `number: true` parses to a Number; `maxLen` marks a string field
@@ -25,7 +43,7 @@ export function coerceField(opts, raw) {
 
 // Shared CRUD factory for the hierarchy collections (games, series, seasons,
 // teams, entries, races). Reads are public; writes require an admin.
-export function makeCollectionRoutes({ collection, parentField, fields, sortField = "created_at" }) {
+export function makeCollectionRoutes({ collection, parentField, fields, sortField = "created_at", normalize = null }) {
   async function GET(request) {
     const { searchParams } = new URL(request.url);
     let query = db().collection(collection);
@@ -74,6 +92,8 @@ export function makeCollectionRoutes({ collection, parentField, fields, sortFiel
         doc[name] = coerced.value;
       } else if (opts.default !== undefined) doc[name] = opts.default;
     }
+    // Derived fields the spec keeps in sync (e.g. an entry's class_id/class_ids).
+    if (normalize) Object.assign(doc, normalize(doc) || {});
     const ref = await db().collection(collection).add(doc);
     return NextResponse.json({ id: ref.id, ...doc }, { status: 201 });
   });
@@ -81,7 +101,7 @@ export function makeCollectionRoutes({ collection, parentField, fields, sortFiel
   return { GET, POST };
 }
 
-export function makeDocRoutes({ collection, fields }) {
+export function makeDocRoutes({ collection, fields, normalize = null }) {
   const PATCH = withAdmin(async (request, { params }) => {
     const body = await request.json();
     const updates = {};
@@ -92,6 +112,7 @@ export function makeDocRoutes({ collection, fields }) {
         updates[name] = coerced.value;
       }
     }
+    if (normalize) Object.assign(updates, normalize(updates) || {});
     if (!Object.keys(updates).length) {
       return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
     }
@@ -114,8 +135,15 @@ export function makeDocRoutes({ collection, fields }) {
 export const SPECS = {
   games:   { collection: "games", parentField: null, sortField: "name",
              fields: { name: { required: true }, logo_url: {}, description: {} } },
+  // `isBangerRacing` flags the series as Demo Derby / Banger Racing. It turns on
+  // the mode-specific stats (Takedowns, Survival Bonus, Most Lethal Bonus — see
+  // lib/bangerRacing.js): the results grids of its events grow inputs for them,
+  // the points structures grow a bonus value for each, and Standings/Stats show
+  // their totals — but ONLY while the viewer is scoped to this series. Off (the
+  // default) the series behaves exactly as every series did before.
   series:  { collection: "series", parentField: "game_id", sortField: "name",
-             fields: { name: { required: true }, logo_url: {}, description: {} } },
+             fields: { name: { required: true }, logo_url: {}, description: {},
+                       isBangerRacing: { bool: true, default: false } } },
   seasons: { collection: "seasons", parentField: "series_id", sortField: "created_at",
              // `car` is the free-text car/model this season races (e.g. "NASCAR
              // Next Gen", "GT3"). It's the season-wide default; a race can
@@ -181,8 +209,12 @@ export const SPECS = {
   // backward-compat reads but is no longer written. `aliases` is an ordered list
   // of { label, value } connected-account identities (Discord/PSN/Xbox/… — see
   // lib/aliases.js) the importer also matches imported names against.
+  // `display_name` overrides the name shown everywhere that isn't tied to one
+  // game, and `game_names` ([{ game_id, name }]) sets the name shown on each
+  // game's own pages — see lib/driverNames.js.
   drivers: { collection: "drivers", parentField: null, sortField: "name",
              fields: { name: { required: true }, user_id: {}, notes: {},
+                       display_name: {}, game_names: {},
                        skillRating: { number: true }, skillRatings: {}, aliases: {},
                        // Names this driver was previously known as — appended when
                        // another driver is merged into them (see /api/admin/drivers/merge).
@@ -190,12 +222,18 @@ export const SPECS = {
   // `number` is the car number — stored as a STRING (max 3 chars) so racing
   // numbers with leading zeros ("01", "001", "0", "00", "000") survive intact
   // instead of being parsed to an integer that drops the zeros.
-  // `class_id` is the season class this driver races in (see SPECS.classes);
-  // blank/absent means unclassified, which still counts toward the season's
-  // overall championship but toward no class championship.
+  // `class_ids` are the season classes this driver races in (see SPECS.classes)
+  // — a driver can run several, so they appear in each of those class
+  // championships from one roster entry instead of needing a duplicate entry
+  // per class. Empty means unclassified, which still counts toward the season's
+  // overall championship but toward no class championship. `class_id` mirrors
+  // the first of them (the primary class) for everything written before
+  // multi-class; `normalize` keeps the two in step whichever one is sent.
   entries: { collection: "entries", parentField: "season_id", sortField: "name",
+             normalize: normalizeEntryClasses,
              fields: { name: { required: true }, number: { maxLen: 3 }, team_id: {}, user_id: {},
-                       driver_id: {}, class_id: {}, points_adjustment: { number: true }, adjustment_note: {} } },
+                       driver_id: {}, class_id: {}, class_ids: {},
+                       points_adjustment: { number: true }, adjustment_note: {} } },
   pointsTemplates: { collection: "points_templates", parentField: null, sortField: "name",
              fields: { name: { required: true }, race_points: {}, qual_points: {}, bonus_points: {} } },
   // Global venue pool — tracks exist independently of any season and are pulled
@@ -230,7 +268,12 @@ export const SPECS = {
              fields: { name: { required: true }, track: {}, track_id: {}, track_logo_url: {}, date: { dateOnly: true },
                        class_id: {}, per_class_results: { bool: true },
                        round_number: { number: true, required: true }, sessions: {},
-                       total_laps: { number: true }, car: {},
+                       // How this event's distance is measured: `length_type` is
+                       // "laps" (the default, and what every pre-toggle race reads
+                       // as) or "time". A lap race carries `total_laps`; a timed
+                       // race carries `race_minutes` and runs to the clock. See
+                       // lib/raceLength.js.
+                       length_type: {}, total_laps: { number: true }, race_minutes: { number: true }, car: {},
                        // Heat-racing weekend structure: when heat_format is on, `heats` and
                        // `consolations` are ordered lists of session names (each addable/removable
                        // from the event screen) feeding into one Feature session. `session_points`

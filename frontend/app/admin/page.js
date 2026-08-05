@@ -4,18 +4,24 @@ import { useEffect, useState, useCallback } from "react";
 import { useLeague } from "@/components/LeagueProvider";
 import { AdminGate } from "@/components/AdminGate";
 import { LeagueSettings } from "@/components/LeagueSettings";
+import { BackupRestore } from "@/components/BackupRestore";
+import { useAuth } from "@/components/AuthProvider";
 import { ImageUpload } from "@/components/ImageUpload";
 import { TrackSelect } from "@/components/TrackSelect";
+import { RaceLengthField } from "@/components/RaceLengthField";
+import { TrackMergeModal } from "@/components/TrackMergeModal";
+import { LENGTH_LAPS, LENGTH_TIME } from "@/lib/raceLength";
 import { api } from "@/lib/api";
-import { BONUS_TYPES } from "@/lib/standings";
+import { ALL_BONUS_TYPES, BONUS_TYPES } from "@/lib/standings";
 import { TRACK_TYPES } from "@/lib/trackTypes";
 import { listToTableOrZero, tableToList } from "@/lib/pointsTemplates";
 import { carForClass } from "@/lib/classFilter";
 import { SeasonForm } from "@/components/SeasonForm";
-import { PointsFields } from "@/components/PointsFields";
+import { BangerBonusFields, PointsFields } from "@/components/PointsFields";
 import { BLANK_SEASON_FORM, scoresNoPoints, seasonFormToBody, seasonToForm } from "@/lib/seasonForm";
 import { BLANK_CLASS_FORM, classFormToBody, classToForm, seasonPointsAsClassFields } from "@/lib/classForm";
 import { classScoresOwnPoints } from "@/lib/standings";
+import { isBangerSeries } from "@/lib/bangerRacing";
 
 function Panel({ title, sub, step, muted, children }) {
   return (
@@ -65,6 +71,25 @@ function ItemRow({ logo, name, meta, onEdit, onDelete, editing, children }) {
   );
 }
 
+// League Setup is one screen per topic, reached from the button row at the top,
+// rather than every form stacked into one long scroll. `group` splits the row
+// into the league hierarchy (build it top-down) and the reusable library.
+const SECTIONS = [
+  { key: "league",    label: "League",          icon: "🏛", group: "structure", hint: "Name, logo & multi-league" },
+  { key: "games",     label: "Games",           icon: "🎮", group: "structure", hint: "iRacing, F1 25, GT7…" },
+  { key: "series",    label: "Series",          icon: "🏆", group: "structure", hint: "Championships within a game" },
+  { key: "seasons",   label: "Seasons",         icon: "📅", group: "structure", hint: "A series' runs & their points" },
+  { key: "classes",   label: "Classes",         icon: "🎽", group: "structure", hint: "Split a season's field" },
+  { key: "races",     label: "Races",           icon: "🏁", group: "structure", hint: "A season's calendar" },
+  { key: "tracks",    label: "Tracks",          icon: "🏟", group: "library",   hint: "Shared venue database" },
+  { key: "templates", label: "Points Templates", icon: "🔢", group: "library",  hint: "Reusable scoring structures" },
+  // Recovery tools. Owner-only — the whole row is hidden for the other staff
+  // roles, since only an Owner can export or import the database.
+  { key: "backup",    label: "Backup & Restore", icon: "💾", group: "data",     hint: "Export/import the entire app as JSON" },
+];
+
+const BLANK_SERIES_FORM = { name: "", logo_url: "", isBangerRacing: false };
+
 function toArray(str) {
   return String(str || "").split(",").map(s => s.trim()).filter(Boolean);
 }
@@ -74,13 +99,24 @@ function sessionsToArray(str) {
 }
 
 function AdminInner() {
+  const { role } = useAuth();
+  const isOwner = role === "owner";
   const league = useLeague();
   const { games, seriesList, seasons, gameId, seriesId, seasonId, game, series, season, refresh } = league;
+  // Is the series currently selected in the top bar a Demo Derby / Banger
+  // Racing series? Gates the derby bonus values in the season and class points
+  // editors below — the series toggle itself is in the Series panel.
+  const bangerSeries = isBangerSeries(series);
   const [races, setRaces] = useState([]);
   const [toast, setToast] = useState(null);
+  // Which setup screen is open. Starts on Games — the top of the hierarchy an
+  // admin actually edits.
+  const [section, setSection] = useState("games");
 
   const [gameForm, setGameForm] = useState({ name: "", logo_url: "" });
-  const [seriesForm, setSeriesForm] = useState({ name: "", logo_url: "" });
+  // `isBangerRacing` turns this series into a Demo Derby / Banger Racing series
+  // — see lib/bangerRacing.js and the toggle in the Series panel below.
+  const [seriesForm, setSeriesForm] = useState(BLANK_SERIES_FORM);
   const [editIds, setEditIds] = useState({ game: null, series: null, season: null, class: null, race: null, track: null, template: null });
   const setEditId = (type, id) => setEditIds(ids => ({ ...ids, [type]: id }));
   // The season's own fields live in the shared <SeasonForm> (and lib/seasonForm.js),
@@ -90,7 +126,7 @@ function AdminInner() {
   const [templates, setTemplates] = useState([]);
   const blankTemplate = {
     name: "", race_points: "", qual_points: "",
-    bonuses: Object.fromEntries(BONUS_TYPES.map(([k]) => [k, "0"])),
+    bonuses: Object.fromEntries(ALL_BONUS_TYPES.map(([k]) => [k, "0"])),
   };
   const [templateForm, setTemplateForm] = useState(blankTemplate);
 
@@ -109,7 +145,7 @@ function AdminInner() {
       name: t.name || "",
       race_points: tableToList(t.race_points),
       qual_points: tableToList(t.qual_points),
-      bonuses: Object.fromEntries(BONUS_TYPES.map(([k]) => [k, String(bonusSrc[k] ?? 0)])),
+      bonuses: Object.fromEntries(ALL_BONUS_TYPES.map(([k]) => [k, String(bonusSrc[k] ?? 0)])),
     });
   }
 
@@ -145,7 +181,9 @@ function AdminInner() {
 
   const blankRace = {
     name: "", track: "", track_id: "", date: "", round_number: "", track_logo_url: "", sessions: "Race", car: "",
-    total_laps: "", heat_format: false, heats: "", consolations: "", feature_name: "A-Main Feature",
+    // Distance: a lap count, or a duration for a race run to the clock.
+    length_type: LENGTH_LAPS, total_laps: "", race_minutes: "",
+    heat_format: false, heats: "", consolations: "", feature_name: "A-Main Feature",
     // Blank = shared by every class. Only settable while the season has
     // per-class schedules turned on.
     class_id: "",
@@ -186,6 +224,8 @@ function AdminInner() {
   const blankTrack = { name: "", location: "", length: "", track_type: "", logo_url: "", notes: "" };
   const [trackForm, setTrackForm] = useState(blankTrack);
   const [tracks, setTracks] = useState([]);
+  // The venue duplicates get folded INTO, while the merge dialog is open.
+  const [mergingTrack, setMergingTrack] = useState(null);
   const loadTracks = useCallback(() => {
     api("/api/tracks").then(rows => setTracks(rows.sort((a, b) => String(a.name).localeCompare(String(b.name))))).catch(() => setTracks([]));
   }, []);
@@ -229,12 +269,9 @@ function AdminInner() {
         Your league is a hierarchy — a <strong>Game</strong> holds <strong>Series</strong>, a series holds
         <strong> Seasons</strong>, and a season holds its <strong>Classes</strong> and <strong>Races</strong>.
         Pick what you&apos;re working in with the dropdowns at the top of the page; the banner below always
-        shows your current spot.
+        shows your current spot, and the buttons under it open one setup screen at a time.
       </p>
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
-
-      {/* Multi-league: settings for the active league + Owner-only create/migrate. */}
-      <LeagueSettings />
 
       {/* Always-visible "you are here" breadcrumb, driven by the top dropdowns. */}
       <div className="setup-context">
@@ -249,11 +286,53 @@ function AdminInner() {
         <Crumb icon="🏁" label="Races" value={seasonId ? `${races.length} scheduled` : ""} />
       </div>
 
-      <h3 className="setup-section-title">
-        League Structure
-        <span className="setup-section-hint">Build the tree top-down — each step fills in the one below it</span>
-      </h3>
-      <div className="two-col" style={{ marginTop: 14 }}>
+      {/* One button per setup screen — nothing is stacked, so switching topics
+          never means scrolling past the form you're not using. */}
+      <div className="setup-switch">
+        <span className="setup-switch-label">League Structure</span>
+        <div className="setup-switch-row">
+          {SECTIONS.filter(s => s.group === "structure").map(s => (
+            <button key={s.key} type="button" title={s.hint}
+              className={`tab setup-switch-btn${section === s.key ? " active" : ""}`}
+              onClick={() => setSection(s.key)}>
+              <span aria-hidden="true">{s.icon}</span> {s.label}
+            </button>
+          ))}
+        </div>
+        <span className="setup-switch-label">Shared Library</span>
+        <div className="setup-switch-row">
+          {SECTIONS.filter(s => s.group === "library").map(s => (
+            <button key={s.key} type="button" title={s.hint}
+              className={`tab setup-switch-btn${section === s.key ? " active" : ""}`}
+              onClick={() => setSection(s.key)}>
+              <span aria-hidden="true">{s.icon}</span> {s.label}
+            </button>
+          ))}
+        </div>
+        {isOwner && (
+          <>
+            <span className="setup-switch-label">Data &amp; Recovery</span>
+            <div className="setup-switch-row">
+              {SECTIONS.filter(s => s.group === "data").map(s => (
+                <button key={s.key} type="button" title={s.hint}
+                  className={`tab setup-switch-btn${section === s.key ? " active" : ""}`}
+                  onClick={() => setSection(s.key)}>
+                  <span aria-hidden="true">{s.icon}</span> {s.label}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="setup-stage">
+        {/* Multi-league: settings for the active league + Owner-only create/migrate. */}
+        {section === "league" && <LeagueSettings />}
+
+        {/* Whole-application export/import, plus the weekly automatic backup. */}
+        {section === "backup" && <BackupRestore />}
+
+        {section === "games" && (
         <Panel title="Games" step={1} sub="e.g. iRacing, F1 25, Gran Turismo 7">
           <form onSubmit={e => {
             e.preventDefault();
@@ -274,29 +353,58 @@ function AdminInner() {
               onDelete={() => remove(`/api/games/${g.id}`, `Delete game "${g.name}"? Its series/seasons remain in the database but will be hidden.`)} />)}
           </div>
         </Panel>
+        )}
 
+        {section === "series" && (
         <Panel title="Series" step={2} muted={!gameId} sub={gameId ? `In ${game?.name}` : "Select a game above first"}>
           <form onSubmit={e => {
             e.preventDefault();
             save("/api/series", editIds.series ? seriesForm : { ...seriesForm, game_id: gameId }, editIds.series,
-              () => { setSeriesForm({ name: "", logo_url: "" }); setEditId("series", null); });
+              () => { setSeriesForm(BLANK_SERIES_FORM); setEditId("series", null); });
           }}>
             <div className="field"><label>Series Name</label>
               <input required disabled={!gameId} value={seriesForm.name} onChange={e => setSeriesForm(f => ({ ...f, name: e.target.value }))} placeholder="Asphalt Assault Series" /></div>
             <ImageUpload label="Series Logo" kind="series-logo" value={seriesForm.logo_url} onUploaded={url => setSeriesForm(f => ({ ...f, logo_url: url }))} />
+
+            {/* Demo Derby / Banger Racing. The one switch behind the whole mode:
+                it adds the derby stats to this series' results grids, the derby
+                bonuses to its points structures, and their totals to ITS
+                standings and stats — and nowhere else. */}
+            <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
+              <input type="checkbox" id="series_banger_racing" disabled={!gameId}
+                checked={!!seriesForm.isBangerRacing}
+                onChange={e => setSeriesForm(f => ({ ...f, isBangerRacing: e.target.checked }))}
+                style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+              <label htmlFor="series_banger_racing" style={{ margin: 0 }}>
+                Demo Derby / Banger Racing Mode
+                <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
+                  Off (default): an ordinary racing series. On: every event in this series captures{" "}
+                  <strong>Takedowns</strong>, a <strong>Survival Bonus</strong> (whoever survived longest)
+                  and a <strong>Most Lethal Bonus</strong> (most takedowns) on each results row, and its
+                  points structures gain a value for each — points per takedown, and a one-off value for
+                  each bonus. These stats show on <strong>this series&rsquo;</strong> Standings and Stats
+                  only: they never appear in the Overall or per-Game views, where they&rsquo;d mean nothing.
+                </span>
+              </label>
+            </div>
+
             <button className="btn btn-primary" type="submit" disabled={!gameId}>{editIds.series ? "Save Changes" : "Add Series"}</button>
             {editIds.series && (
               <button className="btn btn-ghost" type="button" style={{ marginLeft: 8 }}
-                onClick={() => { setEditId("series", null); setSeriesForm({ name: "", logo_url: "" }); }}>Cancel</button>
+                onClick={() => { setEditId("series", null); setSeriesForm(BLANK_SERIES_FORM); }}>Cancel</button>
             )}
           </form>
           <div style={{ marginTop: 16 }}>
-            {seriesList.map(s => <ItemRow key={s.id} logo={s.logo_url} name={s.name} editing={editIds.series === s.id}
-              onEdit={() => { setEditId("series", s.id); setSeriesForm({ name: s.name, logo_url: s.logo_url || "" }); }}
+            {seriesList.map(s => <ItemRow key={s.id} logo={s.logo_url} name={s.name}
+              meta={isBangerSeries(s) ? "💥 Demo Derby / Banger Racing" : null}
+              editing={editIds.series === s.id}
+              onEdit={() => { setEditId("series", s.id); setSeriesForm({ name: s.name, logo_url: s.logo_url || "", isBangerRacing: !!s.isBangerRacing }); }}
               onDelete={() => remove(`/api/series/${s.id}`, `Delete series "${s.name}"?`)} />)}
           </div>
         </Panel>
+        )}
 
+        {section === "seasons" && (
         <Panel title="Seasons" step={3} muted={!seriesId} sub={seriesId ? `In ${series?.name}` : "Select a series above first"}>
           <form onSubmit={e => {
             e.preventDefault();
@@ -315,6 +423,7 @@ function AdminInner() {
               templates={templates} onTemplatesChanged={loadTemplates}
               disabled={!seriesId} defaultPointsOpen={!!editIds.season}
               onError={msg => showToast("error", msg)}
+              banger={bangerSeries}
             />
 
             <span style={{ display: "block" }}>
@@ -347,15 +456,17 @@ function AdminInner() {
             ))}
           </div>
         </Panel>
+        )}
 
+        {section === "classes" && (
         <Panel title="Classes" step={4} muted={!seasonId}
           sub={seasonId ? `In ${season?.name} — optional; leave empty for a single-class season` : "Select a season above first"}>
           <p style={{ marginTop: 0, color: "var(--ink-1)", fontSize: "0.85rem" }}>
             Split this season&rsquo;s field into separately-scored groups — <strong>Pro</strong> and{" "}
             <strong>Amateur</strong>, or <strong>GT3</strong> and <strong>LMP2</strong>. Each class runs its own
             championship (points, wins, averages), and a <strong>Class</strong> menu appears next to
-            Game / Series / Season on Standings, Stats and Records. Assign drivers to a class on the{" "}
-            <strong>Roster</strong> page or right in the results grid. Give a class its own{" "}
+            Game / Series / Season on Standings, Stats and Records. Assign drivers to a class on{" "}
+            <strong>Drivers ▸ Roster &amp; Teams</strong> or right in the results grid. Give a class its own{" "}
             <strong>Car Type</strong> and the schedule shows which car goes with which class — handy
             when divisions run different machinery. Each class can also score on its own{" "}
             <strong>points structure</strong>, so Pro and Amateur pay different points for the same
@@ -419,7 +530,7 @@ function AdminInner() {
                 {showClassPoints && (
                   <PointsFields value={classForm} onPatch={patchClassForm} templates={templates}
                     onTemplatesChanged={loadTemplates} disabled={!seasonId} onError={msg => showToast("error", msg)}
-                    noPoints={scoresNoPoints(classForm)}
+                    noPoints={scoresNoPoints(classForm)} banger={bangerSeries}
                     blankWarning="⚠ Blank scores 0 for every finishing position in this class — load a template above, or untick the box to score on the season's points." />
                 )}
               </>
@@ -458,15 +569,23 @@ function AdminInner() {
             ))}
           </div>
         </Panel>
+        )}
 
+        {section === "races" && (
         <Panel title="Races" step={5} muted={!seasonId} sub={seasonId ? `In ${season?.name}` : "Select a season above first"}>
           <form onSubmit={e => {
             e.preventDefault();
             const heats = toArray(raceForm.heats);
+            const timed = raceForm.length_type === LENGTH_TIME;
             const body = {
               ...raceForm,
               sessions: sessionsToArray(raceForm.sessions),
-              total_laps: raceForm.total_laps === "" ? 0 : Number(raceForm.total_laps),
+              // Only the figure the chosen format uses is stored; the other is
+              // zeroed so a race never keeps a stale length from the format it
+              // was switched away from.
+              length_type: timed ? LENGTH_TIME : LENGTH_LAPS,
+              total_laps: timed || raceForm.total_laps === "" ? 0 : Number(raceForm.total_laps),
+              race_minutes: !timed || raceForm.race_minutes === "" ? 0 : Number(raceForm.race_minutes),
               heat_format: !!raceForm.heat_format,
               heats: raceForm.heat_format ? (heats.length ? heats : ["Heat 1"]) : [],
               consolations: raceForm.heat_format ? toArray(raceForm.consolations) : [],
@@ -500,12 +619,9 @@ function AdminInner() {
                   class&rsquo;s calendar alone.
                 </span></div>
             )}
-            <div className="field"><label>Total Race Laps</label>
-              <input type="number" min="0" disabled={!seasonId} value={raceForm.total_laps} placeholder="e.g. 100"
-                onChange={e => setRaceForm(f => ({ ...f, total_laps: e.target.value }))} />
-              <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
-                Used to auto-count laps completed: lead-lap finishers get the full total, laps-down (e.g. 2L) and DNFs subtract from it.
-              </span></div>
+            <RaceLengthField idPrefix="admin_race_length" disabled={!seasonId}
+              lengthType={raceForm.length_type} totalLaps={raceForm.total_laps} raceMinutes={raceForm.race_minutes}
+              onChange={patch => setRaceForm(f => ({ ...f, ...patch }))} />
             <div className="field"><label>Car Type</label>
               <input disabled={!seasonId} value={raceForm.car} placeholder={classes.length ? "Leave blank to use the class's / season's car" : "Leave blank to use the season's car"}
                 onChange={e => setRaceForm(f => ({ ...f, car: e.target.value }))} /></div>
@@ -559,7 +675,9 @@ function AdminInner() {
                   track_logo_url: r.track_logo_url || "",
                   sessions: Array.isArray(r.sessions) && r.sessions.length ? r.sessions.join(", ") : "Race",
                   car: r.car || "",
+                  length_type: r.length_type === LENGTH_TIME ? LENGTH_TIME : LENGTH_LAPS,
                   total_laps: r.total_laps != null ? String(r.total_laps) : "",
+                  race_minutes: r.race_minutes ? String(r.race_minutes) : "",
                   heat_format: !!r.heat_format,
                   heats: Array.isArray(r.heats) ? r.heats.join(", ") : "",
                   consolations: Array.isArray(r.consolations) ? r.consolations.join(", ") : "",
@@ -572,13 +690,9 @@ function AdminInner() {
             })}
           </div>
         </Panel>
-      </div>
+        )}
 
-      <h3 className="setup-section-title">
-        Shared Library
-        <span className="setup-section-hint">Reusable building blocks — the same across every game &amp; season</span>
-      </h3>
-      <div className="two-col" style={{ marginTop: 14 }}>
+        {section === "tracks" && (
         <Panel title="Tracks" sub="Venue database shared across every game & season">
           <form onSubmit={async e => {
             e.preventDefault();
@@ -618,9 +732,16 @@ function AdminInner() {
                 onClick={() => { setEditId("track", null); setTrackForm(blankTrack); }}>Cancel</button>
             )}
           </form>
+          {/* ⧉ folds duplicates of the same circuit into a venue, under a name
+              the admin picks — every race held at them (and all the history
+              derived from those races) comes across. */}
           <div style={{ marginTop: 16 }}>
             {tracks.map(t => <ItemRow key={t.id} logo={t.logo_url}
               name={`${t.name}${t.track_type ? ` · ${t.track_type}` : ""}`} editing={editIds.track === t.id}
+              children={
+                <button className="btn btn-ghost" title="Merge duplicate venues into this one"
+                  style={{ marginTop: 0, padding: "4px 10px" }} onClick={() => setMergingTrack(t)}>⧉</button>
+              }
               onEdit={() => {
                 setEditId("track", t.id);
                 setTrackForm({
@@ -635,7 +756,26 @@ function AdminInner() {
               }} />)}
           </div>
         </Panel>
+        )}
 
+        {mergingTrack && (
+          <TrackMergeModal
+            track={mergingTrack}
+            tracks={tracks}
+            onClose={() => setMergingTrack(null)}
+            onMerged={res => {
+              setMergingTrack(null);
+              // The survivor may have been renamed and the losers are gone, so
+              // reload the pool rather than patching it.
+              loadTracks();
+              // A merged-away track could be the one open in the form.
+              if (res.merged_ids?.includes(editIds.track)) { setEditId("track", null); setTrackForm(blankTrack); }
+              showToast("success", `Merged ${res.tracks_merged} track${res.tracks_merged === 1 ? "" : "s"} into “${res.track.name}” — ${res.races_moved} race${res.races_moved === 1 ? "" : "s"} moved across.`);
+            }}
+          />
+        )}
+
+        {section === "templates" && (
         <Panel title="Points Templates" sub="Reusable scoring structures — assign to a season or any session's points">
           <form onSubmit={e => { e.preventDefault(); saveTemplateForm(); }}>
             <div className="field"><label>Template Name</label>
@@ -656,6 +796,12 @@ function AdminInner() {
                     onChange={e => setTemplateForm(f => ({ ...f, bonuses: { ...f.bonuses, [key]: e.target.value } }))} /></div>
               ))}
             </div>
+            {/* Templates are a shared library rather than a series' own points,
+                so the derby values are always offered here — a template built
+                for a Banger Racing series can carry them and be assigned to any
+                of its sessions. They score nothing anywhere else. */}
+            <BangerBonusFields value={templateForm}
+              onPatch={patch => setTemplateForm(f => ({ ...f, ...patch }))} />
             <button className="btn btn-primary" type="submit">{editIds.template ? "Save Changes" : "Add Template"}</button>
             {editIds.template && (
               <button className="btn btn-ghost" type="button" style={{ marginLeft: 8 }}
@@ -672,6 +818,7 @@ function AdminInner() {
             ))}
           </div>
         </Panel>
+        )}
       </div>
     </section>
   );

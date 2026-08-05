@@ -10,11 +10,17 @@ import { ImportResultsModal } from "@/components/ImportResultsModal";
 import { NONE_TEMPLATE } from "@/lib/pointsTemplates";
 import { classIdForScope, entriesEligibleForRace, entriesInSessionClass, isClassScoped, resultInSessionClass } from "@/lib/classFilter";
 import { pointsFor, classConfigs, classScoresOwnPoints, configForTemplate, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
-import { applyAutoFlags, detectFlagLocks } from "@/lib/autoFlags";
-import { parseTime, formatTime, formatGap, parseLapsDown, deriveLaps } from "@/lib/raceTime";
+import { applyAutoFlags, detectFlagLocks, autoMostLapsLedSlot } from "@/lib/autoFlags";
+import { BANGER_BOOL_FIELDS, BANGER_RESULT_FIELDS, BANGER_STATS, bangerGridStyle, blankBangerRow } from "@/lib/bangerRacing";
+import { parseTime, formatTime, formatGap, formatDelta, parseDelta, parseLapsDown, deriveLaps } from "@/lib/raceTime";
+import { isTimedRace, scheduledLaps } from "@/lib/raceLength";
 
-const RESULT_FIELDS = ["finish_pos", "start_pos", "qual_time", "race_time", "interval", "fastest_lap_time", "laps", "laps_led", "incidents", "fastest_lap", "halfway_leader", "hard_charger", "most_laps_led", "provisional", "points_adjustment", "manual_points", "status", "class_id"];
-const BOOL_FIELDS = new Set(["fastest_lap", "halfway_leader", "hard_charger", "most_laps_led", "provisional"]);
+// Every field a saved result can restore into a grid row. The banger fields
+// (Takedowns, Survival, Most Lethal) are always in the list: they're stored on
+// every result, and a row only ever SHOWS them in a Demo Derby / Banger Racing
+// series — see lib/bangerRacing.js.
+const RESULT_FIELDS = ["finish_pos", "start_pos", "qual_time", "race_time", "interval", "fastest_lap_time", "laps", "laps_led", "incidents", "fastest_lap", "halfway_leader", "hard_charger", "most_laps_led", "provisional", "points_adjustment", "manual_points", "status", "class_id", ...BANGER_RESULT_FIELDS];
+const BOOL_FIELDS = new Set(["fastest_lap", "halfway_leader", "hard_charger", "most_laps_led", "provisional", ...BANGER_BOOL_FIELDS]);
 
 // Each grid row is a *finishing position* — it may or may not yet have a
 // driver assigned. `entry_id === null` is an empty slot (rendered with a
@@ -32,6 +38,12 @@ function makeRow(position) {
     finish_pos: String(position),
     start_pos: "",
     qual_time: "",
+    // Qualifying only, and derived rather than stored: the gap to the leader's
+    // time and to the car one position up. Either can be typed instead of the
+    // lap time — see syncQualGaps — but only qual_time is ever saved, so the
+    // two always come back in step with the times on reload.
+    qual_to_lead: "",
+    qual_gap: "",
     race_time: "",
     interval: "",
     fastest_lap_time: "",
@@ -50,6 +62,10 @@ function makeRow(position) {
     // driver is assigned, and saved onto the result so the class championships
     // stay historically correct if they're re-classed later.
     class_id: "",
+    // Demo Derby / Banger Racing stats (Takedowns, Survival, Most Lethal).
+    // Carried on every row — they're stored on every result — but only
+    // RENDERED for a banger series. See lib/bangerRacing.js.
+    ...blankBangerRow(),
   };
 }
 
@@ -128,10 +144,13 @@ function buildRows(entries, existing, totalLaps, qualPos = {}, sessionType = "ra
   // deliberately cleared it (see detectFlagLocks).
   if (sessionType !== "qualifying") {
     const savedById = new Map(existing.map(r => [r.entry_id, r]));
-    const maxLed = Math.max(0, ...filled.map(r => Number(r.laps_led || 0)));
+    // Seeded with the same rule the live grid derives (one winner, ties to the
+    // better finish), so an old result opens on the pick the grid would make
+    // itself and stays free to follow later edits.
+    const ledSlot = autoMostLapsLedSlot(filled);
     for (const row of filled) {
       if (savedById.get(row.entry_id)?.most_laps_led == null) {
-        row.most_laps_led = maxLed > 0 && Number(row.laps_led || 0) === maxLed;
+        row.most_laps_led = row.slot_id === ledSlot;
       }
     }
   }
@@ -151,6 +170,96 @@ function sortByFinish(rows) {
   });
 }
 
+// ── Qualifying: Qual Time ⇄ To Lead ⇄ Gap ────────────────────────────────
+//
+// The sheet works from whichever of the three you have. Entering lap times
+// fills both gap columns; entering a gap (to the leader, or to the car one
+// position up) derives that row's lap time instead, so a sheet that only
+// publishes gaps can be typed straight in. Rows are in position order, so
+// "one position up" is simply the previous row that has a time.
+//
+// Only qual_time is persisted — the gaps are recomputed from the times on
+// every load, which is what keeps them honest after a reorder or a correction.
+
+// Fill in lap times from the gap columns. A row with no time takes whichever
+// gap it has — To Lead first, since it's absolute (no chain of rounding to
+// accumulate). `edited` is the gap cell just typed into ({ idx, field }): that
+// one row re-derives its time from what was typed even if it already had one,
+// which is what makes the columns work in both directions.
+function deriveQualTimes(rows, edited = null) {
+  const leaderTime = parseTime(rows.find(r => Number(r.finish_pos) === 1)?.qual_time);
+  let prev = null;                       // last row above this one that has a time
+  let changed = false;
+  const next = rows.map((r, i) => {
+    const editedField = edited && edited.idx === i && edited.field !== "qual_time" ? edited.field : null;
+    const t = parseTime(r.qual_time);
+    if (t != null && !editedField) { prev = t; return r; }
+    if (!r.entry_id) return r;
+    const toLead = parseDelta(r.qual_to_lead);
+    const gap = parseDelta(r.qual_gap);
+    const isLeader = Number(r.finish_pos) === 1;
+    let derived = null;
+    // The cell being typed in wins outright; otherwise To Lead, then Gap.
+    if (editedField === "qual_to_lead") derived = !isLeader && leaderTime != null ? leaderTime + toLead : null;
+    else if (editedField === "qual_gap") derived = prev != null && gap != null ? prev + gap : null;
+    else if (toLead != null && leaderTime != null && !isLeader) derived = leaderTime + toLead;
+    else if (gap != null && prev != null) derived = prev + gap;
+    if (derived == null || isNaN(derived) || derived < 0) { if (t != null) prev = t; return r; }
+    prev = derived;
+    const qual_time = formatTime(derived);
+    if (qual_time === r.qual_time) return r;
+    changed = true;
+    return { ...r, qual_time };
+  });
+  return changed ? next : rows;          // same reference when nothing moved
+}
+
+// Recompute both gap columns from the lap times. A row with no time keeps
+// whatever was typed into it (that's the input still waiting on a reference
+// time); the leader's own gaps are always blank — it *is* the reference.
+// `skip` is the cell the admin is typing in right now ({ idx, field }); its
+// text is left exactly as typed so a half-entered "+0.3" is never rewritten to
+// "+0.300" under the cursor. It normalizes as soon as focus leaves.
+function computeQualGaps(rows, skip = null) {
+  const leaderTime = parseTime(rows.find(r => Number(r.finish_pos) === 1)?.qual_time);
+  let prev = null;
+  let changed = false;
+  const next = rows.map((r, i) => {
+    const t = parseTime(r.qual_time);
+    if (t == null) return r;
+    const isLeader = Number(r.finish_pos) === 1;
+    const held = f => skip && skip.idx === i && skip.field === f;
+    const qual_to_lead = held("qual_to_lead") ? (r.qual_to_lead ?? "")
+      : isLeader || leaderTime == null ? "" : formatDelta(t - leaderTime);
+    const qual_gap = held("qual_gap") ? (r.qual_gap ?? "")
+      : isLeader || prev == null ? "" : formatDelta(t - prev);
+    prev = t;
+    if (qual_to_lead === (r.qual_to_lead ?? "") && qual_gap === (r.qual_gap ?? "")) return r;
+    changed = true;
+    return { ...r, qual_to_lead, qual_gap };
+  });
+  return changed ? next : rows;          // same reference when nothing moved
+}
+
+// The grid cell that currently has focus, so the sync can leave it alone while
+// it's being typed into. Returns null when focus is anywhere else.
+function focusedGridCell() {
+  if (typeof document === "undefined") return null;
+  const el = document.activeElement;
+  const field = el?.dataset?.gridField;
+  const idx = el?.dataset?.gridIdx;
+  return field && idx != null && idx !== "" ? { field, idx: Number(idx) } : null;
+}
+
+// Derive, then recompute — run after any edit to a qualifying grid. `edited`
+// is the cell that was just typed into, if any.
+function syncQualGaps(rows, edited = null) {
+  return computeQualGaps(deriveQualTimes(rows, edited), edited ?? focusedGridCell());
+}
+
+// The three columns that feed each other.
+const QUAL_TIME_FIELDS = new Set(["qual_time", "qual_to_lead", "qual_gap"]);
+
 const LABELS = { qualifying: "Qualifying", race: "Race", heat: "Heat", consolation: "Consolation", feature: "Feature" };
 
 // Unified results grid for any session type — Qualifying, standard Race
@@ -162,9 +271,16 @@ const LABELS = { qualifying: "Qualifying", race: "Race", heat: "Heat", consolati
 //
 // Starting position lives only on Qualifying (its Pos column) — there is no
 // "Start" field on race/heat/consolation/feature rows. A driver's qualifying
-// bonus/pole bonus is looked up from their actual Qualifying result for this
+// points are looked up from their actual Qualifying result for this
 // race, not copied onto every other session, so Average Start and Poles are
 // always computed from Qualifying results alone.
+//
+// `isBangerRacing` comes from the SERIES this event belongs to: with it on the
+// grid grows one extra column per Demo Derby / Banger Racing stat (Takedowns,
+// Survival Bonus, Most Lethal Bonus — all defined in lib/bangerRacing.js, so
+// adding another needs no change here), and the points structure editor opened
+// from this screen offers a value for each. Off — every ordinary series — the
+// grid is exactly what it always was.
 //
 // `sessionClass` scopes the whole editor to ONE class of a split event (see
 // lib/classFilter.js): the grid loads and saves only that class's results, the
@@ -180,6 +296,7 @@ export function SessionEditor({
   canAddSession = false, onAddSession, onRemoveSession, onRenameSession,
   initialSession, onEntriesChanged, seriesName, classes = [],
   sessionClass = null, sessionClassName = "",
+  isBangerRacing = false,
 }) {
   const names = sessionNames.length ? sessionNames : [LABELS[sessionType] || "Session"];
   const namesKey = names.join("|");
@@ -241,7 +358,10 @@ export function SessionEditor({
       // finishing-order grid.
       const mains = existing.filter(r => !r.provisional);
       const provs = existing.filter(r => r.provisional);
-      const built = buildRows(entries, mains, race.total_laps, qp, sessionType);
+      const loaded = buildRows(entries, mains, scheduledLaps(race), qp, sessionType);
+      // The gap columns aren't stored — they're recomputed from the saved lap
+      // times each time the sheet opens.
+      const built = sessionType === "qualifying" ? computeQualGaps(loaded) : loaded;
       // Saved flags that disagree with what the grid would derive were set by
       // hand — keep them, and keep hands off that flag for the rest of the
       // session. Anything that already matches carries on auto-deriving.
@@ -274,6 +394,21 @@ export function SessionEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [race?.id, sessionType, namesKey, sessionClass]);
 
+  // …with one exception: the editor can mount before the roster has loaded —
+  // linking straight to a results tab (the Schedule's ⏱ button) renders it as
+  // soon as the race resolves, a tick before the entries land. The grid is
+  // built from the roster, so it would come up permanently empty. Rebuild it
+  // once the drivers arrive, but only while the grid is still empty — a grid
+  // with rows in it is someone's work in progress and is never touched.
+  // `loading` is in the deps because the roster can arrive while that first
+  // (empty) load is still in flight — the rebuild then happens the moment it
+  // finishes, rather than being skipped.
+  useEffect(() => {
+    if (loading || rows.length || !entries.length) return;
+    loadSession(session);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entries.length, loading]);
+
   // Keep the derived bonus flags in step with the numbers as they're typed:
   // the quickest Best Lap gets FL, the biggest position gain gets HC, and the
   // most laps led gets MLL. Runs on every grid change, and re-runs when a lock
@@ -285,8 +420,40 @@ export function SessionEditor({
     setRows(prev => applyAutoFlags(prev, flagLocks));
   }, [rows, flagLocks, sessionType, loading]);
 
+  // Qualifying's counterpart: keep Qual Time / To Lead / Gap consistent however
+  // the grid changed — a driver assigned or cleared, a row removed, a position
+  // renumbered, an import applied. syncQualGaps returns the same array when
+  // nothing moves, so this settles on the first pass rather than looping.
+  useEffect(() => {
+    if (sessionType !== "qualifying" || loading) return;
+    setRows(prev => syncQualGaps(prev));
+  }, [rows, sessionType, loading]);
+
   function updateRow(idx, field, value) {
-    setRows(prev => prev.map((r, i) => (i === idx ? { ...r, [field]: value } : r)));
+    const qualTimeEdit = sessionType === "qualifying" && QUAL_TIME_FIELDS.has(field);
+    setRows(prev => {
+      const next = prev.map((r, i) => {
+        if (i !== idx) return r;
+        const patch = { ...r, [field]: value };
+        // Deleting a lap time clears the gaps derived from it — left in place
+        // they'd just re-derive the time that was deleted.
+        if (qualTimeEdit && field === "qual_time" && String(value).trim() === "") {
+          patch.qual_to_lead = "";
+          patch.qual_gap = "";
+        }
+        return patch;
+      });
+      // Qual Time / To Lead / Gap all feed each other — whichever one was
+      // typed, re-derive the other two off it.
+      return qualTimeEdit ? syncQualGaps(next, { idx, field }) : next;
+    });
+  }
+
+  // Tidy the qualifying gap columns once focus leaves the cell being typed in:
+  // the sync holds the focused cell's raw text, so this is what turns a
+  // finished "+0.3" into "+0.300". Deferred a tick so focus has already moved.
+  function normalizeQualGaps() {
+    setTimeout(() => setRows(prev => syncQualGaps(prev)), 0);
   }
 
   // Ticking or unticking one of the auto-derived boxes by hand hands that flag
@@ -323,13 +490,27 @@ export function SessionEditor({
       });
       return;
     }
-    setRows(prev => prev.map((r, i) => {
-      if (i < startIdx || i >= startIdx + values.length || !r.entry_id) return r;
-      return { ...r, [field]: String(values[i - startIdx] ?? "").trim() };
-    }));
+    setRows(prev => {
+      const next = prev.map((r, i) => {
+        if (i < startIdx || i >= startIdx + values.length || !r.entry_id) return r;
+        return { ...r, [field]: String(values[i - startIdx] ?? "").trim() };
+      });
+      // A pasted column of times (or of gaps) fills the other two columns the
+      // same way typing them one at a time would — every pasted row counts as
+      // edited, so a column of gaps rewrites the times under it.
+      if (sessionType !== "qualifying" || !QUAL_TIME_FIELDS.has(field)) return next;
+      let out = next;
+      for (let i = startIdx; i < Math.min(startIdx + values.length, next.length); i++) {
+        out = syncQualGaps(out, { idx: i, field });
+      }
+      return out;
+    });
   }
 
-  const totalLaps = Number(race?.total_laps) || null;
+  // The scheduled lap count laps-completed is auto-derived from. Null on a
+  // timed event — it has no scheduled distance to count down from, so laps are
+  // typed in per driver instead of being filled from the total.
+  const totalLaps = scheduledLaps(race);
 
   // Assigns/creates a driver into a specific slot, seeding Start from the
   // driver's Qualifying position for race-type sessions.
@@ -554,7 +735,9 @@ export function SessionEditor({
       const [moved] = next.splice(dragIndex, 1);
       next.splice(idx, 0, moved);
       const renumbered = next.map((r, i) => ({ ...r, finish_pos: String(i + 1) }));
-      if (sessionType === "qualifying") return renumbered;
+      // Reordering changes who's on pole and who's one position up, so both
+      // qualifying gap columns re-derive off the new order.
+      if (sessionType === "qualifying") return syncQualGaps(renumbered);
       // Reordering can change who leads; re-derive intervals off the new P1.
       const lt = leaderTimeOf(renumbered);
       return renumbered.map(r => {
@@ -778,6 +961,10 @@ export function SessionEditor({
   // season keeps the grid exactly as it was. A grid already scoped to one class
   // doesn't need it either — every row in it is that class by definition.
   const hasClasses = classes.length > 0 && !scoped;
+  // One header per banger stat, generated from the stat list — the grid, the
+  // row inputs and these headers all read the same definitions, so a new banger
+  // bonus appears in all three at once.
+  const bangerHeaders = isBangerRacing ? BANGER_STATS.map(s => s.header) : [];
 
   const rowCommon = (row, idx) => ({
     available: availableFor(row),
@@ -892,6 +1079,16 @@ export function SessionEditor({
           ? "Position 1 is the pole. Each slot starts empty — click it, type a name, and pick the driver from the dropdown (or create a new one inline). This is the only place starting position is recorded — Average Start and Poles are calculated from Qualifying results only."
           : <>Each finishing position starts empty — click a slot, type a driver's name, and pick them from the dropdown (or create a new driver inline). Drag ⠿ to reorder; positions renumber automatically. Enter <strong>Race Time</strong> for the leader, then either a Race Time or an <strong>Int</strong> (gap behind leader, e.g. <code>+2.345</code>) for everyone else — each fills in the other. Use <code>1L</code>, <code>2L</code>… in Int for laps down.{totalLaps ? ` Laps auto-count off the ${totalLaps}-lap distance (laps down and DNF lap subtract from it).` : " Set Total Race Laps on the Race Info tab so laps auto-count."}</>}
       </p>
+      {isQual && (
+        <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.78rem" }}>
+          ⏱ <strong>Qual Time</strong>, <strong>To Lead</strong> and <strong>Gap</strong> fill each other in —
+          enter whichever your timing sheet gives you. Type lap times and both gaps appear (To Lead is the
+          gap to pole, Gap is to the car one position up); type a gap instead — e.g. <code>+0.312</code> — and
+          the lap time is worked out from the pole time (To Lead) or the car above (Gap). Pole sets the
+          reference, so its own gaps stay blank. Only the lap times are saved; the gaps are recalculated
+          from them, so they stay right after a reorder or a correction.
+        </p>
+      )}
       {isQual && showStatsToggle && !statsOn && (
         <p style={{ marginTop: 0, color: "var(--ink-1)", fontSize: "0.82rem" }}>
           ⚠ <strong>Official Stats are off for {session}.</strong> The grid below still shows on the event page,
@@ -904,9 +1101,24 @@ export function SessionEditor({
           ✓ <strong>FL</strong>, <strong>HC</strong> and <strong>MLL</strong> tick themselves as you type:
           the quickest <strong>Best Lap</strong> takes Fastest Lap (one lap time entered is the fastest one),
           the biggest gain from <strong>Start</strong> to <strong>Fin</strong> takes Hard Charger (a tie goes to
-          whoever started furthest back), and the highest <strong>Led</strong> count takes Most Laps Led.
+          whoever finished highest), and the highest <strong>Led</strong> count takes Most Laps Led.
           Tick or untick any of them yourself and that one stops moving — your call sticks.
           These are stats either way; they only affect points if your season or points structure pays a bonus for them.
+        </p>
+      )}
+      {isBangerRacing && (
+        <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.78rem" }}>
+          💥 This is a <strong>Demo Derby / Banger Racing</strong> series, so each row also records{" "}
+          <strong>TD</strong> (takedowns), <strong>SUR</strong> (survived the longest) and{" "}
+          <strong>LTH</strong> (most lethal — most takedowns, ticked automatically off the TD column).
+          What each is worth is set in this session&rsquo;s points structure; the Points column updates
+          as you type. These stats show on this series&rsquo; Standings and Stats only.
+        </p>
+      )}
+      {!isQual && isTimedRace(race) && (
+        <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.78rem" }}>
+          ⏱ This is a <strong>timed</strong> event, so there&rsquo;s no scheduled lap total to count down
+          from — enter each driver&rsquo;s <strong>Laps</strong> yourself.
         </p>
       )}
       <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.78rem" }}>
@@ -916,7 +1128,7 @@ export function SessionEditor({
       {!entries.length ? (
         <p style={{ color: "var(--ink-1)", fontSize: "0.9rem" }}>
           {scoped
-            ? `No drivers are in ${sessionClassName || "this class"} yet — assign drivers to it on the Roster page, or add one below and set their class.`
+            ? `No drivers are in ${sessionClassName || "this class"} yet — assign drivers to it on Drivers ▸ Roster & Teams, or add one below and set their class.`
             : "No drivers on the roster yet — add one below to start entering results."}
         </p>
       ) : loading ? (
@@ -924,11 +1136,12 @@ export function SessionEditor({
       ) : sessionType === "qualifying" ? (
         <div style={{ overflowX: "auto" }}>
           <p style={{ margin: "0 0 8px", color: "var(--ink-2)", fontSize: "0.78rem" }}>Drag ⠿ to reorder.</p>
-          <div className={`qual-grid${hasClasses ? " has-class" : ""}`}>
-            {["", "Pos", "Driver", ...(hasClasses ? ["Class"] : []), "Qual Time", pointsLabel, ""].map((h, i) => <span className="grid-header" key={h || i}>{h}</span>)}
+          <div className={`qual-grid${hasClasses ? " has-class" : ""}${isBangerRacing ? " has-banger" : ""}`}
+            style={bangerGridStyle(isBangerRacing)}>
+            {["", "Pos", "Driver", ...(hasClasses ? ["Class"] : []), "Qual Time", "To Lead", "Gap", ...bangerHeaders, pointsLabel, ""].map((h, i) => <span className="grid-header" key={h || i}>{h}</span>)}
             {rows.map((row, idx) => (
-              <QualRow key={row.slot_id} row={row} idx={idx} updateRow={updateRow} autoFocus={row.entry_id === justAddedId} points={rowPoints(row)}
-                classes={classes} hasClasses={hasClasses}
+              <QualRow key={row.slot_id} row={row} idx={idx} updateRow={updateRow} updateFlag={updateFlag} onGapBlur={normalizeQualGaps} autoFocus={row.entry_id === justAddedId} points={rowPoints(row)}
+                classes={classes} hasClasses={hasClasses} isBangerRacing={isBangerRacing}
                 dragging={dragIndex === idx} dragOver={overIndex === idx && dragIndex !== idx}
                 onDragStart={() => handleDragStart(idx)} onDragOver={e => handleDragOver(idx, e)} onDrop={() => handleDrop(idx)} onDragEnd={handleDragEnd}
                 {...rowCommon(row, idx)} />
@@ -938,15 +1151,16 @@ export function SessionEditor({
       ) : (
         <div style={{ overflowX: "auto" }}>
           <p style={{ margin: "0 0 8px", color: "var(--ink-2)", fontSize: "0.78rem" }}>Drag ⠿ to reorder — finishing positions renumber automatically.</p>
-          <div className={`result-grid result-grid-wide${hasClasses ? " has-class" : ""}`}>
-            {["", "Fin", "Start", "Driver", ...(hasClasses ? ["Class"] : []), "Race Time", "Int", "Best Lap", "Laps", "Led", "Inc", "FL", "½", "HC", "MLL", "Adj", "Status", pointsLabel, ""].map((h, i) => (
+          <div className={`result-grid result-grid-wide${hasClasses ? " has-class" : ""}${isBangerRacing ? " has-banger" : ""}`}
+            style={bangerGridStyle(isBangerRacing)}>
+            {["", "Fin", "Start", "Driver", ...(hasClasses ? ["Class"] : []), "Race Time", "Int", "Best Lap", "Laps", "Led", "Inc", "FL", "½", "HC", "MLL", ...bangerHeaders, "Adj", "Status", pointsLabel, ""].map((h, i) => (
               <span className="grid-header" key={h || i}>{h}</span>
             ))}
             {rows.map((row, idx) => (
               <RowInputs key={row.slot_id} row={row} idx={idx} updateRow={updateRow} updateFlag={updateFlag}
                 updateRaceTime={updateRaceTime} updateInterval={updateInterval} updateStatus={updateStatus}
                 autoFocus={row.entry_id === justAddedId} points={rowPoints(row)}
-                classes={classes} hasClasses={hasClasses}
+                classes={classes} hasClasses={hasClasses} isBangerRacing={isBangerRacing}
                 dragging={dragIndex === idx} dragOver={overIndex === idx && dragIndex !== idx}
                 onDragStart={() => handleDragStart(idx)} onDragOver={e => handleDragOver(idx, e)} onDrop={() => handleDrop(idx)} onDragEnd={handleDragEnd}
                 {...rowCommon(row, idx)} />
@@ -1024,7 +1238,7 @@ export function SessionEditor({
         <PointsEditorModal
           session={session} sessionType={sessionType} value={templateId}
           templates={templates} baseConfig={baseConfig} baseLabel={baseLabel}
-          classLabel={scoped ? sessionClassName : ""}
+          classLabel={scoped ? sessionClassName : ""} banger={isBangerRacing}
           onAssign={assignSessionPoints} onTemplatesChanged={onTemplatesChanged}
           onClose={() => setPointsModal(false)}
         />
@@ -1339,7 +1553,27 @@ function ClassCell({ row, idx, classes, updateRow }) {
   );
 }
 
-function RowInputs({ row, idx, updateRow, updateFlag, updateRaceTime, updateInterval, updateStatus, autoFocus, points, classes = [], hasClasses, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, available, onAssign, onClear, onRequestCreate, onPasteColumn }) {
+// The Demo Derby / Banger Racing cells for one row — a numeric input for a
+// counted stat (Takedowns), a checkbox for a bonus flag (Survival, Most
+// Lethal). Generated from BANGER_STATS, so a new banger stat needs no edit
+// here. `updateFlag` is used for the flags so hand-ticking one hands it to the
+// admin for the session, exactly like FL/HC/MLL.
+function BangerCells({ row, idx, updateRow, updateFlag, gridProps }) {
+  const hasDriver = !!row.entry_id;
+  return (
+    <>
+      {BANGER_STATS.map(stat => (stat.type === "bool" ? (
+        <Check key={stat.key} title={stat.title} value={!!row[stat.key]} disabled={!hasDriver}
+          onChange={v => (updateFlag ? updateFlag(idx, stat.key, v) : updateRow(idx, stat.key, v))} />
+      ) : (
+        <input key={stat.key} type="number" min="0" title={stat.title} value={row[stat.key] ?? "0"} disabled={!hasDriver}
+          {...gridProps(stat.key)} onChange={e => updateRow(idx, stat.key, e.target.value)} />
+      )))}
+    </>
+  );
+}
+
+function RowInputs({ row, idx, updateRow, updateFlag, updateRaceTime, updateInterval, updateStatus, autoFocus, points, classes = [], hasClasses, isBangerRacing, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, available, onAssign, onClear, onRequestCreate, onPasteColumn }) {
   const hasDriver = !!row.entry_id;
   const isLeader = Number(row.finish_pos) === 1;
   // Shared per-cell wiring: column/row tags, Enter-to-next-row, and column
@@ -1375,14 +1609,16 @@ function RowInputs({ row, idx, updateRow, updateFlag, updateRaceTime, updateInte
       <Check title="Fastest lap — ticked automatically for the quickest Best Lap time entered. Change it and it stays where you put it."
         value={row.fastest_lap} disabled={!hasDriver} onChange={v => updateFlag(idx, "fastest_lap", v)} />
       <Check title="Halfway-point leader" value={row.halfway_leader} disabled={!hasDriver} onChange={v => updateRow(idx, "halfway_leader", v)} />
-      <Check title="Hard charger — ticked automatically for the biggest gain from Start to Fin (ties go to whoever started furthest back). Change it and it stays where you put it."
+      <Check title="Hard charger — ticked automatically for the biggest gain from Start to Fin (ties go to whoever finished highest). Change it and it stays where you put it."
         value={row.hard_charger} disabled={!hasDriver} onChange={v => updateFlag(idx, "hard_charger", v)} />
       <Check title="Most laps led — ticked automatically for the highest Led count (a tie is shared). Change it and it stays where you put it."
         value={row.most_laps_led} disabled={!hasDriver} onChange={v => updateFlag(idx, "most_laps_led", v)} />
+      {isBangerRacing && <BangerCells row={row} idx={idx} updateRow={updateRow} updateFlag={updateFlag} gridProps={gridProps} />}
       <input type="number" title="Points adjustment — penalty (−) or bonus (+). Applied on top of scored points without changing the finishing position."
         placeholder="0" value={row.points_adjustment} disabled={!hasDriver}
         {...gridProps("points_adjustment")} onChange={e => updateRow(idx, "points_adjustment", e.target.value)} style={{ textAlign: "center" }} />
-      <select value={row.status} disabled={!hasDriver} onChange={e => updateStatus(idx, e.target.value)}>
+      <select title="Status — DNS (did not start) scores nothing and counts toward no stat; DNF and DQ are both scored as classified finishes and both add to the driver's DNF total."
+        value={row.status} disabled={!hasDriver} onChange={e => updateStatus(idx, e.target.value)}>
         <option value="finished">Running</option>
         <option value="dnf">DNF</option>
         <option value="dns">DNS</option>
@@ -1394,8 +1630,9 @@ function RowInputs({ row, idx, updateRow, updateFlag, updateRaceTime, updateInte
   );
 }
 
-function QualRow({ row, idx, updateRow, autoFocus, points, classes = [], hasClasses, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, available, onAssign, onClear, onRequestCreate, onPasteColumn }) {
+function QualRow({ row, idx, updateRow, updateFlag, onGapBlur, autoFocus, points, classes = [], hasClasses, isBangerRacing, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, available, onAssign, onClear, onRequestCreate, onPasteColumn }) {
   const hasDriver = !!row.entry_id;
+  const isPole = Number(row.finish_pos) === 1;
   const gridProps = field => ({
     "data-grid-field": field, "data-grid-idx": idx,
     onKeyDown: gridEnterAdvance,
@@ -1408,7 +1645,18 @@ function QualRow({ row, idx, updateRow, autoFocus, points, classes = [], hasClas
       <DriverCell row={row} idx={idx} dragging={dragging} available={available} onAssign={onAssign} onClear={onClear} onRequestCreate={onRequestCreate} onPasteColumn={onPasteColumn} />
       {hasClasses && <ClassCell row={row} idx={idx} classes={classes} updateRow={updateRow} />}
       <input placeholder="01:43.863" value={row.qual_time} disabled={!hasDriver}
-        {...gridProps("qual_time")} onChange={e => updateRow(idx, "qual_time", e.target.value)} />
+        title="Lap time. Fills To Lead and Gap as you type — or type one of those instead and this fills itself."
+        {...gridProps("qual_time")} onBlur={onGapBlur} onChange={e => updateRow(idx, "qual_time", e.target.value)} />
+      {/* To Lead / Gap are two ways of saying the same thing as Qual Time, and
+          any one of the three fills the other two. Pole has neither — it's the
+          time everything else is measured against. */}
+      <input placeholder={isPole ? "pole" : "+0.312"} value={isPole ? "" : (row.qual_to_lead ?? "")} disabled={!hasDriver || isPole}
+        title="Gap to pole. Type it and the lap time fills itself from the pole time."
+        {...gridProps("qual_to_lead")} onBlur={onGapBlur} onChange={e => updateRow(idx, "qual_to_lead", e.target.value)} />
+      <input placeholder={isPole ? "—" : "+0.087"} value={isPole ? "" : (row.qual_gap ?? "")} disabled={!hasDriver || isPole}
+        title="Gap to the car one position up. Type it and the lap time fills itself from that car's time."
+        {...gridProps("qual_gap")} onBlur={onGapBlur} onChange={e => updateRow(idx, "qual_gap", e.target.value)} />
+      {isBangerRacing && <BangerCells row={row} idx={idx} updateRow={updateRow} updateFlag={updateFlag} gridProps={gridProps} />}
       <div className="points-cell" style={{ textAlign: "center", fontWeight: 600 }}>{points}</div>
       <RemoveButton row={row} onRemove={onRemove} />
     </>

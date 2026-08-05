@@ -1,4 +1,8 @@
 {
+  "scripts": {
+    "backup": "node scripts/fetch-backup.mjs",
+    "backup:drive": "node scripts/upload-to-drive.mjs"
+  },
   "dependencies": {
     "firebase": "^12.16.0"
   }

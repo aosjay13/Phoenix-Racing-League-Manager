@@ -8,8 +8,9 @@ import {
   resolveSeasonConfig,
 } from "@/lib/standings";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
-import { classIdsInSeason, fetchSeasonClasses, filterEntriesByClass, filterResultsByClass } from "@/lib/classServer";
-import { gameAlias } from "@/lib/aliases";
+import { classIdsInSeason, entryClassIds, fetchSeasonClasses, filterEntriesByClass, filterResultsByClass } from "@/lib/classServer";
+import { seasonChampions } from "@/lib/champions";
+import { fetchDriverNames } from "@/lib/driverNamesServer";
 
 // One season's championship tables.
 //   ?season_id=…              → the overall (whole-field) championship
@@ -56,34 +57,47 @@ export async function GET(request) {
   const drivers = calculateStandings(results, entries, teams, config, templatesById, classes);
   const teamRows = calculateTeamStandings(drivers.rows, teams);
 
-  // Contextual name rendering: on this game's standings, surface each driver's
-  // game-specific alias (the on-track name) when they've mapped one. The season
-  // carries its game_id; look up each pooled driver's alias for that game and
-  // stamp it on the row (null when none), for the client to prefer over the
-  // primary profile name.
+  // Contextual name rendering: on this game's standings, surface the name each
+  // driver is shown under IN THIS GAME when they've set one. The season carries
+  // its game_id; resolve every pooled driver's name for that game (see
+  // lib/driverNames.js) and stamp it on the row — null when they haven't set
+  // one, so the client falls back to the name on the entry.
   const gameId = season.game_id || null;
   if (gameId) {
-    const driverIds = [...new Set(drivers.rows.map(r => r.driver_id).filter(Boolean))];
-    const aliasByDriver = {};
-    await Promise.all(driverIds.map(async id => {
-      const doc = await db().collection("drivers").doc(id).get();
-      if (doc.exists) aliasByDriver[id] = gameAlias(doc.data().aliases, gameId);
-    }));
-    for (const r of drivers.rows) r.game_alias = r.driver_id ? (aliasByDriver[r.driver_id] ?? null) : null;
+    const names = await fetchDriverNames(drivers.rows.map(r => r.driver_id), gameId);
+    for (const r of drivers.rows) r.game_alias = r.driver_id ? (names[r.driver_id]?.game ?? null) : null;
   }
 
   // Tag every row with its class so the combined table can still show which
-  // class each driver belongs to.
+  // class each driver belongs to. A driver entered in several classes lists
+  // them all, with the primary one kept in `class_id` for anything that can
+  // only carry a single class.
   const classNameById = Object.fromEntries(classes.map(c => [c.id, c.name]));
   for (const r of drivers.rows) {
-    const cid = entriesById[r.entry_id]?.class_id || null;
-    r.class_id = cid;
-    r.class_name = cid ? (classNameById[cid] ?? null) : null;
+    const cids = entryClassIds(entriesById[r.entry_id]);
+    r.class_id = cids[0] || null;
+    r.class_ids = cids;
+    const names = cids.map(cid => classNameById[cid]).filter(Boolean);
+    r.class_name = names.length ? names.join(" · ") : null;
   }
+
+  // Every crown this season handed out, so the standings screen can show who
+  // was actually credited — a class-by-class list plus the overall one, in the
+  // same order the classes are listed. Computed from the UNFILTERED season, and
+  // empty until the season is marked completed (nothing is awarded before
+  // then). Named from the roster entry, matching the tables above.
+  const champions = seasonChampions({ id: seasonId, ...season }, allResults, allEntries, config, templatesById, classes)
+    .map(c => ({
+      ...c,
+      driver_name: entriesById[c.entry_id]?.name ?? "Unknown",
+      driver_id: entriesById[c.entry_id]?.driver_id ?? null,
+      user_id: entriesById[c.entry_id]?.user_id ?? null,
+    }));
 
   return NextResponse.json({
     season: { id: seasonId, ...season },
     classes,
+    champions,
     class_id: classSel[0] || classId || null,
     class_name: className || null,
     // Whether this season also crowns ONE overall champion across every class.

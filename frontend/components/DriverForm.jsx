@@ -1,12 +1,15 @@
 "use client";
 
-// Shared driver-identity fields: Name, per-series Car Number, Class, Team, and
-// an optional linked player account. Used by the Roster page's Add Driver card
-// and by the race-entry "create driver on the fly" modal, so both surfaces
+import { ClassPicker } from "@/components/ClassPicker";
+
+// Shared driver-identity fields: Name, per-series Car Number, Classes, Team,
+// and an optional linked player account. Used by the Roster manager's Add Driver
+// card and by the race-entry "create driver on the fly" modal, so both surfaces
 // stay in sync with the same fields and the same series-scoped number.
 //
-// The Class dropdown only appears for a season that actually runs classes —
-// a single-class season never sees it.
+// The Classes picker only appears for a season that actually runs classes — a
+// single-class season never sees it. A driver can be in several at once (see
+// ClassPicker), so racing both Pro and Am takes one roster entry, not two.
 export function DriverForm({ value, onChange, teams, users, classes = [], numberLabel = "Car Number" }) {
   return (
     <>
@@ -21,11 +24,12 @@ export function DriverForm({ value, onChange, teams, users, classes = [], number
       </div>
       {classes.length > 0 && (
         <div className="field">
-          <label>Class</label>
-          <select value={value.class_id ?? ""} onChange={e => onChange({ ...value, class_id: e.target.value })}>
-            <option value="">Unclassified</option>
-            {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          <label>Classes</label>
+          <ClassPicker
+            classes={classes}
+            value={value.class_ids ?? (value.class_id ? [value.class_id] : [])}
+            onChange={ids => onChange({ ...value, class_ids: ids, class_id: ids[0] || "" })}
+          />
         </div>
       )}
       <div className="field">

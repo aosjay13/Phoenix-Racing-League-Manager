@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { withAdmin, getRequestLeagueId } from "@/lib/serverAuth";
 import { recalcGameSkillRatings, gameIdForSeason } from "@/lib/skillRatingServer";
-import { classIdForScope, isClassScoped, resultInSessionClass } from "@/lib/classFilter";
+import { classIdForScope, isClassScoped, primaryClassId, resultInSessionClass } from "@/lib/classFilter";
+import { bangerFieldsForSave } from "@/lib/bangerRacing";
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -31,11 +32,13 @@ async function sessionContext(raceId) {
 
 // class_id per roster entry, used to resolve the class of a result saved before
 // classes existed (or before this driver was classified) — the same fallback
-// classOfResult applies everywhere else.
+// classOfResult applies everywhere else. A driver entered in several classes
+// falls back to their primary one; a combined session's Class dropdown on the
+// row is how the other class gets recorded.
 async function classByEntryForSeason(seasonId) {
   if (!seasonId) return {};
   const snap = await db().collection("entries").where("season_id", "==", seasonId).get();
-  return Object.fromEntries(snap.docs.map(d => [d.id, { class_id: d.data().class_id || "" }]));
+  return Object.fromEntries(snap.docs.map(d => [d.id, { class_id: primaryClassId(d.data()) || "" }]));
 }
 
 // Docs that count as "this session". Qualifying is isolated by type, but all
@@ -141,6 +144,12 @@ export const POST = withAdmin(async (request, ctx, user) => {
       // saved before this field existed.
       most_laps_led: !!row.most_laps_led,
       provisional: !!row.provisional,
+      // Demo Derby / Banger Racing stats (takedowns, survival bonus, most
+      // lethal). Written for every result — zeros/falses outside a banger
+      // series, which score nothing and aggregate to nothing — so the stats
+      // engine never has to ask what kind of series a result came from. See
+      // lib/bangerRacing.js.
+      ...bangerFieldsForSave(row),
       bonus_points: Number(row.bonus_points || 0),
       penalty_points: Number(row.penalty_points || 0),
       // Signed per-result adjustment (penalties/corrections), applied on top of

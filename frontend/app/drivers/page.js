@@ -1,15 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
 import { DirectoryRow } from "@/components/DirectoryRow";
+import { RosterManager } from "@/components/RosterManager";
+import { UserAccountsManager } from "@/components/UserAccountsManager";
 import { DriverPoolCreateModal } from "@/components/DriverPoolCreateModal";
 import { DriverEditModal } from "@/components/DriverEditModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Modal } from "@/components/Modal";
 
-export default function DriversPage() {
+// The global driver directory — the "Drivers" tab, and the only one every
+// visitor sees.
+function DriversDirectory() {
   const { user, isAdmin } = useAuth();
   const [drivers, setDrivers] = useState(null);
   const [users, setUsers] = useState([]);
@@ -59,8 +64,14 @@ export default function DriversPage() {
           const account = d.user_id ? byUid[d.user_id] : null;
           return {
             id: d.id,
-            name: account?.display_name || d.name,
+            // The directory isn't tied to a game, so it shows the overall
+            // display name: the driver's own override first, then a linked
+            // account's name, then the pool name (see lib/driverNames.js).
+            name: d.display_name || account?.display_name || d.name,
             pool_name: d.name,
+            account_name: account?.display_name || "",
+            display_name: d.display_name || "",
+            game_names: d.game_names || [],
             notes: d.notes || "",
             aliases: d.aliases || [],
             photo_url: account?.photo_url || null,
@@ -143,9 +154,18 @@ export default function DriversPage() {
   function handleSaved(updated) {
     setDrivers(prev => (prev || [])
       .map(d => (d.id === updated.id
-        // A linked driver keeps its account display name; an unlinked one takes
-        // the new pool name.
-        ? { ...d, pool_name: updated.name, notes: updated.notes ?? d.notes, aliases: updated.aliases ?? d.aliases, name: d.linked ? d.name : updated.name }
+        // An explicit overall display name wins; without one, a linked driver
+        // keeps its account display name and an unlinked one takes the new
+        // pool name.
+        ? {
+            ...d,
+            pool_name: updated.name,
+            display_name: updated.display_name ?? d.display_name,
+            game_names: updated.game_names ?? d.game_names,
+            notes: updated.notes ?? d.notes,
+            aliases: updated.aliases ?? d.aliases,
+            name: (updated.display_name || "").trim() || d.account_name || updated.name,
+          }
         : d))
       .sort((a, b) => String(a.name).localeCompare(String(b.name))));
     setEditing(null);
@@ -220,7 +240,16 @@ export default function DriversPage() {
       )}
       {editing && (
         <DriverEditModal
-          driver={{ id: editing.id, name: editing.pool_name, notes: editing.notes, aliases: editing.aliases, linked: editing.linked }}
+          driver={{
+            id: editing.id,
+            name: editing.pool_name,
+            display_name: editing.display_name,
+            game_names: editing.game_names,
+            account_name: editing.account_name,
+            notes: editing.notes,
+            aliases: editing.aliases,
+            linked: editing.linked,
+          }}
           onClose={() => setEditing(null)}
           onSaved={handleSaved}
         />
@@ -270,5 +299,61 @@ export default function DriversPage() {
         />
       )}
     </section>
+  );
+}
+
+// ── The Drivers menu ───────────────────────────────────────────────────────
+// Everything about the people in the league lives here, one tab per view, so
+// an admin never has to hop between menus (or scroll past one screen to reach
+// the next): the public directory, the season roster & teams manager, and the
+// player accounts behind the profiles.
+const TABS = [
+  { key: "directory", label: "Drivers",        icon: "🏎", admin: false },
+  { key: "roster",    label: "Roster & Teams", icon: "⊞",  admin: true  },
+  { key: "accounts",  label: "User Accounts",  icon: "👥", admin: true  },
+];
+
+function DriversTabs() {
+  const { isAdmin } = useAuth();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const wanted = searchParams.get("tab") || "directory";
+
+  const visible = TABS.filter(t => !t.admin || isAdmin);
+  // A non-admin (or an admin whose role is still loading) can only ever be on
+  // the directory, so an admin-only ?tab= falls back rather than showing blank.
+  const tab = visible.some(t => t.key === wanted) ? wanted : "directory";
+
+  function selectTab(key) {
+    // Shallow URL update so the tab is linkable/back-buttonable without
+    // re-running the route.
+    router.replace(key === "directory" ? "/drivers" : `/drivers?tab=${key}`, { scroll: false });
+  }
+
+  return (
+    <section>
+      {visible.length > 1 && (
+        <div className="tab-row" style={{ marginTop: 0, marginBottom: 18, flexWrap: "wrap" }}>
+          {visible.map(t => (
+            <button key={t.key} type="button" className={`tab${tab === t.key ? " active" : ""}`}
+              onClick={() => selectTab(t.key)}>
+              <span style={{ marginRight: 6 }}>{t.icon}</span>{t.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {tab === "directory" && <DriversDirectory />}
+      {tab === "roster" && isAdmin && <RosterManager />}
+      {tab === "accounts" && isAdmin && <UserAccountsManager />}
+    </section>
+  );
+}
+
+export default function DriversPage() {
+  return (
+    <Suspense fallback={<div className="skeleton" style={{ height: 240 }} />}>
+      <DriversTabs />
+    </Suspense>
   );
 }

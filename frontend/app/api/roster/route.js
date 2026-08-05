@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
+import { fetchDriverNames } from "@/lib/driverNamesServer";
+import { entryClassIds } from "@/lib/classServer";
 
 export const dynamic = "force-dynamic";
 
@@ -86,7 +88,10 @@ export async function GET(request) {
         team_name: null,
         class_id: null,
         class_name: null,
+        class_ids: [],
+        class_names: [],
         entry_id: null,
+        entry_ids: [],
         season_id: null,
         series_entries: {},
       });
@@ -97,11 +102,24 @@ export async function GET(request) {
       bucket.user_id = entry.user_id ?? bucket.user_id;
       bucket.team_id = entry.team_id ?? bucket.team_id;
       bucket.team_name = entry.team_id ? teamName[entry.team_id] ?? bucket.team_name : bucket.team_name;
-      // Class is per-season, so the latest season in scope wins — matching how
-      // team/number resolve.
-      bucket.class_id = entry.class_id || null;
-      bucket.class_name = entry.class_id ? className[entry.class_id] ?? null : null;
+      // Classes are per-season, so the latest season in scope wins — matching
+      // how team/number resolve. A driver can race SEVERAL classes, so the row
+      // carries all of them; and because the same driver can still hold more
+      // than one entry in a season (the old one-entry-per-class workaround),
+      // the classes of every such entry are folded in rather than the last one
+      // seen silently winning.
+      if (bucket.season_id !== season.id) {
+        bucket.class_ids = [];
+        bucket.entry_ids = [];
+      }
+      for (const cid of entryClassIds(entry)) {
+        if (!bucket.class_ids.includes(cid)) bucket.class_ids.push(cid);
+      }
+      bucket.class_names = bucket.class_ids.map(cid => className[cid]).filter(Boolean);
+      bucket.class_id = bucket.class_ids[0] || null;
+      bucket.class_name = bucket.class_id ? className[bucket.class_id] ?? null : null;
       bucket.entry_id = entry.id;
+      if (!bucket.entry_ids.includes(entry.id)) bucket.entry_ids.push(entry.id);
       bucket.season_id = season.id;
       if (entry.number != null) {
         bucket.number = entry.number;
@@ -119,32 +137,66 @@ export async function GET(request) {
     }
   }
 
-  // In aggregated scopes (game/league) a driver can span series with
-  // different alias names, so show their canonical global-driver name
-  // instead of whichever alias happened to be seen last.
+  // Display names, resolved from each driver's profile (see lib/driverNames.js).
+  // Every scope here sits under at most one game — season/series through their
+  // season docs, `scope=game` through the query — so inside a game the roster
+  // shows the name that driver is shown under in THAT game, and league-wide it
+  // shows their overall display name.
+  //
+  // `name` stays the raw editable name (canonical driver name in aggregated
+  // scopes, the per-series entry alias in season/series scope) because the
+  // roster editor writes it straight back; `display_name` is the one to render.
+  // League scope spans every game, so it has no per-game name to apply.
+  const scopeGameId =
+    scope === "game" ? searchParams.get("game_id")
+      : scope === "league" ? null
+        : (seasons.find(s => s.game_id)?.game_id || null);
+  const names = await fetchDriverNames(Object.values(drivers).map(d => d.driver_id), scopeGameId);
+
   if (!showNumber) {
-    const driverIds = [...new Set(Object.values(drivers).map(d => d.driver_id).filter(Boolean))];
-    if (driverIds.length) {
-      const docs = await Promise.all(driverIds.map(id => db().collection("drivers").doc(id).get()));
-      const canonicalName = Object.fromEntries(docs.filter(d => d.exists).map(d => [d.id, d.data().name]));
-      for (const bucket of Object.values(drivers)) {
-        if (bucket.driver_id && canonicalName[bucket.driver_id]) bucket.name = canonicalName[bucket.driver_id];
-      }
+    // Aggregated scopes: a driver can span series with different entry names,
+    // so fall back to their profile name rather than whichever was seen last.
+    for (const bucket of Object.values(drivers)) {
+      const overall = bucket.driver_id ? names[bucket.driver_id]?.overall : null;
+      if (overall) bucket.name = overall;
     }
+  }
+  for (const bucket of Object.values(drivers)) {
+    const n = bucket.driver_id ? names[bucket.driver_id] : null;
+    // A per-game name takes over; without one the row keeps the name it already
+    // had — the per-series entry alias in a season/series roster, the profile
+    // name in an aggregated one.
+    bucket.display_name = n?.game || bucket.name;
+    bucket.profile_name = n?.overall || bucket.name;
+    bucket.game_alias = n?.game ?? null;
   }
 
   const rows = Object.values(drivers).map(d => ({
     key: d.key,
     name: d.name,
+    // What to show: the game's name for this driver when the scope is inside a
+    // game, else their overall display name. `profile_name` is always the
+    // overall one, so a game roster can note who the on-track name belongs to.
+    display_name: d.display_name,
+    profile_name: d.profile_name,
+    game_alias: d.game_alias,
     driver_id: d.driver_id,
     user_id: d.user_id,
     // Only expose a concrete number when the scope pins it to one series.
     number: showNumber ? d.number : null,
     team_id: d.team_id,
     team_name: d.team_name,
+    // Every class this driver races in the latest season in scope, plus the
+    // primary one on its own for callers that can only show a single class.
     class_id: d.class_id,
     class_name: d.class_name,
+    class_ids: d.class_ids,
+    class_names: d.class_names,
     entry_id: d.entry_id,
+    // Every entry this driver holds in that season. More than one means they
+    // were added once per class before a single entry could carry several —
+    // the roster offers to combine them (see /api/admin/entries/combine).
+    entry_ids: d.entry_ids,
     season_id: d.season_id,
     series_entries: d.series_entries,
   }));

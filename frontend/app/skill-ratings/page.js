@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useLeague } from "@/components/LeagueProvider";
 import { useSortable } from "@/components/useSortable";
+import { ShareGraphicButton, ShareGraphicModal } from "@/components/ShareGraphicModal";
+import { leagueLogos, specToGraphicTable } from "@/lib/shareGraphic";
 import { api } from "@/lib/api";
 import { SR_BASELINE } from "@/lib/skillRating";
 
@@ -19,11 +21,19 @@ function Trend({ delta }) {
   );
 }
 
+// The trend chip as plain text for the exporter: "+12" / "−8" / "±0".
+function trendText(delta) {
+  if (delta == null) return "—";
+  if (delta === 0) return "±0";
+  return delta > 0 ? `+${delta}` : String(delta);
+}
+
 export default function SkillRatingsPage() {
   const league = useLeague();
   const { gameId, seriesId, seasonId, game, series, season, loading } = league ?? {};
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [sharing, setSharing] = useState(false);
 
   // Scope mirrors the Stats / Records pages: the deepest concrete selection in
   // the top dropdowns wins. SR is gated per game, so a Game must be selected —
@@ -52,6 +62,18 @@ export default function SkillRatingsPage() {
 
   const count = data?.count ?? 0;
 
+  // The exporter mirrors the table, in the order it's currently sorted — so a
+  // re-sort on any column is what gets posted. The leaderboard has a ranking,
+  // so the top three are medalled the way Standings' are.
+  const shareSpec = [
+    { key: "rank", label: "Rank", locked: true, get: (r, i) => r.rank ?? i + 1 },
+    { key: "driver", label: "Driver", align: "left", locked: true, wrap: true, get: r => r.driver_name },
+    { key: "sr", label: "SR", get: r => r.skill_rating },
+    { key: "trend", label: "Trend", get: r => trendText(r.last_delta) },
+    { key: "races", label: "Races", get: r => r.total_races ?? 0 },
+  ];
+  const shareTable = specToGraphicTable(shareSpec, rows, { rankOf: (r, i) => r.rank ?? i + 1 });
+
   return (
     <section>
       <div className="page-title">
@@ -59,7 +81,27 @@ export default function SkillRatingsPage() {
         {active && data && (
           <span className="page-badge">{count} Driver{count === 1 ? "" : "s"}</span>
         )}
+        {rows.length > 0 && <ShareGraphicButton onClick={() => setSharing(true)} />}
       </div>
+
+      <ShareGraphicModal
+        open={sharing}
+        onClose={() => setSharing(false)}
+        kind="Skill Ratings"
+        defaultTitle={active?.title ?? "Skill Ratings"}
+        subtitle={[game?.name, series?.name, season?.name].filter(Boolean).join(" · ")}
+        columns={shareTable.columns}
+        rows={shareTable.rows}
+        meta={[
+          { label: "Game", value: game?.name },
+          { label: "Scope", value: season?.name || series?.name || game?.name },
+          { label: "Rated Drivers", value: count },
+          { label: "Baseline", value: SR_BASELINE },
+        ]}
+        logos={leagueLogos({ league: league?.league, game, series, season })}
+        leagueName={league?.league?.name ?? ""}
+        leagueLogoUrl={league?.league?.logo_url ?? ""}
+      />
       <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.88rem" }}>
         Each driver&apos;s Elo-style Skill Rating, earned and lost against the Strength of Field they
         race. Everyone starts at {SR_BASELINE}. Ratings are <strong>per game</strong> — skill in one game
@@ -117,6 +159,11 @@ export default function SkillRatingsPage() {
                     {(r.driver_id || r.user_id)
                       ? <Link href={`/drivers/${r.driver_id || r.user_id}`} style={{ color: "var(--accent-cyan)" }}>{r.driver_name}</Link>
                       : r.driver_name}
+                    {/* This board is always one game, so it leads with that game's
+                        name for the driver and keeps their profile name beneath. */}
+                    {r.game_alias && r.profile_name && r.game_alias !== r.profile_name && (
+                      <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.74rem" }}>{r.profile_name}</span>
+                    )}
                   </td>
                   <td className="points-cell" style={{ fontWeight: 600 }}>{r.skill_rating}</td>
                   <td><Trend delta={r.last_delta} /></td>

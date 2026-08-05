@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { withOwner } from "@/lib/serverAuth";
+import { SCOPED_COLLECTIONS } from "@/lib/backup";
 
 export const dynamic = "force-dynamic";
 
@@ -9,13 +10,11 @@ export const dynamic = "force-dynamic";
 // Settings.
 const DEFAULT_LEAGUE_NAME = "Prodigy Racing Association";
 
-// Every collection that is partitioned per league. `users` and `claim_requests`
-// are deliberately excluded — those belong to people (accounts span leagues),
-// not to a single league.
-const SCOPED_COLLECTIONS = [
-  "games", "series", "seasons", "classes", "races", "entries", "teams",
-  "results", "drivers", "tracks", "points_templates",
-];
+// The per-league collection list lives in lib/backup.js — the backup engine
+// needs exactly the same partition map, and two copies of it would drift the
+// first time a collection is added. `users` and `claim_requests` are
+// deliberately not in it: those belong to people (accounts span leagues), not
+// to a single league.
 
 // The "Containment" migration. Owner-only, IDEMPOTENT and ADDITIVE-ONLY:
 //   • It never deletes or overwrites any field — it only SETS `league_id` on

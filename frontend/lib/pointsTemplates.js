@@ -30,14 +30,17 @@ export function tableToList(table) {
 
 // Real-world scoring, editable after loading.
 // race/qual values are comma lists (position 1 first).
+// A series that pays for pole does it through `qual` — the first entry in that
+// list IS the pole's points — since there is no separate pole bonus (see
+// BONUS_TYPES in lib/standings.js).
 export const BUILTIN_TEMPLATES = [
   {
     id: "builtin-nascar",
     name: "NASCAR (Cup style)",
     // Winner 40 (win bonus included), 2nd 35, then -1 per spot; 36th+ score 1
     race: [40, 35, ...Array.from({ length: 32 }, (_, i) => 34 - i), 1, 1, 1, 1, 1].join(", "),
-    qual: "",
-    bonuses: { pole: 1, best_lap: 0, most_laps_led: 1, lead_a_lap: 1, halfway_point: 0, hard_charger: 0 },
+    qual: "1", // pole scores 1, every other grid slot 0
+    bonuses: { best_lap: 0, most_laps_led: 1, lead_a_lap: 1, halfway_point: 0, hard_charger: 0 },
   },
   {
     id: "builtin-imsa",
@@ -45,30 +48,30 @@ export const BUILTIN_TEMPLATES = [
     // 350, 320, 300, 280, 260, then -10 per spot (min 10); qualifying mirrors ÷10
     race: [350, 320, 300, 280, 260, ...Array.from({ length: 25 }, (_, i) => 250 - 10 * i)].join(", "),
     qual: [35, 32, 30, 28, 26, ...Array.from({ length: 25 }, (_, i) => 25 - i).filter(n => n >= 1)].join(", "),
-    bonuses: { pole: 0, best_lap: 0, most_laps_led: 0, lead_a_lap: 0, halfway_point: 0, hard_charger: 0 },
+    bonuses: { best_lap: 0, most_laps_led: 0, lead_a_lap: 0, halfway_point: 0, hard_charger: 0 },
   },
   {
     id: "builtin-arca",
     name: "ARCA Menards",
     // Winner 46 (43 + 3 win bonus), 2nd 42, then -1 per spot (min 4)
     race: [46, ...Array.from({ length: 39 }, (_, i) => 42 - i).filter(n => n >= 4)].join(", "),
-    qual: "",
-    bonuses: { pole: 1, best_lap: 0, most_laps_led: 1, lead_a_lap: 1, halfway_point: 0, hard_charger: 0 },
+    qual: "1", // pole scores 1, every other grid slot 0
+    bonuses: { best_lap: 0, most_laps_led: 1, lead_a_lap: 1, halfway_point: 0, hard_charger: 0 },
   },
   {
     id: "builtin-f1",
     name: "Formula 1",
     race: "25, 18, 15, 12, 10, 8, 6, 4, 2, 1",
     qual: "",
-    bonuses: { pole: 0, best_lap: 0, most_laps_led: 0, lead_a_lap: 0, halfway_point: 0, hard_charger: 0 },
+    bonuses: { best_lap: 0, most_laps_led: 0, lead_a_lap: 0, halfway_point: 0, hard_charger: 0 },
   },
   {
     id: "builtin-indycar",
     name: "IndyCar",
     // 50, 40, 35, 32, 30, 28, 26, 24, 22, 20, then -1 per spot; 25th-33rd score 5
     race: [50, 40, 35, 32, 30, 28, 26, 24, 22, 20, ...Array.from({ length: 14 }, (_, i) => 19 - i), ...Array(9).fill(5)].join(", "),
-    qual: "",
-    bonuses: { pole: 1, best_lap: 0, most_laps_led: 2, lead_a_lap: 1, halfway_point: 0, hard_charger: 0 },
+    qual: "1", // pole scores 1, every other grid slot 0
+    bonuses: { best_lap: 0, most_laps_led: 2, lead_a_lap: 1, halfway_point: 0, hard_charger: 0 },
   },
 ];
 
@@ -82,7 +85,7 @@ export const NONE_TEMPLATE = {
   name: "No Points — all drivers score 0",
   race_points: { 1: 0 },
   qual_points: { 1: 0 },
-  bonus_points: { pole: 0, best_lap: 0, most_laps_led: 0, lead_a_lap: 0, halfway_point: 0, hard_charger: 0 },
+  bonus_points: { best_lap: 0, most_laps_led: 0, lead_a_lap: 0, halfway_point: 0, hard_charger: 0 },
 };
 
 // BUILTIN_TEMPLATES use comma-list strings (race/qual/bonuses); saved

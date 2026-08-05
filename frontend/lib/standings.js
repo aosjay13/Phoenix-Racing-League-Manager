@@ -1,4 +1,5 @@
 import { classOfResult } from "@/lib/classFilter";
+import { BANGER_BONUS_TYPES, BANGER_STAT_KEYS, bangerPoints, bangerStatLine, blankBangerTotals } from "@/lib/bangerRacing";
 
 // Default points tables mirror the PRA spreadsheet:
 // race: P1 350, P2 320, P3 300, P4 280, P5 260, then -10 per position (min 10)
@@ -18,8 +19,13 @@ export const DEFAULT_RACE_POINTS = buildRacePoints();
 export const DEFAULT_QUAL_POINTS = buildQualPoints();
 export const DEFAULT_POINTS_SCALE = DEFAULT_RACE_POINTS; // legacy alias
 
+// The bonuses a season / class / points template can pay. There is deliberately
+// no pole bonus here: pole is position 1 of Qualifying, so a pole bonus and the
+// P1 qualifying points were two separate settings paying for the same result —
+// and a league that set both silently paid twice. Qualifying Points is now the
+// single place a pole is worth something (put the value first in the list).
+// `bonus_points.pole` left on old season/class/template docs is simply ignored.
 export const BONUS_TYPES = [
-  ["pole", "Pole Bonus"],
   ["best_lap", "Best Lap Bonus"],
   ["most_laps_led", "Most Laps Led Bonus"],
   ["lead_a_lap", "Lead a Lap Bonus"],
@@ -27,7 +33,14 @@ export const BONUS_TYPES = [
   ["hard_charger", "Hard Charger Bonus"],
 ];
 
-export const DEFAULT_BONUSES = Object.fromEntries(BONUS_TYPES.map(([k]) => [k, 0]));
+// Every bonus a points structure can carry: the traditional racing ones above,
+// plus the Demo Derby / Banger Racing ones (see lib/bangerRacing.js). Banger
+// bonuses live in every structure — they default to 0, so an ordinary series is
+// scored exactly as before — but only a banger series' editors SHOW them, and
+// only banger results can be worth anything under them.
+export const ALL_BONUS_TYPES = [...BONUS_TYPES, ...BANGER_BONUS_TYPES];
+
+export const DEFAULT_BONUSES = Object.fromEntries(ALL_BONUS_TYPES.map(([k]) => [k, 0]));
 
 export function parseMaybeJson(value, fallback) {
   if (!value) return fallback;
@@ -37,6 +50,30 @@ export function parseMaybeJson(value, fallback) {
   } catch {
     return fallback;
   }
+}
+
+// ── Result statuses ────────────────────────────────────────────────────────
+//
+// The Status column on a results grid is one of: Running (finished), DNF, DNS
+// or DQ. Two of them change how a result is treated everywhere:
+//
+//   • DNS — "did not start". The driver never took the green flag, so the
+//     result is not scored at all (pointsFor returns 0) and counts toward
+//     nothing: not a start, not a finishing position, not a grid slot, not a
+//     DNF. It stays on the grid as a record that they were entered.
+//   • DQ  — thrown out. Scored like any other classified result, but it counts
+//     toward the driver's DNF total the same way a retirement does: either way
+//     they didn't see the checkered flag legally.
+const statusOf = result => String(result?.status || "").toLowerCase();
+
+export function isDidNotStart(result) {
+  return statusOf(result) === "dns";
+}
+
+// Counts toward the DNFs stat — a retirement or a disqualification.
+export function isDnf(result) {
+  const s = statusOf(result);
+  return s === "dnf" || s === "dq";
 }
 
 // Resolve a season document into a full scoring config.
@@ -74,7 +111,7 @@ export function configForTemplate(baseConfig, template) {
 //   season default → the class's own structure → the session's template
 //
 // Every level only overrides what it actually sets, so a class that changes
-// nothing but the pole bonus still inherits the season's race scale.
+// nothing but the best-lap bonus still inherits the season's race scale.
 
 // Does this value hold a real points table? An unset field, an empty object and
 // unparseable JSON all mean "inherit"; `{ 1: 0 }` (what a deliberately blank
@@ -175,12 +212,18 @@ export function decorateRaceBonuses(results) {
 // (looked up separately — see buildQualPosMap), not a copy stored on the
 // race result itself. That's the only source of starting-position info now;
 // there is no editable "Start" field on race/heat/consolation/feature rows.
-// `qualConfig` resolves the qualifying-position bonus against the Qualifying
+// `qualConfig` resolves the qualifying-position points against the Qualifying
 // session's OWN assigned points system (see buildQualTemplateMap) — falling
 // back to `config` (the race result's own template) when Qualifying carries
 // no override of its own, so a session-specific Qualifying points structure
 // actually reaches the standings total instead of being silently ignored.
 export function pointsFor(result, config, qualPos = null, qualConfig = null) {
+  // Did Not Start: the driver never took the green flag, so there is nothing to
+  // score — no position points, no qualifying points, no bonuses, and no
+  // per-result adjustment either. A no-show that still needs to cost the driver
+  // something is an entry-level points adjustment, not a scored result.
+  if (isDidNotStart(result)) return 0;
+
   // A per-result adjustment (penalties/corrections) is applied on top of the
   // scored points in every case — an admin can dock or add points without
   // touching the driver's finishing position. Negative = penalty.
@@ -196,28 +239,66 @@ export function pointsFor(result, config, qualPos = null, qualConfig = null) {
   const { racePoints, bonuses } = config;
   const qualPoints = (qualConfig || config).qualPoints;
   let pts = Number(racePoints[result.finish_pos] ?? 0);
-  if (qualPos != null) {
-    pts += Number(qualPoints[qualPos] ?? 0);
-    if (Number(qualPos) === 1) pts += Number(bonuses.pole || 0);
-  }
+  // Grid position pays through the qualifying scale alone — pole is just its
+  // position 1 (see BONUS_TYPES on why there's no separate pole bonus).
+  if (qualPos != null) pts += Number(qualPoints[qualPos] ?? 0);
   if (result.fastest_lap) pts += Number(bonuses.best_lap || 0);
   if (result.is_most_laps_led) pts += Number(bonuses.most_laps_led || 0);
   if (Number(result.laps_led || 0) > 0) pts += Number(bonuses.lead_a_lap || 0);
   if (result.halfway_leader) pts += Number(bonuses.halfway_point || 0);
   if (result.hard_charger) pts += Number(bonuses.hard_charger || 0);
+  // Demo Derby / Banger Racing bonuses: takedowns paid per car put out, plus
+  // the survival and most-lethal flags. Zero for an ordinary racing result —
+  // those bonuses default to 0 and the fields to 0/false — so this costs a
+  // traditional series nothing and needs no knowledge of the series here.
+  pts += bangerPoints(result, bonuses);
   pts += Number(result.bonus_points || 0) - Number(result.penalty_points || 0);
   pts += adjustment;
   return pts;
 }
 
-// race_id|entry_id -> that driver's Qualifying finish position, from
-// whichever qualifying-type results are present in the given result set.
-export function buildQualPosMap(results) {
+// A driver's Qualifying finish position, per event — the number the qualifying
+// points in pointsFor are scored off.
+//
+// Keyed by race + entry + class, because one roster entry can race SEVERAL
+// classes at the same event: at a split event each class runs its own
+// Qualifying, so "SuperRaptor_'s grid slot at round 4" has three different
+// answers and a race+entry key would keep only whichever was read last. That
+// collision is invisible inside a single class championship (only that class's
+// Qualifying is in the filtered set) but wrong in the combined table, where all
+// three are — which is exactly how a driver's class totals stopped adding up to
+// their overall total.
+//
+// The unscoped race|entry key is kept as a fallback for the ordinary case: one
+// combined Qualifying for the whole field, whose result may carry no class at
+// all (data written before classes existed). It's only set when that entry has
+// a SINGLE qualifying result at the event — with several, there is no
+// class-agnostic answer and guessing one is what caused the bug above.
+export function buildQualPosMap(results, entriesById = {}) {
   const map = {};
+  const byEntry = {};
   for (const r of results) {
-    if (r.session_type === "qualifying") map[`${r.race_id}|${r.entry_id}`] = Number(r.finish_pos);
+    if (r.session_type !== "qualifying") continue;
+    // A DNS in qualifying is no grid slot at all, so it pays no qualifying
+    // points in the race that follows.
+    if (isDidNotStart(r)) continue;
+    const pos = Number(r.finish_pos);
+    const key = `${r.race_id}|${r.entry_id}`;
+    map[`${key}|${classOfResult(r, entriesById) || ""}`] = pos;
+    (byEntry[key] ??= []).push(pos);
+  }
+  for (const [key, positions] of Object.entries(byEntry)) {
+    if (positions.length === 1) map[key] = positions[0];
   }
   return map;
+}
+
+// The Qualifying position a given result scores its grid bonus off: its own
+// class's Qualifying when that class ran one, else the event's single combined
+// Qualifying, else null (the driver never qualified).
+export function qualPosFor(map, result, entriesById = {}) {
+  const key = `${result.race_id}|${result.entry_id}`;
+  return map[`${key}|${classOfResult(result, entriesById) || ""}`] ?? map[key] ?? null;
 }
 
 // The Qualifying session's own points_template_id (or null for the season/class
@@ -239,7 +320,7 @@ export function buildQualTemplateMap(results, entriesById = {}) {
   return map;
 }
 
-// The Qualifying template a given result's qualifying bonus scores under:
+// The Qualifying template a given result's qualifying points score under:
 // its own class's Qualifying when that class ran one, else the event's.
 export function qualTemplateFor(map, result, entriesById = {}) {
   const key = `${result.race_id}|${classOfResult(result, entriesById) || ""}`;
@@ -248,26 +329,26 @@ export function qualTemplateFor(map, result, entriesById = {}) {
 
 // Everything needed to score one season's results in one place: each result is
 // scored under its own class's structure (configForClass), with the session's
-// assigned template laid on top, and its qualifying bonus resolved against that
+// assigned template laid on top, and its qualifying points resolved against that
 // same class's Qualifying session. Every screen and stat page builds its points
 // through this, so a per-class structure reaches all of them identically.
 export function makeScorer(results, { config, classes = [], entriesById = {}, templatesById = {} } = {}) {
   const byClass = classConfigs(config, classes);
   const baseFor = r => byClass[classOfResult(r, entriesById)] || config;
-  const qualPosMap = buildQualPosMap(results);
+  const qualPosMap = buildQualPosMap(results, entriesById);
   const qualTemplates = buildQualTemplateMap(results, entriesById);
 
   const configFor = r => configForTemplate(baseFor(r), templatesById[r.points_template_id]);
   const qualConfigFor = r => configForTemplate(baseFor(r), templatesById[qualTemplateFor(qualTemplates, r, entriesById)]);
-  const qualPosFor = r => qualPosMap[`${r.race_id}|${r.entry_id}`] ?? null;
+  const posFor = r => qualPosFor(qualPosMap, r, entriesById);
 
   return {
     qualPosMap,
-    qualPosFor,
+    qualPosFor: posFor,
     baseFor,
     configFor,
     qualConfigFor,
-    points: r => pointsFor(r, configFor(r), qualPosFor(r), qualConfigFor(r)),
+    points: r => pointsFor(r, configFor(r), posFor(r), qualConfigFor(r)),
   };
 }
 
@@ -308,9 +389,11 @@ function statLine(results) {
   // qualifying run held purely for show (a grid set for visual purposes, an
   // exhibition hot-lap session) stays on the event page without touching
   // anyone's record. Provisional entries (drivers who didn't race) are excluded
-  // too — they earn points only, never stats.
-  const rs = results.filter(r => !isQualifying(r) && r.counts_stats !== false && !r.provisional);
-  const qs = results.filter(r => isQualifying(r) && r.counts_stats !== false);
+  // too — they earn points only, never stats. So are DNS rows: a driver who
+  // never took the green flag has no start, no finishing position to average
+  // and no lap count — the slot they were listed in is not a race they ran.
+  const rs = results.filter(r => !isQualifying(r) && r.counts_stats !== false && !r.provisional && !isDidNotStart(r));
+  const qs = results.filter(r => isQualifying(r) && r.counts_stats !== false && !isDidNotStart(r));
   // Provisionals are counted from the full race set, since `rs` now omits them.
   const provisionalCount = results.filter(r => !isQualifying(r) && r.provisional).length;
   const starts = rs.length;
@@ -335,10 +418,15 @@ function statLine(results) {
     qualifying_sessions: qs.length,
     avg_start: positions.length ? round2(positions.reduce((a, b) => a + b, 0) / positions.length) : null,
     start_sum: positions.reduce((a, b) => a + b, 0),
-    dnfs: rs.filter(r => r.status === "dnf").length,
+    dnfs: rs.filter(isDnf).length,
     provisionals: provisionalCount,
     incidents: sum(r => Number(r.incidents || 0)),
     best_finish: starts ? Math.min(...rs.map(r => r.finish_pos)) : null,
+    // Demo Derby / Banger Racing totals (takedowns, survival bonuses, most
+    // lethal awards). Aggregated for every driver — they're just zeros outside
+    // a banger series — and rendered ONLY on a screen scoped to a banger
+    // series; see lib/bangerRacing.js for why the isolation lives in the views.
+    ...bangerStatLine(rs),
   };
 }
 
@@ -505,6 +593,9 @@ export function calculateTeamStandings(driverRows, teams = []) {
       // averages, which would weight a one-race driver like a full-season one.
       top10: 0, best_laps: 0, laps_led: 0,
       starts: 0, finish_sum: 0, qualifying_sessions: 0, start_sum: 0,
+      // Banger totals, summed like any other count. Shown only on a banger
+      // series' team standings.
+      ...blankBangerTotals(),
     });
     t.points += row.adjusted_points;
     t.wins += row.wins;
@@ -518,6 +609,7 @@ export function calculateTeamStandings(driverRows, teams = []) {
     t.finish_sum += row.finish_sum;
     t.qualifying_sessions += row.qualifying_sessions;
     t.start_sum += row.start_sum;
+    for (const k of BANGER_STAT_KEYS) t[k] += Number(row[k] || 0);
     t.drivers += 1;
   }
   for (const t of Object.values(byTeam)) {

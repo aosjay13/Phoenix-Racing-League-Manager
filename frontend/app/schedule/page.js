@@ -8,9 +8,12 @@ import { useAuth } from "@/components/AuthProvider";
 import { RaceCreateModal } from "@/components/RaceCreateModal";
 import { SeasonCreateModal } from "@/components/SeasonCreateModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ShareGraphicButton, ShareGraphicModal } from "@/components/ShareGraphicModal";
+import { leagueLogos, specToGraphicTable } from "@/lib/shareGraphic";
 import { api } from "@/lib/api";
 import { formatRaceDate, isPastRaceDate, raceDateSortKey } from "@/lib/raceDate";
 import { racePerClassResults } from "@/lib/classFilter";
+import { LENGTH_TIME } from "@/lib/raceLength";
 
 // A driver cell that links to the profile when we can resolve one, else plain
 // text. Falls back to an em-dash for events with no recorded pole/winner yet.
@@ -67,6 +70,31 @@ function PersonCell({ summary, classSummaries, field }) {
   return <Person p={summary?.[field]} />;
 }
 
+// ── Share Graphic helpers ───────────────────────────────────────────────────
+// The exporter draws its own table, so the cells that stack per class on screen
+// (a round several classes ran has a pole and a winner each) are flattened to
+// one line — "Pro: Ana · Am: Bo" — rather than losing all but one class.
+
+function personText(summary, classSummaries, field) {
+  if (classSummaries?.length && summary?.has_results) {
+    return classSummaries.map(cs => `${cs.class_name}: ${cs[field]?.name || "—"}`).join(" · ");
+  }
+  return summary?.[field]?.name || "—";
+}
+
+// A row's Length as flat text, for the share graphic: a timed event reads
+// "45 Min (78 laps)", a lap race "100 Laps".
+function lengthText(summary) {
+  if (!summary?.length_label) return "—";
+  if (summary.length_type === LENGTH_TIME && summary.laps) return `${summary.length_label} (${summary.laps} laps)`;
+  return summary.length_label;
+}
+
+function carText(summary, classCars) {
+  if (classCars?.length) return classCars.map(c => `${c.class_name}: ${c.car || "—"}`).join(" · ");
+  return summary?.car || "—";
+}
+
 export default function SchedulePage() {
   const { seasonId } = useLeague();
   // A concrete season shows that season's full event table (with admin tools);
@@ -77,7 +105,7 @@ export default function SchedulePage() {
 // ── Master feed across seasons (no single season selected) ─────────────────
 
 function GlobalSchedule() {
-  const { gameId, seriesId, game, series, setSeasonId, refresh } = useLeague();
+  const { gameId, seriesId, game, series, games, seriesList, setGameId, setSeriesId, setSeasonId, refresh } = useLeague();
   const { isAdmin } = useAuth();
   const [rows, setRows] = useState(null);
   const [showCreateSeason, setShowCreateSeason] = useState(false);
@@ -104,9 +132,11 @@ function GlobalSchedule() {
   }, [rows]);
 
   const scopeLabel = series?.name || game?.name || "All Games";
-  // A season belongs to one series, so a new one can only be started once a
-  // concrete series is picked — at "All Series" there's nothing to hang it on.
-  const canCreateSeason = isAdmin && !!seriesId;
+  // Available at every scope, including "All Games": whatever the scope leaves
+  // unnamed — the game, the series, or both — the dialog asks for and creates if
+  // it doesn't exist yet. That's what keeps a game with no seasons (or a league
+  // with no games) from dead-ending on an empty calendar.
+  const canCreateSeason = isAdmin;
 
   return (
     <section>
@@ -116,7 +146,9 @@ function GlobalSchedule() {
         {canCreateSeason && (
           <div style={{ marginLeft: "auto" }}>
             <button className="btn btn-primary" style={{ marginTop: 0 }}
-              title={`Start a new season in ${series?.name ?? "this series"}`}
+              title={series?.name || game?.name
+                ? `Start a new season in ${series?.name || game?.name}`
+                : "Start a new season — you'll pick (or name) the game and series it belongs to"}
               onClick={() => setShowCreateSeason(true)}>
               + New Season
             </button>
@@ -131,14 +163,18 @@ function GlobalSchedule() {
 
       {showCreateSeason && (
         <SeasonCreateModal
-          gameId={gameId} seriesId={seriesId} seriesName={series?.name}
+          gameId={gameId} games={games}
+          seriesId={seriesId} seriesName={series?.name} seriesList={seriesList}
           onClose={() => setShowCreateSeason(false)}
-          onCreated={season => {
+          onCreated={(season, scope) => {
             setShowCreateSeason(false);
-            // Pull the new season into the league selector, then select it — the
-            // page re-renders as that season's own (empty) calendar, ready for
-            // its first race.
+            // Pull the new season — and the game/series the dialog made or
+            // picked for it — into the league selector, then select it. The page
+            // re-renders as that season's own (empty) calendar, ready for its
+            // first race.
             refresh();
+            if (scope.gameId !== gameId) setGameId(scope.gameId);
+            if (scope.seriesId !== seriesId) setSeriesId(scope.seriesId);
             setSeasonId(season.id);
           }}
         />
@@ -159,14 +195,50 @@ function GlobalSchedule() {
 }
 
 function FeedSection({ title, icon, rows, kind }) {
+  const { league, game, series } = useLeague();
+  const [sharing, setSharing] = useState(false);
   if (!rows.length) return null;
   const archive = kind === "archive";
+
+  // Each half of the feed exports on its own — an "Upcoming" graphic and a
+  // "Recent Results" one are different posts. The last column follows the table:
+  // who won for the archive, what they're driving for what's still to come.
+  const shareSpec = [
+    { key: "date", label: "Date", locked: true, get: r => fmtDate(r.date) },
+    { key: "event", label: "Event", align: "left", locked: true, wrap: true, get: r => r.name },
+    { key: "track", label: "Track", align: "left", wrap: true, get: r => r.track || "—" },
+    { key: "series", label: "Series · Season", align: "left", wrap: true, get: r => [r.series_name, r.season_name].filter(Boolean).join(" · ") || "—" },
+    { key: "game", label: "Game", align: "left", get: r => r.game_name || "—" },
+    archive
+      ? { key: "winner", label: "Winner", align: "left", wrap: true, get: r => personText(r.summary, r.class_summaries, "winner") }
+      : { key: "car", label: "Car", align: "left", wrap: true, get: r => carText(r.summary || {}, r.class_cars) },
+  ];
+  const shareTable = specToGraphicTable(shareSpec, rows);
+  const scopeLabel = series?.name || game?.name || "All Games";
+
   return (
     <div style={{ marginTop: 22 }}>
       <h3 style={{ margin: "0 0 10px", display: "flex", alignItems: "center", gap: 8 }}>
         <span>{icon}</span>{title}
         <span className="page-badge" style={{ marginLeft: 4 }}>{rows.length}</span>
+        <ShareGraphicButton onClick={() => setSharing(true)} />
       </h3>
+      <ShareGraphicModal
+        open={sharing}
+        onClose={() => setSharing(false)}
+        kind={archive ? "Recent Results" : "Upcoming Races"}
+        defaultTitle={`${scopeLabel} — ${archive ? "Recent Results" : "Upcoming Races"}`}
+        subtitle={[game?.name, series?.name].filter(Boolean).join(" · ")}
+        columns={shareTable.columns}
+        rows={shareTable.rows}
+        meta={[
+          { label: "Scope", value: [game?.name, series?.name].filter(Boolean).join(" · ") || "All Games", wide: true },
+          { label: "Events", value: rows.length },
+        ]}
+        logos={leagueLogos({ league, game, series })}
+        leagueName={league?.name ?? ""}
+        leagueLogoUrl={league?.logo_url ?? ""}
+      />
       <div className="table-wrap">
         <table className="stats-table" style={{ width: "100%", minWidth: 720 }}>
           <thead>
@@ -192,8 +264,14 @@ function FeedSection({ title, icon, rows, kind }) {
                     {[r.series_name, r.season_name].filter(Boolean).join(" · ") || "—"}
                     {r.game_name && <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.74rem" }}>{r.game_name}</span>}
                   </td>
+                  {/* Same per-class stacking as a season's own calendar: a
+                      round several classes ran lists each class's winner (or
+                      each class's car, before it runs) rather than picking one
+                      of them. */}
                   <td style={{ textAlign: "left", fontWeight: archive && s.winner ? 600 : undefined }}>
-                    {archive ? <Person p={s.winner} /> : (s.car || <span style={{ color: "var(--ink-2)" }}>—</span>)}
+                    {archive
+                      ? <PersonCell summary={s} classSummaries={r.class_summaries} field="winner" />
+                      : <CarCell summary={s} classCars={r.class_cars} />}
                   </td>
                   <td>
                     {archive
@@ -213,10 +291,11 @@ function FeedSection({ title, icon, rows, kind }) {
 // ── One season's full event table (a concrete season is selected) ──────────
 
 function SeasonSchedule() {
-  const { seasonId, season, classId, className, classes, raceClass, refresh } = useLeague();
+  const { seasonId, season, classId, className, classes, raceClass, refresh, league, game, series } = useLeague();
   const { isAdmin } = useAuth();
   const router = useRouter();
   const [races, setRaces] = useState(null);
+  const [sharing, setSharing] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [toDelete, setToDelete] = useState(null); // race pending delete confirmation
   const [toggleComplete, setToggleComplete] = useState(false); // season completion pending confirmation
@@ -265,6 +344,28 @@ function SeasonSchedule() {
   // either that class's or shared, and its results are already that class's.
   const showClassCol = classes.length > 0 && !classId && (perClassSchedules || ordered.some(splitResults));
 
+  // The calendar as a shareable image: every column the table shows, in the same
+  // order, with the round and event locked on since a row is unreadable without
+  // them. Rounds that haven't run yet export with em-dashes for pole/winner,
+  // which is what makes this useful as a "season ahead" graphic as well as a
+  // season-in-review one.
+  const shareSpec = [
+    { key: "round", label: "Rd", locked: true, get: r => r.round_number ?? "—" },
+    { key: "date", label: "Date", get: r => fmtDate(r.date) },
+    { key: "event", label: "Event", align: "left", locked: true, wrap: true, get: r => r.name },
+    { key: "track", label: "Track", align: "left", wrap: true, get: r => r.track || "—" },
+    ...(showClassCol ? [{ key: "class", label: "Class", align: "left", wrap: true, get: r => r.class_name || "All Classes" }] : []),
+    // Timed events export as their clock ("45 Min") with the winner's lap count
+    // alongside; lap races export as the distance they ran.
+    { key: "length", label: "Length", get: r => lengthText(r.summary || {}) },
+    { key: "car", label: "Car", align: "left", wrap: true, get: r => carText(r.summary || {}, r.class_cars) },
+    { key: "pole", label: "Pole", align: "left", wrap: true, get: r => personText(r.summary, r.class_summaries, "pole") },
+    { key: "winner", label: "Winner", align: "left", wrap: true, get: r => personText(r.summary, r.class_summaries, "winner") },
+    { key: "drivers", label: "Drivers", get: r => r.summary?.num_drivers || "—" },
+  ];
+  const shareTable = specToGraphicTable(shareSpec, ordered);
+  const scopeName = [season?.name, raceClass?.name].filter(Boolean).join(" · ");
+
   return (
     <section>
       <div className="page-title">
@@ -280,6 +381,7 @@ function SeasonSchedule() {
             {raceClass.name} Results
           </span>
         )}
+        {races.length > 0 && <ShareGraphicButton onClick={() => setSharing(true)} />}
         {isAdmin && (
           <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
             <button
@@ -297,6 +399,33 @@ function SeasonSchedule() {
           </div>
         )}
       </div>
+
+      <ShareGraphicModal
+        open={sharing}
+        onClose={() => setSharing(false)}
+        kind="Schedule"
+        defaultTitle={`${scopeName || "Season"} Schedule`}
+        subtitle={[game?.name, series?.name, raceClass?.name].filter(Boolean).join(" · ")}
+        columns={shareTable.columns}
+        rows={shareTable.rows}
+        meta={[
+          { label: "Series", value: [game?.name, series?.name].filter(Boolean).join(" · "), wide: true },
+          { label: "Season", value: season?.name },
+          { label: "Class", value: raceClass?.name },
+          { label: "Events", value: races.length },
+        ]}
+        logos={leagueLogos({ league, game, series, season })}
+        leagueName={league?.name ?? ""}
+        leagueLogoUrl={league?.logo_url ?? ""}
+      />
+
+      {isAdmin && (
+        <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.85rem" }}>
+          Every event is managed from this table: <strong>⏱</strong> opens its results grid (qualifying,
+          races, heats and points), <strong>✎</strong> edits the event itself — name, date, track, sessions
+          and heat racing — and <strong>🗑</strong> deletes it.
+        </p>
+      )}
 
       {isAdmin && toggleComplete && (
         <ConfirmDialog
@@ -383,7 +512,11 @@ function SeasonSchedule() {
                       </td>
                     )}
                     <td style={{ whiteSpace: "nowrap" }}>
-                      {s.laps ? `${s.laps} Laps` : "—"}
+                      {s.length_label || "—"}
+                      {s.length_type === LENGTH_TIME && !!s.laps && (
+                        <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.72rem" }}
+                          title="Laps the winner completed before time expired">{s.laps} laps</span>
+                      )}
                       {s.laps_extended && (
                         <span title={`Scheduled ${s.scheduled_laps} laps — extended by a green-white-checkered / overtime finish`}
                           style={{ marginLeft: 5, fontSize: "0.7rem", color: "var(--accent-cyan)", fontWeight: 700 }}>GWC</span>
@@ -400,7 +533,13 @@ function SeasonSchedule() {
                     </td>
                     {isAdmin && (
                       <td style={{ whiteSpace: "nowrap" }}>
-                        <button className="icon-btn" title="Edit race" onClick={() => router.push(`/races/${r.id}/edit`)}>✎</button>
+                        {/* Results entry lives on the event's own edit screen —
+                            this jumps straight to the right grid (the Feature
+                            on a heat-racing event, the Race otherwise), which
+                            is what the old Race Entry menu did. */}
+                        <button className="icon-btn" title="Enter / edit results"
+                          onClick={() => router.push(`/races/${r.id}/edit?tab=${r.heat_format ? "feature" : "results"}`)}>⏱</button>
+                        <button className="icon-btn" title="Edit race details" onClick={() => router.push(`/races/${r.id}/edit`)}>✎</button>
                         <button className="icon-btn icon-btn-danger" title="Delete race" onClick={() => setToDelete(r)}>🗑</button>
                       </td>
                     )}

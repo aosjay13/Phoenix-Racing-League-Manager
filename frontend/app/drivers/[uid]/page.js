@@ -87,9 +87,11 @@ export default function DriverProfilePage() {
   if (!data) return <div className="skeleton" style={{ height: 280 }} />;
 
   const { profile, all_games, by_game, by_track = [], titles_detail = [], linked, skill_ratings_by_game = [], aliases = [], former_names = [] } = data;
-  const stats = gameFilter === "all"
-    ? all_games
-    : by_game.find(g => g.game_id === gameFilter)?.stats ?? all_games;
+  const selectedGame = gameFilter === "all" ? null : by_game.find(g => g.game_id === gameFilter);
+  const stats = gameFilter === "all" ? all_games : selectedGame?.stats ?? all_games;
+  // Games where this driver is shown under a different name than their profile
+  // one — the names that appear on those games' standings, results and stats.
+  const gameNames = by_game.filter(g => g.driver_game_name && g.driver_game_name !== profile.display_name);
 
   return (
     <section>
@@ -114,6 +116,13 @@ export default function DriverProfilePage() {
           {former_names.length > 0 && (
             <p style={{ marginTop: 8, color: "var(--ink-2)", fontSize: "0.82rem" }}>
               Also known as: {former_names.join(", ")}
+            </p>
+          )}
+          {/* The name this driver appears under inside each game — what that
+              game's standings, results, stats and records show. */}
+          {gameNames.length > 0 && (
+            <p style={{ marginTop: 8, color: "var(--ink-2)", fontSize: "0.82rem" }}>
+              Races as: {gameNames.map(g => `${g.driver_game_name} (${g.game_name})`).join(", ")}
             </p>
           )}
           {!linked && (
@@ -240,6 +249,12 @@ export default function DriverProfilePage() {
             </div>
           </div>
 
+          {selectedGame?.driver_game_name && selectedGame.driver_game_name !== profile.display_name && (
+            <p style={{ marginTop: 0, marginBottom: 12, color: "var(--ink-2)", fontSize: "0.85rem" }}>
+              Shown as <strong>{selectedGame.driver_game_name}</strong> in {selectedGame.game_name}.
+            </p>
+          )}
+
           {stats.starts === 0 ? (
             <div className="empty-state"><span className="empty-state-icon">📊</span><p>No race results recorded yet.</p></div>
           ) : (
@@ -293,8 +308,8 @@ export default function DriverProfilePage() {
         <>
           <div className="section-header"><h3>Championships</h3></div>
           <p style={{ marginTop: 0, color: "var(--ink-1)", fontSize: "0.85rem" }}>
-            Every season title won. A class championship counts the same as any other; winning a
-            class and the overall in one season is one championship, listed with both crowns.
+            Every season title won. A class championship counts the same as any other, and taking
+            both a class and the overall in one season is two championships — both crowns were won.
           </p>
           <div className="table-wrap">
             <table className="stats-table">
@@ -308,7 +323,7 @@ export default function DriverProfilePage() {
                       {t.overall && <span className="badge" style={{ marginRight: 6 }}>Overall</span>}
                       {t.class_names.map(c => <span key={c} className="badge" style={{ marginRight: 6 }}>{c}</span>)}
                       {t.overall && t.class_names.length > 0 && (
-                        <span style={{ color: "var(--ink-2)", fontSize: "0.76rem" }}>double crown — counts once</span>
+                        <span style={{ color: "var(--ink-2)", fontSize: "0.76rem" }}>double crown — counts twice</span>
                       )}
                     </td>
                   </tr>

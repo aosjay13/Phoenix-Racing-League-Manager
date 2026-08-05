@@ -45,6 +45,54 @@ export function formatGap(gapSec) {
   return `+${s}.${pad(millis, 3)}`;
 }
 
+// A signed gap string → seconds, negative allowed ("-0.180" → -0.18). parseTime
+// itself rejects negatives (a lap or elapsed time can't be one); a gap between
+// two entered times legitimately can be.
+export function parseDelta(str) {
+  if (str == null) return null;
+  const s = String(str).trim();
+  if (!s) return null;
+  if (s.startsWith("-")) {
+    const v = parseTime(s.slice(1));
+    return v == null ? null : -v;
+  }
+  return parseTime(s);
+}
+
+// A signed gap, e.g. "+2.345" or "-0.180". Unlike formatGap, a negative value
+// renders rather than blanking: on a qualifying sheet a driver placed below
+// someone with a slower time shows "-0.180" instead of nothing, so an
+// out-of-order grid is visible instead of silently swallowed.
+export function formatDelta(gapSec) {
+  if (gapSec == null || isNaN(gapSec)) return "";
+  if (gapSec < 0) return `-${formatGap(-gapSec).slice(1)}`;
+  return formatGap(gapSec);
+}
+
+// The two gap columns a results table shows, for a list of times already in
+// finishing/qualifying order: `toLead` is the gap to the row on top (P1 / pole)
+// and `gap` the gap to the car one position up.
+//
+// Nothing here is stored — every gap is worked out from the times themselves,
+// so it's the same answer for a session entered last year as for one entered
+// today. A row with no time (a DNF, a driver who never set a lap) gets nulls
+// and is skipped in the chain, so the row below it measures to the next timed
+// car up rather than to nothing. Takes seconds (see parseTime), returns
+// seconds — the caller formats.
+export function gapColumns(times) {
+  const leader = times.length ? times[0] : null;
+  let prev = null;
+  return times.map((t, i) => {
+    if (t == null) return { toLead: null, gap: null };
+    const out = {
+      toLead: i === 0 || leader == null ? null : t - leader,
+      gap: i === 0 || prev == null ? null : t - prev,
+    };
+    prev = t;
+    return out;
+  });
+}
+
 // "3L" / "3 l" → 3 (laps behind the leader); anything else → null.
 export function parseLapsDown(str) {
   if (str == null) return null;

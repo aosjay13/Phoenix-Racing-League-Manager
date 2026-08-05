@@ -10,6 +10,10 @@ import { db } from "@/lib/firebase";
 export {
   classOfResult,
   classIdSet,
+  entryClassIds,
+  entryInClassSet,
+  normalizeClassIds,
+  primaryClassId,
   classIdsInSeason,
   filterEntriesByClass,
   filterResultsByClass,

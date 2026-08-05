@@ -7,11 +7,16 @@ import { Modal } from "@/components/Modal";
 import { DriverForm } from "@/components/DriverForm";
 
 // The full driver-creation form, opened from the race-entry autocomplete's
-// "+ Create new driver" option — same fields as the Roster page's Add Driver
+// "+ Create new driver" option — same fields as the Roster manager's Add Driver
 // card, so a car number is always captured for this season's series, not
 // just a bare name.
 export function DriverCreateModal({ seasonId, seriesName, initialName, defaultClassId = "", onClose, onCreated }) {
-  const [form, setForm] = useState({ name: initialName || "", number: "", team_id: "", user_id: "", class_id: defaultClassId });
+  const [form, setForm] = useState({
+    name: initialName || "", number: "", team_id: "", user_id: "",
+    // A driver can race several classes from one entry; the grid being entered
+    // seeds the first one.
+    class_ids: defaultClassId ? [defaultClassId] : [],
+  });
   const [teams, setTeams] = useState([]);
   const [users, setUsers] = useState([]);
   const [classes, setClasses] = useState([]);
@@ -38,7 +43,7 @@ export function DriverCreateModal({ seasonId, seriesName, initialName, defaultCl
       // Registers (or reuses) the identity in the global pool, so it's tied
       // to one driver_id and reusable from Roster or another race.
       const driverId = await ensureDriverId({ name: form.name, user_id: form.user_id });
-      const body = { name: form.name, team_id: form.team_id, user_id: form.user_id, driver_id: driverId, season_id: seasonId, class_id: form.class_id || "" };
+      const body = { name: form.name, team_id: form.team_id, user_id: form.user_id, driver_id: driverId, season_id: seasonId, class_ids: form.class_ids || [] };
       if (form.number !== "") body.number = form.number;
       const entry = await api("/api/entries", { method: "POST", body });
       onCreated(entry);

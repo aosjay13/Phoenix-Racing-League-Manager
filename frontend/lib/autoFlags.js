@@ -7,10 +7,10 @@
 //   • Fastest Lap  — whoever set the quickest Best Lap time (a single entered
 //                    lap time is, trivially, the fastest one).
 //   • Hard Charger — whoever gained the most positions from start to finish;
-//                    ties go to the driver who started furthest back.
+//                    ties go to the driver who finished highest.
 //   • Most Laps Led — whoever led the most laps, when Led is being tracked at
-//                    all. Ties share it, matching how the bonus has always
-//                    been scored.
+//                    all; ties go to the driver who finished highest, so the
+//                    bonus lands on exactly one car.
 //
 // So the grid fills them in as the numbers are entered. None of this changes
 // scoring on its own — a flag is only worth points if the season (or the
@@ -22,8 +22,13 @@
 // per-flag, so hand-placing the Hard Charger doesn't freeze Fastest Lap.
 
 import { parseTime } from "@/lib/raceTime";
+import { autoMostLethalSlot } from "@/lib/bangerRacing";
 
-export const AUTO_FLAG_FIELDS = ["fastest_lap", "hard_charger", "most_laps_led"];
+//   • Most Lethal — the Demo Derby / Banger Racing counterpart: whoever
+//                   recorded the most takedowns. Only ever true on a banger
+//                   series' grid, since nowhere else has takedowns to count,
+//                   and overridable in exactly the same way as the three above.
+export const AUTO_FLAG_FIELDS = ["fastest_lap", "hard_charger", "most_laps_led", "most_lethal"];
 
 // Didn't take the green flag / was thrown out — never an auto Hard Charger,
 // however flattering the arithmetic looks. A DNF still counts: they raced, and
@@ -46,8 +51,8 @@ export function autoFastestLapSlot(rows) {
 }
 
 // Slot that gained the most positions start → finish. Ties go to whoever
-// started deepest in the field. Null when nobody moved forward (or starting
-// positions haven't been entered).
+// finished highest. Null when nobody moved forward (or starting positions
+// haven't been entered).
 export function autoHardChargerSlot(rows) {
   let best = null;
   for (const r of filled(rows)) {
@@ -57,30 +62,44 @@ export function autoHardChargerSlot(rows) {
     if (!(start > 0) || !(finish > 0)) continue;
     const gained = start - finish;
     if (gained <= 0) continue;
-    if (best == null || gained > best.gained || (gained === best.gained && start > best.start)) {
-      best = { gained, start, slot_id: r.slot_id };
+    if (best == null || gained > best.gained || (gained === best.gained && finish < best.finish)) {
+      best = { gained, finish, slot_id: r.slot_id };
     }
   }
   return best?.slot_id ?? null;
 }
 
-// Slots that led the most laps — plural, because a tie on laps led has always
-// been scored as a shared bonus. Empty when laps led isn't being tracked.
-export function autoMostLapsLedSlots(rows) {
-  const most = filled(rows).reduce((m, r) => Math.max(m, laps(r)), 0);
-  if (most <= 0) return [];
-  return filled(rows).filter(r => laps(r) === most).map(r => r.slot_id);
+// Slot that led the most laps. Ties go to whoever finished highest — two cars
+// can lead the same number of laps often enough (a 25-lap heat split down the
+// middle), and the bonus is one car's to win, so the better finish takes it. A
+// row with no finishing position yet can only win outright; if even the finish
+// is tied it falls to the row listed first. Null when laps led isn't being
+// tracked at all.
+export function autoMostLapsLedSlot(rows) {
+  let best = null;
+  for (const r of filled(rows)) {
+    const led = laps(r);
+    if (led <= 0) continue;
+    const finish = Number(r.finish_pos);
+    const rank = finish > 0 ? finish : Infinity;
+    if (best == null || led > best.led || (led === best.led && rank < best.rank)) {
+      best = { led, rank, slot_id: r.slot_id };
+    }
+  }
+  return best?.slot_id ?? null;
 }
 
 // The auto value of every flag, as slot_id -> { field: boolean }.
 function autoFlags(rows) {
   const fastest = autoFastestLapSlot(rows);
   const charger = autoHardChargerSlot(rows);
-  const led = new Set(autoMostLapsLedSlots(rows));
+  const led = autoMostLapsLedSlot(rows);
+  const lethal = autoMostLethalSlot(rows);
   return row => ({
     fastest_lap: row.slot_id === fastest,
     hard_charger: row.slot_id === charger,
-    most_laps_led: led.has(row.slot_id),
+    most_laps_led: row.slot_id === led,
+    most_lethal: row.slot_id === lethal,
   });
 }
 

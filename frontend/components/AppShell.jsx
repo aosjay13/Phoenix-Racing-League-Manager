@@ -5,23 +5,29 @@ import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { useLeague } from "@/components/LeagueProvider";
+import { copyCurrentLink } from "@/lib/scopeLink";
 import { api } from "@/lib/api";
 
-// localStorage key + custom event shared with the User Accounts page: it stamps
+// localStorage key + custom event shared with the User Accounts tab on the
+// Drivers page (components/UserAccountsManager.jsx): it stamps
 // "everything up to now has been seen" when the admin opens the dashboard, which
 // clears the red new-signup badge in the sidebar.
 export const USERS_SEEN_KEY = "pr_users_last_seen";
 export const USERS_SEEN_EVENT = "pr-users-seen";
+
+// How often the sidebar re-checks for signups that happened while the admin sat
+// on a page — without this the badge only appears on the next navigation.
+const ALERTS_POLL_MS = 60_000;
 
 // Count of User Accounts items needing admin attention: accounts created since
 // the admin last opened the dashboard PLUS pending driver-claim requests. Drives
 // the red badge next to the nav item. The new-signup baseline is stamped to "now"
 // on first ever load so an admin isn't greeted by their whole existing roster.
 function useUserAccountsAlerts(isAdmin, pathname) {
-  const [count, setCount] = useState(0);
+  const [alerts, setAlerts] = useState({ accounts: 0, claims: 0, total: 0 });
 
   const load = useCallback(async () => {
-    if (!isAdmin) { setCount(0); return; }
+    if (!isAdmin) { setAlerts({ accounts: 0, claims: 0, total: 0 }); return; }
     try {
       const [users, requests] = await Promise.all([
         api("/api/admin/users"),
@@ -31,20 +37,39 @@ function useUserAccountsAlerts(isAdmin, pathname) {
         localStorage.setItem(USERS_SEEN_KEY, new Date().toISOString());
       }
       const seen = localStorage.getItem(USERS_SEEN_KEY) || "";
-      const newAccounts = (Array.isArray(users) ? users : []).filter(u => (u.created_at || "") > seen).length;
-      const pending = Array.isArray(requests) ? requests.length : 0;
-      setCount(newAccounts + pending);
+      const accounts = (Array.isArray(users) ? users : []).filter(u => (u.created_at || "") > seen).length;
+      const claims = Array.isArray(requests) ? requests.length : 0;
+      setAlerts({ accounts, claims, total: accounts + claims });
     } catch { /* leave count unchanged on transient errors */ }
   }, [isAdmin]);
 
   useEffect(() => {
     load();
     function onSeen() { load(); }
+    // Re-check on a timer and whenever the admin comes back to the tab, so a
+    // signup during an open session raises the badge on its own.
+    function onVisible() { if (document.visibilityState === "visible") load(); }
+    const timer = setInterval(load, ALERTS_POLL_MS);
     window.addEventListener(USERS_SEEN_EVENT, onSeen);
-    return () => window.removeEventListener(USERS_SEEN_EVENT, onSeen);
+    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener(USERS_SEEN_EVENT, onSeen);
+      window.removeEventListener("focus", onVisible);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [load, pathname]);
 
-  return count;
+  return alerts;
+}
+
+// "2 new accounts · 1 claim request" — spells out what the badge number covers.
+function alertsTitle({ accounts, claims }) {
+  const parts = [];
+  if (accounts) parts.push(`${accounts} new account${accounts === 1 ? "" : "s"}`);
+  if (claims) parts.push(`${claims} driver claim request${claims === 1 ? "" : "s"}`);
+  return parts.join(" · ") || "Nothing new";
 }
 
 const publicNav = [
@@ -59,10 +84,11 @@ const publicNav = [
   { href: "/tracks",    label: "Tracks",    icon: "🏁" },
 ];
 
+// Everything else an admin used to reach from here now lives as a tab on the
+// page it belongs to: races are edited from the Schedule, and the roster, teams
+// and user accounts are tabs on Drivers. Only the league hierarchy itself is
+// admin-only enough to keep its own entry.
 const adminNav = [
-  { href: "/race-entry",  label: "Race Entry",     icon: "⏱" },
-  { href: "/roster",      label: "Roster & Teams", icon: "⊞" },
-  { href: "/admin/users", label: "User Accounts",  icon: "👥" },
   { href: "/admin",       label: "League Setup",   icon: "⚙", exact: true },
 ];
 
@@ -71,13 +97,17 @@ function NavLinks({ items, pathname, badges }) {
     const isActive = item.href === "/" || item.exact
       ? pathname === item.href
       : pathname.startsWith(item.href);
-    const badge = badges?.[item.href] || 0;
+    const entry = badges?.[item.href];
+    const badge = typeof entry === "number" ? entry : (entry?.count || 0);
+    const badgeTitle = typeof entry === "number"
+      ? `${badge} item${badge === 1 ? "" : "s"} need${badge === 1 ? "s" : ""} your attention`
+      : entry?.title;
     return (
       <Link className={`nav-link${isActive ? " active" : ""}`} key={item.href} href={item.href}>
         <span className="nav-icon">{item.icon}</span>
         {item.label}
         {badge > 0 && (
-          <span className="nav-badge" title={`${badge} item${badge === 1 ? "" : "s"} need${badge === 1 ? "s" : ""} your attention`}>{badge}</span>
+          <span className="nav-badge" title={badgeTitle}>{badge > 99 ? "99+" : badge}</span>
         )}
       </Link>
     );
@@ -153,6 +183,35 @@ function ContextSelectors() {
   );
 }
 
+// Copies the address of whatever is on screen. Because the scope selectors now
+// write themselves into the URL (see lib/scopeLink.js), that address opens the
+// exact page the sender was on — this season's standings, this class's stats,
+// this race's results — instead of dropping the reader on the front page to
+// hunt through the menus for it.
+function CopyLinkButton() {
+  const [state, setState] = useState("idle"); // idle | copied | failed
+
+  useEffect(() => {
+    if (state === "idle") return;
+    const t = setTimeout(() => setState("idle"), 2200);
+    return () => clearTimeout(t);
+  }, [state]);
+
+  async function copy() {
+    setState(await copyCurrentLink() ? "copied" : "failed");
+  }
+
+  return (
+    <button
+      className="btn btn-ghost copy-link-btn"
+      onClick={copy}
+      title="Copy a direct link to this page — it opens on the same league, game, series, season and class you're viewing"
+    >
+      {state === "copied" ? "✓ Link copied" : state === "failed" ? "Copy failed" : "🔗 Copy link"}
+    </button>
+  );
+}
+
 function UserChip() {
   const { user, profile, loading, signOut } = useAuth();
   if (loading) return null;
@@ -184,7 +243,11 @@ export function AppShell({ children }) {
   const { isAdmin } = useAuth();
   const league = useLeague();
   const userAccountsAlerts = useUserAccountsAlerts(isAdmin, pathname);
-  const adminBadges = { "/admin/users": userAccountsAlerts };
+  // New signups / pending claims are handled on the Drivers page's User
+  // Accounts tab, so the badge rides along with that nav item.
+  const navBadges = {
+    "/drivers": { count: userAccountsAlerts.total, title: alertsTitle(userAccountsAlerts) },
+  };
 
   return (
     <div className="shell">
@@ -198,12 +261,12 @@ export function AppShell({ children }) {
         </Link>
 
         <span className="nav-section-label">Navigation</span>
-        <nav><NavLinks items={publicNav} pathname={pathname} /></nav>
+        <nav><NavLinks items={publicNav} pathname={pathname} badges={navBadges} /></nav>
 
         {isAdmin && (
           <>
             <span className="nav-section-label" style={{ marginTop: 16 }}>Admin</span>
-            <nav><NavLinks items={adminNav} pathname={pathname} badges={adminBadges} /></nav>
+            <nav><NavLinks items={adminNav} pathname={pathname} /></nav>
           </>
         )}
 
@@ -219,6 +282,7 @@ export function AppShell({ children }) {
           <div className="topbar-scope">
             <LeagueSwitcher />
             <ContextSelectors />
+            <CopyLinkButton />
           </div>
           <UserChip />
         </header>

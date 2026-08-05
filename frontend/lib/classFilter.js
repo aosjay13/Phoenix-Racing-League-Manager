@@ -1,21 +1,68 @@
 // Pure filtering rules for the Class tier (Game ▸ Series ▸ Season ▸ Class).
 //
 // A class is a separately-scored group inside one season ("Pro"/"Amateur",
-// "GT3"/"LMP2"). A roster entry carries the class it races in (`entries.class_id`)
-// and every saved result records the class the driver ran in at the time
-// (`results.class_id`), so re-classing a driver mid-season doesn't silently
-// rewrite the class championships they already scored in.
+// "GT3"/"LMP2"). A roster entry carries the classes it races in and every saved
+// result records the class the driver ran in at the time (`results.class_id`),
+// so re-classing a driver mid-season doesn't silently rewrite the class
+// championships they already scored in.
+//
+// A driver can race in SEVERAL classes in one season — that's `entries.class_ids`,
+// an array. `entries.class_id` is kept in sync as the first of them (their
+// primary class) so everything written before multi-class existed still reads
+// correctly; entryClassIds() below is the one way to ask "which classes is this
+// entry in", and handles an entry that only ever had the single field.
 //
 // Deliberately dependency-free so both the API routes and client components can
 // apply the same rules — lib/classServer.js adds the Firestore reads on top.
 
+// Clean a class-id list: strings, trimmed, no blanks, no duplicates.
+export function normalizeClassIds(value) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const raw of value) {
+    const id = String(raw ?? "").trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
+// Every class this roster entry races in, newest model first and falling back
+// to the single `class_id` for entries written before multi-class. An empty
+// array means unclassified.
+export function entryClassIds(entry) {
+  const many = normalizeClassIds(entry?.class_ids);
+  if (many.length) return many;
+  const one = String(entry?.class_id ?? "").trim();
+  return one ? [one] : [];
+}
+
+// The entry's primary class — the one thing a single-class field can show (a
+// standings row's Class column, an unstamped result's class). Null when the
+// driver is unclassified.
+export function primaryClassId(entry) {
+  return entryClassIds(entry)[0] || null;
+}
+
+// Is this entry in the given class selection (a Set from classIdSet)? An
+// unclassified entry matches only a selection that includes `null`.
+export function entryInClassSet(entry, set) {
+  const ids = entryClassIds(entry);
+  if (!ids.length) return set.has(null);
+  return ids.some(id => set.has(id));
+}
+
 // The class a result counts toward: the class stamped on the result when it was
-// saved, else the driver's current roster class. Results written before classes
-// existed have neither, and count only toward the overall championship.
+// saved, else the driver's primary roster class. Results written before classes
+// existed have neither, and count only toward the overall championship. A
+// driver who races several classes always has their results stamped by the
+// per-class results editor, which is what keeps each one in the right table.
 export function classOfResult(result, entriesById = {}) {
   const stamped = result.class_id;
   if (stamped) return stamped;
-  return entriesById[result.entry_id]?.class_id || null;
+  return primaryClassId(entriesById[result.entry_id]);
 }
 
 // A class *selection* is one of:
@@ -37,11 +84,12 @@ export function classIdSet(selection) {
 }
 
 // Narrow a season's entries to a class selection. "All Classes" leaves the list
-// untouched.
+// untouched. A driver entered in several classes belongs to each of them, so
+// they appear in every one of those class championships.
 export function filterEntriesByClass(entries, selection) {
   const set = classIdSet(selection);
   if (!set) return entries;
-  return entries.filter(e => set.has(e.class_id || null));
+  return entries.filter(e => entryInClassSet(e, set));
 }
 
 // Narrow results to a class selection, judged by classOfResult so a result
@@ -88,7 +136,10 @@ export function classIdsInSeason(seasonClasses = [], { className = "", classId =
 export function entriesEligibleForRace(entries, race) {
   const pinned = race?.class_id || null;
   if (!pinned) return entries;
-  return entries.filter(e => !e.class_id || e.class_id === pinned);
+  return entries.filter(e => {
+    const ids = entryClassIds(e);
+    return !ids.length || ids.includes(pinned);
+  });
 }
 
 // ── Cars ───────────────────────────────────────────────────────────────────
@@ -187,7 +238,12 @@ export function resultInSessionClass(result, scope, entriesById = {}) {
 export function entriesInSessionClass(entries, scope) {
   if (!isClassScoped(scope)) return entries;
   const want = classIdForScope(scope);
-  return entries.filter(e => (e.class_id || "") === want);
+  return entries.filter(e => {
+    const ids = entryClassIds(e);
+    // A driver in several classes lines up in each of their grids; the
+    // Unclassified scope is only for drivers with no class at all.
+    return want ? ids.includes(want) : !ids.length;
+  });
 }
 
 // Does this event run its sessions split by class? Resolved per event, falling
@@ -209,7 +265,7 @@ export function racePerClassResults(race, season) {
 // out machinery that actually differs between classes.
 export function sessionClassScopes(classes = [], entries = [], results = []) {
   const scopes = classes.map(c => ({ value: c.id, label: c.name, car: trimmed(c.car) || "" }));
-  const stray = entries.some(e => !e.class_id) || results.some(r => !(r.class_id || ""));
+  const stray = entries.some(e => !entryClassIds(e).length) || results.some(r => !(r.class_id || ""));
   if (stray || !scopes.length) scopes.push({ value: UNCLASSIFIED, label: "Unclassified", car: "" });
   return scopes;
 }

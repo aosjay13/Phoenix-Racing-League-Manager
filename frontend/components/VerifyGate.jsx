@@ -30,6 +30,28 @@ export function VerifyGate({ children }) {
     }
   }, [blocked, resendVerification]);
 
+  // The link is very often opened somewhere else — a phone, another browser —
+  // so this session is never told. Re-check whenever the tab comes back to the
+  // foreground, and on a slow poll while it's visible, so the wall lifts on its
+  // own instead of waiting for someone to press the button below.
+  useEffect(() => {
+    if (!blocked) return;
+    let stopped = false;
+    async function check() {
+      if (stopped || document.visibilityState !== "visible") return;
+      try { await refreshVerification(); } catch { /* transient — the poll retries */ }
+    }
+    const timer = setInterval(check, 15000);
+    document.addEventListener("visibilitychange", check);
+    window.addEventListener("focus", check);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", check);
+      window.removeEventListener("focus", check);
+    };
+  }, [blocked, refreshVerification]);
+
   if (loading || !blocked) return children;
 
   async function resend() {

@@ -8,10 +8,10 @@
 // Form state is all strings/booleans, because it comes straight from inputs;
 // seasonFormToBody does the parsing into the shapes the API stores.
 
-import { BONUS_TYPES } from "@/lib/standings";
+import { ALL_BONUS_TYPES } from "@/lib/standings";
 import { listToTableOrZero, tableToList } from "@/lib/pointsTemplates";
 
-export const BLANK_BONUSES = Object.fromEntries(BONUS_TYPES.map(([k]) => [k, "0"]));
+export const BLANK_BONUSES = Object.fromEntries(ALL_BONUS_TYPES.map(([k]) => [k, "0"]));
 
 // A brand-new season. Points start blank, which saves as an explicit zero scale
 // — see seasonFormToBody. New seasons track a combined (overall) championship;
@@ -45,7 +45,7 @@ export function seasonToForm(season = {}) {
     combined_championship: season.combined_championship !== false,
     per_class_schedules: !!season.per_class_schedules,
     per_class_results: !!season.per_class_results,
-    bonuses: Object.fromEntries(BONUS_TYPES.map(([k]) => [k, String(bonusSrc[k] ?? 0)])),
+    bonuses: Object.fromEntries(ALL_BONUS_TYPES.map(([k]) => [k, String(bonusSrc[k] ?? 0)])),
   };
 }
 

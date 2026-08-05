@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { decorateRaceBonuses, isQualifying, makeScorer, resolveSeasonConfig } from "@/lib/standings";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
-import { gameAlias } from "@/lib/aliases";
+import { fetchDriverNames } from "@/lib/driverNamesServer";
 import { fetchSeasonClasses, classOfResult, racePerClassResults } from "@/lib/classServer";
 
 // Full detail for one event: a dedicated qualifying session plus every race
@@ -34,17 +34,14 @@ export async function GET(request, { params }) {
   const configFor = r => scorer.configFor(r);
 
   // Contextual name rendering: this event belongs to one game (season.game_id),
-  // so resolve each driver's alias for that game (their on-track name) and stamp
-  // it on every result row — null when none is mapped, so the client falls back
-  // to the primary profile name.
+  // so resolve the name each driver is shown under in that game (see
+  // lib/driverNames.js) and stamp it on every result row — null when they've set
+  // none, so the client falls back to the name on the entry.
   const gameId = season?.game_id || null;
-  const aliasByDriver = {};
+  let aliasByDriver = {};
   if (gameId) {
-    const driverIds = [...new Set(all.map(r => entriesById[r.entry_id]?.driver_id).filter(Boolean))];
-    await Promise.all(driverIds.map(async id => {
-      const doc = await db().collection("drivers").doc(id).get();
-      if (doc.exists) aliasByDriver[id] = gameAlias(doc.data().aliases, gameId);
-    }));
+    const names = await fetchDriverNames(all.map(r => entriesById[r.entry_id]?.driver_id), gameId);
+    aliasByDriver = Object.fromEntries(Object.entries(names).map(([id, n]) => [id, n.game]));
   }
 
   // The class each result counts toward, resolved once here (stamped class, else
@@ -66,7 +63,6 @@ export async function GET(request, { params }) {
 
   const raceResults = all.filter(r => !isQualifying(r));
   const qualResults = all.filter(r => isQualifying(r));
-  const qualPosMap = scorer.qualPosMap;
 
   // Race sessions: whatever the event declares (standard `sessions`, or for
   // heat-format events its heats/consolations/feature), plus any found in
@@ -84,9 +80,10 @@ export async function GET(request, { params }) {
     results: raceResults
       .filter(r => (r.session || declared[0]) === name)
       .map(r => {
-        const qp = qualPosMap[`${r.race_id}|${r.entry_id}`] ?? null;
         // Start = the driver's own saved start_pos, else their qualifying
-        // finishing position. Finish is scored/ordered independently of both.
+        // finishing position — their OWN class's Qualifying at a split event,
+        // which is what scorer.qualPosFor resolves.
+        const qp = scorer.qualPosFor(r);
         const start = r.start_pos != null ? Number(r.start_pos) : qp;
         return { ...joinEntry(r), start_pos: start, points: scorer.points(r) };
       })

@@ -5,10 +5,14 @@ import { api } from "@/lib/api";
 import { Modal } from "@/components/Modal";
 import { ImageUpload } from "@/components/ImageUpload";
 import { TrackSelect } from "@/components/TrackSelect";
+import { RaceLengthField } from "@/components/RaceLengthField";
+import { LENGTH_LAPS, LENGTH_TIME } from "@/lib/raceLength";
 
 const blankRace = {
   name: "", track: "", track_id: "", date: "", round_number: "", track_logo_url: "", sessions: "Race", car: "",
-  total_laps: "", heat_format: false, heats: "", consolations: "", feature_name: "A-Main Feature",
+  // Distance: a lap count, or a duration for a race run to the clock.
+  length_type: LENGTH_LAPS, total_laps: "", race_minutes: "",
+  heat_format: false, heats: "", consolations: "", feature_name: "A-Main Feature",
   // Blank = shared by every class; only settable for a season running per-class
   // schedules.
   class_id: "",
@@ -66,10 +70,16 @@ export function RaceCreateModal({ seasonId, defaultRound, classes = [], perClass
     setError(null);
     try {
       const heats = toArray(form.heats);
+      const timed = form.length_type === LENGTH_TIME;
       const body = {
         ...form,
         sessions: sessionsToArray(form.sessions),
-        total_laps: form.total_laps === "" ? 0 : Number(form.total_laps),
+        // Only the figure the chosen format uses is stored — the other is zeroed
+        // so a race can never carry a stale lap count from before the toggle was
+        // flipped.
+        length_type: timed ? LENGTH_TIME : LENGTH_LAPS,
+        total_laps: timed || form.total_laps === "" ? 0 : Number(form.total_laps),
+        race_minutes: !timed || form.race_minutes === "" ? 0 : Number(form.race_minutes),
         heat_format: !!form.heat_format,
         heats: form.heat_format ? (heats.length ? heats : ["Heat 1"]) : [],
         consolations: form.heat_format ? toArray(form.consolations) : [],
@@ -127,11 +137,9 @@ export function RaceCreateModal({ seasonId, defaultRound, classes = [], perClass
             </label>
           </div>
         )}
-        <div className="field"><label>Total Race Laps</label>
-          <input type="number" min="0" value={form.total_laps} placeholder="e.g. 100" onChange={e => setForm(f => ({ ...f, total_laps: e.target.value }))} />
-          <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
-            Used to auto-count laps completed: lead-lap finishers get the full total, laps-down (e.g. 2L) and DNFs subtract from it.
-          </span></div>
+        <RaceLengthField idPrefix="new_race_length"
+          lengthType={form.length_type} totalLaps={form.total_laps} raceMinutes={form.race_minutes}
+          onChange={patch => setForm(f => ({ ...f, ...patch }))} />
         <div className="field"><label>Car Type</label>
           <input value={form.car} placeholder={classes.length ? "Leave blank to use the class's / season's car" : "Leave blank to use the season's car"}
             onChange={e => setForm(f => ({ ...f, car: e.target.value }))} /></div>
