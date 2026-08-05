@@ -516,11 +516,30 @@ export function SessionEditor({
   // typed in per driver instead of being filled from the total.
   const totalLaps = scheduledLaps(race);
 
+  // The class this grid is running: the one most of its rows are already in
+  // (or the season's only class). A driver whose ROSTER entry carries no class
+  // — one created inline while entering results, or added before the class
+  // existed — would otherwise land on a row with no class at all, and a result
+  // with no class scores on the SEASON's points rather than the class's. That
+  // is how one row in a grid ends up paying a different rate per takedown than
+  // every other row.
+  const gridClassId = useMemo(() => {
+    if (scoped) return scopeClassId;
+    const counts = {};
+    for (const r of rows) if (r.entry_id && r.class_id) counts[r.class_id] = (counts[r.class_id] || 0) + 1;
+    const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+    if (top) return top[0];
+    return classes.length === 1 ? classes[0].id : "";
+  }, [rows, classes, scoped, scopeClassId]);
+
   // Assigns/creates a driver into a specific slot, seeding Start from the
-  // driver's Qualifying position for race-type sessions.
+  // driver's Qualifying position for race-type sessions, and the class from
+  // the driver's roster entry — falling back to the class the rest of the grid
+  // is in, so nobody scores under the wrong points structure by omission.
   const withDriver = (row, entry) => {
     const out = assignEntry(row, entry, totalLaps);
     if (sessionType !== "qualifying" && qualPos[out.entry_id] != null) out.start_pos = String(qualPos[out.entry_id]);
+    if (!out.class_id && gridClassId) out.class_id = gridClassId;
     return out;
   };
   function assignToSlot(slotId, entry) {
@@ -1022,6 +1041,32 @@ export function SessionEditor({
   // row inputs and these headers all read the same definitions, so a new banger
   // bonus appears in all three at once.
   const bangerHeaders = isBangerRacing ? BANGER_STATS.map(s => s.header) : [];
+  // Rows with a driver but no class — the ones that would score on the season's
+  // structure instead of the class's.
+  const unclassedRows = hasClasses ? rows.filter(r => r.entry_id && !r.class_id) : [];
+  const gridClassName = classes.find(c => c.id === gridClassId)?.name ?? "";
+
+  // Fill in a blank Class cell with the class the rest of the grid is in, on
+  // rows loaded from already-saved results as well as newly assigned ones. A
+  // saved result with no class scores on the season's points instead of the
+  // class's — the same race paying one driver a different rate per takedown
+  // than the rest — so the grid shows the class it will be saved with rather
+  // than leaving the row silently unclassified. It's only applied when the rest
+  // of the grid agrees on one class, it's visible in the Class column before
+  // anything is written, and it takes effect on Save like any other edit.
+  useEffect(() => {
+    if (loading || !hasClasses || !gridClassId) return;
+    setRows(prev => {
+      let changed = false;
+      const next = prev.map(r => {
+        if (!r.entry_id || r.class_id) return r;
+        changed = true;
+        return { ...r, class_id: gridClassId };
+      });
+      return changed ? next : prev;
+    });
+  }, [rows, hasClasses, gridClassId, loading]);
+
 
   const rowCommon = (row, idx) => ({
     available: availableFor(row),
@@ -1174,6 +1219,16 @@ export function SessionEditor({
           whoever finished highest), and the highest <strong>Led</strong> count takes Most Laps Led.
           Tick or untick any of them yourself and that one stops moving — your call sticks.
           These are stats either way; they only affect points if your season or points structure pays a bonus for them.
+        </p>
+      )}
+      {hasClasses && unclassedRows.length > 0 && (
+        <p style={{ marginTop: 0, color: "var(--accent-gold, #e2b714)", fontSize: "0.82rem" }}>
+          ⚠ <strong>{unclassedRows.length} row{unclassedRows.length === 1 ? " has" : "s have"} no class set</strong>
+          {unclassedRows.length <= 4 && <> — {unclassedRows.map(r => r.driver_name).join(", ")}</>}.
+          A result with no class scores on the <strong>season&rsquo;s</strong> points, not
+          {gridClassName ? <> <strong>{gridClassName}</strong>&rsquo;s</> : " the class's"} — which is how one
+          driver ends up paid a different rate per takedown than everyone else in the same race. Set the
+          Class on those rows (or use <strong>Class for every row</strong> above) and Save.
         </p>
       )}
       {isBangerRacing && (
