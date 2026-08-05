@@ -179,17 +179,7 @@ function GlobalSchedule() {
       {rows == null ? (
         <div className="skeleton" style={{ height: 240, marginTop: 16 }} />
       ) : upcoming.length === 0 && archive.length === 0 ? (
-        <div className="empty-state">
-          <span className="empty-state-icon">📅</span>
-          <p>No races scheduled yet in this scope.</p>
-          {/* Nothing here means nothing to click — so the way out of an empty
-              scope sits in the empty state itself, not only up in the header. */}
-          {canCreateSeason && (
-            <button className="btn btn-primary" onClick={() => setShowCreateSeason(true)}>
-              + New Season
-            </button>
-          )}
-        </div>
+        <div className="empty-state"><span className="empty-state-icon">📅</span><p>No races scheduled yet in this scope.</p></div>
       ) : (
         <>
           <FeedSection title="Upcoming" icon="🟢" rows={upcoming} kind="upcoming" />
