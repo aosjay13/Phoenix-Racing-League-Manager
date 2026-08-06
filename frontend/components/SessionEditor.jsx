@@ -586,21 +586,37 @@ export function SessionEditor({
   // typed in per driver instead of being filled from the total.
   const totalLaps = scheduledLaps(race);
 
-  // The class this grid is running: the one most of its rows are already in
-  // (or the season's only class). A driver whose ROSTER entry carries no class
-  // — one created inline while entering results, or added before the class
-  // existed — would otherwise land on a row with no class at all, and a result
-  // with no class scores on the SEASON's points rather than the class's. That
-  // is how one row in a grid ends up paying a different rate per takedown than
-  // every other row.
+  // The class this grid is running, used to fill a row that hasn't got one of
+  // its own. A driver whose ROSTER entry carries no class — one created inline
+  // while entering results, or added before the class existed — would otherwise
+  // land on a row with no class at all, and a result with no class scores on
+  // the SEASON's points rather than the class's. That is how one row in a grid
+  // ends up paying a different rate per takedown than every other row.
+  //
+  // It only ever fills a BLANK Class cell; a row that already names a class
+  // keeps it, so this can't rewrite results that are already right.
+  //
+  // In priority order:
+  //   1. the class this grid is scoped to, on a per-class session;
+  //   2. the race's OWN class — the "<class> only" round set on Race Info. That
+  //      is an explicit statement of whose race this is, so it outranks anything
+  //      inferred below it: a round on one class's calendar defaults every row
+  //      to that class rather than to whatever the first few rows happened to
+  //      carry over from a driver's roster entry;
+  //   3. the class most of the filled rows are already in;
+  //   4. the season's only class, when it has just the one.
   const gridClassId = useMemo(() => {
     if (scoped) return scopeClassId;
+    // Only honour a race class the season actually still has — a class deleted
+    // or renamed out from under the round would otherwise stamp every row with
+    // an id nothing resolves.
+    if (race?.class_id && classes.some(c => c.id === race.class_id)) return race.class_id;
     const counts = {};
     for (const r of rows) if (r.entry_id && r.class_id) counts[r.class_id] = (counts[r.class_id] || 0) + 1;
     const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
     if (top) return top[0];
     return classes.length === 1 ? classes[0].id : "";
-  }, [rows, classes, scoped, scopeClassId]);
+  }, [rows, classes, scoped, scopeClassId, race]);
 
   // Assigns/creates a driver into a specific slot, seeding Start from the
   // driver's Qualifying position for race-type sessions, and the class from
