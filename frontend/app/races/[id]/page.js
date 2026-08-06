@@ -181,7 +181,16 @@ export default function EventResultsPage() {
   // legitimately share a position here — the two semi-final losers both finished
   // 3rd — so each row names the round it came out of rather than leaving a
   // repeated number looking like a data error. See lib/bracketRacing.js.
-  const bracketSize = normalizeBracketSize(event.bracket_size);
+  //
+  // Gated on the event's OWN scope actually racing brackets, not merely on a
+  // bracket_size being stored: a size left on an ordinary race would otherwise
+  // caption its finishing order with elimination rounds it never ran. On a
+  // class-scoped view the class's own flag answers instead, so a drag-racing
+  // class inside an ordinary season still gets its rounds labelled.
+  const bracketHere = activeClass
+    ? (data.bracket_classes || []).includes(classIdForScope(activeClass.value))
+    : !!data.is_bracket_racing;
+  const bracketSize = bracketHere ? normalizeBracketSize(event.bracket_size) : null;
   const sof = event.strength_of_field;
 
   // Gap columns, worked out from the times on the results themselves — so every

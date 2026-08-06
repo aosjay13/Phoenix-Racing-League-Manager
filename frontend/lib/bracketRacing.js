@@ -152,7 +152,8 @@ export function bracketRoundFor(size, position) {
 // bracket class (a drag-racing class) alongside its ordinary racing ones.
 //
 // What a scope CONTAINS never makes it a bracket scope: a series with one
-// bracket class in one of its seasons is still an ordinary series.
+// bracket class in one of its seasons is still an ordinary series, and its
+// shared results grids run 1..N like any other race.
 
 // Does this one doc (a series or a class) carry the flag?
 export function isBracketDoc(doc) {
@@ -162,20 +163,16 @@ export function isBracketDoc(doc) {
 // Is the scope being viewed/entered itself bracket racing? `season` is accepted
 // and honoured so a season doc that ever grows the flag resolves through the
 // same chain, but nothing sets it today — the toggles are series and class.
+//
+// This is the ONLY rule. There is deliberately no wider "entry" variant that
+// asks whether anything in the field races brackets: such a rule turns every
+// shared grid in a season into an elimination ladder the moment one class is
+// flagged, which regroups an ordinary race's finishing order into tied
+// positions (1, 2, 3, 3, 4, 4, 4, 4) and drops the guard that stops two drivers
+// sharing a place. A bracket class inside an ordinary season enters its ladder
+// on its own class-scoped grid — that is what per-class results are for.
 export function isBracketScope({ series = null, season = null, cls = null } = {}) {
   return isBracketDoc(cls) || isBracketDoc(season) || isBracketDoc(series);
-}
-
-// Where the bracket controls may be USED, which is deliberately wider than the
-// scope rule above — the same split Demo Derby draws. A results grid has to
-// offer the bracket layout whenever ANYTHING in the event's field races
-// brackets, otherwise the one bracket class in an ordinary season could never
-// have its rounds entered.
-export function bracketEntryScope({ series = null, season = null, cls = null, classes = [] } = {}) {
-  if (isBracketScope({ series, season, cls })) return true;
-  // A specific class that isn't a bracket class, under a series that isn't one.
-  if (cls) return false;
-  return Array.isArray(classes) && classes.some(isBracketDoc);
 }
 
 // ── Validation ─────────────────────────────────────────────────────────────

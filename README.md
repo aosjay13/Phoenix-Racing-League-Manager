@@ -450,9 +450,16 @@ each other; there is no way to separate the two semi-final losers, because they 
 The flag is `series.isBracketRacing` and `classes.isBracketRacing`, resolved by `isBracketScope()` in
 `lib/bracketRacing.js` with the same "at or under a flagged level" rule the derby flag uses: a
 flagged series covers every season and class in it, and a flagged class covers itself alone — which
-is how a season runs a drag-racing class alongside its ordinary racing ones. Entering is wider than
-labelling, exactly as it is for derby: the results grid offers the bracket layout whenever *anything*
-in the event's field races brackets.
+is how a season runs a drag-racing class alongside its ordinary racing ones.
+
+`isBracketScope()` is the **only** rule, on the results grid and the event page alike, and what a
+scope *contains* never counts. Every session that isn't itself flagged runs a strict linear 1, 2, 3,
+4… order, pays the ordinary points drop-off, and still refuses to save two drivers in the same
+position. That strictness is the point: a wider "anything in the field races brackets" rule turns
+every shared grid in a season into an elimination ladder the moment one class is flagged, regrouping
+ordinary finishes into tied positions and dropping the duplicate-position guard. A bracket class
+inside an ordinary season enters its ladder on its own class-scoped grid — that is what per-class
+results are for.
 
 The ladder size lives on the **race** (`races.bracket_size`), not the season, because a league can
 run an 8-car bracket one week and a 16 the next. The dropdown above the results grid saves it

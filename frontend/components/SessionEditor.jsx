@@ -307,13 +307,17 @@ const LABELS = { qualifying: "Qualifying", race: "Race", heat: "Heat", consolati
 // session, including one in a season that merely CONTAINS a derby class — the
 // grid is exactly what it always was, with no derby text on it.
 //
-// `isBracketRacing` comes from the series or the class being entered: with it on
-// the grid stops running 1..N and takes its finishing positions from the
-// elimination ladder instead, sized by the Bracket Size dropdown above it (4, 8,
-// 16 or 32 drivers). Several rows then legitimately share a position — two 3rd
-// places for the semi-final losers, four 4ths for the quarter-finals — which is
-// the one thing an ordinary results grid refuses to save. See
-// lib/bracketRacing.js. Off, the grid is exactly what it always was.
+// `isBracketRacing` says the thing being entered is ITSELF flagged as Bracket
+// Style Racing — the class on a split event, or the season/series on a shared
+// one (isBracketScope in lib/bracketRacing.js). Off — which is every ordinary
+// session, including one in a season that merely CONTAINS a bracket class — the
+// grid runs a strict 1..N finishing order and refuses to save two drivers in
+// the same position, exactly as it always did. With it on, the grid takes its
+// finishing positions from the elimination ladder instead, sized by the Bracket
+// Size dropdown above it (4, 8, 16 or 32 drivers). Several rows then
+// legitimately share a position — two 3rd places for the semi-final losers,
+// four 4ths for the quarter-finals — which is the one thing an ordinary results
+// grid refuses to save. See lib/bracketRacing.js.
 //
 // `sessionClass` scopes the whole editor to ONE class of a split event (see
 // lib/classFilter.js): the grid loads and saves only that class's results, the

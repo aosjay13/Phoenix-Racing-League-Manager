@@ -12,7 +12,7 @@ import { LENGTH_LAPS, raceLengthBody, raceLengthForm } from "@/lib/raceLength";
 import { normalizedBuiltinTemplates } from "@/lib/pointsTemplates";
 import { carForRace, racePerClassResults, sessionClassScopes } from "@/lib/classFilter";
 import { isBangerScope, derbyPointsTarget } from "@/lib/bangerRacing";
-import { bracketEntryScope } from "@/lib/bracketRacing";
+import { isBracketScope } from "@/lib/bracketRacing";
 import { api } from "@/lib/api";
 
 const BLANK_INFO = {
@@ -334,16 +334,22 @@ function UnifiedEditInner() {
     // Where a derby rate typed above the grid is saved, and how.
     derbyTarget,
     onDerbyPointsSave: saveDerbyPoints,
-    // Bracket Style Racing — flagged on the series or on a single class. Same
-    // ENTRY rule the derby flag uses: the grid offers the bracket layout
-    // whenever anything in this event's field races brackets (the class being
-    // entered on a split event, or any class of the season on a shared one), so
-    // a drag-racing class inside an ordinary season can still have its ladder
-    // entered. See lib/bracketRacing.js.
-    isBracketRacing: bracketEntryScope({
+    // Bracket Style Racing — flagged on the series or on a single class, and
+    // resolved by the STRICT scope rule: the thing being entered must itself
+    // carry the flag, which is the class on a split event and the season/series
+    // on a shared one. What a season CONTAINS never counts.
+    //
+    // This is load-bearing. Anything else and one flagged drag-racing class
+    // turns every shared grid in its season into an elimination ladder —
+    // positions grouped as 1, 2, 3, 3, 4, 4, 4, 4 instead of running 1..N —
+    // which silently ties drivers who finished apart in an ordinary race. A
+    // bracket class in an ordinary season enters its ladder on its own
+    // class-scoped grid (turn on per-class results for the season or the
+    // event). See lib/bracketRacing.js.
+    isBracketRacing: isBracketScope({
       series,
+      season,
       cls: perClassResults ? classes.find(c => c.id === scope) || null : null,
-      classes,
     }),
     // The ladder size this race ran, and how the dropdown above the grid saves
     // it. It lives on the RACE, so a league can run an 8-car bracket one week
