@@ -16,5 +16,6 @@ export const TRACK_TYPES = [
   "Dirt Road Course",
   "Rallycross",
   "Kart",
+  "Drag Strip",
   "Demo Derby Arena",
 ];
