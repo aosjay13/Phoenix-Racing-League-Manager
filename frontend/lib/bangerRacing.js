@@ -122,14 +122,20 @@ export function isBangerScope({ series = null, season = null, cls = null } = {})
   return isBangerDoc(season) || isBangerDoc(series);
 }
 
-// ── Where the derby stats may be ENTERED and CONFIGURED ────────────────────
+// ── Where the derby rates may be CONFIGURED ────────────────────────────────
 //
-// Deliberately wider than the view rule above. A results grid has to offer the
-// derby inputs whenever ANY class in the event's field races derby — otherwise
-// the one Banger class in an ordinary season could never have its takedowns
-// recorded — and the points editors have to offer the derby rates wherever
-// those results will be scored. None of that puts a column on a table: the
-// stats are stored for everyone and shown only where isBangerScope says yes.
+// Deliberately wider than the rule above, and for one job only: the points
+// editors in League Setup have to offer the derby rates wherever derby results
+// will be SCORED, which includes the season above a lone Banger class — that
+// class would otherwise have nowhere but itself to set a rate. That is
+// configuration, not display.
+//
+// The results grid does NOT use this. It follows isBangerScope, so an ordinary
+// season that merely contains a derby class keeps plain Qualifying and Race
+// grids; that class enters its takedowns on its own class-scoped grid (turn on
+// per-class results for the season or the event). Nothing here puts a column on
+// a table either: the stats are stored for everyone and shown only where
+// isBangerScope says yes.
 export function bangerEntryScope({ series = null, season = null, cls = null, classes = [] } = {}) {
   if (isBangerScope({ series, season, cls })) return true;
   // A specific class that isn't a derby, under a season/series that isn't one.

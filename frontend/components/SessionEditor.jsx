@@ -297,12 +297,15 @@ const LABELS = { qualifying: "Qualifying", race: "Race", heat: "Heat", consolati
 // race, not copied onto every other session, so Average Start and Poles are
 // always computed from Qualifying results alone.
 //
-// `isBangerRacing` comes from the SERIES this event belongs to: with it on the
-// grid grows one extra column per Demo Derby / Banger Racing stat (Takedowns,
-// Survival Bonus, Most Lethal Bonus — all defined in lib/bangerRacing.js, so
-// adding another needs no change here), and the points structure editor opened
-// from this screen offers a value for each. Off — every ordinary series — the
-// grid is exactly what it always was.
+// `isBangerRacing` says the thing being entered is ITSELF labelled Demo Derby /
+// Banger Racing — the class on a split event, or the season/series on a shared
+// one (isBangerScope in lib/bangerRacing.js). With it on the grid grows one
+// extra column per derby stat (Takedowns, Survival Bonus, Most Lethal Bonus —
+// all defined in lib/bangerRacing.js, so adding another needs no change here),
+// prints the derby explainer and rate bar above itself, and the points structure
+// editor opened from this screen offers a value for each. Off — every ordinary
+// session, including one in a season that merely CONTAINS a derby class — the
+// grid is exactly what it always was, with no derby text on it.
 //
 // `isBracketRacing` comes from the series or the class being entered: with it on
 // the grid stops running 1..N and takes its finishing positions from the

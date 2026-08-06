@@ -11,7 +11,7 @@ import { RaceLengthField } from "@/components/RaceLengthField";
 import { LENGTH_LAPS, LENGTH_TIME } from "@/lib/raceLength";
 import { normalizedBuiltinTemplates } from "@/lib/pointsTemplates";
 import { carForRace, racePerClassResults, sessionClassScopes } from "@/lib/classFilter";
-import { bangerEntryScope, derbyPointsTarget } from "@/lib/bangerRacing";
+import { isBangerScope, derbyPointsTarget } from "@/lib/bangerRacing";
 import { bracketEntryScope } from "@/lib/bracketRacing";
 import { api } from "@/lib/api";
 
@@ -320,21 +320,18 @@ function UnifiedEditInner() {
     sessionClass: perClassResults ? scope : null,
     sessionClassName: perClassResults ? scopeName : "",
     // Demo Derby / Banger Racing can be flagged on the series, on this season,
-    // or on a single class. On a split event the answer is the class being
-    // entered; on a combined grid it's the season's field as a whole, so a
-    // season with one Banger class shows the derby columns on the shared grid
-    // it enters that class in. See lib/bangerRacing.js.
-    // The ENTRY rule, not the view rule: the grid offers the derby inputs
-    // whenever anything in this event's field races derby — the class being
-    // entered on a split event, or any class of the season on a shared one —
-    // so the derby class in an ordinary season can still have its takedowns
-    // recorded. Where those stats are SHOWN is decided separately, and much
-    // more strictly. See lib/bangerRacing.js.
-    isBangerRacing: bangerEntryScope({
+    // or on a single class, and this grid follows the same strict scope rule the
+    // Standings and Stats tables do: the thing being entered must ITSELF be
+    // labelled derby — the class on a split event, or the season/series on a
+    // shared one. What a season CONTAINS never counts, so an ordinary season
+    // that happens to run one Banger class keeps plain Qualifying and Race
+    // grids: no TD/SUR/LTH columns, no derby explainer, no rate bar. That class
+    // records its takedowns on its own class-scoped grid — switch the event (or
+    // the season) to per-class results to enter them. See lib/bangerRacing.js.
+    isBangerRacing: isBangerScope({
       series,
       season,
       cls: perClassResults ? classes.find(c => c.id === scope) || null : null,
-      classes,
     }),
     // Where a derby rate typed above the grid is saved, and how.
     derbyTarget,

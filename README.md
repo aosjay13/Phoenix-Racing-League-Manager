@@ -376,19 +376,22 @@ other classes: only that class's own championship carries them. The league-wide 
 view never do, at all. A labelled series or season covers the levels beneath it, since that is what
 labelling the higher level means.
 
-Entering them is deliberately wider than seeing them: a results grid offers the derby inputs whenever
-*anything* in the event's field races derby, so the one Banger class in an ordinary season can still
-have its takedowns recorded, and the points editors offer the derby rates wherever those results will
-be scored. Storing a stat is not the same as putting a column on a table.
+The results grid follows exactly the same rule: Qualifying and Race show the derby columns, the derby
+explainer and the rate bar only when the thing being entered is itself labelled — the class on a
+split event, or the season/series on a shared one. An ordinary season that merely *contains* a Banger
+class keeps plain grids with no derby text on them; that class records its takedowns on its own
+class-scoped grid, which is what per-class results are for. Configuration is the one place that stays
+wider: the points editors offer the derby rates wherever derby results will be scored, including the
+season above a lone Banger class, which would otherwise have nowhere but itself to set a rate.
+Storing a stat is not the same as putting a column on a table.
 
 **Demo Derby / Banger Racing** is one boolean, settable at three levels: `series.isBangerRacing`,
 `seasons.isBangerRacing` and `classes.isBangerRacing`. They add up rather than override — derby is
 on for anything at or under a flagged level, so a flagged series covers all its seasons and classes,
 a flagged season covers its classes (a one-off derby year in an ordinary series), and a flagged
 class covers itself alone (a Banger class racing alongside ordinary ones). `isBangerScope()` in
-`lib/bangerRacing.js` is the single resolver every guard calls; a view of a whole season also counts
-as banger when the field it shows contains a banger class, while picking one of that season's
-*ordinary* classes does not. With it on,
+`lib/bangerRacing.js` is the single resolver every guard calls, on the results grid as much as on the
+tables; what a scope *contains* never makes it a derby. With it on,
 every results row of that series' events also stores `takedowns` (a count), `survival_bonus` and
 `most_lethal` (flags), and every points structure — season, class or points template — can pay a
 `takedown` rate plus a `survival_bonus` / `most_lethal` value through its `bonus_points` map. Those
@@ -404,9 +407,9 @@ Because a rate set at the wrong level is indistinguishable from a broken feature
 carries the rate itself: a **Derby points** bar above the grid states what this session pays for each
 derby stat — or warns, in gold, that nothing is set and the Points column will not move — and lets an
 admin set it inline. It always writes to the **season**, deliberately: a rate on a class only reaches
-results stamped with that class, so a league that flags a Banger class but enters its results on a
-shared grid (drivers unclassified, or the row's Class cell left blank) records takedowns that a
-class-level rate pays nothing for. A season rate applies however the results are classed and can't
+results stamped with that class, so a class-scoped grid whose rows are left unclassified records
+takedowns that a class-level rate pays nothing for. A season rate applies however the results are
+classed and can't
 leak into ordinary racing, since it is only ever multiplied by stats an ordinary result doesn't have.
 Saved results re-score the moment it lands, so nothing needs re-entering.
 
