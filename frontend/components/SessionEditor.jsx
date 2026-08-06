@@ -220,13 +220,18 @@ function sortByFinish(rows) {
 // accumulate). `edited` is the gap cell just typed into ({ idx, field }): that
 // one row re-derives its time from what was typed even if it already had one,
 // which is what makes the columns work in both directions.
-function deriveQualTimes(rows, edited = null) {
+// `held` is the qual_time cell currently being typed into (or holding focus):
+// that cell's text is never rewritten, even when it doesn't parse yet — a
+// half-entered "1:" must not be "restored" from the row's stale gap columns
+// mid-keystroke.
+function deriveQualTimes(rows, edited = null, held = null) {
   const leaderTime = parseTime(rows.find(r => Number(r.finish_pos) === 1)?.qual_time);
   let prev = null;                       // last row above this one that has a time
   let changed = false;
   const next = rows.map((r, i) => {
     const editedField = edited && edited.idx === i && edited.field !== "qual_time" ? edited.field : null;
     const t = parseTime(r.qual_time);
+    if (held && held.idx === i && held.field === "qual_time") { if (t != null) prev = t; return r; }
     if (t != null && !editedField) { prev = t; return r; }
     if (!r.entry_id) return r;
     const toLead = parseDelta(r.qual_to_lead);
@@ -288,7 +293,8 @@ function focusedGridCell() {
 // Derive, then recompute — run after any edit to a qualifying grid. `edited`
 // is the cell that was just typed into, if any.
 function syncQualGaps(rows, edited = null) {
-  return computeQualGaps(deriveQualTimes(rows, edited), edited ?? focusedGridCell());
+  const active = edited ?? focusedGridCell();
+  return computeQualGaps(deriveQualTimes(rows, edited, active), active);
 }
 
 // The three columns that feed each other.
@@ -560,9 +566,11 @@ export function SessionEditor({
       const next = prev.map((r, i) => {
         if (i !== idx) return r;
         const patch = { ...r, [field]: value };
-        // Deleting a lap time clears the gaps derived from it — left in place
-        // they'd just re-derive the time that was deleted.
-        if (qualTimeEdit && field === "qual_time" && String(value).trim() === "") {
+        // Deleting or retyping a lap time clears the gaps derived from it —
+        // left in place they'd just re-derive the time that was deleted (or
+        // its half-typed replacement) the moment focus moved. They refill
+        // themselves as soon as the new time parses.
+        if (qualTimeEdit && field === "qual_time" && parseTime(value) == null) {
           patch.qual_to_lead = "";
           patch.qual_gap = "";
         }
