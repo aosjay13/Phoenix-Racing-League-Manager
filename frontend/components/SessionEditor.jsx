@@ -985,14 +985,25 @@ export function SessionEditor({
   // combined grid this is asked per ROW, since a driver's points come from the
   // class they raced in even when every class shares one results table.
   const baseFor = classId => (classId && classBase[classId]) || seasonConfig;
-  const scopeClass = scoped ? classes.find(c => c.id === scopeClassId) : null;
+  // The one class whose points structure is this grid's DEFAULT, from any way
+  // an event states its class: the per-class scope on a split event, the class
+  // the round is pinned to (races.class_id / a per-class session), or the
+  // season's only class. Empty only on a genuinely shared multi-class grid,
+  // where no single class is the honest default and each row's own class
+  // answers instead (configForRow below). This is what makes a class's own
+  // points structure the default for its races — not just on split events —
+  // instead of the season's.
+  const pointsClassId = scoped ? scopeClassId
+    : (pinnedClassId || (classes.length === 1 ? classes[0].id : ""));
+  const scopeClass = pointsClassId ? classes.find(c => c.id === pointsClassId) : null;
   const classOwnPoints = classScoresOwnPoints(scopeClass);
   // What "no session override" scores under, named for the dropdown.
-  const baseLabel = classOwnPoints ? `${sessionClassName || scopeClass?.name || "Class"} points` : "Season default";
+  const pointsClassName = sessionClassName || scopeClass?.name || "Class";
+  const baseLabel = classOwnPoints ? `Class Default — ${pointsClassName} points` : "Season default";
   // Classes of this season that score on structures of their own — the ones an
   // event-wide points template does NOT re-point (see `layered` below).
   const ownPointsClassNames = classes.filter(classScoresOwnPoints).map(c => c.name);
-  const baseConfig = scoped ? baseFor(scopeClassId) : seasonConfig;
+  const baseConfig = baseFor(pointsClassId || "");
 
   // This session's assigned template. On a split event the assignment is per
   // class — Pro's Race and Amateur's Race can score differently — falling back
@@ -1025,8 +1036,8 @@ export function SessionEditor({
   };
 
   const config = useMemo(
-    () => layered(scoped ? scopeClassId : "", template, templateIsForClass),
-    [baseConfig, template, templateIsForClass, scoped, scopeClassId, classes, seasonConfig],
+    () => layered(pointsClassId || "", template, templateIsForClass),
+    [baseConfig, template, templateIsForClass, pointsClassId, classes, seasonConfig],
   );
 
   // Qualifying's own points system (always the "Qualifying" session, regardless
@@ -1379,18 +1390,18 @@ export function SessionEditor({
         {onSessionPointsChange && (
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
             <div className="field" style={{ maxWidth: 280, margin: 0 }}>
-              <label>Points system · {scoped && sessionClassName ? `${sessionClassName} · ` : ""}{session}</label>
+              <label>Points system · {scopeClass ? `${pointsClassName} · ` : ""}{session}</label>
               <select value={templateId}
                 onChange={e => Promise.resolve(assignSessionPoints(session, e.target.value, sessionType)).catch(err => showToast("error", err.message))}>
                 <option value="">{baseLabel}</option>
                 <option value={NONE_TEMPLATE.id}>{NONE_TEMPLATE.name}</option>
                 {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
-              {scoped ? (
+              {scopeClass ? (
                 <span style={{ fontSize: "0.75rem", color: "var(--ink-2)" }}>
                   {classOwnPoints
-                    ? `${sessionClassName} scores on its own points structure — switching class here swaps it. A template picked here overrides it for this session.`
-                    : "Applies to this class's session only."}
+                    ? `${pointsClassName} scores on its own points structure by default. A template picked here overrides it for this session.`
+                    : scoped ? "Applies to this class's session only." : `This round belongs to ${pointsClassName}, which scores on the season's points structure.`}
                 </span>
               ) : ownPointsClassNames.length > 0 && (
                 // An event-wide template is the event's default, and a class
@@ -1756,7 +1767,7 @@ export function SessionEditor({
         <PointsEditorModal
           session={session} sessionType={sessionType} value={templateId}
           templates={templates} baseConfig={baseConfig} baseLabel={baseLabel}
-          classLabel={scoped ? sessionClassName : ""} banger={isBangerRacing}
+          classLabel={scopeClass ? pointsClassName : ""} banger={isBangerRacing}
           onAssign={assignSessionPoints} onTemplatesChanged={onTemplatesChanged}
           onClose={() => setPointsModal(false)}
         />
