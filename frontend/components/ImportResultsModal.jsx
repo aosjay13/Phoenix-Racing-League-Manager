@@ -33,7 +33,10 @@ const SEGMENT_TYPE_LABEL = {
 // Columns and driver names are detected either way; the admin can remap any
 // column and resolve/skip individual drivers before applying — nothing is saved
 // until they Apply and then Save the grid.
-export function ImportResultsModal({ session, sessionType, entries, seasonId, seriesName, onDriverCreated, onApply, onClose }) {
+// `defaultClassId` is the class the grid this import feeds is being entered for
+// (a per-class session, or a "<class> only" round) — a driver created from the
+// review table joins it, the same as one created on the grid itself.
+export function ImportResultsModal({ session, sessionType, entries, seasonId, seriesName, defaultClassId = "", onDriverCreated, onApply, onClose }) {
   const [text, setText] = useState("");
   const [parsed, setParsed] = useState(null);      // { headers, rows, delimiter }
   const [mapping, setMapping] = useState({});
@@ -464,6 +467,7 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
           seasonId={seasonId}
           seriesName={seriesName}
           initialName={createFor.name}
+          defaultClassId={defaultClassId}
           onClose={() => setCreateFor(null)}
           onCreated={handleDriverCreated}
         />

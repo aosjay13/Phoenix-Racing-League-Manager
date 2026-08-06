@@ -27,7 +27,10 @@ async function sessionContext(raceId) {
   const raceDoc = await db().collection("races").doc(raceId).get();
   const data = raceDoc.exists ? raceDoc.data() : {};
   const sessions = Array.isArray(data.sessions) && data.sessions.length ? data.sessions : ["Race"];
-  return { firstSession: sessions[0], seasonId: data.season_id || null };
+  // `raceClassId` is the "<class> only" round set on Race Info — the class the
+  // whole event is run in, and so the class of every result written for it that
+  // doesn't name one of its own.
+  return { firstSession: sessions[0], seasonId: data.season_id || null, raceClassId: data.class_id || "" };
 }
 
 // class_id per roster entry, used to resolve the class of a result saved before
@@ -79,15 +82,17 @@ export const POST = withAdmin(async (request, ctx, user) => {
     }
   }
 
-  const { firstSession } = await sessionContext(race_id);
+  const { firstSession, raceClassId } = await sessionContext(race_id);
   const savingSession = session || firstSession;
   const leagueId = getRequestLeagueId(request);
 
   // Record the class each driver ran in on the result itself, so a class
   // championship stays historically correct even if the driver is later moved
   // to another class (or the roster entry is re-used). An explicit class on the
-  // row wins (the results grid's Class dropdown); otherwise it's taken from the
-  // driver's current roster entry. Blank = unclassified.
+  // row wins (the results grid's Class dropdown); then the class the ROUND is
+  // run in, when it's a "<class> only" event — that's the whole event's class,
+  // so it beats a roster guess for a driver who races several; otherwise it's
+  // taken from the driver's current roster entry. Blank = unclassified.
   const entriesById = await classByEntryForSeason(season_id);
   const classByEntry = Object.fromEntries(Object.entries(entriesById).map(([id, e]) => [id, e.class_id]));
   // A per-class save is that class's session: every row it writes belongs to
@@ -120,7 +125,9 @@ export const POST = withAdmin(async (request, ctx, user) => {
       entry_id: row.entry_id,
       class_id: scoped
         ? scopeClassId
-        : ((row.class_id != null && row.class_id !== "") ? row.class_id : (classByEntry[row.entry_id] || "")),
+        : ((row.class_id != null && row.class_id !== "")
+          ? row.class_id
+          : (raceClassId || classByEntry[row.entry_id] || "")),
       finish_pos: Number(row.finish_pos),
       start_pos: row.start_pos === "" || row.start_pos == null ? null : Number(row.start_pos),
       qual_time: row.qual_time || null,

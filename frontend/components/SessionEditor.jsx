@@ -105,13 +105,20 @@ function makeProvRow(src = {}) {
 
 // Attaches a driver (roster entry) to a slot, pre-filling laps to the full
 // race distance so lead-lap finishers don't need manual entry.
-function assignEntry(row, entry, totalLaps) {
+//
+// `pinnedClassId` is the class this grid is declared to be — the class of a
+// per-class session, or the "<class> only" round set on Race Info. When there
+// is one it IS the driver's class here, ahead of the class their roster entry
+// happens to list first: a driver in Pro and Am entered into the Am-only round
+// ran in Am, not in whichever class was ticked first on the roster. Without one
+// the grid falls back to the driver's primary class, exactly as before.
+function assignEntry(row, entry, totalLaps, pinnedClassId = "") {
   const out = {
     ...row,
     entry_id: entry.id ?? entry.entry_id,
     driver_name: entry.name ?? entry.driver_name ?? "",
     driver_number: entry.number ?? entry.driver_number ?? null,
-    class_id: entry.class_id ?? row.class_id ?? "",
+    class_id: pinnedClassId || entry.class_id || row.class_id || "",
   };
   const d = deriveLaps(out, totalLaps);
   if (d != null) out.laps = String(d);
@@ -133,20 +140,25 @@ function assignEntry(row, entry, totalLaps) {
 // places), and the empty slots below them take the positions the bracket still
 // has room for, so a half-filled 8-driver ladder opens on the rounds left to
 // enter rather than on 1..N.
-function buildRows(entries, existing, totalLaps, qualPos = {}, sessionType = "race", positions = null) {
+//
+// `pinnedClassId` is the class this grid is declared to be (see assignEntry):
+// a saved result that recorded no class of its own shows that class rather than
+// the driver's primary one, so an "<class> only" round opens on the class it is
+// actually run in.
+function buildRows(entries, existing, totalLaps, qualPos = {}, sessionType = "race", positions = null, pinnedClassId = "") {
   const entryById = new Map(entries.map(e => [e.id ?? e.entry_id, e]));
   const filled = existing
     .filter(r => entryById.has(r.entry_id))
     .map(r => {
-      const row = assignEntry(makeRow(r.finish_pos), entryById.get(r.entry_id), totalLaps);
+      const row = assignEntry(makeRow(r.finish_pos), entryById.get(r.entry_id), totalLaps, pinnedClassId);
       if (sessionType !== "qualifying" && qualPos[row.entry_id] != null) row.start_pos = String(qualPos[row.entry_id]);
       for (const f of RESULT_FIELDS) {
         if (r[f] == null) continue;
         // A saved result's class wins — that's the class the driver actually
         // raced in — but a BLANK one falls through to the class assignEntry
-        // seeded from their roster entry, so results saved before the season had
-        // classes pick up the driver's class instead of showing unclassified.
-        // Mirrors classOfResult() on the server.
+        // seeded (the grid's own class, else the driver's roster class), so
+        // results saved before the season had classes pick up a class instead of
+        // showing unclassified. Mirrors classOfResult() on the server.
         if (f === "class_id" && r[f] === "") continue;
         row[f] = BOOL_FIELDS.has(f) ? !!r[f] : String(r[f]);
       }
@@ -349,6 +361,29 @@ export function SessionEditor({
   const scopeClassId = scoped ? classIdForScope(sessionClass) : "";
   const entries = useMemo(() => entriesInSessionClass(allEntries, sessionClass), [allEntries, sessionClass]);
 
+  // ── The class this grid IS ───────────────────────────────────────────────
+  //
+  // Set when the event states its own class, from either end:
+  //   • a per-class session — this grid is that class's session; or
+  //   • a "<class> only" round (races.class_id on Race Info) — the whole event
+  //     is on one class's calendar.
+  //
+  // Both are an explicit statement of whose race this is, made once, so every
+  // driver entered here is entered in THAT class: the Class cell fills with it
+  // instead of with whatever class a driver's roster entry lists first, and a
+  // driver added or created from inside the grid joins it. Blank on a shared
+  // event (and on the Unclassified scope, which is unclassified by definition),
+  // where each driver's own roster class is still the honest answer.
+  //
+  // Only a class the season still has counts — a class deleted or renamed out
+  // from under the round would otherwise stamp every row with an id nothing
+  // resolves.
+  const pinnedClassId = useMemo(() => {
+    if (scoped) return scopeClassId;
+    if (race?.class_id && classes.some(c => c.id === race.class_id)) return race.class_id;
+    return "";
+  }, [scoped, scopeClassId, race?.class_id, classes]);
+
   // ── Bracket Style Racing ─────────────────────────────────────────────────
   //
   // A race is a bracket ONLY when a ladder size has been chosen for that race.
@@ -447,7 +482,7 @@ export function SessionEditor({
       // finishing-order grid.
       const mains = existing.filter(r => !r.provisional);
       const provs = existing.filter(r => r.provisional);
-      const loaded = buildRows(entries, mains, scheduledLaps(race), qp, sessionType, bracketLayout);
+      const loaded = buildRows(entries, mains, scheduledLaps(race), qp, sessionType, bracketLayout, pinnedClassId);
       // The gap columns aren't stored — they're recomputed from the saved lap
       // times each time the sheet opens.
       const built = sessionType === "qualifying" ? computeQualGaps(loaded) : loaded;
@@ -461,7 +496,7 @@ export function SessionEditor({
         const e = entryById.get(r.entry_id);
         return makeProvRow({
           entry_id: r.entry_id, driver_name: e?.name ?? "", driver_number: e?.number ?? null,
-          class_id: e?.class_id ?? "", manual_points: r.manual_points, auto: false,
+          class_id: pinnedClassId || e?.class_id || "", manual_points: r.manual_points, auto: false,
         });
       }));
     } catch {
@@ -613,33 +648,28 @@ export function SessionEditor({
   // keeps it, so this can't rewrite results that are already right.
   //
   // In priority order:
-  //   1. the class this grid is scoped to, on a per-class session;
-  //   2. the race's OWN class — the "<class> only" round set on Race Info. That
-  //      is an explicit statement of whose race this is, so it outranks anything
-  //      inferred below it: a round on one class's calendar defaults every row
-  //      to that class rather than to whatever the first few rows happened to
-  //      carry over from a driver's roster entry;
-  //   3. the class most of the filled rows are already in;
-  //   4. the season's only class, when it has just the one.
+  //   1. the class this grid IS — the per-class session's class, or the
+  //      "<class> only" round set on Race Info (see pinnedClassId above). Both
+  //      are explicit, so they outrank anything inferred below;
+  //   2. the class most of the filled rows are already in;
+  //   3. the season's only class, when it has just the one.
   const gridClassId = useMemo(() => {
-    if (scoped) return scopeClassId;
-    // Only honour a race class the season actually still has — a class deleted
-    // or renamed out from under the round would otherwise stamp every row with
-    // an id nothing resolves.
-    if (race?.class_id && classes.some(c => c.id === race.class_id)) return race.class_id;
+    if (pinnedClassId) return pinnedClassId;
+    if (scoped) return scopeClassId;   // the Unclassified scope: blank, on purpose
     const counts = {};
     for (const r of rows) if (r.entry_id && r.class_id) counts[r.class_id] = (counts[r.class_id] || 0) + 1;
     const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
     if (top) return top[0];
     return classes.length === 1 ? classes[0].id : "";
-  }, [rows, classes, scoped, scopeClassId, race]);
+  }, [rows, classes, scoped, scopeClassId, pinnedClassId]);
 
   // Assigns/creates a driver into a specific slot, seeding Start from the
-  // driver's Qualifying position for race-type sessions, and the class from
-  // the driver's roster entry — falling back to the class the rest of the grid
-  // is in, so nobody scores under the wrong points structure by omission.
+  // driver's Qualifying position for race-type sessions, and the class from the
+  // class this grid IS — else from the driver's roster entry, falling back to
+  // the class the rest of the grid is in, so nobody scores under the wrong
+  // points structure by omission.
   const withDriver = (row, entry) => {
-    const out = assignEntry(row, entry, totalLaps);
+    const out = assignEntry(row, entry, totalLaps, pinnedClassId);
     if (sessionType !== "qualifying" && qualPos[out.entry_id] != null) out.start_pos = String(qualPos[out.entry_id]);
     if (!out.class_id && gridClassId) out.class_id = gridClassId;
     return out;
@@ -730,7 +760,7 @@ export function SessionEditor({
       entry_id: entry.id ?? entry.entry_id,
       driver_name: entry.name ?? entry.driver_name ?? "",
       driver_number: entry.number ?? entry.driver_number ?? null,
-      class_id: entry.class_id ?? "",
+      class_id: pinnedClassId || entry.class_id || "",
     });
   }
   // Picking a driver — by Enter, Tab or click — drops focus straight into that
@@ -1231,6 +1261,16 @@ export function SessionEditor({
   // structure instead of the class's.
   const unclassedRows = hasClasses ? rows.filter(r => r.entry_id && !r.class_id) : [];
   const gridClassName = classes.find(c => c.id === gridClassId)?.name ?? "";
+  // Rows in some class OTHER than the one this round is run in. New rows can't
+  // land here — a pinned round fills every Class cell with its own class — so
+  // these are either a deliberate choice or results entered before the round was
+  // pinned, back when the cell followed the driver's roster class. Either way
+  // they're left exactly as they are and simply pointed out, since the fix (one
+  // pass of "Class for every row") is a click away and blindly rewriting saved
+  // results isn't ours to make.
+  const offClassRows = hasClasses && pinnedClassId
+    ? rows.filter(r => r.entry_id && r.class_id && r.class_id !== pinnedClassId)
+    : [];
 
   // Fill in a blank Class cell with the class the rest of the grid is in, on
   // rows loaded from already-saved results as well as newly assigned ones. A
@@ -1449,6 +1489,15 @@ export function SessionEditor({
           {gridClassName ? <> <strong>{gridClassName}</strong>&rsquo;s</> : " the class's"} — which is how one
           driver ends up paid a different rate per takedown than everyone else in the same race. Set the
           Class on those rows (or use <strong>Class for every row</strong> above) and Save.
+        </p>
+      )}
+      {offClassRows.length > 0 && (
+        <p style={{ marginTop: 0, color: "var(--accent-gold, #e2b714)", fontSize: "0.82rem" }}>
+          ⚠ This round is <strong>{gridClassName || "one class"}</strong> only, but{" "}
+          <strong>{offClassRows.length} row{offClassRows.length === 1 ? " is" : "s are"} in another class</strong>
+          {offClassRows.length <= 4 && <> — {offClassRows.map(r => r.driver_name).join(", ")}</>}. Every new row
+          here is {gridClassName || "this round's class"}; these were set to something else. Leave them if that&rsquo;s
+          deliberate, or use <strong>Class for every row</strong> above and Save.
         </p>
       )}
       {isBangerRacing && (
@@ -1697,7 +1746,7 @@ export function SessionEditor({
       )}
 
       <AddDriverToRace seasonId={seasonId} seriesName={seriesName} existingNames={existingNames}
-        defaultClassId={scopeClassId} onCreated={handleDriverAdded} onError={msg => showToast("error", msg)} />
+        defaultClassId={pinnedClassId} onCreated={handleDriverAdded} onError={msg => showToast("error", msg)} />
 
       {pointsModal && (
         <PointsEditorModal
@@ -1712,7 +1761,7 @@ export function SessionEditor({
       {importOpen && (
         <ImportResultsModal
           session={session} sessionType={sessionType} entries={entries}
-          seasonId={seasonId} seriesName={seriesName}
+          seasonId={seasonId} seriesName={seriesName} defaultClassId={pinnedClassId}
           onDriverCreated={handleDriverAdded}
           onApply={applyImport} onClose={() => setImportOpen(false)}
         />
@@ -1720,7 +1769,7 @@ export function SessionEditor({
 
       {createFor && (
         <DriverCreateModal
-          seasonId={seasonId} seriesName={seriesName} initialName={createFor.name} defaultClassId={scopeClassId}
+          seasonId={seasonId} seriesName={seriesName} initialName={createFor.name} defaultClassId={pinnedClassId}
           onClose={() => setCreateFor(null)}
           onCreated={entry => {
             if (createFor.prov) { assignProv(createFor.slotId, entry); focusProvPoints(createFor.slotId); }
