@@ -10,7 +10,7 @@ import { ImportResultsModal } from "@/components/ImportResultsModal";
 import { NONE_TEMPLATE, isNoPointsTemplate } from "@/lib/pointsTemplates";
 import { classIdForScope, entriesEligibleForRace, entriesInSessionClass, isClassScoped, resultInSessionClass } from "@/lib/classFilter";
 import { pointsFor, pointsBreakdown, classConfigs, classScoresOwnPoints, configForClass, configForTemplate, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
-import { applyAutoFlags, detectFlagLocks, autoMostLapsLedSlot } from "@/lib/autoFlags";
+import { AUTO_FLAG_FIELDS, applyAutoFlags, detectFlagLocks, autoMostLapsLedSlot } from "@/lib/autoFlags";
 import { BANGER_BOOL_FIELDS, BANGER_RESULT_FIELDS, BANGER_STATS, bangerRates, blankBangerRow, hasBangerBonuses } from "@/lib/bangerRacing";
 import { BRACKET_SIZES, bracketGridError, bracketPositionAt, bracketPositions, bracketRoundFor, bracketRounds, bracketSizeForField, bracketSizeLabel, normalizeBracketSize, ordinal } from "@/lib/bracketRacing";
 import { parseTime, formatTime, formatGap, formatDelta, parseDelta, parseLapsDown, deriveLaps } from "@/lib/raceTime";
@@ -299,6 +299,62 @@ function syncQualGaps(rows, edited = null) {
 
 // The three columns that feed each other.
 const QUAL_TIME_FIELDS = new Set(["qual_time", "qual_to_lead", "qual_gap"]);
+
+// ── Reading a pasted spreadsheet column ────────────────────────────────────
+//
+// Every column on the grid takes a pasted column (see pasteColumn), and the
+// three that aren't plain text boxes need their cells interpreting first:
+// checkboxes, the Status dropdown and the Class dropdown. Spreadsheets spell
+// these a dozen ways, so the parsers below are deliberately generous — and
+// deliberately return null for anything they don't recognise, which leaves that
+// row exactly as it was rather than guessing.
+
+// The tick-box columns.
+const CHECK_FIELDS = new Set(["fastest_lap", "halfway_leader", "hard_charger", "most_laps_led", ...BANGER_BOOL_FIELDS]);
+
+const CHECK_TRUE = new Set(["1", "true", "t", "yes", "y", "x", "✓", "✔", "on", "fl", "win", "won"]);
+const CHECK_FALSE = new Set(["0", "false", "f", "no", "n", "off", "-", "–", "—", "."]);
+
+// "TRUE" / "Y" / "x" / "1" → ticked; "FALSE" / "N" / "0" / "-" → unticked. An
+// empty cell reads as unticked: a spreadsheet marks the one driver who got the
+// fastest lap and leaves the rest of the column blank, and taking those blanks
+// literally is the whole point of pasting the column.
+function parseCheckCell(text) {
+  const s = String(text ?? "").trim().toLowerCase();
+  if (!s) return false;
+  if (CHECK_TRUE.has(s)) return true;
+  if (CHECK_FALSE.has(s)) return false;
+  return null;
+}
+
+// The Status column, in the words a results sheet actually uses.
+const STATUS_WORDS = {
+  running: "finished", finished: "finished", fin: "finished", finish: "finished",
+  classified: "finished", ok: "finished", running_: "finished", r: "finished",
+  dnf: "dnf", retired: "dnf", ret: "dnf", out: "dnf", "did not finish": "dnf",
+  dns: "dns", ns: "dns", "did not start": "dns", "no show": "dns",
+  dq: "dq", dsq: "dq", disq: "dq", disqualified: "dq",
+};
+
+function parseStatusCell(text) {
+  const s = String(text ?? "").trim().toLowerCase();
+  return s ? (STATUS_WORDS[s] ?? null) : null;
+}
+
+// The Class column, matched against the season's classes by name (then by id,
+// for a column exported from this app). Unmatched names are left alone rather
+// than blanked — a result with no class scores on the season's points instead
+// of the class's, which is not something a typo should be able to cause.
+function parseClassCell(text, classes = []) {
+  const s = String(text ?? "").trim().toLowerCase();
+  if (!s) return null;
+  const byName = classes.find(c => String(c.name || "").trim().toLowerCase() === s);
+  if (byName) return byName.id;
+  const byId = classes.find(c => String(c.id).toLowerCase() === s);
+  if (byId) return byId.id;
+  const partial = classes.find(c => String(c.name || "").trim().toLowerCase().includes(s));
+  return partial ? partial.id : null;
+}
 
 const LABELS = { qualifying: "Qualifying", race: "Race", heat: "Heat", consolation: "Consolation", feature: "Feature" };
 
@@ -598,31 +654,122 @@ export function SessionEditor({
   }
 
   // Column paste ("fill-down"): drop a copied column of values into a grid
-  // column starting at `startIdx`. The Driver column resolves each pasted name
-  // to a roster entry (exact name first, then a contains-match), never reusing a
-  // driver already placed; unmatched names are skipped. Every other column just
-  // sets the raw value on the rows that have a driver. Only fills existing rows
-  // — it never invents new finishing positions.
+  // column starting at `startIdx`. EVERY column on the grid takes one — names,
+  // times, laps, the tick boxes, Class and Status included — so a results sheet
+  // can be moved across a column at a time instead of a cell at a time.
+  //
+  // Whatever the column, a pasted value goes through the same code path typing
+  // it by hand would: a column of race times fills the intervals under it, a
+  // column of statuses re-derives lap counts, a column of ticks hands that flag
+  // to the admin exactly as clicking one box does. Only existing rows are
+  // filled — a paste never invents finishing positions — and rows without a
+  // driver are skipped.
   function pasteColumn(field, startIdx, values) {
+    // The rows a paste starting here covers, as [rowIndex, pastedText] pairs.
+    const spanOf = rows => values
+      .map((v, k) => [startIdx + k, v])
+      .filter(([i]) => i >= 0 && i < rows.length);
+
+    // The Driver column resolves each pasted name to a roster entry (exact name
+    // first, then a contains-match), and no driver is ever placed twice.
+    //
+    // The rows the paste covers are released FIRST, before a single name is
+    // matched. That is what makes pasting a running order over a grid that's
+    // already filled work: a straight reorder asks for drivers who are all still
+    // on the grid, and freeing each row's own driver only as its turn came round
+    // meant every name that belonged to a row further down matched nothing —
+    // pasting a reversed order left the grid half-shuffled and half-untouched.
+    //
+    // A blank line still means "leave this row alone", so those rows keep their
+    // driver and that driver stays reserved. A name that matches nobody on the
+    // roster clears its row: the driver who was there may well have just been
+    // claimed by another row of the same paste, and an empty slot with the
+    // picker in it says what happened where a silently stale name would not.
     if (field === "driver") {
       setRows(prev => {
         const norm = s => String(s ?? "").trim().toLowerCase();
-        const used = new Set(prev.map(r => r.entry_id).filter(Boolean));
+        const idOf = e => e.id ?? e.entry_id;
+        const span = spanOf(prev);
+        const covered = new Map(span.map(([i, v]) => [i, norm(v)]));
+        // Reserved: every driver this paste does not touch — the rows outside it,
+        // and the rows it leaves alone with a blank line.
+        const used = new Set(
+          prev.map((r, i) => (r.entry_id && (!covered.has(i) || !covered.get(i)) ? r.entry_id : null)).filter(Boolean)
+        );
         const next = [...prev];
-        for (let k = 0; k < values.length; k++) {
-          const i = startIdx + k;
-          if (i >= next.length) break;
-          const name = norm(values[k]);
-          if (!name) continue;                       // blank line — leave the row as-is
-          if (next[i].entry_id) used.delete(next[i].entry_id);   // free this row's own driver
-          const pick = entries.find(e => !used.has(e.id ?? e.entry_id) && norm(e.name ?? e.driver_name) === name)
-            || entries.find(e => !used.has(e.id ?? e.entry_id) && norm(e.name ?? e.driver_name).includes(name));
-          if (pick) { used.add(pick.id ?? pick.entry_id); next[i] = withDriver(next[i], pick); }
+        for (const [i, name] of covered) {
+          if (!name) continue;
+          const pick = entries.find(e => !used.has(idOf(e)) && norm(e.name ?? e.driver_name) === name)
+            || entries.find(e => !used.has(idOf(e)) && norm(e.name ?? e.driver_name).includes(name));
+          if (pick) { used.add(idOf(pick)); next[i] = withDriver(next[i], pick); }
+          else next[i] = { ...makeRow(next[i].finish_pos), slot_id: next[i].slot_id };  // same as the ✕ button
         }
         return next;
       });
       return;
     }
+
+    // The tick boxes. Three of them (plus Most Lethal) are normally derived from
+    // the numbers on the grid, so a pasted column hands that flag to the admin
+    // for the session exactly as clicking one box does — otherwise the auto
+    // derivation would simply undo the paste on the next render.
+    if (CHECK_FIELDS.has(field)) {
+      if (AUTO_FLAG_FIELDS.includes(field)) {
+        setFlagLocks(prev => (prev[field] ? prev : { ...prev, [field]: true }));
+      }
+      setRows(prev => {
+        const next = [...prev];
+        for (const [i, text] of spanOf(prev)) {
+          if (!next[i].entry_id) continue;
+          const on = parseCheckCell(text);
+          if (on != null) next[i] = { ...next[i], [field]: on };
+        }
+        return next;
+      });
+      return;
+    }
+
+    // Class: a column of class NAMES out of a spreadsheet, resolved against the
+    // season's classes. A cell that matches nothing leaves the row's class alone.
+    if (field === "class_id") {
+      setRows(prev => {
+        const next = [...prev];
+        for (const [i, text] of spanOf(prev)) {
+          if (!next[i].entry_id) continue;
+          const id = parseClassCell(text, classes);
+          if (id != null) next[i] = { ...next[i], class_id: id };
+        }
+        return next;
+      });
+      return;
+    }
+
+    // Status, Race Time and Interval all derive something else on the row (lap
+    // counts, the opposite time column), so each pasted cell is put through the
+    // very same applier a typed one goes through, row by row and in order.
+    const applier = field === "status" ? applyStatus
+      : field === "race_time" ? applyRaceTime
+      : field === "interval" ? applyInterval
+      : null;
+    if (applier) {
+      setRows(prev => {
+        let out = prev;
+        for (const [i, text] of spanOf(prev)) {
+          if (!out[i].entry_id) continue;
+          const value = String(text ?? "").trim();
+          if (field === "status") {
+            const status = parseStatusCell(value);
+            if (!status) continue;
+            out = applyStatus(out, i, status);
+          } else {
+            out = applier(out, i, value);
+          }
+        }
+        return out;
+      });
+      return;
+    }
+
     setRows(prev => {
       const next = prev.map((r, i) => {
         if (i < startIdx || i >= startIdx + values.length || !r.entry_id) return r;
@@ -631,12 +778,62 @@ export function SessionEditor({
       // A pasted column of times (or of gaps) fills the other two columns the
       // same way typing them one at a time would — every pasted row counts as
       // edited, so a column of gaps rewrites the times under it.
+      //
+      // Derivation runs over the whole pasted span BEFORE the gap columns are
+      // recomputed, and that order matters: computeQualGaps rewrites the gaps of
+      // every row that has a lap time, so re-running the full sync after each
+      // row in turn overwrote the pasted gaps still waiting further down — a
+      // pasted To Lead column moved only its first row and left the rest at
+      // whatever the old times implied. Top to bottom, since a Gap is measured
+      // off the row above.
       if (sessionType !== "qualifying" || !QUAL_TIME_FIELDS.has(field)) return next;
       let out = next;
-      for (let i = startIdx; i < Math.min(startIdx + values.length, next.length); i++) {
-        out = syncQualGaps(out, { idx: i, field });
+      for (const [i] of spanOf(next)) {
+        out = deriveQualTimes(out, { idx: i, field }, { idx: i, field });
       }
-      return out;
+      return computeQualGaps(out);
+    });
+  }
+
+  // Column paste for the Provisional Entries rows below the grid — the same
+  // fill-down, over the two columns those rows have. Names resolve against the
+  // drivers still available for a provisional slot; Points takes the raw value
+  // and counts as a hand-entered one, so it stops auto-filling from the
+  // finishing order.
+  function pasteProvColumn(field, startIdx, values) {
+    setProvRows(prev => {
+      const next = [...prev];
+      const norm = s => String(s ?? "").trim().toLowerCase();
+      const used = new Set(prev.map(r => r.entry_id).filter(Boolean));
+      for (let k = 0; k < values.length; k++) {
+        const i = startIdx + k;
+        if (i >= next.length) break;
+        const text = String(values[k] ?? "").trim();
+        if (field !== "driver") {
+          next[i] = { ...next[i], manual_points: text, auto: false };
+          continue;
+        }
+        if (!text) continue;
+        if (next[i].entry_id) used.delete(next[i].entry_id);
+        // A driver already in the finishing order can't also be a provisional
+        // entry, so the grid's own drivers are off the table here.
+        const free = e => {
+          const id = e.id ?? e.entry_id;
+          return !used.has(id) && !assignedIds.has(id);
+        };
+        const pick = candidates.find(e => free(e) && norm(e.name ?? e.driver_name) === norm(text))
+          || candidates.find(e => free(e) && norm(e.name ?? e.driver_name).includes(norm(text)));
+        if (!pick) continue;
+        used.add(pick.id ?? pick.entry_id);
+        next[i] = {
+          ...next[i],
+          entry_id: pick.id ?? pick.entry_id,
+          driver_name: pick.name ?? pick.driver_name,
+          driver_number: pick.number ?? pick.driver_number ?? null,
+          class_id: pinnedClassId || pick.class_id || "",
+        };
+      }
+      return next;
     });
   }
 
@@ -790,59 +987,72 @@ export function SessionEditor({
   // Editing Race Time: the leader's time is the reference. Typing it on a
   // non-leader derives that row's interval; typing it on the leader re-derives
   // every other row's Race Time from their interval.
+  //
+  // Written as a rows → rows function rather than straight into setRows so a
+  // pasted COLUMN of race times gets exactly the same derivation, applied row
+  // by row, that typing them one at a time does (see pasteColumn).
+  function applyRaceTime(rows, idx, value) {
+    const next = rows.map((r, i) => (i === idx ? { ...r, race_time: value } : r));
+    const isLeader = Number(next[idx].finish_pos) === 1;
+    const lt = leaderTimeOf(next);
+    if (isLeader) {
+      return next.map(r => {
+        if (Number(r.finish_pos) === 1 || lt == null) return r;
+        const gap = parseTime(r.interval); // "+1.234" → seconds; laps-down → null
+        if (parseLapsDown(r.interval) == null && gap != null) return { ...r, race_time: formatTime(lt + gap) };
+        return r;
+      });
+    }
+    const rt = parseTime(value);
+    if (rt != null && lt != null) next[idx] = { ...next[idx], interval: formatGap(rt - lt) };
+    return next;
+  }
+
   function updateRaceTime(idx, value) {
-    setRows(prev => {
-      const next = prev.map((r, i) => (i === idx ? { ...r, race_time: value } : r));
-      const isLeader = Number(next[idx].finish_pos) === 1;
-      const lt = leaderTimeOf(next);
-      if (isLeader) {
-        return next.map(r => {
-          if (Number(r.finish_pos) === 1 || lt == null) return r;
-          const gap = parseTime(r.interval); // "+1.234" → seconds; laps-down → null
-          if (parseLapsDown(r.interval) == null && gap != null) return { ...r, race_time: formatTime(lt + gap) };
-          return r;
-        });
-      }
-      const rt = parseTime(value);
-      if (rt != null && lt != null) next[idx] = { ...next[idx], interval: formatGap(rt - lt) };
-      return next;
-    });
+    setRows(prev => applyRaceTime(prev, idx, value));
   }
 
   // Editing Interval: "NL" marks laps-down (and sets laps = total − N); a time
-  // gap derives Race Time from the leader's time.
+  // gap derives Race Time from the leader's time. Same rows → rows shape as
+  // applyRaceTime, and for the same reason.
+  function applyInterval(rows, idx, value) {
+    const next = rows.map((r, i) => (i === idx ? { ...r, interval: value } : r));
+    const ld = parseLapsDown(value);
+    if (ld != null) {
+      const patch = { ...next[idx], race_time: "" };
+      const d = deriveLaps(patch, totalLaps);
+      if (d != null) patch.laps = String(d);
+      next[idx] = patch;
+    } else {
+      const lt = leaderTimeOf(next);
+      const gap = parseTime(value);
+      const patch = { ...next[idx] };
+      if (gap != null && lt != null) patch.race_time = formatTime(lt + gap);
+      const d = deriveLaps(patch, totalLaps); // lead-lap finisher → total
+      if (d != null) patch.laps = String(d);
+      next[idx] = patch;
+    }
+    return next;
+  }
+
   function updateInterval(idx, value) {
-    setRows(prev => {
-      const next = prev.map((r, i) => (i === idx ? { ...r, interval: value } : r));
-      const ld = parseLapsDown(value);
-      if (ld != null) {
-        const patch = { ...next[idx], race_time: "" };
-        const d = deriveLaps(patch, totalLaps);
-        if (d != null) patch.laps = String(d);
-        next[idx] = patch;
-      } else {
-        const lt = leaderTimeOf(next);
-        const gap = parseTime(value);
-        const patch = { ...next[idx] };
-        if (gap != null && lt != null) patch.race_time = formatTime(lt + gap);
-        const d = deriveLaps(patch, totalLaps); // lead-lap finisher → total
-        if (d != null) patch.laps = String(d);
-        next[idx] = patch;
-      }
-      return next;
-    });
+    setRows(prev => applyInterval(prev, idx, value));
   }
 
   // Status change re-derives laps (finished lead-lap → total; DNF/DNS/DQ stays
   // manual so the admin can enter the lap they retired on).
-  function updateStatus(idx, value) {
-    setRows(prev => prev.map((r, i) => {
+  function applyStatus(rows, idx, value) {
+    return rows.map((r, i) => {
       if (i !== idx) return r;
       const patch = { ...r, status: value };
       const d = deriveLaps(patch, totalLaps);
       if (d != null) patch.laps = String(d);
       return patch;
-    }));
+    });
+  }
+
+  function updateStatus(idx, value) {
+    setRows(prev => applyStatus(prev, idx, value));
   }
 
   // A driver added from the bottom "Add a driver" bar drops into the first
@@ -1651,7 +1861,12 @@ export function SessionEditor({
         </p>
       )}
       <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.78rem" }}>
-        ⌨ Press <strong>Enter</strong> in any cell to jump to the same column one row down. Or <strong>paste a whole column</strong> at once — copy a column of names or times (e.g. from a spreadsheet) and paste into the top cell to fill straight down.
+        ⌨ Press <strong>Enter</strong> in any cell to jump to the same column one row down. Or <strong>paste a whole column</strong> at once — copy a column from a spreadsheet and paste into the cell you want it to start at, and it fills straight down.
+        <br />
+        Every column takes one: names, times, laps, adjustments{hasClasses ? ", Class" : ""} and Status, and the tick boxes
+        {isBangerRacing ? " (FL, ½, HC, MLL, Survival, Most Lethal)" : " (FL, ½, HC, MLL)"} — click the box and paste a column of
+        <strong> TRUE/FALSE</strong>, <strong>Y/N</strong>, <strong>1/0</strong> or <strong>x</strong>. Status reads Running / DNF / DNS / DQ. To re-paste names over a grid that&rsquo;s
+        already filled, click a driver&rsquo;s name first.
       </p>
 
       {!entries.length ? (
@@ -1721,7 +1936,9 @@ export function SessionEditor({
                 <div key={row.slot_id} style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                   <div style={{ flex: "1 1 240px", minWidth: 220 }}>
                     {row.entry_id ? (
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.92rem" }}>
+                      <div tabIndex={-1} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.92rem", outlineOffset: 2 }}
+                        title="Paste a column of driver names here to fill these entries from this row down"
+                        onPaste={e => handleColumnPaste(e, "driver", i, pasteProvColumn, { always: true })}>
                         {row.driver_number != null && <span className="badge">#{row.driver_number}</span>}
                         <span>{row.driver_name}</span>
                         <button type="button" title="Change driver" className="btn btn-ghost"
@@ -1729,7 +1946,7 @@ export function SessionEditor({
                           onClick={() => updateProvRow(row.slot_id, { entry_id: null, driver_name: "", driver_number: null, class_id: "" })}>✕</button>
                       </div>
                     ) : (
-                      <DriverCombobox available={availableForProv(row)} commitOnTab
+                      <DriverCombobox available={availableForProv(row)} commitOnTab gridIdx={i} onPasteColumn={pasteProvColumn}
                         onAssign={e => { assignProv(row.slot_id, e); focusProvPoints(row.slot_id); }}
                         onRequestCreate={name => setCreateFor({ slotId: row.slot_id, name, prov: true })} />
                     )}
@@ -1741,6 +1958,7 @@ export function SessionEditor({
                       title={row.auto
                         ? `Auto-filled with P${lastFinishPos + i + 1} points — the first position nobody finished in. Type over it to set your own.`
                         : "Your own value — click ↺ to go back to the auto-filled points."}
+                      onPaste={e => handleColumnPaste(e, "manual_points", i, pasteProvColumn)}
                       onChange={e => updateProvRow(row.slot_id, { manual_points: e.target.value, auto: false })} />
                     {!row.auto && (
                       <button type="button" className="btn btn-ghost" title="Back to the auto-filled points"
@@ -1840,9 +2058,14 @@ function Toggle({ label, checked, onChange }) {
   );
 }
 
-function Check({ value, onChange, title, disabled }) {
+// A grid tick box. `gridProps` carries the same column/row tags, Enter-to-next-
+// row and column-paste wiring every other cell gets — a focused checkbox does
+// receive paste events, so a TRUE/FALSE column out of a spreadsheet fills
+// straight down here exactly as a column of lap times does.
+function Check({ value, onChange, title, disabled, gridProps }) {
   return (
     <input type="checkbox" title={title} checked={value} disabled={disabled} onChange={e => onChange(e.target.checked)}
+      {...(gridProps || {})}
       style={{ width: 18, height: 18, accentColor: "var(--accent-cyan)", margin: "auto", opacity: disabled ? 0.35 : 1 }} />
   );
 }
@@ -1891,11 +2114,17 @@ function parseColumnClipboard(text) {
 }
 
 // Paste handler for a grid cell: a multi-value clipboard fills the column
-// downward from this row (via onPasteColumn); a single value pastes normally.
-function handleColumnPaste(e, field, idx, onPasteColumn) {
+// downward from this row (via onPasteColumn); a single value pastes normally,
+// so pasting one lap time into one box still behaves like an ordinary paste.
+//
+// `always` is for the cells that have no text box to paste into — a tick box, a
+// dropdown, a driver cell that's already filled. A native paste does nothing at
+// all there, so a single value is handled here too rather than being dropped.
+function handleColumnPaste(e, field, idx, onPasteColumn, { always = false } = {}) {
   if (!onPasteColumn) return;
   const values = parseColumnClipboard(e.clipboardData?.getData("text") ?? "");
-  if (values.length <= 1) return;   // ordinary single-cell paste — let it through
+  if (!values.length) return;
+  if (values.length === 1 && !always) return;   // ordinary single-cell paste — let it through
   e.preventDefault();
   onPasteColumn(field, idx, values);
 }
@@ -2011,12 +2240,24 @@ function DriverCombobox({ available, onAssign, onRequestCreate, gridIdx, onPaste
 
 // The driver cell: a searchable dropdown while empty, or the locked-in driver
 // with a clear button once filled.
+//
+// The filled state has no input to paste into, which used to mean a column of
+// names could only be pasted onto a grid whose Driver column was still empty —
+// exactly the wrong way round for fixing a running order that's already been
+// entered. So the filled cell is a paste target in its own right: click it and
+// paste, and the whole column re-resolves from there down. tabIndex is -1 so
+// this doesn't add a second tab stop to a row that already has the ✕ button.
 function DriverCell({ row, idx, dragging, available, onAssign, onClear, onRequestCreate, onPasteColumn }) {
   if (!row.entry_id) {
     return <DriverCombobox available={available} onAssign={onAssign} onRequestCreate={onRequestCreate} gridIdx={idx} onPasteColumn={onPasteColumn} />;
   }
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.92rem", whiteSpace: "nowrap", opacity: dragging ? 0.35 : 1 }}>
+    <div
+      tabIndex={-1}
+      title="Paste a column of driver names here to fill the running order from this row down"
+      onPaste={e => handleColumnPaste(e, "driver", idx, onPasteColumn, { always: true })}
+      style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.92rem", whiteSpace: "nowrap", opacity: dragging ? 0.35 : 1, outlineOffset: 2 }}
+    >
       {row.driver_number != null && <span className="badge">#{row.driver_number}</span>}
       <span>{row.driver_name}</span>
       <button type="button" title="Clear this position (keeps the driver on the roster)"
@@ -2072,9 +2313,11 @@ function RemoveButton({ row, onRemove }) {
 // roster (seeded by assignEntry); changing it here scopes THIS result to another
 // class without touching the roster — useful when a driver runs up a class for
 // one round.
-function ClassCell({ row, idx, classes, updateRow }) {
+function ClassCell({ row, idx, classes, updateRow, gridProps }) {
   return (
-    <select value={row.class_id ?? ""} disabled={!row.entry_id} title="Class this driver ran in"
+    <select value={row.class_id ?? ""} disabled={!row.entry_id}
+      title="Class this driver ran in — a pasted column of class names fills straight down"
+      {...(gridProps || {})}
       onChange={e => updateRow(idx, "class_id", e.target.value)}>
       <option value="">—</option>
       {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -2087,12 +2330,13 @@ function ClassCell({ row, idx, classes, updateRow }) {
 // Lethal). Generated from BANGER_STATS, so a new banger stat needs no edit
 // here. `updateFlag` is used for the flags so hand-ticking one hands it to the
 // admin for the session, exactly like FL/HC/MLL.
-function BangerCells({ row, idx, updateRow, updateFlag, gridProps }) {
+function BangerCells({ row, idx, updateRow, updateFlag, gridProps, pickerProps }) {
   const hasDriver = !!row.entry_id;
   return (
     <>
       {BANGER_STATS.map(stat => (stat.type === "bool" ? (
         <Check key={stat.key} title={stat.title} value={!!row[stat.key]} disabled={!hasDriver}
+          gridProps={pickerProps(stat.key)}
           onChange={v => (updateFlag ? updateFlag(idx, stat.key, v) : updateRow(idx, stat.key, v))} />
       ) : (
         <input key={stat.key} type="number" min="0" title={stat.title} value={row[stat.key] ?? "0"} disabled={!hasDriver}
@@ -2106,12 +2350,16 @@ function RowInputs({ row, idx, updateRow, updateFlag, updateRaceTime, updateInte
   const hasDriver = !!row.entry_id;
   const isLeader = Number(row.finish_pos) === 1;
   // Shared per-cell wiring: column/row tags, Enter-to-next-row, and column
-  // paste (fill-down). Spread onto every editable input.
-  const gridProps = field => ({
+  // paste (fill-down). Spread onto every cell in the row — inputs, tick boxes
+  // and dropdowns alike, so every column takes a pasted spreadsheet column.
+  const gridProps = (field, opts) => ({
     "data-grid-field": field, "data-grid-idx": idx,
     onKeyDown: gridEnterAdvance,
-    onPaste: e => handleColumnPaste(e, field, idx, onPasteColumn),
+    onPaste: e => handleColumnPaste(e, field, idx, onPasteColumn, opts),
   });
+  // A tick box or a dropdown has no text box for a native paste to land in, so
+  // even a single pasted value is handled here as a one-row fill.
+  const pickerProps = field => gridProps(field, { always: true });
   const num = (field, min = 0, focus = false) => (
     <input type="number" min={min} value={row[field]} disabled={!hasDriver}
       {...gridProps(field)}
@@ -2124,7 +2372,7 @@ function RowInputs({ row, idx, updateRow, updateFlag, updateRaceTime, updateInte
       <input type="number" min="1" title="Starting position (defaults from Qualifying)" placeholder="—" disabled={!hasDriver}
         value={row.start_pos} {...gridProps("start_pos")} onChange={e => updateRow(idx, "start_pos", e.target.value)} />
       <DriverCell row={row} idx={idx} dragging={dragging} available={available} onAssign={onAssign} onClear={onClear} onRequestCreate={onRequestCreate} onPasteColumn={onPasteColumn} />
-      {hasClasses && <ClassCell row={row} idx={idx} classes={classes} updateRow={updateRow} />}
+      {hasClasses && <ClassCell row={row} idx={idx} classes={classes} updateRow={updateRow} gridProps={pickerProps("class_id")} />}
       <input placeholder={isLeader ? "1:23.456" : "1:24.567"} value={row.race_time} disabled={!hasDriver}
         {...gridProps("race_time")} onChange={e => updateRaceTime(idx, e.target.value)} />
       <input placeholder={isLeader ? "leader" : "+2.345 / 1L"} value={isLeader ? "" : row.interval} disabled={!hasDriver || isLeader}
@@ -2136,18 +2384,19 @@ function RowInputs({ row, idx, updateRow, updateFlag, updateRaceTime, updateInte
       {num("laps_led")}
       {num("incidents")}
       <Check title="Fastest lap — ticked automatically for the quickest Best Lap time entered. Change it and it stays where you put it."
-        value={row.fastest_lap} disabled={!hasDriver} onChange={v => updateFlag(idx, "fastest_lap", v)} />
-      <Check title="Halfway-point leader" value={row.halfway_leader} disabled={!hasDriver} onChange={v => updateRow(idx, "halfway_leader", v)} />
+        value={row.fastest_lap} disabled={!hasDriver} gridProps={pickerProps("fastest_lap")} onChange={v => updateFlag(idx, "fastest_lap", v)} />
+      <Check title="Halfway-point leader" value={row.halfway_leader} disabled={!hasDriver}
+        gridProps={pickerProps("halfway_leader")} onChange={v => updateRow(idx, "halfway_leader", v)} />
       <Check title="Hard charger — ticked automatically for the biggest gain from Start to Fin (ties go to whoever finished highest). Change it and it stays where you put it."
-        value={row.hard_charger} disabled={!hasDriver} onChange={v => updateFlag(idx, "hard_charger", v)} />
+        value={row.hard_charger} disabled={!hasDriver} gridProps={pickerProps("hard_charger")} onChange={v => updateFlag(idx, "hard_charger", v)} />
       <Check title="Most laps led — ticked automatically for the highest Led count (a tie is shared). Change it and it stays where you put it."
-        value={row.most_laps_led} disabled={!hasDriver} onChange={v => updateFlag(idx, "most_laps_led", v)} />
-      {isBangerRacing && <BangerCells row={row} idx={idx} updateRow={updateRow} updateFlag={updateFlag} gridProps={gridProps} />}
+        value={row.most_laps_led} disabled={!hasDriver} gridProps={pickerProps("most_laps_led")} onChange={v => updateFlag(idx, "most_laps_led", v)} />
+      {isBangerRacing && <BangerCells row={row} idx={idx} updateRow={updateRow} updateFlag={updateFlag} gridProps={gridProps} pickerProps={pickerProps} />}
       <input type="number" title="Points adjustment — penalty (−) or bonus (+). Applied on top of scored points without changing the finishing position."
         placeholder="0" value={row.points_adjustment} disabled={!hasDriver}
         {...gridProps("points_adjustment")} onChange={e => updateRow(idx, "points_adjustment", e.target.value)} style={{ textAlign: "center" }} />
-      <select title="Status — DNS (did not start) scores nothing and counts toward no stat; DNF and DQ are both scored as classified finishes and both add to the driver's DNF total."
-        value={row.status} disabled={!hasDriver} onChange={e => updateStatus(idx, e.target.value)}>
+      <select title="Status — DNS (did not start) scores nothing and counts toward no stat; DNF and DQ are both scored as classified finishes and both add to the driver's DNF total. A pasted column of Running/DNF/DNS/DQ fills straight down."
+        value={row.status} disabled={!hasDriver} {...pickerProps("status")} onChange={e => updateStatus(idx, e.target.value)}>
         <option value="finished">Running</option>
         <option value="dnf">DNF</option>
         <option value="dns">DNS</option>
@@ -2162,17 +2411,18 @@ function RowInputs({ row, idx, updateRow, updateFlag, updateRaceTime, updateInte
 function QualRow({ row, idx, updateRow, updateFlag, onGapBlur, autoFocus, points, classes = [], hasClasses, isBangerRacing, bracketRound = null, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, available, onAssign, onClear, onRequestCreate, onPasteColumn }) {
   const hasDriver = !!row.entry_id;
   const isPole = Number(row.finish_pos) === 1;
-  const gridProps = field => ({
+  const gridProps = (field, opts) => ({
     "data-grid-field": field, "data-grid-idx": idx,
     onKeyDown: gridEnterAdvance,
-    onPaste: e => handleColumnPaste(e, field, idx, onPasteColumn),
+    onPaste: e => handleColumnPaste(e, field, idx, onPasteColumn, opts),
   });
+  const pickerProps = field => gridProps(field, { always: true });
   return (
     <>
       <DragHandle dragging={dragging} dragOver={dragOver} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={onDragEnd} />
       <input type="number" min="1" value={row.finish_pos} {...gridProps("finish_pos")} onChange={e => updateRow(idx, "finish_pos", e.target.value)} autoFocus={hasDriver && autoFocus} />
       <DriverCell row={row} idx={idx} dragging={dragging} available={available} onAssign={onAssign} onClear={onClear} onRequestCreate={onRequestCreate} onPasteColumn={onPasteColumn} />
-      {hasClasses && <ClassCell row={row} idx={idx} classes={classes} updateRow={updateRow} />}
+      {hasClasses && <ClassCell row={row} idx={idx} classes={classes} updateRow={updateRow} gridProps={pickerProps("class_id")} />}
       <input placeholder="01:43.863" value={row.qual_time} disabled={!hasDriver}
         title="Lap time. Fills To Lead and Gap as you type — or type one of those instead and this fills itself."
         {...gridProps("qual_time")} onBlur={onGapBlur} onChange={e => updateRow(idx, "qual_time", e.target.value)} />
@@ -2185,7 +2435,7 @@ function QualRow({ row, idx, updateRow, updateFlag, onGapBlur, autoFocus, points
       <input placeholder={isPole ? "—" : "+0.087"} value={isPole ? "" : (row.qual_gap ?? "")} disabled={!hasDriver || isPole}
         title="Gap to the car one position up. Type it and the lap time fills itself from that car's time."
         {...gridProps("qual_gap")} onBlur={onGapBlur} onChange={e => updateRow(idx, "qual_gap", e.target.value)} />
-      {isBangerRacing && <BangerCells row={row} idx={idx} updateRow={updateRow} updateFlag={updateFlag} gridProps={gridProps} />}
+      {isBangerRacing && <BangerCells row={row} idx={idx} updateRow={updateRow} updateFlag={updateFlag} gridProps={gridProps} pickerProps={pickerProps} />}
       <div className="points-cell" style={{ textAlign: "center", fontWeight: 600 }}>{points}</div>
       <RemoveButton row={row} onRemove={onRemove} />
     </>
