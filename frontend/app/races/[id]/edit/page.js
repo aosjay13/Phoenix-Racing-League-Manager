@@ -302,9 +302,11 @@ function UnifiedEditInner() {
 
   // Bracket Style Racing: the ladder size for this event, saved on the race the
   // moment it's picked so the grid can re-lay itself out immediately (and so it
-  // is still right when the screen is reopened).
+  // is still right when the screen is reopened). 0 is "Standard racing" — no
+  // ladder — which is what makes an ordinary race in a bracket series possible,
+  // and what hands a race back to a normal 1..N order.
   const saveBracketSize = useCallback(async (size) => {
-    const updated = await api(`/api/races/${race.id}`, { method: "PATCH", body: { bracket_size: Number(size) } });
+    const updated = await api(`/api/races/${race.id}`, { method: "PATCH", body: { bracket_size: Number(size) || 0 } });
     setRace(r => ({ ...r, ...updated }));
   }, [race]);
 

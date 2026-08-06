@@ -461,6 +461,14 @@ ordinary finishes into tied positions and dropping the duplicate-position guard.
 inside an ordinary season enters its ladder on its own class-scoped grid — that is what per-class
 results are for.
 
+Two things have to be true before a grid becomes a ladder, and the second is the decisive one: the
+scope must be flagged (which only decides whether the **Race Format** dropdown is offered above the
+grid), *and* a ladder size must have been chosen for that specific race. Standard racing is that
+dropdown's first option and its default, so a bracket-racing league can still run an ordinary
+feature, and any race that became a bracket can be handed straight back to a 1..N order. Nothing is
+inferred — not from the field size, not from the series flag — so no race can silently turn into a
+ladder.
+
 The ladder size lives on the **race** (`races.bracket_size`), not the season, because a league can
 run an 8-car bracket one week and a 16 the next. The dropdown above the results grid saves it
 immediately and the grid re-lays itself out from it — an 8 becoming a 16 turns the four 4th places

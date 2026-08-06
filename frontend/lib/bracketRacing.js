@@ -56,8 +56,15 @@ function aBracketOf(size) {
 }
 
 // A stored bracket size, coerced to one of the offered sizes. Anything else
-// (unset, a legacy race, a hand-edited doc) reads as null — "no bracket", which
-// is what makes every ordinary race behave exactly as it always did.
+// (unset, 0 = "Standard racing", a legacy race, a hand-edited doc) reads as
+// null — "no bracket", which is what makes every ordinary race behave exactly
+// as it always did.
+//
+// This is the SECOND half of the switch, and the decisive one. isBracketScope
+// only decides whether an admin is OFFERED the ladder dropdown; a race is a
+// bracket solely because a size was chosen for it. Nothing is inferred from a
+// field size or from the series flag, so a bracket-racing league can still run
+// an ordinary feature, and no race can silently become a ladder.
 export function normalizeBracketSize(size) {
   const n = Number(size);
   return BRACKET_SIZES.includes(n) ? n : null;
