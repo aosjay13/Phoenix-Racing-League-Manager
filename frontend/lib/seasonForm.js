@@ -52,7 +52,9 @@ export function seasonToForm(season = {}) {
     per_class_schedules: !!season.per_class_schedules,
     per_class_results: !!season.per_class_results,
     isBangerRacing: !!season.isBangerRacing,
-    banger_mode: season.banger_mode || (season.isBangerRacing ? "on" : ""),
+    // "off" predates the strict visibility rule and reads the same as the
+    // default now — an ordinary racing season.
+    banger_mode: season.isBangerRacing ? "on" : (season.banger_mode === "on" ? "on" : ""),
     bonuses: Object.fromEntries(ALL_BONUS_TYPES.map(([k]) => [k, String(bonusSrc[k] ?? 0)])),
   };
 }

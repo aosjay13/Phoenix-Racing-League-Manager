@@ -11,7 +11,7 @@ import { RaceLengthField } from "@/components/RaceLengthField";
 import { LENGTH_LAPS, LENGTH_TIME } from "@/lib/raceLength";
 import { normalizedBuiltinTemplates } from "@/lib/pointsTemplates";
 import { carForRace, racePerClassResults, sessionClassScopes } from "@/lib/classFilter";
-import { derbyPointsTarget, isBangerScope } from "@/lib/bangerRacing";
+import { bangerEntryScope, derbyPointsTarget } from "@/lib/bangerRacing";
 import { api } from "@/lib/api";
 
 const BLANK_INFO = {
@@ -315,7 +315,13 @@ function UnifiedEditInner() {
     // entered; on a combined grid it's the season's field as a whole, so a
     // season with one Banger class shows the derby columns on the shared grid
     // it enters that class in. See lib/bangerRacing.js.
-    isBangerRacing: isBangerScope({
+    // The ENTRY rule, not the view rule: the grid offers the derby inputs
+    // whenever anything in this event's field races derby — the class being
+    // entered on a split event, or any class of the season on a shared one —
+    // so the derby class in an ordinary season can still have its takedowns
+    // recorded. Where those stats are SHOWN is decided separately, and much
+    // more strictly. See lib/bangerRacing.js.
+    isBangerRacing: bangerEntryScope({
       series,
       season,
       cls: perClassResults ? classes.find(c => c.id === scope) || null : null,

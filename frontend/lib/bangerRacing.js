@@ -74,24 +74,19 @@ export const BANGER_STATS = [
 // flagged series means every season and class in it; a flagged season means
 // every class in it; a flagged class means that class alone.
 //
-// A season also gets a say in the other direction. By default a season whose
-// FIELD contains a derby class reads as derby itself — its combined standings
-// show the derby stats, and its results grids capture them, because part of
-// that field races derby. A season that runs one Banger class alongside
-// ordinary racing usually doesn't want that: the season is a racing season, and
-// only the Banger class is a derby. `banger_mode: "off"` says exactly that —
-// the season is not a derby, whatever its classes do — while a class flagged as
-// derby stays a derby in its own right, with its own stats, its own rates and
-// its own championship. See BANGER_MODES below.
+// A season can also say so itself, for a one-off derby year inside an ordinary
+// series. What a scope CONTAINS never makes it a derby: a racing series with a
+// Banger class in one of its seasons is still a racing series, and its overall
+// standings must not carry takedown columns.
 
 // A season's own answer to "is this a derby season?".
-//   ""    follow the classes (the default, and how it behaved before)
-//   "on"  yes, the whole season — same as ticking isBangerRacing
-//   "off" no, not even if one of its classes is
+//   ""    no (the default)
+//   "on"  yes, the whole season
+//   "off" no — kept as a distinct value because it used to override an
+//         inference that no longer exists; it reads the same as the default.
 export const BANGER_MODES = [
-  ["", "Follow the classes (default)"],
+  ["", "No — an ordinary racing season"],
   ["on", "Yes — the whole season is Demo Derby / Banger Racing"],
-  ["off", "No — a racing season, even if one of its classes is a derby"],
 ];
 
 // Does this one doc (a series, a season or a class) carry the flag?
@@ -99,33 +94,48 @@ export function isBangerDoc(doc) {
   return !!(doc && doc.isBangerRacing);
 }
 
-// Has this season explicitly opted out of being a derby season?
+// Has this season explicitly said it is NOT a derby season?
 export function bangerOptOut(season) {
   return String(season?.banger_mode || "") === "off";
 }
 
-// Is the scope being viewed (or entered) a Demo Derby / Banger Racing context?
-// This is the single check every visibility guard runs.
+// ── Where the derby stats may be SEEN ──────────────────────────────────────
 //
-//   • Any of series / season / cls flagged → yes, for the reasons above.
-//   • No single class picked, but the field being shown CONTAINS a banger class
-//     → yes: part of that table races derby, so its stats belong on it.
-//   • Nothing flagged → no. Callers pass no series at all above series level
-//     ("All Series", a Game view, the league-wide Overall), so those scopes can
-//     never answer yes — which is the isolation rule.
-export function isBangerScope({ series = null, season = null, cls = null, classes = [] } = {}) {
-  // A class flagged as a derby is one wherever you look at it — that's the
-  // whole point of flagging the class rather than the season, and a season
-  // opting out below must not take it away.
+// The visibility rule, and the only one the Standings and Stats columns follow:
+// the scope being viewed must ITSELF be labelled Demo Derby / Banger Racing —
+// the class you picked, or the season, or the series it sits in. Nothing is
+// inferred from what a scope contains, so:
+//
+//   • the league-wide Overall and any Game view: never — no series is in scope;
+//   • a series that isn't labelled: never, however many derby classes or
+//     seasons are inside it;
+//   • a season that isn't labelled: never, even when one of its classes is a
+//     derby — that class's own standings are where those stats belong;
+//   • a class that isn't labelled: never, even inside a season that runs one.
+//
+// A labelled series or season does cover the levels BELOW it — that's what
+// labelling the higher level means — so a class inside a derby series shows the
+// derby stats without needing its own label.
+export function isBangerScope({ series = null, season = null, cls = null } = {}) {
   if (isBangerDoc(cls)) return true;
-  // The season's explicit "no" wins over everything above it and over its own
-  // classes: this season is a racing season.
   if (bangerOptOut(season)) return false;
-  if (isBangerDoc(series) || isBangerDoc(season)) return true;
-  // A class that isn't flagged, under a season that isn't either.
+  return isBangerDoc(season) || isBangerDoc(series);
+}
+
+// ── Where the derby stats may be ENTERED and CONFIGURED ────────────────────
+//
+// Deliberately wider than the view rule above. A results grid has to offer the
+// derby inputs whenever ANY class in the event's field races derby — otherwise
+// the one Banger class in an ordinary season could never have its takedowns
+// recorded — and the points editors have to offer the derby rates wherever
+// those results will be scored. None of that puts a column on a table: the
+// stats are stored for everyone and shown only where isBangerScope says yes.
+export function bangerEntryScope({ series = null, season = null, cls = null, classes = [] } = {}) {
+  if (isBangerScope({ series, season, cls })) return true;
+  // A specific class that isn't a derby, under a season/series that isn't one.
   if (cls) return false;
-  // No single class picked: the season reads as derby when its field contains
-  // one — unless it has opted out above.
+  // Otherwise: does anything in this field race derby? (An opted-out season
+  // still has to be able to enter its derby class's stats.)
   return Array.isArray(classes) && classes.some(isBangerDoc);
 }
 

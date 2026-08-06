@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ImageUpload } from "@/components/ImageUpload";
 import { PointsFields } from "@/components/PointsFields";
 import { scoresNoPoints } from "@/lib/seasonForm";
-import { BANGER_MODES, isBangerScope } from "@/lib/bangerRacing";
+import { BANGER_MODES, bangerEntryScope } from "@/lib/bangerRacing";
 
 // Every season field, in one place. Rendered identically by League Setup's
 // Seasons panel and by the Schedule page's "+ New Season" dialog, so the two
@@ -28,7 +28,7 @@ export function SeasonForm({
   const seriesBanger = banger;
   // Which derby bonus values to offer below: the season's own answer wins, so a
   // season set to "No" doesn't carry derby rates it will never pay.
-  const bangerOn = isBangerScope({
+  const bangerOn = bangerEntryScope({
     series: seriesBanger ? { isBangerRacing: true } : null,
     season: { isBangerRacing: !!value.isBangerRacing, banger_mode: value.banger_mode },
     classes: classesAreBanger ? [{ isBangerRacing: true }] : [],
@@ -122,17 +122,14 @@ export function SeasonForm({
         </select>
         <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
           {value.banger_mode === "on" ? (
-            <>Every event in this season records Takedowns, the Survival Bonus and the Most Lethal
-              Bonus, and the points below gain a value for each.</>
-          ) : value.banger_mode === "off" ? (
-            <><strong>{value.name || "This season"} is a racing season.</strong> A class flagged as a
-              derby is still a derby — it keeps its own derby stats, rates and championship — but the
-              season itself doesn&rsquo;t: no derby columns on its combined standings, and none on the
-              points below{seriesBanger ? ", even though its series is flagged" : ""}.</>
+            <>This season&rsquo;s standings and stats carry Takedowns, Survival and Most Lethal, and every
+              event in it records them.</>
           ) : (
-            <>Default: the season is a derby when one of its classes is
-              {seriesBanger ? ", and this series is flagged, so it is" : ""}. Pick{" "}
-              <em>No</em> to keep the season itself a racing season while a class runs the derby.</>
+            <><strong>{value.name || "This season"} is a racing season</strong>
+              {seriesBanger && " — but its series is labelled Demo Derby / Banger Racing, which covers every season in it"}.
+              A class labelled as a derby is still a derby: it keeps its own derby stats, rates and
+              championship, and its results can still be entered here. The season&rsquo;s own standings
+              stay clean.</>
           )}
         </span>
       </div>

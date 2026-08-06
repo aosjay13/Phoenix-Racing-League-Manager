@@ -360,11 +360,18 @@ it to inherit). This is what stops a class ticked purely to carry a takedown rat
 drivers' finishing points, and an all-zero scale on an existing class doc is read as "inherit" for the
 same reason.
 
-A season has a **three-way** say of its own — *Follow the classes* (the default), *Yes — the whole
-season*, or *No — a racing season even if one of its classes is a derby*. That last one is what a
-league running a single Banger class alongside ordinary racing needs: the class keeps its derby
-stats, rates and championship, while the season itself stays a racing season — no derby columns on
-its combined standings, and no derby values in its points.
+**Visibility is strict, and nothing is inferred from what a scope contains.** The derby stats appear
+only where the scope being *viewed* is itself labelled Demo Derby / Banger Racing — the class you
+picked, the season, or the series it sits in. So a racing series with a Banger class inside it shows
+no derby columns on the series' standings, none on its seasons' combined standings, and none on its
+other classes: only that class's own championship carries them. The league-wide Overall and any Game
+view never do, at all. A labelled series or season covers the levels beneath it, since that is what
+labelling the higher level means.
+
+Entering them is deliberately wider than seeing them: a results grid offers the derby inputs whenever
+*anything* in the event's field races derby, so the one Banger class in an ordinary season can still
+have its takedowns recorded, and the points editors offer the derby rates wherever those results will
+be scored. Storing a stat is not the same as putting a column on a table.
 
 **Demo Derby / Banger Racing** is one boolean, settable at three levels: `series.isBangerRacing`,
 `seasons.isBangerRacing` and `classes.isBangerRacing`. They add up rather than override — derby is

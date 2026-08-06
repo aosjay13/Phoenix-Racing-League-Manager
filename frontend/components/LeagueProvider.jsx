@@ -291,11 +291,14 @@ export function LeagueProvider({ children }) {
     // Banger class included, since part of that table races derby. Forced false
     // above series level, which is what keeps the derby stats out of the
     // Overall and per-Game views. See lib/bangerRacing.js.
+    // Strictly the scope being VIEWED: a labelled class, season or series and
+    // nothing else. Never inferred from what a scope contains, so a racing
+    // series with a derby class inside it shows no derby columns anywhere
+    // except on that class. Forced false above series level.
     isBangerRacing: !!seriesId && isBangerScope({
       series: seriesList.find(s => s.id === seriesId) || null,
       season,
       cls: raceClass,
-      classes,
     }),
     loading,
     refresh,

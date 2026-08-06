@@ -22,7 +22,7 @@ import { BLANK_SEASON_FORM, scoresNoPoints, seasonFormToBody, seasonToForm } fro
 import { BLANK_SERIES_FORM, seriesFormToBody, seriesToForm } from "@/lib/seriesForm";
 import { BLANK_CLASS_FORM, classFormToBody, classToForm, seasonPointsAsClassFields } from "@/lib/classForm";
 import { classScoresOwnPoints, definesPoints } from "@/lib/standings";
-import { isBangerDoc, isBangerScope } from "@/lib/bangerRacing";
+import { bangerEntryScope, isBangerDoc } from "@/lib/bangerRacing";
 
 function Panel({ title, sub, step, muted, children }) {
   return (
@@ -231,8 +231,10 @@ function AdminInner() {
   // values: "off" keeps a racing season clean even when one of its classes is a
   // derby (see isBangerScope). The class's own flag is unaffected — a derby
   // class always gets its derby rates.
-  const bangerSeasonScope = isBangerScope({ series, season, classes });
-  const classBanger = isBangerScope({ series, season, cls: { isBangerRacing: !!classForm.isBangerRacing } })
+  // Points editors offer the derby rates wherever derby results will be scored
+  // (the entry rule) — that's configuration, not a stats table.
+  const bangerSeasonScope = bangerEntryScope({ series, season, classes });
+  const classBanger = bangerEntryScope({ series, season, cls: { isBangerRacing: !!classForm.isBangerRacing } })
     || !!classForm.isBangerRacing;
 
   // Whether this season lets each class run its own calendar. Gates the Class
@@ -610,7 +612,7 @@ function AdminInner() {
                 {showClassPoints && (
                   <PointsFields value={classForm} onPatch={patchClassForm} templates={templates}
                     onTemplatesChanged={loadTemplates} disabled={!seasonId} onError={msg => showToast("error", msg)}
-                    noPoints={false} inherits banger={bangerSeason || !!classForm.isBangerRacing} />
+                    noPoints={false} inherits banger={classBanger} />
                 )}
               </>
             )}
