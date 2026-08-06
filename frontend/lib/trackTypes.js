@@ -9,10 +9,12 @@ export const TRACK_TYPES = [
   "Oval",
   "Superspeedway",
   "Short Track",
+  "Figure 8",
   "Road Course",
   "Street Circuit",
   "Dirt Oval",
   "Dirt Road Course",
   "Rallycross",
   "Kart",
+  "Demo Derby Arena",
 ];

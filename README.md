@@ -636,7 +636,8 @@ date everyone sees, in every timezone.
 
 **Track types** come from the shared list in `lib/trackTypes.js`, which drives the creation/edit
 forms, the Tracks directory's type filter, and its section grouping. Dirt racing is split by surface
-into `Dirt Oval` and `Dirt Road Course`. A track saved with a value outside the list still displays
+into `Dirt Oval` and `Dirt Road Course`, and non-circuit venues have their own entries (`Figure 8`,
+`Demo Derby Arena`). A track saved with a value outside the list still displays
 and stays selectable while editing, so nothing has to be in the list to survive.
 
 **Containment migration:** existing data created before the multi-league layer is safely
