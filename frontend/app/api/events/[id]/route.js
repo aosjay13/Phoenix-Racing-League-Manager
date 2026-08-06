@@ -6,6 +6,7 @@ import { fetchDriverNames } from "@/lib/driverNamesServer";
 import { fetchSeasonClasses, classOfResult, racePerClassResults } from "@/lib/classServer";
 import { fetchSeriesForSeason } from "@/lib/seriesServer";
 import { isBracketDoc, isBracketEvent } from "@/lib/bracketRacing";
+import { isBangerDoc, isBangerEvent } from "@/lib/bangerRacing";
 
 // Full detail for one event: a dedicated qualifying session plus every race
 // session (including heat/consolation/feature sessions for heat-format
@@ -78,20 +79,39 @@ export async function GET(request, { params }) {
     const label = r.session || declared[0];
     if (!names.includes(label)) names.push(label);
   }
-  const races = names.map(name => ({
-    name,
-    results: raceResults
-      .filter(r => (r.session || declared[0]) === name)
-      .map(r => {
-        // Start = the driver's own saved start_pos, else their qualifying
-        // finishing position — their OWN class's Qualifying at a split event,
-        // which is what scorer.qualPosFor resolves.
-        const qp = scorer.qualPosFor(r);
-        const start = r.start_pos != null ? Number(r.start_pos) : qp;
-        return { ...joinEntry(r), start_pos: start, points: scorer.points(r) };
-      })
-      .sort((a, b) => a.finish_pos - b.finish_pos),
-  })).filter(s => s.results.length || names.length === 1);
+  // The bonus values in force for one session, keyed by the class each result
+  // counts toward ("" for an unclassed result) — the same resolved structure
+  // scorer.points() paid the row from, so the viewer's "1 Bonus Point for a Lap
+  // Led" header can never disagree with the points column beneath it. Only the
+  // classes that actually raced the session appear, and a session nobody raced
+  // resolves to an empty map.
+  const sessionBonuses = rows => {
+    const out = {};
+    for (const r of rows) {
+      const classId = classOfResult(r, entriesById) || "";
+      if (classId in out) continue;
+      out[classId] = configFor(r).bonuses;
+    }
+    return out;
+  };
+
+  const races = names.map(name => {
+    const rows = raceResults.filter(r => (r.session || declared[0]) === name);
+    return {
+      name,
+      bonuses: sessionBonuses(rows),
+      results: rows
+        .map(r => {
+          // Start = the driver's own saved start_pos, else their qualifying
+          // finishing position — their OWN class's Qualifying at a split event,
+          // which is what scorer.qualPosFor resolves.
+          const qp = scorer.qualPosFor(r);
+          const start = r.start_pos != null ? Number(r.start_pos) : qp;
+          return { ...joinEntry(r), start_pos: start, points: scorer.points(r) };
+        })
+        .sort((a, b) => a.finish_pos - b.finish_pos),
+    };
+  }).filter(s => s.results.length || names.length === 1);
 
   // Qualifying is the only source of starting position — there's no fallback
   // to anything recorded on a race result.
@@ -135,6 +155,13 @@ export async function GET(request, { params }) {
     // an otherwise ordinary season still labels its ladder.
     is_bracket_racing: isBracketEvent({ series, season, race: event, classes }),
     bracket_classes: classes.filter(isBracketDoc).map(c => c.id),
+    // Demo Derby / Banger Racing, resolved the same way — it decides whether the
+    // results table carries the takedown / survival / most-lethal columns the
+    // admin grid collects, and whether those rates appear in the bonus header.
+    // `banger_classes` covers a derby class inside an otherwise ordinary season,
+    // whose own class-scoped view should still show them.
+    is_banger_racing: isBangerEvent({ series, season, race: event, classes }),
+    banger_classes: classes.filter(isBangerDoc).map(c => c.id),
     races,
     qualifying,
   });

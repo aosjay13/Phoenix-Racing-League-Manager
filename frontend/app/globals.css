@@ -1583,6 +1583,52 @@ tbody tr:hover {
   white-space: nowrap;
 }
 
+/* ── Bonus points panel (public race results) ──────────────────────────────
+   Sits above the results table and names every bonus the viewed session pays,
+   so a total that is more than the finishing position can be read rather than
+   guessed at. Each chip has a matching ticked column in the table below. */
+.bonus-panel {
+  margin-top: 16px;
+  margin-bottom: 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-gold, #e2b714);
+  border-radius: var(--radius-card, 12px);
+  background: var(--card);
+}
+
+.bonus-panel-title {
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.bonus-panel-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.bonus-chip {
+  padding: 3px 11px;
+  border-radius: 999px;
+  border: 1px solid rgba(244, 162, 40, 0.35);
+  background: rgba(244, 162, 40, 0.12);
+  color: var(--accent-gold, #e2b714);
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.bonus-panel-note {
+  margin: 10px 0 0;
+  color: var(--ink-2);
+  font-size: 0.78rem;
+}
+
 /* ── Backup & Restore (League Setup ▸ Data & Recovery) ─────────────────────
    The import half is bordered in red on purpose: it is the one control on the
    admin screen that can delete live data, and it should never be mistaken for

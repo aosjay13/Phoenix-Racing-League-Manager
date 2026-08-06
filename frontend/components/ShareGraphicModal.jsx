@@ -20,9 +20,9 @@ import { createPortal } from "react-dom";
 //   kind          – short label used in the filename + default title ("Standings")
 //   defaultTitle  – pre-filled headline (editable by the user)
 //   subtitle      – muted meta line under the title (series · season · date …)
-//   columns       – [{ key?, label, align?, locked? }]  (align: "left"|"center"|"right")
+//   columns       – [{ key?, label, align?, locked?, off? }]  (align: "left"|"center"|"right")
 //                   every column starts ticked in "Displayed Stats"; locked ones
-//                   can't be switched off at all.
+//                   can't be switched off at all, and `off` ones start unticked.
 //   rows          – [{ cells: (string|number)[], rank? }]  cells.length === columns.length
 //                   rank (1..3) tints the row's leading cell gold/silver/bronze.
 //   logos         – [{ label, url }] logos the user can drop into the header.
@@ -70,8 +70,14 @@ const colKey = (c, i) => c.key ?? `${c.label}-${i}`;
 // Every column a screen offers starts ticked — the graphic opens showing all
 // of the data, and anything unwanted is one click away in "Displayed Stats".
 // (The table scales its type down as columns are added, see tableScale.)
-function defaultHidden() {
-  return new Set();
+//
+// The one exception is a column marked `off`: it is offered in the picker but
+// starts unticked. That's for the detail columns a screen carries for
+// completeness (the per-driver bonus ticks on a results table, say) which would
+// otherwise squeeze an ordinary results graphic into a dozen extra hairlines
+// nobody asked for. One click still puts any of them on.
+function defaultHidden(columns = []) {
+  return new Set(columns.map((c, i) => (c.off ? colKey(c, i) : null)).filter(Boolean));
 }
 
 // The graphic is a fixed 1080px wide, so the more columns are on, the less room
@@ -128,9 +134,10 @@ export function ShareGraphicModal({
   const [leagueLogo, setLeagueLogo] = useState("");
   const [uploadedLeagueLogo, setUploadedLeagueLogo] = useState(null);
   const [limit, setLimit] = useState(() => (rows.length > 15 ? 15 : rows.length || 15));
-  // Column keys the user has switched OFF. Starts empty: the graphic opens with
-  // every stat the screen offers already on it.
-  const [hidden, setHidden] = useState(() => defaultHidden());
+  // Column keys the user has switched OFF. Seeded from the column list: the
+  // graphic opens with every stat the screen offers already on it, bar any the
+  // screen marked `off` (see defaultHidden).
+  const [hidden, setHidden] = useState(() => defaultHidden(columns));
   const [pickerOpen, setPickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -147,7 +154,7 @@ export function ShareGraphicModal({
       setLogoIdx(-1);
       setLeague(leagueName);
       setLeagueLogo("");
-      setHidden(defaultHidden());
+      setHidden(defaultHidden(columns));
       setPickerOpen(false);
       setError(null);
     }

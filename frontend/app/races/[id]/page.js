@@ -13,6 +13,8 @@ import { raceLengthLabel } from "@/lib/raceLength";
 import { gapColumns, formatDelta, parseTime, parseLapsDown } from "@/lib/raceTime";
 import { carForRace, carsByClassForRace, classIdForScope, sessionClassScopes, soleCarForRace } from "@/lib/classFilter";
 import { bracketRoundFor, bracketSizeLabel, normalizeBracketSize } from "@/lib/bracketRacing";
+import { BANGER_STATS } from "@/lib/bangerRacing";
+import { bonusLineText, flagColumnsFor, groupBonusPanels } from "@/lib/raceBonuses";
 import { readParam, setParam } from "@/lib/scopeLink";
 import { api } from "@/lib/api";
 
@@ -55,6 +57,16 @@ function raceTimesInOrder(rows) {
     const behind = parseTime(r.interval);
     return behind != null && leader != null ? leader + behind : null;
   });
+}
+
+// A ticked achievement (Best Lap, Most Laps Led, Led a Lap, …) on a results
+// row. Every one of these is a box an admin ticks on the results grid; this is
+// the public read of it, so a driver's bonus points can be traced to the thing
+// they earned them for.
+function CheckCell({ on, title }) {
+  return on
+    ? <span title={title} style={{ color: "var(--accent-gold)", fontWeight: 700 }}>✓</span>
+    : <span style={{ color: "var(--ink-2)" }}>—</span>;
 }
 
 // Coloured +/- SR change a driver earned in this race.
@@ -198,6 +210,41 @@ export default function EventResultsPage() {
   const bracketSize = bracketHere ? (normalizeBracketSize(event.bracket_size) ?? impliedBracketSize) : null;
   const sof = event.strength_of_field;
 
+  // ── Bonuses, and the achievements that earn them ─────────────────────────
+  //
+  // Demo Derby / Banger Racing: whether the takedown / survival / most-lethal
+  // stats belong on this table at all. A flagged event covers every class in
+  // it; a class flagged on its own answers for its own class-scoped view.
+  const bangerHere = !!data.is_banger_racing
+    || (!!activeClass && (data.banger_classes || []).includes(classIdForScope(activeClass.value)));
+  // The bonus values this session pays, per class — resolved server-side from
+  // the very same points structure each row was scored under.
+  const sessionBonuses = activeRace?.bonuses || {};
+  const activeClassId = activeClass ? classIdForScope(activeClass.value) : null;
+  const bonusEntries = activeClass
+    ? [[activeClassId, sessionBonuses[activeClassId]]]
+    : Object.entries(sessionBonuses);
+  const bonusPanels = groupBonusPanels(bonusEntries, {
+    banger: bangerHere,
+    classNameFor: id => eventClasses.find(c => c.id === id)?.name ?? null,
+  });
+  // Which achievement columns to print: the ones somebody in this session
+  // actually earned, plus any the session pays for (so a bonus named in the
+  // header always has a column under it). `bonusesHere` is the map to judge
+  // that by — one class's own on a split event, else anything the field pays.
+  const bonusesHere = activeClass
+    ? (sessionBonuses[activeClassId] ?? null)
+    : Object.values(sessionBonuses).reduce((acc, map) => {
+        // "Does anyone here pay for this?" — a class paying nothing must not
+        // cancel out the class next to it that does.
+        for (const [key, value] of Object.entries(map || {})) {
+          if (Number(value || 0) !== 0) acc[key] = value;
+        }
+        return acc;
+      }, {});
+  const flagCols = flagColumnsFor(finishers, bonusesHere);
+  const bangerCols = bangerHere ? BANGER_STATS : [];
+
   // Gap columns, worked out from the times on the results themselves — so every
   // session already in the database gets them without being re-entered.
   const qualRows = inClass(qualifying);
@@ -235,7 +282,17 @@ export default function EventResultsPage() {
         { key: "gap", label: "Gap", get: (r, i) => gapCell(raceGaps[i]?.gap) },
         { key: "best_lap", label: "Best Lap", get: r => r.fastest_lap_time || "—" },
         { key: "laps", label: "Laps", get: r => r.laps ?? "—" },
-        { key: "laps_led", label: "Led", get: r => r.laps_led ?? 0 },
+        { key: "laps_led", label: "Led", get: r => (Number(r.laps_led || 0) > 0 ? r.laps_led : "—") },
+        // The bonus ticks are offered but start unticked: a results graphic is
+        // usually wanted as the finishing order, and five more hairline columns
+        // by default would shrink the type for everybody. One click adds them.
+        ...flagCols.map(f => ({ key: f.key, label: f.header, off: true, get: r => (f.on(r) ? "✓" : "—") })),
+        ...bangerCols.map(s => ({
+          key: s.key,
+          label: s.header,
+          off: true,
+          get: r => (s.type === "bool" ? (r[s.key] ? "✓" : "—") : Number(r[s.key] || 0)),
+        })),
         { key: "incidents", label: "Inc", get: r => r.incidents ?? 0 },
         { key: "status", label: "Status", get: r => statusLabel(r.status) },
         { key: "points", label: "Pts", get: r => r.points },
@@ -437,6 +494,26 @@ export default function EventResultsPage() {
         </div>
       ) : activeRace && activeResults.length ? (
         <>
+        {/* Where the bonus points come from. Only the bonuses this session
+            actually pays are listed — a series that pays none shows nothing —
+            and each one has a ticked column in the table below naming the
+            drivers who earned it. */}
+        {bonusPanels.length > 0 && (
+          <div className="bonus-panel">
+            <div className="bonus-panel-title">Bonus Points in {scopedName}</div>
+            {bonusPanels.map(panel => (
+              <div key={panel.key} className="bonus-panel-row">
+                {panel.label && <span className="badge" title="These rates apply to this class">{panel.label}</span>}
+                {panel.lines.map(line => (
+                  <span key={line.key} className="bonus-chip">{bonusLineText(line)}</span>
+                ))}
+              </div>
+            ))}
+            <p className="bonus-panel-note">
+              Added to a driver&rsquo;s finishing points. Look for the ✓ in each driver&rsquo;s row below to see who earned what.
+            </p>
+          </div>
+        )}
         {showSr && sof != null && (
           <div className="hero" style={{ marginTop: 16, marginBottom: 4, display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
             <span style={{ fontSize: "0.78rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-2)" }}>
@@ -465,7 +542,13 @@ export default function EventResultsPage() {
                 <th>Race Time</th>
                 <th title="Gap to the winner">Int</th>
                 <th title="Gap to the car one position up">Gap</th>
-                <th>Best Lap</th><th>Laps</th><th>Led</th><th>Inc</th><th>Status</th><th>Points</th>
+                <th>Best Lap</th><th>Laps</th><th title="Laps led">Led</th>
+                {/* One tick per achievement an admin recorded — the same boxes
+                    the results grid collects, so the bonus points named above
+                    the table can be traced to the driver who earned them. */}
+                {flagCols.map(f => <th key={f.key} title={f.title}>{f.header}</th>)}
+                {bangerCols.map(s => <th key={s.key} title={s.title}>{s.header}</th>)}
+                <th>Inc</th><th>Status</th><th>Points</th>
                 {showSr && <th title="Skill Rating change from this race">SR ±</th>}
               </tr>
             </thead>
@@ -493,7 +576,21 @@ export default function EventResultsPage() {
                   <td style={{ color: "var(--ink-1)" }}>{gapCell(raceGaps[i]?.gap)}</td>
                   <td>{r.fastest_lap_time || "—"}</td>
                   <td>{r.laps ?? "—"}</td>
-                  <td>{r.laps_led ?? 0}</td>
+                  <td>
+                    {Number(r.laps_led || 0) > 0
+                      ? <strong style={{ color: "var(--accent-gold)" }}>{r.laps_led}</strong>
+                      : <span style={{ color: "var(--ink-2)" }}>—</span>}
+                  </td>
+                  {flagCols.map(f => (
+                    <td key={f.key}><CheckCell on={f.on(r)} title={f.name} /></td>
+                  ))}
+                  {bangerCols.map(s => (
+                    <td key={s.key}>
+                      {s.type === "bool"
+                        ? <CheckCell on={!!r[s.key]} title={s.name} />
+                        : (Number(r[s.key] || 0) || <span style={{ color: "var(--ink-2)" }}>—</span>)}
+                    </td>
+                  ))}
                   <td>{r.incidents ?? 0}</td>
                   <td>{statusLabel(r.status)}</td>
                   <td className="points-cell">{r.points}</td>
