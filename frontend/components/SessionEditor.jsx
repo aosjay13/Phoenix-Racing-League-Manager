@@ -324,9 +324,10 @@ const LABELS = { qualifying: "Qualifying", race: "Race", heat: "Heat", consolati
 // one (isBracketScope in lib/bracketRacing.js). Off — which is every ordinary
 // session, including one in a season that merely CONTAINS a bracket class — the
 // grid runs a strict 1..N finishing order and refuses to save two drivers in
-// the same position, exactly as it always did. With it on, the grid takes its
-// finishing positions from the elimination ladder instead, sized by the Bracket
-// Size dropdown above it (4, 8, 16 or 32 drivers). Several rows then
+// the same position, exactly as it always did. With it on, the session IS a
+// bracket — the grid takes its finishing positions from the elimination ladder,
+// sized by the Bracket Size dropdown above it (4, 8, 16 or 32 drivers; the
+// smallest ladder that holds the field until one is chosen). Several rows then
 // legitimately share a position — two 3rd places for the semi-final losers,
 // four 4ths for the quarter-finals — which is the one thing an ordinary results
 // grid refuses to save. See lib/bracketRacing.js.
@@ -386,28 +387,27 @@ export function SessionEditor({
 
   // ── Bracket Style Racing ─────────────────────────────────────────────────
   //
-  // A race is a bracket ONLY when a ladder size has been chosen for that race.
-  // Nothing is assumed: an event with no size stored runs the ordinary 1, 2, 3,
-  // 4… order even in a bracket-flagged series, because a flag on the series says
-  // this league runs brackets — not that this particular race was one.
+  // The flag IS the format. When the series, season, or class being entered is
+  // flagged as Bracket Style Racing, this session is an elimination ladder —
+  // always. There is no "Standard racing" opt-out and no extra step: a race
+  // with no size stored yet simply takes the smallest ladder that holds its
+  // field, so the grid is a bracket from the first keystroke. The dropdown
+  // below only chooses HOW BIG the ladder is (saved per race, since a league
+  // can run an 8-car bracket one week and a 16 the next).
   //
-  // The flag therefore controls one thing: whether the Bracket Size dropdown is
-  // OFFERED. Choosing a size there turns this race into a ladder; choosing
-  // "Standard racing" clears it and hands the race back to the normal format.
-  // That is the escape hatch — without it, one flag switched on anywhere left
-  // every race in its scope a bracket with no way back.
+  // Everything unflagged is untouched: no flag anywhere in scope means
+  // `activeBracketSize` is null and the grid runs the ordinary strict 1..N
+  // order exactly as it always has.
   //
-  // `bracketLayout` is the flat list of finishing positions the chosen ladder
+  // `bracketLayout` is the flat list of finishing positions the ladder
   // produces — the grid's position column, and the thing that puts two drivers
   // on 3rd. Null (and every derived value empty) for an ordinary session.
   const activeBracketSize = useMemo(
-    () => (isBracketRacing ? normalizeBracketSize(bracketSize) : null),
-    [isBracketRacing, bracketSize]
+    () => (isBracketRacing
+      ? (normalizeBracketSize(bracketSize) ?? bracketSizeForField(entries.length))
+      : null),
+    [isBracketRacing, bracketSize, entries.length]
   );
-  // What the dropdown offers as a starting point when no size has been picked:
-  // the smallest ladder that would hold the field, so an admin turning this race
-  // into a bracket isn't presented with an empty 32 for eight drivers.
-  const suggestedBracketSize = bracketSizeForField(entries.length);
   // Qualifying is NOT a bracket. In drag racing it's the timed session that
   // seeds the ladder, so its positions run 1..N and stay unique — which is also
   // what keeps Poles and Average Start meaning what they always meant. Only the
@@ -1347,28 +1347,24 @@ export function SessionEditor({
           style={{ marginTop: 0, whiteSpace: "nowrap" }} onClick={() => setImportOpen(true)} disabled={!entries.length && !seasonId}>
           ⬆ Import Results
         </button>
-        {/* Bracket Style Racing: whether this race ran a ladder, and how big.
-            Standard racing is the first option and the default, so a race in a
-            bracket series can still be an ordinary race — and any race that has
-            become a bracket can always be handed back. Saved on the RACE,
-            because a league can run an 8-car bracket one week and a 16 the
-            next, and an ordinary feature the week after. */}
+        {/* Bracket Style Racing: this scope is flagged, so the race IS a
+            bracket — the only choice here is the ladder size. Saved on the
+            RACE, because a league can run an 8-car bracket one week and a 16
+            the next. There is deliberately no "Standard racing" option: the
+            flag on the series/season/class already said what format this is. */}
         {isBracketRacing && sessionType !== "qualifying" && (
           <div className="field" style={{ maxWidth: 260, margin: 0 }}>
-            <label htmlFor="bracket-size">Race Format</label>
+            <label htmlFor="bracket-size">Bracket Size</label>
             <select id="bracket-size" value={activeBracketSize ?? ""}
               disabled={!onBracketSizeChange}
-              onChange={e => Promise.resolve(onBracketSizeChange?.(Number(e.target.value) || 0))
+              onChange={e => Promise.resolve(onBracketSizeChange?.(Number(e.target.value)))
                 .catch(err => showToast("error", err.message))}>
-              <option value="">Standard racing — 1, 2, 3, 4…</option>
               {BRACKET_SIZES.map(size => (
                 <option key={size} value={size}>{bracketSizeLabel(size)}</option>
               ))}
             </select>
             <span style={{ fontSize: "0.75rem", color: "var(--ink-2)" }}>
-              {activeBracketSize
-                ? "Applies to this race. The grid below is laid out from it — pick Standard racing to hand it back to a normal 1..N finishing order."
-                : `This race runs a normal finishing order. Pick a ladder to enter it as a bracket instead (${suggestedBracketSize} would suit the ${entries.length} driver${entries.length === 1 ? "" : "s"} entered).`}
+              This is a Bracket Style Racing event, so results are entered as an elimination ladder. The grid below is laid out from the size chosen here.
             </span>
           </div>
         )}

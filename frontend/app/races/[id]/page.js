@@ -190,7 +190,12 @@ export default function EventResultsPage() {
   const bracketHere = activeClass
     ? (data.bracket_classes || []).includes(classIdForScope(activeClass.value))
     : !!data.is_bracket_racing;
-  const bracketSize = bracketHere ? normalizeBracketSize(event.bracket_size) : null;
+  // A flagged scope is a bracket even when no size was stored on the race: the
+  // deepest finishing position implies the ladder (positions run 1..log2(n)+1,
+  // so a grid whose last round is 4th came out of an 8-driver bracket).
+  const deepestPos = Math.max(0, ...finishers.map(r => Number(r.finish_pos) || 0));
+  const impliedBracketSize = deepestPos >= 2 ? normalizeBracketSize(2 ** (deepestPos - 1)) : null;
+  const bracketSize = bracketHere ? (normalizeBracketSize(event.bracket_size) ?? impliedBracketSize) : null;
   const sof = event.strength_of_field;
 
   // Gap columns, worked out from the times on the results themselves — so every
