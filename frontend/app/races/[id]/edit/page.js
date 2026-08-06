@@ -12,7 +12,7 @@ import { LENGTH_LAPS, raceLengthBody, raceLengthForm } from "@/lib/raceLength";
 import { normalizedBuiltinTemplates } from "@/lib/pointsTemplates";
 import { carForRace, racePerClassResults, sessionClassScopes } from "@/lib/classFilter";
 import { isBangerScope, derbyPointsTarget } from "@/lib/bangerRacing";
-import { isBracketScope } from "@/lib/bracketRacing";
+import { isBracketEvent, isBracketScope } from "@/lib/bracketRacing";
 import { api } from "@/lib/api";
 
 const BLANK_INFO = {
@@ -336,23 +336,23 @@ function UnifiedEditInner() {
     // Where a derby rate typed above the grid is saved, and how.
     derbyTarget,
     onDerbyPointsSave: saveDerbyPoints,
-    // Bracket Style Racing — flagged on the series or on a single class, and
-    // resolved by the STRICT scope rule: the thing being entered must itself
-    // carry the flag, which is the class on a split event and the season/series
-    // on a shared one. What a season CONTAINS never counts.
+    // Bracket Style Racing — selected on the series, the season, or a class,
+    // and honored wherever the flagged thing is what's being entered:
     //
-    // This is load-bearing. Anything else and one flagged drag-racing class
-    // turns every shared grid in its season into an elimination ladder —
-    // positions grouped as 1, 2, 3, 3, 4, 4, 4, 4 instead of running 1..N —
-    // which silently ties drivers who finished apart in an ordinary race. A
-    // bracket class in an ordinary season enters its ladder on its own
-    // class-scoped grid (turn on per-class results for the season or the
-    // event). See lib/bracketRacing.js.
-    isBracketRacing: isBracketScope({
-      series,
-      season,
-      cls: perClassResults ? classes.find(c => c.id === scope) || null : null,
-    }),
+    //   • split event: the class whose grid is open answers for itself;
+    //   • everything else: the EVENT rule (isBracketEvent) — flagged
+    //     series/season, a round pinned to a flagged class, or a season whose
+    //     classes all race brackets (including the one-class season). Any of
+    //     those makes this grid an elimination ladder, full stop.
+    //
+    // The one grid a flagged class does not convert is a shared combined grid
+    // it races alongside UNFLAGGED classes — regrouping that grid into rounds
+    // would tie drivers from the ordinary classes, which must never change.
+    // Split that event's results by class and the flagged class gets its
+    // ladder on its own grid. See lib/bracketRacing.js.
+    isBracketRacing: perClassResults
+      ? isBracketScope({ series, season, cls: classes.find(c => c.id === scope) || null })
+      : isBracketEvent({ series, season, race, classes }),
     // The ladder size this race ran, and how the dropdown above the grid saves
     // it. It lives on the RACE, so a league can run an 8-car bracket one week
     // and a 16 the next.

@@ -182,6 +182,30 @@ export function isBracketScope({ series = null, season = null, cls = null } = {}
   return isBracketDoc(cls) || isBracketDoc(season) || isBracketDoc(series);
 }
 
+// Does this EVENT race brackets? The one answer for a whole event (its combined
+// results grid and its results page), where isBracketScope answers for a single
+// per-class grid. An event is a bracket when Bracket Style Racing is selected
+// anywhere that covers it:
+//
+//   • the series or season carries the flag — every event in it; or
+//   • the event is pinned to one class (races.class_id, a "<class> only"
+//     round) and THAT class carries the flag; or
+//   • every class actually racing this shared event carries the flag — which
+//     is what makes a one-class season (or an all-bracket season) enter its
+//     combined grid as a ladder without any further setup.
+//
+// The only case a flagged class does NOT convert is a shared combined grid it
+// races alongside UNFLAGGED classes: one grid holds both fields, and regrouping
+// it into elimination rounds would tie drivers from the ordinary classes.
+// Split that event's results by class and the flagged class gets its ladder on
+// its own grid while the others keep 1..N.
+export function isBracketEvent({ series = null, season = null, race = null, classes = [] } = {}) {
+  if (isBracketScope({ series, season })) return true;
+  const pinned = race?.class_id || null;
+  if (pinned) return isBracketDoc(classes.find(c => c.id === pinned));
+  return classes.length > 0 && classes.every(isBracketDoc);
+}
+
 // ── Validation ─────────────────────────────────────────────────────────────
 //
 // What a bracket grid may NOT contain. Deliberately short: sharing a position

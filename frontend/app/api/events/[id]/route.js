@@ -5,7 +5,7 @@ import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
 import { fetchDriverNames } from "@/lib/driverNamesServer";
 import { fetchSeasonClasses, classOfResult, racePerClassResults } from "@/lib/classServer";
 import { fetchSeriesForSeason } from "@/lib/seriesServer";
-import { isBracketDoc, isBracketScope } from "@/lib/bracketRacing";
+import { isBracketDoc, isBracketEvent } from "@/lib/bracketRacing";
 
 // Full detail for one event: a dedicated qualifying session plus every race
 // session (including heat/consolation/feature sessions for heat-format
@@ -125,14 +125,15 @@ export async function GET(request, { params }) {
     // own pole, its own P1) rather than a single combined order.
     classes,
     per_class_results: racePerClassResults(event, season),
-    // Bracket Style Racing, resolved from THIS event's own season → series
-    // rather than from whatever the viewer has selected in the top bar. The
-    // results table prints the round a shared position came out of ("Semi-final
-    // losers"), and that must never appear on an ordinary race — a repeated
-    // position there is a data error, not a bracket. `bracket_classes` carries
-    // the ids of any class that races brackets on its own, so a class-scoped
-    // view of an otherwise ordinary season still labels its ladder.
-    is_bracket_racing: isBracketScope({ series, season }),
+    // Bracket Style Racing, resolved for THIS event by the event rule
+    // (isBracketEvent): a flagged series/season, a round pinned to a flagged
+    // class, or a season whose classes all race brackets. The results table
+    // prints the round a shared position came out of ("Semi-final losers"),
+    // and that must never appear on an ordinary race — a repeated position
+    // there is a data error, not a bracket. `bracket_classes` carries the ids
+    // of any class that races brackets on its own, so a class-scoped view of
+    // an otherwise ordinary season still labels its ladder.
+    is_bracket_racing: isBracketEvent({ series, season, race: event, classes }),
     bracket_classes: classes.filter(isBracketDoc).map(c => c.id),
     races,
     qualifying,
