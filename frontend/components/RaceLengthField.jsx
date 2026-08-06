@@ -1,34 +1,37 @@
 "use client";
 
-import { LENGTH_LAPS, LENGTH_TIME } from "@/lib/raceLength";
+import { LENGTH_LAPS, LENGTH_ROUNDS, LENGTH_TIME } from "@/lib/raceLength";
 
-// Race distance, entered one of two ways: a lap count for a race that runs a
-// set distance, or a duration for a race run to the clock. The toggle picks
-// which figure the event carries; only that figure's input is on screen, so an
-// event can never claim to be both 100 laps and 45 minutes.
+// Race distance, entered one of three ways: a lap count for a race that runs a
+// set distance, a duration for a race run to the clock, or a round count for an
+// event run off in rounds (derby heats, an elimination ladder). The toggle
+// picks which figure the event carries; only that figure's input is on screen,
+// so an event can never claim to be both 100 laps and 45 minutes.
 //
-// Controlled: the parent owns `length_type`, `total_laps` and `race_minutes`
-// and gets a patch object back. `idPrefix` keeps the radio inputs unique when
-// two of these end up on one page.
+// Controlled: the parent owns `length_type`, `total_laps`, `race_minutes` and
+// `total_rounds`, and gets a patch object back. `idPrefix` keeps the radio
+// inputs unique when two of these end up on one page.
 export function RaceLengthField({
-  lengthType = LENGTH_LAPS, totalLaps = "", raceMinutes = "",
+  lengthType = LENGTH_LAPS, totalLaps = "", raceMinutes = "", totalRounds = "",
   disabled = false, idPrefix = "race_length", onChange,
 }) {
-  const timed = lengthType === LENGTH_TIME;
-  const pick = type => () => { if (!disabled) onChange({ length_type: type }); };
+  const type = [LENGTH_TIME, LENGTH_ROUNDS].includes(lengthType) ? lengthType : LENGTH_LAPS;
+  const pick = t => () => { if (!disabled) onChange({ length_type: t }); };
+  const tab = (t, label) => (
+    <button type="button" id={`${idPrefix}_${t}`} disabled={disabled}
+      className={`tab${type === t ? " active" : ""}`} role="radio" aria-checked={type === t}
+      onClick={pick(t)}>{label}</button>
+  );
 
   return (
     <div className="field">
       <label>Race Length</label>
       <div className="tab-row" style={{ marginTop: 0 }} role="radiogroup" aria-label="Race length format">
-        <button type="button" id={`${idPrefix}_laps`} disabled={disabled}
-          className={`tab${timed ? "" : " active"}`} role="radio" aria-checked={!timed}
-          onClick={pick(LENGTH_LAPS)}>Laps</button>
-        <button type="button" id={`${idPrefix}_time`} disabled={disabled}
-          className={`tab${timed ? " active" : ""}`} role="radio" aria-checked={timed}
-          onClick={pick(LENGTH_TIME)}>Time</button>
+        {tab(LENGTH_LAPS, "Laps")}
+        {tab(LENGTH_TIME, "Time")}
+        {tab(LENGTH_ROUNDS, "Rounds")}
       </div>
-      {timed ? (
+      {type === LENGTH_TIME && (
         <>
           <input type="number" min="0" step="1" disabled={disabled} value={raceMinutes} placeholder="e.g. 45"
             aria-label="Race duration in minutes"
@@ -38,7 +41,20 @@ export function RaceLengthField({
             entered per driver on the results grid rather than counted down from a scheduled total.
           </span>
         </>
-      ) : (
+      )}
+      {type === LENGTH_ROUNDS && (
+        <>
+          <input type="number" min="0" step="1" disabled={disabled} value={totalRounds} placeholder="e.g. 6"
+            aria-label="Total rounds"
+            onChange={e => onChange({ total_rounds: e.target.value })} />
+          <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
+            Number of <strong>rounds</strong> the event is run off in — derby heats, or the rounds of an
+            elimination ladder. There&rsquo;s no scheduled lap distance, so laps completed are entered per
+            driver on the results grid rather than counted down from a total.
+          </span>
+        </>
+      )}
+      {type === LENGTH_LAPS && (
         <>
           <input type="number" min="0" step="1" disabled={disabled} value={totalLaps} placeholder="e.g. 100"
             aria-label="Total race laps"

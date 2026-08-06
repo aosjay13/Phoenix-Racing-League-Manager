@@ -315,10 +315,11 @@ export const SPECS = {
                        round_number: { number: true, required: true }, sessions: {},
                        // How this event's distance is measured: `length_type` is
                        // "laps" (the default, and what every pre-toggle race reads
-                       // as) or "time". A lap race carries `total_laps`; a timed
-                       // race carries `race_minutes` and runs to the clock. See
-                       // lib/raceLength.js.
-                       length_type: {}, total_laps: { number: true }, race_minutes: { number: true }, car: {},
+                       // as), "time" or "rounds". A lap race carries `total_laps`;
+                       // a timed race carries `race_minutes` and runs to the clock;
+                       // a rounds race carries `total_rounds`. See lib/raceLength.js.
+                       length_type: {}, total_laps: { number: true }, race_minutes: { number: true },
+                       total_rounds: { number: true }, car: {},
                        // Bracket Style Racing: how big the elimination ladder
                        // this event ran was — 4, 8, 16 or 32 drivers. It's what
                        // the results grid builds its finishing positions from

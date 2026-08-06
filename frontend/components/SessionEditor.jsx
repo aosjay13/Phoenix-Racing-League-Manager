@@ -14,7 +14,7 @@ import { applyAutoFlags, detectFlagLocks, autoMostLapsLedSlot } from "@/lib/auto
 import { BANGER_BOOL_FIELDS, BANGER_RESULT_FIELDS, BANGER_STATS, bangerRates, blankBangerRow, hasBangerBonuses } from "@/lib/bangerRacing";
 import { BRACKET_SIZES, bracketGridError, bracketPositionAt, bracketPositions, bracketRoundFor, bracketRounds, bracketSizeForField, bracketSizeLabel, normalizeBracketSize, ordinal } from "@/lib/bracketRacing";
 import { parseTime, formatTime, formatGap, formatDelta, parseDelta, parseLapsDown, deriveLaps } from "@/lib/raceTime";
-import { isTimedRace, scheduledLaps } from "@/lib/raceLength";
+import { isRoundsRace, isTimedRace, scheduledLaps, scheduledRounds } from "@/lib/raceLength";
 
 // Every field a saved result can restore into a grid row. The banger fields
 // (Takedowns, Survival, Most Lethal) are always in the list: they're stored on
@@ -1558,6 +1558,13 @@ export function SessionEditor({
         <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.78rem" }}>
           ⏱ This is a <strong>timed</strong> event, so there&rsquo;s no scheduled lap total to count down
           from — enter each driver&rsquo;s <strong>Laps</strong> yourself.
+        </p>
+      )}
+      {!isQual && isRoundsRace(race) && (
+        <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.78rem" }}>
+          🔁 This event is run in <strong>rounds</strong>
+          {scheduledRounds(race) ? ` (${scheduledRounds(race)})` : ""}, so there&rsquo;s no scheduled lap
+          total to count down from — enter each driver&rsquo;s <strong>Laps</strong> yourself.
         </p>
       )}
       <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.78rem" }}>

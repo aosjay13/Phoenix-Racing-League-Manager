@@ -1,6 +1,6 @@
 import { isQualifying } from "@/lib/standings";
 import { classIdSet, classOfResult } from "@/lib/classFilter";
-import { formatMinutes, isTimedRace, raceLengthType, scheduledLaps, scheduledMinutes } from "@/lib/raceLength";
+import { formatMinutes, formatRounds, isRoundsRace, isTimedRace, raceLengthType, scheduledLaps, scheduledMinutes, scheduledRounds } from "@/lib/raceLength";
 
 // Which single session decides "the winner" of an event: the Feature for
 // heat-format weekends, otherwise the last standard session in the event.
@@ -35,7 +35,8 @@ function personFromEntry(entry) {
 // A timed event (length_type "time") is billed by its clock instead: `laps`
 // still carries what the winner ran, but `length_label` — the text every
 // calendar prints in its Length column — reads "45 Min", and nothing is ever
-// flagged GWC because there was no scheduled distance to run past.
+// flagged GWC because there was no scheduled distance to run past. An event run
+// in rounds ("rounds") reads "6 Rounds" the same way, for the same reason.
 //
 // `classSelection` narrows the whole summary to one class: on an event whose
 // sessions are split by class, the Pro row of the schedule shows Pro's pole,
@@ -63,7 +64,9 @@ export function summarizeRace(race, results, entriesById, defaultCar = null, cla
   const winnerLaps = winnerRes && Number(winnerRes.laps) > 0 ? Number(winnerRes.laps) : null;
   const schedLaps = scheduledLaps(race);
   const timed = isTimedRace(race);
+  const rounds = isRoundsRace(race);
   const schedMinutes = scheduledMinutes(race);
+  const schedRounds = scheduledRounds(race);
   const laps = winnerLaps ?? schedLaps;
 
   return {
@@ -74,15 +77,19 @@ export function summarizeRace(race, results, entriesById, defaultCar = null, cla
     scheduled_laps: schedLaps,
     // A timed race has no scheduled lap count to run past, so it can't be
     // "extended" — GWC only ever applies to a race scheduled for a distance.
-    laps_extended: !timed && winnerLaps != null && schedLaps != null && winnerLaps > schedLaps,
+    laps_extended: !timed && !rounds && winnerLaps != null && schedLaps != null && winnerLaps > schedLaps,
     // How this event's distance is measured, and the text to print for it: a
-    // timed race is billed by its clock ("45 Min") with the winner's lap count
-    // as the secondary figure, a lap race by its distance ("100 Laps").
+    // timed race is billed by its clock ("45 Min") and a rounds race by its
+    // round count ("6 Rounds"), each with the winner's lap count as the
+    // secondary figure; a lap race by its distance ("100 Laps").
     length_type: raceLengthType(race),
     scheduled_minutes: schedMinutes,
+    scheduled_rounds: schedRounds,
     length_label: timed
       ? (formatMinutes(schedMinutes) ?? (laps ? `${laps} Laps` : null))
-      : (laps ? `${laps} Laps` : null),
+      : rounds
+        ? (formatRounds(schedRounds) ?? (laps ? `${laps} Laps` : null))
+        : (laps ? `${laps} Laps` : null),
     num_drivers: new Set(finalResults.map(r => r.entry_id)).size,
     winner: personFromEntry(winnerRes && entriesById[winnerRes.entry_id]),
     pole: personFromEntry(poleRes && entriesById[poleRes.entry_id]),

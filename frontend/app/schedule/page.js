@@ -13,7 +13,7 @@ import { leagueLogos, specToGraphicTable } from "@/lib/shareGraphic";
 import { api } from "@/lib/api";
 import { formatRaceDate, isPastRaceDate, raceDateSortKey } from "@/lib/raceDate";
 import { racePerClassResults } from "@/lib/classFilter";
-import { LENGTH_TIME } from "@/lib/raceLength";
+import { lapsAreSecondary } from "@/lib/raceLength";
 
 // A driver cell that links to the profile when we can resolve one, else plain
 // text. Falls back to an em-dash for events with no recorded pole/winner yet.
@@ -83,10 +83,11 @@ function personText(summary, classSummaries, field) {
 }
 
 // A row's Length as flat text, for the share graphic: a timed event reads
-// "45 Min (78 laps)", a lap race "100 Laps".
+// "45 Min (78 laps)", one run in rounds "6 Rounds (12 laps)", a lap race
+// "100 Laps".
 function lengthText(summary) {
   if (!summary?.length_label) return "—";
-  if (summary.length_type === LENGTH_TIME && summary.laps) return `${summary.length_label} (${summary.laps} laps)`;
+  if (lapsAreSecondary(summary.length_type) && summary.laps) return `${summary.length_label} (${summary.laps} laps)`;
   return summary.length_label;
 }
 
@@ -513,9 +514,9 @@ function SeasonSchedule() {
                     )}
                     <td style={{ whiteSpace: "nowrap" }}>
                       {s.length_label || "—"}
-                      {s.length_type === LENGTH_TIME && !!s.laps && (
+                      {lapsAreSecondary(s.length_type) && !!s.laps && (
                         <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.72rem" }}
-                          title="Laps the winner completed before time expired">{s.laps} laps</span>
+                          title="Laps the winner completed">{s.laps} laps</span>
                       )}
                       {s.laps_extended && (
                         <span title={`Scheduled ${s.scheduled_laps} laps — extended by a green-white-checkered / overtime finish`}

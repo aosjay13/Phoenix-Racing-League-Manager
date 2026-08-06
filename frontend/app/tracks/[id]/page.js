@@ -6,7 +6,7 @@ import { useParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { formatStat } from "@/lib/standings";
 import { formatRaceDate } from "@/lib/raceDate";
-import { LENGTH_TIME } from "@/lib/raceLength";
+import { lapsAreSecondary } from "@/lib/raceLength";
 import { useLeague } from "@/components/LeagueProvider";
 
 // Links a pole/winner name to their driver profile when resolvable, else plain
@@ -292,9 +292,9 @@ export default function TrackProfilePage() {
                           <td style={{ whiteSpace: "nowrap" }}>{formatRaceDate(w.date, "short", "—")}</td>
                           <td style={{ whiteSpace: "nowrap" }}>
                             {w.length_label || "—"}
-                            {w.length_type === LENGTH_TIME && !!w.laps && (
+                            {lapsAreSecondary(w.length_type) && !!w.laps && (
                               <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.72rem" }}
-                                title="Laps the winner completed before time expired">{w.laps} laps</span>
+                                title="Laps the winner completed">{w.laps} laps</span>
                             )}
                             {w.laps_extended && (
                               <span title={`Scheduled ${w.scheduled_laps} laps — extended by a green-white-checkered / overtime finish`}
