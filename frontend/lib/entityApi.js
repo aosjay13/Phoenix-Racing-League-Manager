@@ -151,10 +151,18 @@ export const SPECS = {
   // once here and adjusts a season or a class where they genuinely differ.
   // Leaving them unset (the default) changes nothing: the season stays the top
   // of the chain, exactly as before series points existed.
+  // `isBracketRacing` flags the series as Bracket Style Racing (drag racing and
+  // other elimination-tournament formats — see lib/bracketRacing.js). It adds
+  // no stats and no bonuses: it changes only how a results grid is SHAPED, so
+  // the drivers knocked out in the same round share one finishing position
+  // (two 3rd places for the semi-final losers, four 4ths for the quarters).
+  // Those finishes are ordinary racing finishes and cascade into Wins, Top 5s,
+  // Average Finish and the Overall/Game views exactly like any other result.
   series:  { collection: "series", parentField: "game_id", sortField: "name",
              fields: { name: { required: true }, logo_url: {}, description: {},
                        race_points: {}, qual_points: {}, bonus_points: {},
-                       isBangerRacing: { bool: true, default: false } } },
+                       isBangerRacing: { bool: true, default: false },
+                       isBracketRacing: { bool: true, default: false } } },
   seasons: { collection: "seasons", parentField: "series_id", sortField: "created_at",
              // `car` is the free-text car/model this season races (e.g. "NASCAR
              // Next Gen", "GT3"). It's the season-wide default; a race can
@@ -221,9 +229,16 @@ export const SPECS = {
   // this class's results capture takedowns/survival/most-lethal, and only its
   // standings show them. A flagged series or season already covers every class
   // under it — see lib/bangerRacing.js.
+  //
+  // `isBracketRacing` makes THIS class a Bracket Style Racing class — a drag
+  // racing class running its elimination ladder alongside the season's ordinary
+  // racing classes. Only its results grid takes the bracket layout (and the
+  // tied finishing positions that come with it); a flagged series already
+  // covers every class under it. See lib/bracketRacing.js.
   classes: { collection: "classes", parentField: "season_id", sortField: "sort_order",
              fields: { name: { required: true }, color: {}, description: {}, car: {},
                        isBangerRacing: { bool: true, default: false },
+                       isBracketRacing: { bool: true, default: false },
                        race_points: {}, qual_points: {}, bonus_points: {},
                        sort_order: { number: true, default: 0 } } },
   teams:   { collection: "teams", parentField: "season_id", sortField: "name",
@@ -304,6 +319,15 @@ export const SPECS = {
                        // race carries `race_minutes` and runs to the clock. See
                        // lib/raceLength.js.
                        length_type: {}, total_laps: { number: true }, race_minutes: { number: true }, car: {},
+                       // Bracket Style Racing: how big the elimination ladder
+                       // this event ran was — 4, 8, 16 or 32 drivers. It's what
+                       // the results grid builds its finishing positions from
+                       // (an 8 gives 1, 2, 3, 3, 4, 4, 4, 4), so it's per RACE
+                       // rather than per season: a league can run an 8-car
+                       // bracket one week and a 16 the next. Unset on every
+                       // ordinary race, where the grid runs 1..N as always.
+                       // See lib/bracketRacing.js.
+                       bracket_size: { number: true },
                        // Heat-racing weekend structure: when heat_format is on, `heats` and
                        // `consolations` are ordered lists of session names (each addable/removable
                        // from the event screen) feeding into one Feature session. `session_points`

@@ -23,6 +23,10 @@ export const BLANK_CLASS_FORM = {
   // Banger class next to ordinary racing classes. A flagged series or season
   // already covers every class under it; see lib/bangerRacing.js.
   isBangerRacing: false,
+  // Bracket Style Racing for this class alone — how a season runs a drag-racing
+  // class next to ordinary racing ones. A flagged series already covers every
+  // class in it; see lib/bracketRacing.js.
+  isBracketRacing: false,
   own_points: false,
   race_points: "",
   qual_points: "",
@@ -59,6 +63,7 @@ export function classToForm(cls = {}) {
     car: cls.car || "",
     sort_order: cls.sort_order != null ? String(cls.sort_order) : "",
     isBangerRacing: !!cls.isBangerRacing,
+    isBracketRacing: !!cls.isBracketRacing,
     own_points: classScoresOwnPoints(cls) && (hasOwnScale(cls) || hasTraditionalBonus(cls)),
     race_points: tableToList(cls.race_points),
     qual_points: tableToList(cls.qual_points),
@@ -85,6 +90,7 @@ export function classFormToBody(form, fallbackSortOrder = 0, { banger = false } 
     car: form.car,
     sort_order: form.sort_order === "" ? fallbackSortOrder : Number(form.sort_order),
     isBangerRacing: !!form.isBangerRacing,
+    isBracketRacing: !!form.isBracketRacing,
     // Nulls (not omissions) so turning the override back off actually clears a
     // structure the class used to have, rather than leaving it in place.
     ...(form.own_points

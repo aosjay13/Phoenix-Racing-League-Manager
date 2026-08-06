@@ -19,6 +19,9 @@ export const BLANK_SERIES_FORM = {
   name: "",
   logo_url: "",
   isBangerRacing: false,
+  // Bracket Style Racing for every season and class in this series — see
+  // lib/bracketRacing.js.
+  isBracketRacing: false,
   race_points: "",
   qual_points: "",
   bonuses: Object.fromEntries(ALL_BONUS_TYPES.map(([k]) => [k, "0"])),
@@ -32,6 +35,7 @@ export function seriesToForm(series = {}) {
     name: series.name || "",
     logo_url: series.logo_url || "",
     isBangerRacing: !!series.isBangerRacing,
+    isBracketRacing: !!series.isBracketRacing,
     race_points: tableToList(series.race_points),
     qual_points: tableToList(series.qual_points),
     bonuses: Object.fromEntries(ALL_BONUS_TYPES.map(([k]) => [k, String(bonusSrc[k] ?? 0)])),

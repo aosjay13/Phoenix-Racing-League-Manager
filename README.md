@@ -38,6 +38,14 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   only: never in the Overall or per-Game views, where a takedown count means nothing. Flag a class
   and a season can run a Banger class alongside its ordinary racing ones — only that class's grid,
   points and championship carry the derby stats
+- 🏆 **Bracket Style Racing (drag racing / tournament brackets)** — flag a **series** or a single
+  **class** and its events are entered as an elimination ladder instead of a 1..N finishing order.
+  Pick the bracket size per race — **4**, **8**, **16** or **32** drivers — and the results grid lays
+  itself out from it, so everyone knocked out in the same round shares a finishing position: one
+  winner, one runner-up, **two** 3rd places (the semi-finals), **four** 4ths (the quarters), and so
+  on. Unlike Demo Derby these are ordinary racing finishes — a bracket 3rd is a straight **3** in
+  Average Finish, both 3rd-place drivers are paid identical points, and it all cascades into Wins,
+  Podiums, Top 5s and the Overall and per-Game stats like any other result
 - 🖼 **Social graphic exporter** — on Standings, Stats, Race Results, Skill Ratings, Records and the
   Schedule (a season's calendar, or the cross-season Upcoming / Recent Results feeds). League name
   + logo branding, a
@@ -421,8 +429,50 @@ column, the stored field, the bonus value, the scoring, the aggregated stat and 
 column) is generated from one list in `lib/bangerRacing.js`, so another derby bonus is one entry in
 that list and nothing else.
 
-`games (league_id)` → `series (game_id, isBangerRacing)` → `seasons (series_id, game_id, drop_weeks, points_scale,
-combined_championship)` → `races (season_id, sessions[])`, `classes (season_id, name, sort_order, race_points?)`
+**Bracket Style Racing** is the other non-standard format, and it is deliberately the *opposite*
+kind of feature to Demo Derby: it adds no stats, no bonuses and no columns. It changes exactly one
+thing — how a field is shaped into finishing positions.
+
+A bracket is an elimination tournament, so drivers knocked out in the same round finished level with
+each other; there is no way to separate the two semi-final losers, because they never raced. An
+8-driver bracket therefore has four finishing positions, not eight:
+
+| Position | Round | Drivers |
+| --- | --- | --- |
+| 1st | Winner | 1 |
+| 2nd | Runner-up (lost the final) | 1 |
+| 3rd | Semi-final losers | 2 |
+| 4th | Quarter-final losers | 4 |
+
+The flag is `series.isBracketRacing` and `classes.isBracketRacing`, resolved by `isBracketScope()` in
+`lib/bracketRacing.js` with the same "at or under a flagged level" rule the derby flag uses: a
+flagged series covers every season and class in it, and a flagged class covers itself alone — which
+is how a season runs a drag-racing class alongside its ordinary racing ones. Entering is wider than
+labelling, exactly as it is for derby: the results grid offers the bracket layout whenever *anything*
+in the event's field races brackets.
+
+The ladder size lives on the **race** (`races.bracket_size`), not the season, because a league can
+run an 8-car bracket one week and a 16 the next. The dropdown above the results grid saves it
+immediately and the grid re-lays itself out from it — an 8 becoming a 16 turns the four 4th places
+into eight 5ths without anything being re-typed — and the round legend above the grid names every
+position, so an admin typing four 4th places can see that four 4th places is the correct shape rather
+than finding out on Save. Qualifying is *not* part of the ladder: in drag racing it is the timed
+session that seeds it, so its positions stay unique and Poles / Average Start mean what they always
+meant.
+
+**The stats engine needed no bracket-specific code**, and that is the point. Every consumer already
+works one result at a time off `finish_pos`: Average Finish sums a driver's own positions over their
+own starts, so a semi-final loser contributes a pure `3` — not a 3.5, and not a re-ranked 4; points
+are looked up as `racePoints[finish_pos]`, so both 3rd-place drivers are paid the identical P3 value;
+Wins / Podiums / Top N are per-result comparisons; and Skill Rating already scores equal positions as
+a half-win each way, which is exactly right for drivers who never met. Nothing in that chain ever
+assumed positions were unique. The only thing this mode had to change was the results editor's "two
+drivers share the same finishing position" guard — correct for a race, wrong for a bracket — which is
+now replaced, for a bracket session only, by a check against the ladder itself: every position must
+be one the bracket has, and no round may hold more drivers than it eliminates.
+
+`games (league_id)` → `series (game_id, isBangerRacing, isBracketRacing)` → `seasons (series_id, game_id, drop_weeks, points_scale,
+combined_championship)` → `races (season_id, sessions[], bracket_size?)`, `classes (season_id, name, sort_order, race_points?, isBracketRacing)`
 and `entries (season_id, team_id, class_id, user_id, number)` / `teams (season_id)` →
 `results (race_id, season_id, entry_id, class_id, points_template_id)`. `users` holds player profiles; linking a
 roster entry to a user account is what feeds their public career stats.

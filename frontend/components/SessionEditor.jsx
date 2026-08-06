@@ -12,6 +12,7 @@ import { classIdForScope, entriesEligibleForRace, entriesInSessionClass, isClass
 import { pointsFor, pointsBreakdown, classConfigs, classScoresOwnPoints, configForTemplate, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
 import { applyAutoFlags, detectFlagLocks, autoMostLapsLedSlot } from "@/lib/autoFlags";
 import { BANGER_BOOL_FIELDS, BANGER_RESULT_FIELDS, BANGER_STATS, bangerRates, blankBangerRow, hasBangerBonuses } from "@/lib/bangerRacing";
+import { BRACKET_SIZES, bracketGridError, bracketPositionAt, bracketPositions, bracketRoundFor, bracketRounds, bracketSizeForField, bracketSizeLabel, normalizeBracketSize, ordinal } from "@/lib/bracketRacing";
 import { parseTime, formatTime, formatGap, formatDelta, parseDelta, parseLapsDown, deriveLaps } from "@/lib/raceTime";
 import { isTimedRace, scheduledLaps } from "@/lib/raceLength";
 
@@ -70,7 +71,14 @@ function makeRow(position) {
 }
 
 // A clean slate of numbered, driverless finishing positions.
-function emptySlots(n) {
+//
+// `positions` is the Bracket Style Racing layout when this session runs one
+// (see lib/bracketRacing.js): the flat list of finishing positions the bracket
+// produces — [1, 2, 3, 3, 4, 4, 4, 4] for an 8-driver ladder — which replaces
+// the 1..N run and is what puts two drivers on 3rd. Null for every ordinary
+// session, where the grid is exactly what it always was.
+function emptySlots(n, positions = null) {
+  if (positions?.length) return positions.map(p => makeRow(p));
   return Array.from({ length: Math.max(0, n) }, (_, i) => makeRow(i + 1));
 }
 
@@ -118,7 +126,14 @@ function assignEntry(row, entry, totalLaps) {
 // Qualifying only feeds the **Start** column of race-type sessions (via
 // qualPos), never the Finish order. A saved result's own start_pos wins over
 // the qualifying default once entered.
-function buildRows(entries, existing, totalLaps, qualPos = {}, sessionType = "race") {
+//
+// `positions` is the bracket layout when this session runs one. It changes only
+// the PADDING: saved results keep the finishing position they were saved with
+// (a bracket that was entered as four 4th places comes back as four 4th
+// places), and the empty slots below them take the positions the bracket still
+// has room for, so a half-filled 8-driver ladder opens on the rounds left to
+// enter rather than on 1..N.
+function buildRows(entries, existing, totalLaps, qualPos = {}, sessionType = "race", positions = null) {
   const entryById = new Map(entries.map(e => [e.id ?? e.entry_id, e]));
   const filled = existing
     .filter(r => entryById.has(r.entry_id))
@@ -155,8 +170,15 @@ function buildRows(entries, existing, totalLaps, qualPos = {}, sessionType = "ra
     }
   }
   const sorted = sortByFinish(filled);
-  let pos = sorted.reduce((m, r) => Math.max(m, Number(r.finish_pos) || 0), 0);
   const rows = [...sorted];
+  if (positions?.length) {
+    // A bracket is a fixed size, so the grid is exactly that many rows —
+    // never the roster's length. Each empty row takes the bracket position at
+    // its own index, which is the round it belongs to.
+    for (let i = rows.length; i < positions.length; i++) rows.push(makeRow(positions[i]));
+    return rows;
+  }
+  let pos = sorted.reduce((m, r) => Math.max(m, Number(r.finish_pos) || 0), 0);
   const target = Math.max(entries.length, sorted.length);
   while (rows.length < target) { pos += 1; rows.push(makeRow(pos)); }
   return rows;
@@ -282,6 +304,14 @@ const LABELS = { qualifying: "Qualifying", race: "Race", heat: "Heat", consolati
 // from this screen offers a value for each. Off — every ordinary series — the
 // grid is exactly what it always was.
 //
+// `isBracketRacing` comes from the series or the class being entered: with it on
+// the grid stops running 1..N and takes its finishing positions from the
+// elimination ladder instead, sized by the Bracket Size dropdown above it (4, 8,
+// 16 or 32 drivers). Several rows then legitimately share a position — two 3rd
+// places for the semi-final losers, four 4ths for the quarter-finals — which is
+// the one thing an ordinary results grid refuses to save. See
+// lib/bracketRacing.js. Off, the grid is exactly what it always was.
+//
 // `sessionClass` scopes the whole editor to ONE class of a split event (see
 // lib/classFilter.js): the grid loads and saves only that class's results, the
 // driver picker offers only that class's drivers, and finishing positions run
@@ -297,6 +327,7 @@ export function SessionEditor({
   initialSession, onEntriesChanged, seriesName, series = null, classes = [],
   sessionClass = null, sessionClassName = "",
   isBangerRacing = false, derbyTarget = null, onDerbyPointsSave = null,
+  isBracketRacing = false, bracketSize = null, onBracketSizeChange = null,
 }) {
   const names = sessionNames.length ? sessionNames : [LABELS[sessionType] || "Session"];
   const namesKey = names.join("|");
@@ -310,10 +341,45 @@ export function SessionEditor({
   // the Unclassified scope, which is exactly the class such a driver needs.
   const scopeClassId = scoped ? classIdForScope(sessionClass) : "";
   const entries = useMemo(() => entriesInSessionClass(allEntries, sessionClass), [allEntries, sessionClass]);
+
+  // ── Bracket Style Racing ─────────────────────────────────────────────────
+  //
+  // The size stored on the race is the admin's choice; until one is made the
+  // grid opens on the smallest ladder that would hold the field, so a bracket
+  // event is never presented as an empty 32 when eight drivers are entered.
+  // `bracketLayout` is the flat list of finishing positions that ladder
+  // produces — the grid's position column, and the thing that puts two drivers
+  // on 3rd. Null (and every derived value empty) for an ordinary session.
+  const activeBracketSize = useMemo(
+    () => (isBracketRacing ? (normalizeBracketSize(bracketSize) ?? bracketSizeForField(entries.length)) : null),
+    [isBracketRacing, bracketSize, entries.length]
+  );
+  // Qualifying is NOT a bracket. In drag racing it's the timed session that
+  // seeds the ladder, so its positions run 1..N and stay unique — which is also
+  // what keeps Poles and Average Start meaning what they always meant. Only the
+  // eliminations (the race-type sessions) take the bracket layout.
+  const bracketLayout = useMemo(
+    () => (activeBracketSize && sessionType !== "qualifying" ? bracketPositions(activeBracketSize) : null),
+    [activeBracketSize, sessionType]
+  );
+  const bracketRoundList = useMemo(
+    () => (bracketLayout ? bracketRounds(activeBracketSize) : []),
+    [bracketLayout, activeBracketSize]
+  );
+  // The position a row at grid index `i` holds — the bracket's, or the plain
+  // 1..N every ordinary session has always used. Every renumber below (drag to
+  // reorder, remove a slot, add a slot) goes through this, so the two modes
+  // can't drift apart.
+  const positionAt = i => (bracketLayout ? bracketPositionAt(bracketLayout, i) : i + 1);
+  // The layout the grid is currently laid out on, so the relayout effect below
+  // can tell "the admin picked a different size" from "the grid was just
+  // (re)loaded from the database".
+  const appliedBracket = useRef(bracketLayout);
+
   const [session, setSession] = useState(
     initialSession && names.includes(initialSession) ? initialSession : names[0]
   );
-  const [rows, setRows] = useState(() => emptySlots(entries.length));
+  const [rows, setRows] = useState(() => emptySlots(entries.length, bracketLayout));
   // Which of the auto-derived bonus flags (Fastest Lap / Hard Charger / Most
   // Laps Led) the admin has taken over by hand for this session — see
   // lib/autoFlags.js. A locked flag stops following the grid's data.
@@ -362,7 +428,7 @@ export function SessionEditor({
       // finishing-order grid.
       const mains = existing.filter(r => !r.provisional);
       const provs = existing.filter(r => r.provisional);
-      const loaded = buildRows(entries, mains, scheduledLaps(race), qp, sessionType);
+      const loaded = buildRows(entries, mains, scheduledLaps(race), qp, sessionType, bracketLayout);
       // The gap columns aren't stored — they're recomputed from the saved lap
       // times each time the sheet opens.
       const built = sessionType === "qualifying" ? computeQualGaps(loaded) : loaded;
@@ -381,10 +447,11 @@ export function SessionEditor({
       }));
     } catch {
       setQualPos({});
-      setRows(emptySlots(entries.length));
+      setRows(emptySlots(entries.length, bracketLayout));
       setFlagLocks({});
       setProvRows([]);
     } finally {
+      appliedBracket.current = bracketLayout;
       setLoading(false);
     }
   }
@@ -562,12 +629,42 @@ export function SessionEditor({
   }
 
   function addSlot() {
-    setRows(prev => [...prev, makeRow(prev.length + 1)]);
+    setRows(prev => [...prev, makeRow(positionAt(prev.length))]);
   }
   // Drops a finishing position from the grid and renumbers the rest.
   function removeSlot(idx) {
-    setRows(prev => prev.filter((_, i) => i !== idx).map((r, i) => ({ ...r, finish_pos: String(i + 1) })));
+    setRows(prev => prev.filter((_, i) => i !== idx).map((r, i) => ({ ...r, finish_pos: String(positionAt(i)) })));
   }
+
+  // CHANGING the bracket size re-lays the grid onto the new ladder: rows keep
+  // their order and their drivers, and each takes the position its index now
+  // holds, so an 8 becoming a 16 turns the four 4th places into eight 5ths
+  // without anything being re-typed. Rows past the end of a SMALLER bracket are
+  // kept when they hold a driver rather than silently binned; they sit on the
+  // last position and the Save check below names the round that is over-filled.
+  //
+  // It deliberately does NOT run on load: a grid that has just been filled from
+  // saved results shows the positions those results were actually saved with,
+  // whatever they are. Rewriting them here would quietly edit history on screen
+  // — an event flagged as a bracket after its results were entered 1..N would
+  // look re-shaped without anyone touching it. Those positions are checked on
+  // Save instead, where the admin is told which round doesn't fit.
+  useEffect(() => {
+    if (!bracketLayout || loading) return;
+    if (appliedBracket.current === bracketLayout) return;
+    appliedBracket.current = bracketLayout;
+    setRows(prev => {
+      const kept = prev.filter((r, i) => i < bracketLayout.length || r.entry_id);
+      const next = kept.map((r, i) => {
+        const pos = String(bracketPositionAt(bracketLayout, i));
+        return r.finish_pos === pos ? r : { ...r, finish_pos: pos };
+      });
+      for (let i = next.length; i < bracketLayout.length; i++) next.push(makeRow(bracketLayout[i]));
+      const same = next.length === prev.length && next.every((r, i) => r === prev[i]);
+      return same ? prev : next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bracketLayout, loading]);
 
   const assignedIds = useMemo(() => new Set(rows.map(r => r.entry_id).filter(Boolean)), [rows]);
   const provAssignedIds = useMemo(() => new Set(provRows.map(r => r.entry_id).filter(Boolean)), [provRows]);
@@ -681,7 +778,7 @@ export function SessionEditor({
     setRows(prev => {
       const idx = prev.findIndex(r => !r.entry_id);
       if (idx >= 0) return prev.map((r, i) => (i === idx ? withDriver(r, entry) : r));
-      return [...prev, withDriver(makeRow(prev.length + 1), entry)];
+      return [...prev, withDriver(makeRow(positionAt(prev.length)), entry)];
     });
     setJustAddedId(entry.id);
     onEntriesChanged?.();
@@ -742,9 +839,16 @@ export function SessionEditor({
     const sorted = sortByFinish(placed);
     const covered = new Set(placed.map(r => r.entry_id));
     const uncovered = entries.filter(e => !covered.has(e.id ?? e.entry_id)).length;
-    let pos = sorted.reduce((m, r) => Math.max(m, Number(r.finish_pos) || 0), 0);
     const next = [...sorted];
-    for (let i = 0; i < uncovered; i++) { pos += 1; next.push(makeRow(pos)); }
+    if (bracketLayout) {
+      // A bracket is a fixed size, so an import fills the ladder rather than
+      // extending it — the relayout effect above then puts every row on the
+      // position its index holds.
+      for (let i = next.length; i < bracketLayout.length; i++) next.push(makeRow(bracketLayout[i]));
+    } else {
+      let pos = sorted.reduce((m, r) => Math.max(m, Number(r.finish_pos) || 0), 0);
+      for (let i = 0; i < uncovered; i++) { pos += 1; next.push(makeRow(pos)); }
+    }
     setRows(next);
     // An import that names its own fastest lap (a column the file carried,
     // rather than one derived from lap times) keeps it; otherwise the grid
@@ -768,7 +872,7 @@ export function SessionEditor({
       const next = [...prev];
       const [moved] = next.splice(dragIndex, 1);
       next.splice(idx, 0, moved);
-      const renumbered = next.map((r, i) => ({ ...r, finish_pos: String(i + 1) }));
+      const renumbered = next.map((r, i) => ({ ...r, finish_pos: String(positionAt(i)) }));
       // Reordering changes who's on pole and who's one position up, so both
       // qualifying gap columns re-derive off the new order.
       if (sessionType === "qualifying") return syncQualGaps(renumbered);
@@ -940,9 +1044,20 @@ export function SessionEditor({
     const filled = rows.filter(r => r.entry_id && r.finish_pos !== "");
     const provReady = provRows.filter(r => r.entry_id);
     if (!filled.length && !provReady.length) return showToast("error", "Assign at least one driver to a finishing position.");
-    const positions = filled.map(r => Number(r.finish_pos));
-    if (new Set(positions).size !== positions.length) {
-      return showToast("error", "Two drivers share the same finishing position.");
+    // Sharing a finishing position is an error in a race and the entire point
+    // of a bracket: the two semi-final losers finished level because they never
+    // raced each other. So the uniqueness rule applies to ordinary sessions
+    // only; a bracket is checked against its own ladder instead — every
+    // position must be one the bracket actually has, and no round may hold more
+    // drivers than it eliminates. See lib/bracketRacing.js.
+    if (bracketLayout) {
+      const err = bracketGridError(filled, activeBracketSize);
+      if (err) return showToast("error", err);
+    } else {
+      const positions = filled.map(r => Number(r.finish_pos));
+      if (new Set(positions).size !== positions.length) {
+        return showToast("error", "Two drivers share the same finishing position.");
+      }
     }
     const ids = filled.map(r => r.entry_id);
     if (new Set(ids).size !== ids.length) {
@@ -1124,6 +1239,28 @@ export function SessionEditor({
           style={{ marginTop: 0, whiteSpace: "nowrap" }} onClick={() => setImportOpen(true)} disabled={!entries.length && !seasonId}>
           ⬆ Import Results
         </button>
+        {/* Bracket Style Racing: how big a ladder this race ran. The grid below
+            lays its finishing positions out from it, so changing it here
+            re-shapes the rounds immediately. Saved on the RACE, because a
+            league can run an 8-car bracket one week and a 16 the next. */}
+        {isBracketRacing && sessionType !== "qualifying" && (
+          <div className="field" style={{ maxWidth: 240, margin: 0 }}>
+            <label htmlFor="bracket-size">Bracket Size</label>
+            <select id="bracket-size" value={activeBracketSize ?? ""}
+              disabled={!onBracketSizeChange}
+              onChange={e => Promise.resolve(onBracketSizeChange?.(Number(e.target.value)))
+                .catch(err => showToast("error", err.message))}>
+              {BRACKET_SIZES.map(size => (
+                <option key={size} value={size}>{bracketSizeLabel(size)}</option>
+              ))}
+            </select>
+            <span style={{ fontSize: "0.75rem", color: "var(--ink-2)" }}>
+              {normalizeBracketSize(bracketSize)
+                ? "Applies to this race. The grid below is laid out from it."
+                : `Not set yet — showing a ${activeBracketSize}-driver ladder to suit the ${entries.length} driver${entries.length === 1 ? "" : "s"} entered. Pick one to save it on this race.`}
+            </span>
+          </div>
+        )}
         {onSessionPointsChange && (
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
             <div className="field" style={{ maxWidth: 280, margin: 0 }}>
@@ -1320,6 +1457,42 @@ export function SessionEditor({
           )}
         </>
       )}
+      {/* What the ladder actually is, spelled out where the positions are
+          typed — an admin filling in four 4th places needs to see that four
+          4th places is right, not a mistake the grid will reject on Save. */}
+      {isBracketRacing && bracketRoundList.length > 0 && (
+        <>
+          <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.78rem" }}>
+            🏆 This is a <strong>Bracket Style Racing</strong> event — a{" "}
+            <strong>{bracketSizeLabel(activeBracketSize).toLowerCase()}</strong>. The{" "}
+            <strong>Fin</strong> column follows the ladder rather than running 1, 2, 3, 4…, so everyone
+            knocked out in the same round shares a position. Drag ⠿ to move a driver between rounds;
+            positions re-apply themselves from the bracket.
+          </p>
+          <div className="bracket-round-bar">
+            <span className="bracket-chip">🏆 Rounds</span>
+            {bracketRoundList.map(r => (
+              <span key={r.position} className="bracket-round" title={`${r.count} driver${r.count === 1 ? "" : "s"} finish ${ordinal(r.position)}`}>
+                <strong>{ordinal(r.position)}</strong> {r.description}
+                {r.count > 1 && <em> ×{r.count}</em>}
+              </span>
+            ))}
+          </div>
+          <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.78rem" }}>
+            These are ordinary racing finishes: a bracket 3rd counts as a straight <strong>3</strong> in
+            Average Finish, both 3rd-place drivers are paid the <strong>same</strong> points, and the
+            results feed Wins, Podiums, Top 5s and the Overall and per-Game stats like any other race.
+          </p>
+        </>
+      )}
+      {isBracketRacing && isQual && (
+        <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.78rem" }}>
+          🏆 This is a <strong>Bracket Style Racing</strong> event, but qualifying is what SEEDS the
+          ladder rather than part of it — positions here run 1, 2, 3, 4… down the field as always, one
+          driver each, and still feed Poles and Average Start. The shared positions belong to the
+          eliminations; enter those on the race session.
+        </p>
+      )}
       {!isQual && isTimedRace(race) && (
         <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.78rem" }}>
           ⏱ This is a <strong>timed</strong> event, so there&rsquo;s no scheduled lap total to count down
@@ -1346,6 +1519,7 @@ export function SessionEditor({
             {rows.map((row, idx) => (
               <QualRow key={row.slot_id} row={row} idx={idx} updateRow={updateRow} updateFlag={updateFlag} onGapBlur={normalizeQualGaps} autoFocus={row.entry_id === justAddedId} points={rowPoints(row)}
                 classes={classes} hasClasses={hasClasses} isBangerRacing={isBangerRacing}
+                bracketRound={bracketLayout ? bracketRoundFor(activeBracketSize, row.finish_pos) : null}
                 dragging={dragIndex === idx} dragOver={overIndex === idx && dragIndex !== idx}
                 onDragStart={() => handleDragStart(idx)} onDragOver={e => handleDragOver(idx, e)} onDrop={() => handleDrop(idx)} onDragEnd={handleDragEnd}
                 {...rowCommon(row, idx)} />
@@ -1364,6 +1538,7 @@ export function SessionEditor({
                 updateRaceTime={updateRaceTime} updateInterval={updateInterval} updateStatus={updateStatus}
                 autoFocus={row.entry_id === justAddedId} points={rowPoints(row)} pointsTitle={rowPointsTitle(row)}
                 classes={classes} hasClasses={hasClasses} isBangerRacing={isBangerRacing}
+                bracketRound={bracketLayout ? bracketRoundFor(activeBracketSize, row.finish_pos) : null}
                 dragging={dragIndex === idx} dragOver={overIndex === idx && dragIndex !== idx}
                 onDragStart={() => handleDragStart(idx)} onDragOver={e => handleDragOver(idx, e)} onDrop={() => handleDrop(idx)} onDragEnd={handleDragEnd}
                 {...rowCommon(row, idx)} />
@@ -1476,7 +1651,7 @@ export function SessionEditor({
       {!!entries.length && (
         <button className="btn btn-ghost" style={{ marginLeft: 8 }}
           title="Clear every slot back to an empty finishing grid"
-          onClick={() => { setRows(emptySlots(entries.length)); setFlagLocks({}); }}>
+          onClick={() => { setRows(emptySlots(entries.length, bracketLayout)); setFlagLocks({}); }}>
           Reset Grid
         </button>
       )}
@@ -1776,7 +1951,7 @@ function BangerCells({ row, idx, updateRow, updateFlag, gridProps }) {
   );
 }
 
-function RowInputs({ row, idx, updateRow, updateFlag, updateRaceTime, updateInterval, updateStatus, autoFocus, points, pointsTitle, classes = [], hasClasses, isBangerRacing, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, available, onAssign, onClear, onRequestCreate, onPasteColumn }) {
+function RowInputs({ row, idx, updateRow, updateFlag, updateRaceTime, updateInterval, updateStatus, autoFocus, points, pointsTitle, classes = [], hasClasses, isBangerRacing, bracketRound = null, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, available, onAssign, onClear, onRequestCreate, onPasteColumn }) {
   const hasDriver = !!row.entry_id;
   const isLeader = Number(row.finish_pos) === 1;
   // Shared per-cell wiring: column/row tags, Enter-to-next-row, and column
@@ -1794,7 +1969,7 @@ function RowInputs({ row, idx, updateRow, updateFlag, updateRaceTime, updateInte
   return (
     <>
       <DragHandle dragging={dragging} dragOver={dragOver} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={onDragEnd} />
-      <input type="number" min="1" value={row.finish_pos} {...gridProps("finish_pos")} onChange={e => updateRow(idx, "finish_pos", e.target.value)} autoFocus={hasDriver && autoFocus} />
+      <input type="number" min="1" value={row.finish_pos} title={bracketRound?.label} {...gridProps("finish_pos")} onChange={e => updateRow(idx, "finish_pos", e.target.value)} autoFocus={hasDriver && autoFocus} />
       <input type="number" min="1" title="Starting position (defaults from Qualifying)" placeholder="—" disabled={!hasDriver}
         value={row.start_pos} {...gridProps("start_pos")} onChange={e => updateRow(idx, "start_pos", e.target.value)} />
       <DriverCell row={row} idx={idx} dragging={dragging} available={available} onAssign={onAssign} onClear={onClear} onRequestCreate={onRequestCreate} onPasteColumn={onPasteColumn} />
@@ -1833,7 +2008,7 @@ function RowInputs({ row, idx, updateRow, updateFlag, updateRaceTime, updateInte
   );
 }
 
-function QualRow({ row, idx, updateRow, updateFlag, onGapBlur, autoFocus, points, classes = [], hasClasses, isBangerRacing, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, available, onAssign, onClear, onRequestCreate, onPasteColumn }) {
+function QualRow({ row, idx, updateRow, updateFlag, onGapBlur, autoFocus, points, classes = [], hasClasses, isBangerRacing, bracketRound = null, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, available, onAssign, onClear, onRequestCreate, onPasteColumn }) {
   const hasDriver = !!row.entry_id;
   const isPole = Number(row.finish_pos) === 1;
   const gridProps = field => ({

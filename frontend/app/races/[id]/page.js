@@ -12,6 +12,7 @@ import { formatRaceDate } from "@/lib/raceDate";
 import { raceLengthLabel } from "@/lib/raceLength";
 import { gapColumns, formatDelta, parseTime, parseLapsDown } from "@/lib/raceTime";
 import { carForRace, carsByClassForRace, classIdForScope, sessionClassScopes, soleCarForRace } from "@/lib/classFilter";
+import { bracketRoundFor, bracketSizeLabel, normalizeBracketSize } from "@/lib/bracketRacing";
 import { readParam, setParam } from "@/lib/scopeLink";
 import { api } from "@/lib/api";
 
@@ -176,6 +177,11 @@ export default function EventResultsPage() {
   // Skill Rating (the main race / Feature) — detected by results carrying an
   // sr_delta. Strength of Field is recorded on the event.
   const showSr = finishers.some(r => r.sr_delta != null);
+  // Bracket Style Racing: the ladder this event ran, if any. Several drivers
+  // legitimately share a position here — the two semi-final losers both finished
+  // 3rd — so each row names the round it came out of rather than leaving a
+  // repeated number looking like a data error. See lib/bracketRacing.js.
+  const bracketSize = normalizeBracketSize(event.bracket_size);
   const sof = event.strength_of_field;
 
   // Gap columns, worked out from the times on the results themselves — so every
@@ -428,6 +434,14 @@ export default function EventResultsPage() {
             </span>
           </div>
         )}
+        {bracketSize && (
+          <p style={{ margin: "16px 0 6px", color: "var(--ink-1)", fontSize: "0.84rem" }}>
+            🏆 <strong>{bracketSizeLabel(bracketSize)}</strong> — an elimination ladder, so drivers knocked
+            out in the same round share a finishing position. They count as ordinary racing finishes
+            everywhere: a bracket 3rd is a straight 3 in Average Finish, and both 3rd-place drivers earn
+            the same points.
+          </p>
+        )}
         {finishers.length > 0 && (
         <div className="table-wrap">
           <table className="stats-table">
@@ -448,6 +462,11 @@ export default function EventResultsPage() {
                     <span className={`rank-badge ${r.finish_pos === 1 ? "rank-p1" : r.finish_pos === 2 ? "rank-p2" : r.finish_pos === 3 ? "rank-p3" : "rank-default"}`}>
                       {r.finish_pos}
                     </span>
+                    {bracketSize && bracketRoundFor(bracketSize, r.finish_pos) && (
+                      <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.7rem", marginTop: 2 }}>
+                        {bracketRoundFor(bracketSize, r.finish_pos).description}
+                      </span>
+                    )}
                   </td>
                   <td style={{ color: "var(--ink-1)" }}>{r.start_pos ?? "—"}</td>
                   <td className="driver-name-cell" style={{ textAlign: "left" }}>

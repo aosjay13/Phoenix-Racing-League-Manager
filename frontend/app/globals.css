@@ -1754,3 +1754,55 @@ tbody tr:hover {
   color: var(--ink-0);
   font-size: 0.85rem;
 }
+
+/* ── Bracket Style Racing: the round legend ───────────────────
+   The ladder the results grid is laid out from, printed above it: which
+   finishing position each elimination round takes, and how many drivers share
+   it. An admin typing four 4th places needs to see that four 4th places is the
+   correct shape, not a mistake the grid is about to reject. See
+   lib/bracketRacing.js. */
+.bracket-round-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-cyan);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+}
+
+.bracket-chip {
+  align-self: flex-start;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--accent-cyan);
+  background: rgba(34, 211, 238, 0.12);
+  border: 1px solid rgba(34, 211, 238, 0.3);
+}
+
+.bracket-round {
+  font-size: 0.8rem;
+  color: var(--ink-1);
+  white-space: nowrap;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.bracket-round strong {
+  color: var(--ink-0);
+  margin-right: 4px;
+}
+
+.bracket-round em {
+  font-style: normal;
+  color: var(--accent-cyan);
+  margin-left: 4px;
+}

@@ -23,6 +23,7 @@ import { BLANK_SERIES_FORM, seriesFormToBody, seriesToForm } from "@/lib/seriesF
 import { BLANK_CLASS_FORM, classFormToBody, classToForm, seasonPointsAsClassFields } from "@/lib/classForm";
 import { classScoresOwnPoints, definesPoints } from "@/lib/standings";
 import { bangerEntryScope, isBangerDoc } from "@/lib/bangerRacing";
+import { isBracketDoc } from "@/lib/bracketRacing";
 
 function Panel({ title, sub, step, muted, children }) {
   return (
@@ -109,6 +110,10 @@ function AdminInner() {
   // derby bonuses straight away rather than after a save.
   const bangerSeries = isBangerDoc(series);
   const bangerSeason = bangerSeries || isBangerDoc(season);
+  // Bracket Style Racing sits on a series or on a single class (see
+  // lib/bracketRacing.js). A flagged series already covers every class in it, so
+  // the class switch below is only offered where it would actually do something.
+  const bracketSeries = isBracketDoc(series);
   const [races, setRaces] = useState([]);
   const [toast, setToast] = useState(null);
   // Which setup screen is open. Starts on Games — the top of the hierarchy an
@@ -409,6 +414,31 @@ function AdminInner() {
               </label>
             </div>
 
+            {/* Bracket Style Racing. Adds no stats and no bonuses — it changes
+                only the SHAPE of a results grid, so the drivers eliminated in
+                the same round share one finishing position. See
+                lib/bracketRacing.js. */}
+            <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
+              <input type="checkbox" id="series_bracket_racing" disabled={!gameId}
+                checked={!!seriesForm.isBracketRacing}
+                onChange={e => setSeriesForm(f => ({ ...f, isBracketRacing: e.target.checked }))}
+                style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+              <label htmlFor="series_bracket_racing" style={{ margin: 0 }}>
+                Bracket Style Racing
+                <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
+                  Off (default): finishing positions run 1, 2, 3, 4… down the field. On: every event in
+                  this series is entered as an elimination bracket — pick a <strong>4</strong>,{" "}
+                  <strong>8</strong>, <strong>16</strong> or <strong>32</strong>-driver ladder on the
+                  results screen and the grid lays itself out from it, so everyone knocked out in the
+                  same round shares one position: one winner, one runner-up, <strong>two</strong> 3rd
+                  places (the semi-finals), <strong>four</strong> 4ths (the quarters), and so on. These
+                  are ordinary racing finishes — a bracket 3rd counts as a straight 3 in Average Finish,
+                  both 3rd-place drivers are paid identical points, and it all cascades into Wins, Top 5s
+                  and the Overall and per-Game stats like any other result.
+                </span>
+              </label>
+            </div>
+
             {/* The series' points are the league DEFAULT: every season in it
                 scores on these unless the season (or one of its classes)
                 overrides them. Left blank the series sets nothing and each
@@ -572,6 +602,30 @@ function AdminInner() {
                     capture Takedowns, the Survival Bonus and the Most Lethal Bonus, its points structure
                     can pay for each, and its championship shows the totals. The other classes are
                     untouched, and the stats stay out of the Overall and per-Game stats views entirely.
+                  </span>
+                </label>
+              </div>
+            )}
+
+            {/* Bracket Style Racing for this class alone — a drag-racing class
+                running its ladder while the rest of the season races normally.
+                Hidden when the series above already runs brackets, since this
+                class does too and the switch would be a no-op. */}
+            {!bracketSeries && (
+              <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
+                <input type="checkbox" id="class_bracket_racing" disabled={!seasonId}
+                  checked={!!classForm.isBracketRacing}
+                  onChange={e => setClassForm(f => ({ ...f, isBracketRacing: e.target.checked }))}
+                  style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+                <label htmlFor="class_bracket_racing" style={{ margin: 0 }}>
+                  Bracket Style Racing Class
+                  <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
+                    Off (default): an ordinary racing class, positions 1, 2, 3, 4… On:{" "}
+                    <strong>this class</strong> is entered as an elimination bracket while the rest of{" "}
+                    {season?.name ?? "the season"} races normally — pick the ladder size (4, 8, 16 or 32
+                    drivers) on the results screen and everyone knocked out in the same round shares one
+                    finishing position. The finishes stay ordinary racing stats, so they feed Wins, Top 5s
+                    and Average Finish everywhere, tied positions included.
                   </span>
                 </label>
               </div>

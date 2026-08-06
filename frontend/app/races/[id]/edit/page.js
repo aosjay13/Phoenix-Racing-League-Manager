@@ -12,6 +12,7 @@ import { LENGTH_LAPS, LENGTH_TIME } from "@/lib/raceLength";
 import { normalizedBuiltinTemplates } from "@/lib/pointsTemplates";
 import { carForRace, racePerClassResults, sessionClassScopes } from "@/lib/classFilter";
 import { bangerEntryScope, derbyPointsTarget } from "@/lib/bangerRacing";
+import { bracketEntryScope } from "@/lib/bracketRacing";
 import { api } from "@/lib/api";
 
 const BLANK_INFO = {
@@ -301,6 +302,14 @@ function UnifiedEditInner() {
     setSeason(s => ({ ...s, ...updated }));
   }, [derbyTarget, season]);
 
+  // Bracket Style Racing: the ladder size for this event, saved on the race the
+  // moment it's picked so the grid can re-lay itself out immediately (and so it
+  // is still right when the screen is reopened).
+  const saveBracketSize = useCallback(async (size) => {
+    const updated = await api(`/api/races/${race.id}`, { method: "PATCH", body: { bracket_size: Number(size) } });
+    setRace(r => ({ ...r, ...updated }));
+  }, [race]);
+
   // Props every SessionEditor on this screen shares: null scope = the combined
   // grid this screen has always shown.
   const classProps = {
@@ -330,6 +339,22 @@ function UnifiedEditInner() {
     // Where a derby rate typed above the grid is saved, and how.
     derbyTarget,
     onDerbyPointsSave: saveDerbyPoints,
+    // Bracket Style Racing — flagged on the series or on a single class. Same
+    // ENTRY rule the derby flag uses: the grid offers the bracket layout
+    // whenever anything in this event's field races brackets (the class being
+    // entered on a split event, or any class of the season on a shared one), so
+    // a drag-racing class inside an ordinary season can still have its ladder
+    // entered. See lib/bracketRacing.js.
+    isBracketRacing: bracketEntryScope({
+      series,
+      cls: perClassResults ? classes.find(c => c.id === scope) || null : null,
+      classes,
+    }),
+    // The ladder size this race ran, and how the dropdown above the grid saves
+    // it. It lives on the RACE, so a league can run an 8-car bracket one week
+    // and a 16 the next.
+    bracketSize: race?.bracket_size ?? null,
+    onBracketSizeChange: saveBracketSize,
   };
 
   const heatFormat = !!race?.heat_format;

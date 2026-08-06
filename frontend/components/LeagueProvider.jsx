@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { getActiveLeagueId, setActiveLeagueId } from "@/lib/leagueClient";
 import { readScopeParams, writeScopeParams } from "@/lib/scopeLink";
 import { isBangerScope } from "@/lib/bangerRacing";
+import { isBracketScope } from "@/lib/bracketRacing";
 
 const LeagueContext = createContext(null);
 const STORAGE_KEY = "prlm-selection";
@@ -296,6 +297,17 @@ export function LeagueProvider({ children }) {
     // series with a derby class inside it shows no derby columns anywhere
     // except on that class. Forced false above series level.
     isBangerRacing: !!seriesId && isBangerScope({
+      series: seriesList.find(s => s.id === seriesId) || null,
+      season,
+      cls: raceClass,
+    }),
+    // Is the current scope a Bracket Style Racing one? Set on a series or on a
+    // single class, resolved through the same "at or under a flagged level"
+    // rule, and forced false above series level. Unlike the derby flag this
+    // gates no stats columns — bracket finishes are ordinary racing stats — it
+    // is here so a scope can LABEL itself as bracket racing. See
+    // lib/bracketRacing.js.
+    isBracketRacing: !!seriesId && isBracketScope({
       series: seriesList.find(s => s.id === seriesId) || null,
       season,
       cls: raceClass,

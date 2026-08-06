@@ -72,6 +72,9 @@ export async function GET(request) {
     // scope reads as banger across it, so a wider view doesn't lose the mode
     // just because the first season met didn't run it that way.
     if (c.isBangerRacing) row.isBangerRacing = true;
+    // Same rule for Bracket Style Racing: a class name that ran as a bracket
+    // class in ANY season of the scope reads as one across it.
+    if (c.isBracketRacing) row.isBracketRacing = true;
     if (!row.color && c.color) row.color = c.color;
   }
   return NextResponse.json(sortClasses([...byName.values()]));
