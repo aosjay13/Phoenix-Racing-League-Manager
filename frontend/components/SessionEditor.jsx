@@ -7,9 +7,9 @@ import { AddDriverToRace } from "@/components/AddDriverToRace";
 import { DriverCreateModal } from "@/components/DriverCreateModal";
 import { PointsEditorModal } from "@/components/PointsEditorModal";
 import { ImportResultsModal } from "@/components/ImportResultsModal";
-import { NONE_TEMPLATE } from "@/lib/pointsTemplates";
+import { NONE_TEMPLATE, isNoPointsTemplate } from "@/lib/pointsTemplates";
 import { classIdForScope, entriesEligibleForRace, entriesInSessionClass, isClassScoped, resultInSessionClass } from "@/lib/classFilter";
-import { pointsFor, pointsBreakdown, classConfigs, classScoresOwnPoints, configForTemplate, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
+import { pointsFor, pointsBreakdown, classConfigs, classScoresOwnPoints, configForClass, configForTemplate, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
 import { applyAutoFlags, detectFlagLocks, autoMostLapsLedSlot } from "@/lib/autoFlags";
 import { BANGER_BOOL_FIELDS, BANGER_RESULT_FIELDS, BANGER_STATS, bangerRates, blankBangerRow, hasBangerBonuses } from "@/lib/bangerRacing";
 import { BRACKET_SIZES, bracketGridError, bracketPositionAt, bracketPositions, bracketRoundFor, bracketRounds, bracketSizeForField, bracketSizeLabel, normalizeBracketSize, ordinal } from "@/lib/bracketRacing";
@@ -914,13 +914,17 @@ export function SessionEditor({
   // ── Points structure ─────────────────────────────────────────────────────
   //
   // Four layers, most specific last: the SERIES' default points, the season's
-  // own, the CLASS's structure when it scores on one, then the template
-  // assigned to this session. Switching class in the bar above swaps the middle layer, so the
-  // Points column (and the modal below it) re-reads the moment you change
-  // class — exactly the way it already re-reads when you change session.
-  // series (the league default) → season → class → this session's template.
-  // The same chain the standings score on, so the Points column here and the
-  // championship there can never disagree.
+  // own, the CLASS's structure when it scores on one, and the template assigned
+  // to this session — whose place in the chain depends on who it was assigned
+  // to (see `layered` below and makeScorer in lib/standings.js):
+  //
+  //   series → season → event-wide template → class → this class's template
+  //
+  // Switching class in the bar above swaps the class layer, so the Points
+  // column (and the modal below it) re-reads the moment you change class —
+  // exactly the way it already re-reads when you change session. The same chain
+  // the standings score on, so the Points column here and the championship
+  // there can never disagree.
   const seasonConfig = useMemo(() => resolveSeasonConfig(season || {}, series), [season, series]);
   const classBase = useMemo(() => classConfigs(seasonConfig, classes), [seasonConfig, classes]);
   // The base config for a class id: its own structure, else the season's. On a
@@ -931,6 +935,9 @@ export function SessionEditor({
   const classOwnPoints = classScoresOwnPoints(scopeClass);
   // What "no session override" scores under, named for the dropdown.
   const baseLabel = classOwnPoints ? `${sessionClassName || scopeClass?.name || "Class"} points` : "Season default";
+  // Classes of this season that score on structures of their own — the ones an
+  // event-wide points template does NOT re-point (see `layered` below).
+  const ownPointsClassNames = classes.filter(classScoresOwnPoints).map(c => c.name);
   const baseConfig = scoped ? baseFor(scopeClassId) : seasonConfig;
 
   // This session's assigned template. On a split event the assignment is per
@@ -942,7 +949,31 @@ export function SessionEditor({
     : (sessionPoints[session] || "");
   const templateFor = id => (id === NONE_TEMPLATE.id ? NONE_TEMPLATE : templates.find(t => t.id === id));
   const template = useMemo(() => templateFor(templateId), [templates, templateId]);
-  const config = useMemo(() => configForTemplate(baseConfig, template), [baseConfig, template]);
+  // Was this session's template picked for THIS class, or for the event as a
+  // whole? Only a class's own assignment lives in session_points_by_class.
+  const templateIsForClass = scoped && !!classSessionPoints[session];
+  const qualIsForClass = scoped && !!classSessionPoints.Qualifying;
+
+  // Lay one class's chain up, putting the template at the level it was actually
+  // assigned at — the same rule makeScorer scores on:
+  //   • assigned to this class (or "No points", which zeroes everybody): it is
+  //     the most specific layer, so it goes on TOP of the class's structure;
+  //   • assigned to the event: it is the event's default, so it goes UNDER the
+  //     class, which overrides it exactly as it overrides the season. Without
+  //     that, one template picked for the event flattened every class's own
+  //     scale back to the event's.
+  const layered = (classId, tpl, forClass) => {
+    if (!tpl) return baseFor(classId);
+    const cls = classId ? classes.find(c => c.id === classId) : null;
+    return (forClass || isNoPointsTemplate(tpl) || !cls)
+      ? configForTemplate(baseFor(classId), tpl)
+      : configForClass(configForTemplate(seasonConfig, tpl), cls);
+  };
+
+  const config = useMemo(
+    () => layered(scoped ? scopeClassId : "", template, templateIsForClass),
+    [baseConfig, template, templateIsForClass, scoped, scopeClassId, classes, seasonConfig],
+  );
 
   // Qualifying's own points system (always the "Qualifying" session, regardless
   // of which tab is open) — used to resolve the qualifying-position bonus
@@ -963,7 +994,7 @@ export function SessionEditor({
   // points" over a grid that scores them perfectly well.
   const derbyConfigs = scoped
     ? [config]
-    : [config, ...classes.map(c => configForTemplate(baseFor(c.id), template))];
+    : [config, ...classes.map(c => layered(c.id, template, false))];
   const payingConfigs = derbyConfigs.filter(c => hasBangerBonuses(c.bonuses));
   const derbyPays = payingConfigs.length > 0;
   const derbyRates = bangerRates((payingConfigs[0] || config).bonuses);
@@ -973,8 +1004,10 @@ export function SessionEditor({
 
   // A row's own configs. Scoped grids are all one class; a combined grid scores
   // each row under the class on that row.
-  const configForRow = row => (scoped ? config : configForTemplate(baseFor(row.class_id || ""), template));
-  const qualConfigForRow = row => configForTemplate(scoped ? baseConfig : baseFor(row.class_id || ""), qualTemplate);
+  const configForRow = row => (scoped ? config : layered(row.class_id || "", template, false));
+  const qualConfigForRow = row => (scoped
+    ? layered(scopeClassId, qualTemplate, qualIsForClass)
+    : layered(row.class_id || "", qualTemplate, false));
 
   // Assign a points system to this session — for THIS class when the event runs
   // its classes separately, so switching class and picking a template doesn't
@@ -1290,11 +1323,20 @@ export function SessionEditor({
                 <option value={NONE_TEMPLATE.id}>{NONE_TEMPLATE.name}</option>
                 {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
-              {scoped && (
+              {scoped ? (
                 <span style={{ fontSize: "0.75rem", color: "var(--ink-2)" }}>
                   {classOwnPoints
-                    ? `${sessionClassName} scores on its own points structure — switching class here swaps it.`
+                    ? `${sessionClassName} scores on its own points structure — switching class here swaps it. A template picked here overrides it for this session.`
                     : "Applies to this class's session only."}
+                </span>
+              ) : ownPointsClassNames.length > 0 && (
+                // An event-wide template is the event's default, and a class
+                // with its own points structure outranks it (see `layered`).
+                // Say so here rather than letting the grid look like it scores
+                // everyone on the template.
+                <span style={{ fontSize: "0.75rem", color: "var(--ink-2)" }}>
+                  Applies to the whole field — except {ownPointsClassNames.join(", ")}, which
+                  score{ownPointsClassNames.length === 1 ? "s" : ""} on their own points structure.
                 </span>
               )}
             </div>

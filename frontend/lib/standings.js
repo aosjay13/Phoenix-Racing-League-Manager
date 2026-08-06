@@ -271,16 +271,46 @@ export function resolveSessionFlags(result, racesById = {}) {
   };
 }
 
+// The class-scoped points-template assignments in force for THIS result's
+// session — `{ classId: templateId }`, off the race's session_points_by_class.
+//
+// A result stores only the template id it scores under, which is not enough to
+// place that template in the chain: a template chosen for ONE class of a split
+// event is a statement about that class, while the event-wide one is the
+// event's default. This map is what tells the two apart at scoring time (see
+// makeScorer), and it is stamped here because every caller already resolves the
+// race docs to decorate the session flags.
+export function classSessionTemplates(result, racesById = {}) {
+  const race = racesById[result.race_id] || {};
+  const byClass = race.session_points_by_class || {};
+  const firstStd = Array.isArray(race.sessions) && race.sessions.length ? race.sessions[0] : "Race";
+  const type = result.session_type || "race";
+  const name = result.session || (type === "qualifying" ? "Qualifying" : firstStd);
+  const out = {};
+  for (const [classId, sessions] of Object.entries(byClass)) {
+    const id = sessions?.[name];
+    if (id) out[classId] = id;
+  }
+  return out;
+}
+
 // Stamp each result with its resolved counts_stats / counts_points flags so the
 // downstream stat/points aggregation can filter without re-consulting the race
 // docs. `racesById` maps race_id -> race doc (carrying the session_stats /
 // session_points_enabled toggle maps) and must hold every race of the season:
 // results whose race no longer exists are dropped here, so results orphaned by
 // an old race deletion never count toward stats or standings.
+//
+// The class-scoped template assignments ride along for the same reason — one
+// pass over the race docs, and every scorer downstream gets both.
 export function decorateSessionFlags(results, racesById = {}) {
   return results
     .filter(r => racesById[r.race_id])
-    .map(r => ({ ...r, ...resolveSessionFlags(r, racesById) }));
+    .map(r => ({
+      ...r,
+      ...resolveSessionFlags(r, racesById),
+      class_session_templates: classSessionTemplates(r, racesById),
+    }));
 }
 
 // Mark per-race derived flags (most laps led) before scoring. Events can
@@ -491,12 +521,54 @@ export function qualTemplateFor(map, result, entriesById = {}) {
 // through this, so a per-class structure reaches all of them identically.
 export function makeScorer(results, { config, classes = [], entriesById = {}, templatesById = {} } = {}) {
   const byClass = classConfigs(config, classes);
+  const classById = Object.fromEntries(classes.map(c => [c.id, c]));
   const baseFor = r => byClass[classOfResult(r, entriesById)] || config;
   const qualPosMap = buildQualPosMap(results, entriesById);
   const qualTemplates = buildQualTemplateMap(results, entriesById);
 
-  const configFor = r => configForTemplate(baseFor(r), templatesById[r.points_template_id]);
-  const qualConfigFor = r => configForTemplate(baseFor(r), templatesById[qualTemplateFor(qualTemplates, r, entriesById)]);
+  // ── Where a session's template sits in the chain ─────────────────────────
+  //
+  // It depends on WHO the template was assigned to, because the two kinds of
+  // assignment are statements at different levels:
+  //
+  //   • picked for ONE class of a split event (session_points_by_class) — the
+  //     most specific thing anyone can say about scoring, so it goes on TOP of
+  //     that class's own structure, as it always has;
+  //   • picked for the event (session_points) — the event's default, which is a
+  //     statement about the season's field as a whole. It therefore goes UNDER
+  //     the class layer, so a class scoring on its own points structure
+  //     overrides it exactly as it overrides the season itself.
+  //
+  // The second case is the fix: an event-wide template used to be laid over
+  // every class, flattening a class's own scale back to whatever the event
+  // picked — "the season default is overriding my per-class points". It still
+  // applies in full to classes that DON'T define their own structure, and a
+  // class still inherits anything the event template sets that the class
+  // doesn't (a bonus, say), since it is a layer below rather than one dropped.
+  const cache = new Map();
+  function configWith(r, templateId) {
+    const classId = classOfResult(r, entriesById) || "";
+    const template = templateId ? templatesById[templateId] : null;
+    if (!template) return byClass[classId] || config;
+
+    // "No points" is the one event-wide assignment that still wins outright: it
+    // means this session awards nothing to anybody, which a class's own scale
+    // must not quietly undo.
+    const forThisClass = isNoPointsTemplate(template)
+      || (classId && r.class_session_templates?.[classId] === templateId);
+    const key = `${classId}|${templateId}|${forThisClass ? "c" : "e"}`;
+    if (cache.has(key)) return cache.get(key);
+
+    const cls = classId ? classById[classId] : null;
+    const out = forThisClass || !cls
+      ? configForTemplate(byClass[classId] || config, template)
+      : configForClass(configForTemplate(config, template), cls);
+    cache.set(key, out);
+    return out;
+  }
+
+  const configFor = r => configWith(r, r.points_template_id);
+  const qualConfigFor = r => configWith(r, qualTemplateFor(qualTemplates, r, entriesById));
   const posFor = r => qualPosFor(qualPosMap, r, entriesById);
 
   return {

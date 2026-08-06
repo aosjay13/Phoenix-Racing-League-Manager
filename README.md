@@ -542,11 +542,23 @@ outright order, an overall championship across classes just adds their points to
 **Enable Overall Championship** off for a pure class-championship season.
 
 **Which class pays what.** Points resolve through the same shape of fallback the car does, most
-specific last: the season's structure → the **class's own structure** (`classes.race_points` /
-`qual_points` / `bonus_points`, all unset by default = inherit) → the template assigned to the
-session. Each level overrides only the fields it actually sets, so a class that changes nothing but
-the best-lap bonus still scores the season's race scale. `classScoresOwnPoints` / `configForClass` in
-`lib/standings.js` hold that rule, and `makeScorer` applies it everywhere points are computed —
+specific last:
+
+    series default → season → event-wide session template → the class's own structure → that class's own session template
+
+The **class's own structure** (`classes.race_points` / `qual_points` / `bonus_points`, all unset by
+default = inherit) therefore **overrides the season and the event's default points template alike**.
+That placement is the point: a template assigned to a session for the whole event is a statement
+about the event's field, so a class that scores on its own structure outranks it — otherwise picking
+one points system for the Feature silently flattens every per-class scale back to the event's. A
+template picked for ONE class of a split event is the opposite: the most specific statement there
+is, so it still sits on top of that class's structure. ("No points" is the one event-wide assignment
+that always wins outright — it means nobody scores.) Each level overrides only the fields it
+actually sets, so a class that changes nothing but the best-lap bonus still scores the season's race
+scale, and a class keeps anything the event template sets that it doesn't. `classScoresOwnPoints` / `configForClass` in
+`lib/standings.js` hold that rule, `makeScorer` places each template at the level it was assigned at
+(off `class_session_templates`, stamped onto every result by `decorateSessionFlags`), and it applies
+everywhere points are computed —
 standings, class championships, career and team profiles, venue leaderboards, the event page and the
 live Points column in the results editor — so a class's structure can't reach one screen and miss
 another. In the combined table each row is still scored under the class its driver raced in, which
