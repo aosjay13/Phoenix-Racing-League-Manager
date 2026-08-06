@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { ensureDriverId } from "@/lib/driverPool";
 import { entryClassIds } from "@/lib/classFilter";
@@ -15,12 +15,21 @@ import { DriverCreateModal } from "@/components/DriverCreateModal";
 // `defaultClassId` is the class the new entry joins — set while entering a
 // class's own session, so a driver added mid-entry lands in the class whose
 // grid is open instead of unclassified (where that grid wouldn't show them).
+//
+// Keyboard-first, because adding a field is a dozen drivers in a row and
+// reaching for the mouse between each one is the slow part: ↓/↑ move the
+// highlight, Enter takes the highlighted row (the top match by default, so
+// type-then-Enter is the whole interaction), Escape closes the list. Focus
+// stays in the box after an add and the query clears itself, so the next name
+// can be typed straight away.
 export function AddDriverToRace({ seasonId, seriesName, existingNames, defaultClassId = "", onCreated, onError }) {
   const [pool, setPool] = useState([]);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
   const [busy, setBusy] = useState(false);
   const [createModalName, setCreateModalName] = useState(null); // non-null while the modal is open
+  const inputRef = useRef(null);
 
   useEffect(() => {
     let live = true;
@@ -44,6 +53,36 @@ export function AddDriverToRace({ seasonId, seriesName, existingNames, defaultCl
     ? pool.filter(c => c.name.toLowerCase().includes(q) && !existingNames.has(c.name.toLowerCase())).slice(0, 8)
     : [];
   const exactExists = pool.some(c => c.name.toLowerCase() === q);
+
+  // One flat list so the keyboard and the mouse pick from exactly the same
+  // options in the same order — the "create new driver" row included, since
+  // typing a name nobody has and hitting Enter should open that.
+  const options = [
+    ...matches.map(c => ({ type: "existing", candidate: c })),
+    ...(!exactExists && q ? [{ type: "create" }] : []),
+  ];
+
+  // Any change to what's typed (or reopening the list) puts the highlight back
+  // on the top match, so Enter always takes the obvious answer.
+  useEffect(() => { setActive(0); }, [query, open]);
+
+  function choose(opt) {
+    if (!opt || busy) return;
+    if (opt.type === "existing") addExisting(opt.candidate);
+    else setCreateModalName(query.trim());
+  }
+
+  function onKeyDown(e) {
+    if (e.key === "ArrowDown") { e.preventDefault(); setOpen(true); setActive(a => Math.min(a + 1, options.length - 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setActive(a => Math.max(a - 1, 0)); }
+    else if (e.key === "Enter") {
+      // Always swallow Enter: this box sits inside the results form, and a bare
+      // Enter there would submit it instead of adding the driver.
+      e.preventDefault();
+      if (open) choose(options[active]);
+    }
+    else if (e.key === "Escape") { setOpen(false); }
+  }
 
   async function addExisting(candidate) {
     setBusy(true);
@@ -80,7 +119,13 @@ export function AddDriverToRace({ seasonId, seriesName, existingNames, defaultCl
       setQuery("");
       setOpen(false);
     } catch (err) { onError(err.message); }
-    finally { setBusy(false); }
+    finally {
+      setBusy(false);
+      // The input is disabled while the entry is being written, and a browser
+      // blurs a control it disables — so put the caret back afterwards or the
+      // next name would be typed into nothing.
+      setTimeout(() => inputRef.current?.focus(), 0);
+    }
   }
 
   function handleCreated(entry) {
@@ -88,17 +133,21 @@ export function AddDriverToRace({ seasonId, seriesName, existingNames, defaultCl
     setQuery("");
     setOpen(false);
     onCreated(entry);
+    setTimeout(() => inputRef.current?.focus(), 0);
   }
 
   return (
     <div style={{ position: "relative", maxWidth: 320, marginTop: 12 }}>
       <input
+        ref={inputRef}
         placeholder="+ Add a driver to this race…"
+        title="Type a name, then press Enter to add the highlighted driver. ↑ / ↓ to pick another, Esc to close."
         value={query}
         disabled={busy || !seasonId}
         onChange={e => { setQuery(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onKeyDown={onKeyDown}
       />
       {open && q && (
         <div style={{
@@ -106,20 +155,21 @@ export function AddDriverToRace({ seasonId, seriesName, existingNames, defaultCl
           background: "var(--surface-1, #14141c)", border: "1px solid var(--border)",
           borderRadius: 8, marginTop: 4, maxHeight: 220, overflowY: "auto",
         }}>
-          {matches.map(c => (
-            <button key={c.name} type="button" className="btn btn-ghost"
-              style={{ display: "block", width: "100%", textAlign: "left", marginTop: 0, borderRadius: 0 }}
-              onMouseDown={e => e.preventDefault()} onClick={() => addExisting(c)}>
-              {c.name}
+          {options.map((opt, i) => (
+            <button key={opt.type === "existing" ? opt.candidate.name : "__create"} type="button" className="btn btn-ghost"
+              style={{
+                display: "block", width: "100%", textAlign: "left", marginTop: 0, borderRadius: 0,
+                background: i === active ? "var(--bg-elevated)" : "transparent",
+                color: opt.type === "create" ? "var(--accent-cyan)" : "var(--ink-0)",
+              }}
+              onMouseDown={e => e.preventDefault()}
+              onMouseEnter={() => setActive(i)}
+              onClick={() => choose(opt)}>
+              {opt.type === "existing"
+                ? opt.candidate.name
+                : <>＋ Create new driver: &ldquo;{query.trim()}&rdquo;</>}
             </button>
           ))}
-          {!exactExists && (
-            <button type="button" className="btn btn-ghost"
-              style={{ display: "block", width: "100%", textAlign: "left", marginTop: 0, borderRadius: 0, color: "var(--accent-cyan)" }}
-              onMouseDown={e => e.preventDefault()} onClick={() => setCreateModalName(query.trim())}>
-              + Create new driver: &ldquo;{query.trim()}&rdquo;
-            </button>
-          )}
           {matches.length === 0 && exactExists && (
             <div style={{ padding: 8, fontSize: "0.8rem", color: "var(--ink-2)" }}>Already in this race.</div>
           )}
