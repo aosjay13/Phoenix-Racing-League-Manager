@@ -181,6 +181,20 @@ function isZeroTable(value) {
   return !Object.values(obj || {}).some(v => Number(v || 0) !== 0);
 }
 
+// A layer's bonus map, keeping only the bonuses it actually PAYS. Every bonus
+// editor writes the whole map, so a bonus nobody touched is stored as a
+// literal 0 — and a 0 that OVERRIDES silently cancels the level above (a class
+// with no Most Laps Led of its own wiped out the season's/series' MLL bonus).
+// An override layer's zeros therefore mean "inherit": class → season → series,
+// each bonus resolved at the most specific level that pays it. A session
+// TEMPLATE keeps its literal zeros (see mergeBonuses) — and "No Points" is
+// still the way to pay nothing at all.
+function overrideBonuses(value) {
+  const map = parseMaybeJson(value, {});
+  const paying = Object.fromEntries(Object.entries(map).filter(([, v]) => Number(v || 0) !== 0));
+  return Object.keys(paying).length ? paying : null;
+}
+
 // Any doc used as an override LAYER — a season over its series, a class over its
 // season: a scale that pays nothing is dropped, so it inherits from above
 // instead of flattening everything below it to zero.
@@ -189,14 +203,15 @@ function isZeroTable(value) {
 // points. Ticking "this class scores on its own points structure" to set (say) a
 // takedown rate, with the Race Points box left empty, used to store an all-zero
 // race scale — and an all-zero scale that OVERRIDES is a class where P1 scores
-// nothing. The bonuses are kept as they are: a bonus of 0 is a real setting, and
-// the derby ones already inherit through mergeBonuses.
+// nothing. Zero-valued bonuses are dropped the same way (overrideBonuses), so
+// each bonus falls through to the level above unless this layer pays it.
 export function structureOverride(doc) {
   if (!doc) return doc;
   return {
     ...doc,
     race_points: isZeroTable(doc.race_points) ? null : doc.race_points,
     qual_points: isZeroTable(doc.qual_points) ? null : doc.qual_points,
+    bonus_points: overrideBonuses(doc.bonus_points),
   };
 }
 
@@ -226,7 +241,7 @@ export function definesPoints(doc) {
 export function classScoresOwnPoints(cls) {
   if (!cls) return false;
   const own = classOverride(cls);
-  return hasTable(own.race_points) || hasTable(own.qual_points) || hasTable(cls.bonus_points);
+  return hasTable(own.race_points) || hasTable(own.qual_points) || hasTable(own.bonus_points);
 }
 
 // The base config a class's results are scored against: the season config with
@@ -373,7 +388,10 @@ export function pointsFor(result, config, qualPos = null, qualConfig = null) {
   // position 1 (see BONUS_TYPES on why there's no separate pole bonus).
   if (qualPos != null) pts += Number(qualPoints[qualPos] ?? 0);
   if (result.fastest_lap) pts += Number(bonuses.best_lap || 0);
-  if (result.is_most_laps_led) pts += Number(bonuses.most_laps_led || 0);
+  // Scored results carry the derived is_most_laps_led (decorateRaceBonuses);
+  // the results editor's live rows only have the ticked most_laps_led box, so
+  // fall through to it — otherwise the grid's Points column never adds MLL.
+  if (result.is_most_laps_led ?? result.most_laps_led) pts += Number(bonuses.most_laps_led || 0);
   if (Number(result.laps_led || 0) > 0) pts += Number(bonuses.lead_a_lap || 0);
   if (result.halfway_leader) pts += Number(bonuses.halfway_point || 0);
   if (result.hard_charger) pts += Number(bonuses.hard_charger || 0);
@@ -411,7 +429,7 @@ export function explainPoints(result, config, qualPos = null, qualConfig = null)
     if (on && value) parts.push({ label, value });
   };
   flag(result.fastest_lap, "Fastest lap", "best_lap");
-  flag(result.is_most_laps_led, "Most laps led", "most_laps_led");
+  flag(result.is_most_laps_led ?? result.most_laps_led, "Most laps led", "most_laps_led");
   flag(Number(result.laps_led || 0) > 0, "Led a lap", "lead_a_lap");
   flag(result.halfway_leader, "Halfway leader", "halfway_point");
   flag(result.hard_charger, "Hard charger", "hard_charger");
