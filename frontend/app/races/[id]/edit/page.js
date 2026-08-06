@@ -11,7 +11,7 @@ import { RaceLengthField } from "@/components/RaceLengthField";
 import { LENGTH_LAPS, raceLengthBody, raceLengthForm } from "@/lib/raceLength";
 import { normalizedBuiltinTemplates } from "@/lib/pointsTemplates";
 import { carForRace, racePerClassResults, sessionClassScopes } from "@/lib/classFilter";
-import { isBangerScope, derbyPointsTarget } from "@/lib/bangerRacing";
+import { isBangerEvent, isBangerScope, derbyPointsTarget } from "@/lib/bangerRacing";
 import { isBracketEvent, isBracketScope } from "@/lib/bracketRacing";
 import { api } from "@/lib/api";
 
@@ -319,20 +319,24 @@ function UnifiedEditInner() {
     series,
     sessionClass: perClassResults ? scope : null,
     sessionClassName: perClassResults ? scopeName : "",
-    // Demo Derby / Banger Racing can be flagged on the series, on this season,
-    // or on a single class, and this grid follows the same strict scope rule the
-    // Standings and Stats tables do: the thing being entered must ITSELF be
-    // labelled derby — the class on a split event, or the season/series on a
-    // shared one. What a season CONTAINS never counts, so an ordinary season
-    // that happens to run one Banger class keeps plain Qualifying and Race
-    // grids: no TD/SUR/LTH columns, no derby explainer, no rate bar. That class
-    // records its takedowns on its own class-scoped grid — switch the event (or
-    // the season) to per-class results to enter them. See lib/bangerRacing.js.
-    isBangerRacing: isBangerScope({
-      series,
-      season,
-      cls: perClassResults ? classes.find(c => c.id === scope) || null : null,
-    }),
+    // Demo Derby / Banger Racing — flagged on the series, the season, or a
+    // class, and honored wherever the flagged thing is what's being entered
+    // (the same resolution Bracket Style Racing uses):
+    //
+    //   • split event: the class whose grid is open answers for itself;
+    //   • everything else: the EVENT rule (isBangerEvent) — flagged
+    //     series/season, a round pinned to a flagged class, or a season whose
+    //     classes are all derby (including the one-class season). Any of those
+    //     grows the TD/SUR/LTH columns, the derby explainer, and the rate bar.
+    //
+    // The one grid a flagged class does not convert is a shared combined grid
+    // it races alongside UNFLAGGED classes — derby columns would sit over
+    // ordinary racing rows. Split that event's results by class and the
+    // flagged class enters its takedowns on its own grid while the others
+    // stay plain. See lib/bangerRacing.js.
+    isBangerRacing: perClassResults
+      ? isBangerScope({ series, season, cls: classes.find(c => c.id === scope) || null })
+      : isBangerEvent({ series, season, race, classes }),
     // Where a derby rate typed above the grid is saved, and how.
     derbyTarget,
     onDerbyPointsSave: saveDerbyPoints,

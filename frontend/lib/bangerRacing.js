@@ -122,6 +122,29 @@ export function isBangerScope({ series = null, season = null, cls = null } = {})
   return isBangerDoc(season) || isBangerDoc(series);
 }
 
+// Does this EVENT run Demo Derby / Banger Racing? The one answer for a whole
+// event's combined results grid, where isBangerScope answers for a single
+// per-class grid. Mirrors isBracketEvent in lib/bracketRacing.js — an event is
+// a derby when the flag covers it from any direction:
+//
+//   • the series or season carries the flag — every event in it; or
+//   • the event is pinned to one class (races.class_id, a "<class> only"
+//     round) and THAT class carries the flag; or
+//   • every class actually racing this shared event carries the flag — which
+//     is what makes a one-class derby season (or an all-derby season) grow the
+//     TD/SUR/LTH columns on its combined grid without any further setup.
+//
+// The only case a flagged class does NOT convert is a shared combined grid it
+// races alongside UNFLAGGED classes — derby columns over the whole field would
+// dress ordinary racing rows in takedown inputs. Split that event's results by
+// class and the flagged class gets its derby grid while the others stay plain.
+export function isBangerEvent({ series = null, season = null, race = null, classes = [] } = {}) {
+  if (isBangerScope({ series, season })) return true;
+  const pinned = race?.class_id || null;
+  if (pinned) return isBangerDoc(classes.find(c => c.id === pinned));
+  return classes.length > 0 && classes.every(isBangerDoc);
+}
+
 // ── Where the derby rates may be CONFIGURED ────────────────────────────────
 //
 // Deliberately wider than the rule above, and for one job only: the points
