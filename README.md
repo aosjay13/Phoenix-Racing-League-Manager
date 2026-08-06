@@ -360,6 +360,12 @@ it to inherit). This is what stops a class ticked purely to carry a takedown rat
 drivers' finishing points, and an all-zero scale on an existing class doc is read as "inherit" for the
 same reason.
 
+A season has a **three-way** say of its own — *Follow the classes* (the default), *Yes — the whole
+season*, or *No — a racing season even if one of its classes is a derby*. That last one is what a
+league running a single Banger class alongside ordinary racing needs: the class keeps its derby
+stats, rates and championship, while the season itself stays a racing season — no derby columns on
+its combined standings, and no derby values in its points.
+
 **Demo Derby / Banger Racing** is one boolean, settable at three levels: `series.isBangerRacing`,
 `seasons.isBangerRacing` and `classes.isBangerRacing`. They add up rather than override — derby is
 on for anything at or under a flagged level, so a flagged series covers all its seasons and classes,

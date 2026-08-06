@@ -26,9 +26,12 @@ export const BLANK_SEASON_FORM = {
   combined_championship: true,
   per_class_schedules: false,
   per_class_results: false,
-  // Demo Derby / Banger Racing for this season alone — a derby year inside an
-  // ordinary series. Adds to the series' own flag; see lib/bangerRacing.js.
+  // Demo Derby / Banger Racing for this season: "" follows its classes, "on" is
+  // the whole season, "off" keeps it a racing season even when a class is a
+  // derby. `isBangerRacing` mirrors "on" for everything that reads the flag
+  // directly. See lib/bangerRacing.js.
   isBangerRacing: false,
+  banger_mode: "",
   bonuses: { ...BLANK_BONUSES },
 };
 
@@ -49,6 +52,7 @@ export function seasonToForm(season = {}) {
     per_class_schedules: !!season.per_class_schedules,
     per_class_results: !!season.per_class_results,
     isBangerRacing: !!season.isBangerRacing,
+    banger_mode: season.banger_mode || (season.isBangerRacing ? "on" : ""),
     bonuses: Object.fromEntries(ALL_BONUS_TYPES.map(([k]) => [k, String(bonusSrc[k] ?? 0)])),
   };
 }
@@ -61,6 +65,10 @@ export function seasonFormToBody(form) {
   const { bonuses, ...rest } = form;
   return {
     ...rest,
+    // The mode and the boolean are two views of one setting, kept in step so
+    // anything reading either gets the same answer.
+    banger_mode: form.banger_mode || "",
+    isBangerRacing: form.banger_mode === "on",
     race_points: listToTableOrZero(form.race_points),
     qual_points: listToTableOrZero(form.qual_points),
     bonus_points: Object.fromEntries(Object.entries(bonuses).map(([k, v]) => [k, Number(v || 0)])),

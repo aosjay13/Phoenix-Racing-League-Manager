@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ImageUpload } from "@/components/ImageUpload";
 import { PointsFields } from "@/components/PointsFields";
 import { scoresNoPoints } from "@/lib/seasonForm";
+import { BANGER_MODES, isBangerScope } from "@/lib/bangerRacing";
 
 // Every season field, in one place. Rendered identically by League Setup's
 // Seasons panel and by the Schedule page's "+ New Season" dialog, so the two
@@ -19,13 +20,19 @@ import { scoresNoPoints } from "@/lib/seasonForm";
 // lethal) to the Points & Bonuses block. See lib/bangerRacing.js.
 export function SeasonForm({
   value, onChange, templates = [], onTemplatesChanged,
-  disabled = false, defaultPointsOpen = false, onError, banger = false,
+  disabled = false, defaultPointsOpen = false, onError, banger = false, classesAreBanger = false,
 }) {
   // `banger` here means the SERIES runs derby, which already covers every
   // season in it; the season's own switch below is for a derby season inside an
   // ordinary series. Either one opens the derby bonus values.
   const seriesBanger = banger;
-  const bangerOn = banger || !!value.isBangerRacing;
+  // Which derby bonus values to offer below: the season's own answer wins, so a
+  // season set to "No" doesn't carry derby rates it will never pay.
+  const bangerOn = isBangerScope({
+    series: seriesBanger ? { isBangerRacing: true } : null,
+    season: { isBangerRacing: !!value.isBangerRacing, banger_mode: value.banger_mode },
+    classes: classesAreBanger ? [{ isBangerRacing: true }] : [],
+  });
   const [showPoints, setShowPoints] = useState(defaultPointsOpen);
 
   const set = patch => onChange(f => ({ ...f, ...patch }));
@@ -103,26 +110,32 @@ export function SeasonForm({
         </label>
       </div>
 
-      {/* Demo Derby / Banger Racing for this season. Hidden when the series
-          around it already runs derby — every season in it does, so a season
-          switch there would only be a switch that does nothing. */}
-      {!seriesBanger && (
-        <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
-          <input type="checkbox" id="season_banger_racing" disabled={disabled}
-            checked={!!value.isBangerRacing} onChange={check("isBangerRacing")}
-            style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
-          <label htmlFor="season_banger_racing" style={{ margin: 0 }}>
-            Demo Derby / Banger Racing Season
-            <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
-              Runs <strong>this season</strong> as demo derby even though the series around it is
-              ordinary racing — every event in it records Takedowns, the Survival Bonus and the
-              Most Lethal Bonus, and the points below gain a value for each. For a season where
-              only <em>some</em> of the field races derby, leave this off and flag the{" "}
-              <strong>class</strong> instead.
-            </span>
-          </label>
-        </div>
-      )}
+      {/* Demo Derby / Banger Racing for this season — three answers, not two.
+          "Follow the classes" is the old behaviour; "No" is what a racing season
+          that happens to run ONE derby class needs, so the derby stops bleeding
+          into the season's own standings and results grids. */}
+      <div className="field">
+        <label htmlFor="season_banger_mode">Demo Derby / Banger Racing</label>
+        <select id="season_banger_mode" disabled={disabled} value={value.banger_mode || ""}
+          onChange={e => set({ banger_mode: e.target.value, isBangerRacing: e.target.value === "on" })}>
+          {BANGER_MODES.map(([mode, label]) => <option key={mode} value={mode}>{label}</option>)}
+        </select>
+        <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
+          {value.banger_mode === "on" ? (
+            <>Every event in this season records Takedowns, the Survival Bonus and the Most Lethal
+              Bonus, and the points below gain a value for each.</>
+          ) : value.banger_mode === "off" ? (
+            <><strong>{value.name || "This season"} is a racing season.</strong> A class flagged as a
+              derby is still a derby — it keeps its own derby stats, rates and championship — but the
+              season itself doesn&rsquo;t: no derby columns on its combined standings, and none on the
+              points below{seriesBanger ? ", even though its series is flagged" : ""}.</>
+          ) : (
+            <>Default: the season is a derby when one of its classes is
+              {seriesBanger ? ", and this series is flagged, so it is" : ""}. Pick{" "}
+              <em>No</em> to keep the season itself a racing season while a class runs the derby.</>
+          )}
+        </span>
+      </div>
 
       <button type="button" className="btn btn-ghost" style={{ marginTop: 14 }} onClick={() => setShowPoints(v => !v)}>
         {showPoints ? "▾" : "▸"} Points &amp; Bonuses

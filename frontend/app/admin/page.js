@@ -22,7 +22,7 @@ import { BLANK_SEASON_FORM, scoresNoPoints, seasonFormToBody, seasonToForm } fro
 import { BLANK_SERIES_FORM, seriesFormToBody, seriesToForm } from "@/lib/seriesForm";
 import { BLANK_CLASS_FORM, classFormToBody, classToForm, seasonPointsAsClassFields } from "@/lib/classForm";
 import { classScoresOwnPoints, definesPoints } from "@/lib/standings";
-import { isBangerDoc } from "@/lib/bangerRacing";
+import { isBangerDoc, isBangerScope } from "@/lib/bangerRacing";
 
 function Panel({ title, sub, step, muted, children }) {
   return (
@@ -227,8 +227,13 @@ function AdminInner() {
   // the class to set a rate. The class form takes them for a derby class, and
   // reads its own in-progress switch so ticking it reveals the fields at once.
   // (A derby season's own switch is handled inside <SeasonForm> the same way.)
-  const bangerSeasonScope = bangerSeason || classes.some(isBangerDoc);
-  const classBanger = bangerSeason || !!classForm.isBangerRacing;
+  // The season's own answer decides whether the SEASON's editors carry derby
+  // values: "off" keeps a racing season clean even when one of its classes is a
+  // derby (see isBangerScope). The class's own flag is unaffected — a derby
+  // class always gets its derby rates.
+  const bangerSeasonScope = isBangerScope({ series, season, classes });
+  const classBanger = isBangerScope({ series, season, cls: { isBangerRacing: !!classForm.isBangerRacing } })
+    || !!classForm.isBangerRacing;
 
   // Whether this season lets each class run its own calendar. Gates the Class
   // field on the race form — with it off, every race stays shared.
@@ -463,7 +468,8 @@ function AdminInner() {
               templates={templates} onTemplatesChanged={loadTemplates}
               disabled={!seriesId} defaultPointsOpen={!!editIds.season}
               onError={msg => showToast("error", msg)}
-              banger={bangerSeasonScope}
+              banger={bangerSeries}
+              classesAreBanger={classes.some(isBangerDoc)}
             />
 
             <span style={{ display: "block" }}>

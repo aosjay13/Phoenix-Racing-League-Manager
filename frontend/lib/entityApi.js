@@ -184,8 +184,14 @@ export const SPECS = {
              // even when the series around it is ordinary racing — a one-off
              // derby year. It adds to the series flag rather than overriding it
              // (see lib/bangerRacing.js), and a single class can carry it too.
+             //
+             // `banger_mode` is the season's own answer to "is this a derby
+             // season?": "" follows its classes (the default), "on" is the whole
+             // season, "off" keeps it a racing season even when one of its
+             // classes IS a derby — that class stays a derby on its own. See
+             // BANGER_MODES in lib/bangerRacing.js.
              fields: { name: { required: true }, game_id: {}, logo_url: {}, status: { default: "active" },
-                       isBangerRacing: { bool: true, default: false },
+                       isBangerRacing: { bool: true, default: false }, banger_mode: {},
                        drop_weeks: { number: true, default: 0 }, points_scale: {}, car: {},
                        race_points: {}, qual_points: {}, bonus_points: {},
                        combined_championship: { bool: true, default: true },
