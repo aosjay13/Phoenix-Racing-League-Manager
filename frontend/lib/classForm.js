@@ -12,6 +12,7 @@ import { BLANK_BONUSES } from "@/lib/seasonForm";
 import { ALL_BONUS_TYPES, BONUS_TYPES, classOverride, classScoresOwnPoints } from "@/lib/standings";
 import { listToTable, tableToList } from "@/lib/pointsTemplates";
 import { bangerBonusesOnly, hasBangerBonuses } from "@/lib/bangerRacing";
+import { BLANK_CAR_SELECTION_FORM, carSelectionFormToBody, carSelectionToForm } from "@/lib/carSelection";
 
 export const BLANK_CLASS_FORM = {
   name: "",
@@ -27,6 +28,10 @@ export const BLANK_CLASS_FORM = {
   // class next to ordinary racing ones. A flagged series already covers every
   // class in it; see lib/bracketRacing.js.
   isBracketRacing: false,
+  // Car selection / lock-in for this class alone — how one class runs its own
+  // car list while the rest of the season picks from the season's. See
+  // lib/carSelection.js.
+  ...BLANK_CAR_SELECTION_FORM,
   own_points: false,
   race_points: "",
   qual_points: "",
@@ -64,6 +69,7 @@ export function classToForm(cls = {}) {
     sort_order: cls.sort_order != null ? String(cls.sort_order) : "",
     isBangerRacing: !!cls.isBangerRacing,
     isBracketRacing: !!cls.isBracketRacing,
+    ...carSelectionToForm(cls),
     own_points: classScoresOwnPoints(cls) && (hasOwnScale(cls) || hasTraditionalBonus(cls)),
     race_points: tableToList(cls.race_points),
     qual_points: tableToList(cls.qual_points),
@@ -91,6 +97,8 @@ export function classFormToBody(form, fallbackSortOrder = 0, { banger = false } 
     sort_order: form.sort_order === "" ? fallbackSortOrder : Number(form.sort_order),
     isBangerRacing: !!form.isBangerRacing,
     isBracketRacing: !!form.isBracketRacing,
+    // The car list is stored as an array of names, not the textarea's raw text.
+    ...carSelectionFormToBody(form),
     // Nulls (not omissions) so turning the override back off actually clears a
     // structure the class used to have, rather than leaving it in place.
     ...(form.own_points

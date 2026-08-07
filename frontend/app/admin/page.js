@@ -24,6 +24,8 @@ import { BLANK_CLASS_FORM, classFormToBody, classToForm, seasonPointsAsClassFiel
 import { classScoresOwnPoints, definesPoints } from "@/lib/standings";
 import { bangerEntryScope, isBangerDoc } from "@/lib/bangerRacing";
 import { isBracketDoc } from "@/lib/bracketRacing";
+import { CarSelectionFields } from "@/components/CarSelectionFields";
+import { carOptionList, resolveCarSelection } from "@/lib/carSelection";
 
 function Panel({ title, sub, step, muted, children }) {
   return (
@@ -89,6 +91,15 @@ const SECTIONS = [
   // roles, since only an Owner can export or import the database.
   { key: "backup",    label: "Backup & Restore", icon: "💾", group: "data",     hint: "Export/import the entire app as JSON" },
 ];
+
+// "🚗 car lock-in · 3 cars" for a list row, or null when this doc asks for no
+// car selection of its own — so a glance down the Series / Seasons / Classes
+// lists shows where the lock-in is switched on.
+function carLockinMeta(doc) {
+  if (!doc?.require_car_selection) return null;
+  const n = carOptionList(doc).length;
+  return `🚗 car lock-in${n ? ` · ${n} car${n === 1 ? "" : "s"}` : " · no cars listed"}${doc.car_selection_locked ? " · locked" : ""}`;
+}
 
 function toArray(str) {
   return String(str || "").split(",").map(s => s.trim()).filter(Boolean);
@@ -439,6 +450,11 @@ function AdminInner() {
               </label>
             </div>
 
+            {/* Car selection / lock-in for every season and class in this
+                series — the same block the Seasons and Classes panels render.
+                See lib/carSelection.js. */}
+            <CarSelectionFields value={seriesForm} onChange={setSeriesForm} level="series" disabled={!gameId} />
+
             {/* The series' points are the league DEFAULT: every season in it
                 scores on these unless the season (or one of its classes)
                 overrides them. Left blank the series sets nothing and each
@@ -469,7 +485,8 @@ function AdminInner() {
           <div style={{ marginTop: 16 }}>
             {seriesList.map(s => <ItemRow key={s.id} logo={s.logo_url} name={s.name}
               meta={[isBangerDoc(s) ? "💥 Demo Derby / Banger Racing" : null,
-                     definesPoints(s) ? "default points set" : null].filter(Boolean).join(" · ")}
+                     definesPoints(s) ? "default points set" : null,
+                     carLockinMeta(s)].filter(Boolean).join(" · ")}
               editing={editIds.series === s.id}
               onEdit={() => {
                 setEditId("series", s.id);
@@ -502,6 +519,7 @@ function AdminInner() {
               onError={msg => showToast("error", msg)}
               banger={bangerSeries}
               classesAreBanger={classes.some(isBangerDoc)}
+              seriesDoc={series}
             />
 
             <span style={{ display: "block" }}>
@@ -516,7 +534,8 @@ function AdminInner() {
             {seasons.map(s => (
               <ItemRow key={s.id} logo={s.logo_url} name={s.name} editing={editIds.season === s.id}
                 meta={[isBangerDoc(s) ? "💥 Demo Derby / Banger Racing" : null,
-                     definesPoints(s) ? "default points set" : null].filter(Boolean).join(" · ")}
+                     definesPoints(s) ? "default points set" : null,
+                     carLockinMeta(s)].filter(Boolean).join(" · ")}
                 onEdit={() => {
                   setEditId("season", s.id);
                   setSeasonForm(seasonToForm(s));
@@ -631,6 +650,12 @@ function AdminInner() {
               </div>
             )}
 
+            {/* Car selection / lock-in for this class alone — a class that
+                sets its own list asks ITS drivers for their own pick, while
+                the rest of the season keeps picking from the season's. */}
+            <CarSelectionFields value={classForm} onChange={setClassForm} level="class" disabled={!seasonId}
+              inherited={resolveCarSelection({ series, season })} />
+
             <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
               <input type="checkbox" id="class_own_points" disabled={!seasonId} checked={!!classForm.own_points}
                 onChange={e => toggleOwnPoints(e.target.checked)}
@@ -686,7 +711,8 @@ function AdminInner() {
             {classes.map(c => (
               <ItemRow key={c.id} name={c.name}
                 meta={[carForClass(season, c), classToForm(c).own_points ? "own points" : null,
-                       isBangerDoc(c) ? "💥 banger racing" : null].filter(Boolean).join(" · ")}
+                       isBangerDoc(c) ? "💥 banger racing" : null,
+                       carLockinMeta(c)].filter(Boolean).join(" · ")}
                 editing={editIds.class === c.id}
                 onEdit={() => {
                   setEditId("class", c.id);

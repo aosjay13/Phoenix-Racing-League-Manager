@@ -46,6 +46,14 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   on. Unlike Demo Derby these are ordinary racing finishes — a bracket 3rd is a straight **3** in
   Average Finish, both 3rd-place drivers are paid identical points, and it all cascades into Wins,
   Podiums, Top 5s and the Overall and per-Game stats like any other result
+- 🚗 **Car selection & lock-in** — flag a **series, a season, or one class** as requiring a car
+  selection and publish the list of cars on offer. Every driver on that roster gets a **Series
+  Information** section on their Dashboard where they pick their car from a dropdown and lock it
+  in, see the instructions the admin left, and see the whole roster's picks side by side so
+  nobody has to ask who's running what. Players can also **sign themselves up** for any season
+  that's upcoming or under way (completed seasons are closed to both), claiming their driver
+  profile — or adding themselves as a new driver — as part of the flow. Admins can freeze every
+  pick with one **Lock the selections** switch when the entry list is final
 - 🖼 **Social graphic exporter** — on Standings, Stats, Race Results, Skill Ratings, Records and the
   Schedule (a season's calendar, or the cross-season Upcoming / Recent Results feeds). League name
   + logo branding, a
@@ -94,24 +102,39 @@ The app runs at `http://localhost:3000`.
 3. **Drivers** — browse every registered player; open a profile to see career stats,
    broken out per game and combined across all games (starts, wins, podiums, poles, average
    finish, titles, etc.).
-4. **Schedule** — the season's race calendar. Completed races are clickable and show full
+4. **Series Information** — a section on your **Dashboard** (not the sidebar) that appears only
+   when there's something for you to do: a series that wants you to lock in a car, or a season
+   open to sign up for. Click through and you get:
+   - **Linking your driver.** Sign-ups and car choices are recorded against a *driver*, not an
+     account, so the first screen asks you to point yours at one. If you've raced here before,
+     find yourself in the list and hit **That's me** — an admin approves it, because it hands
+     over that driver's whole race history. If you're new, **add yourself as a driver** and
+     you're linked straight away, no waiting. (If the league already had you under a different
+     name, an admin merges the two later and every result comes across.)
+   - **Signing up.** Every season still upcoming or under way that you're not on yet, with an
+     optional class and car number. Seasons marked complete never appear — and can't be joined.
+   - **Locking in your car.** Pick from the cars the admin listed and hit **Lock in Car**. You
+     can change your mind as often as you like until an admin locks the selections. Under it,
+     the full roster shows exactly which car everyone else has taken, with a tally of how
+     popular each one is.
+5. **Schedule** — the season's race calendar. Completed races are clickable and show full
    results. Admins get **+ New Race** here; on the cross-season feed (Season set to "All
    Seasons" with a series picked) there's a **+ New Season** button too, offering every option
    League Setup does and dropping you onto the new season's empty calendar. **🖼 Share Graphic**
    exports the calendar as an image — the whole season's rounds, or (on the cross-season feed)
    Upcoming and Recent Results as separate posts.
-5. **Standings** — driver and team championship tables for the selected season, with
+6. **Standings** — driver and team championship tables for the selected season, with
    points, gaps to the leader, and per-category stats. Click any column header to sort. Level
    on points? The tie-breaker chain below decides, and every step of it is a column in the
    table so you can see why.
-6. **Stats** — use the Game/Series/Season/Class menus to scope driver stats to a class, a
+7. **Stats** — use the Game/Series/Season/Class menus to scope driver stats to a class, a
    season, a whole series, a whole game, or the entire league. Pick "All" at any level to
    widen the scope.
-7. **Tracks** — open a venue for its own page: every race held there, a leaderboard of who has
+8. **Tracks** — open a venue for its own page: every race held there, a leaderboard of who has
    gone best, and its lap records. The **Class** menu scopes it too — the leaderboard, winners
    and headline record become that class's — while the per-game and per-class record breakdowns
    always stay side by side, since that's the comparison they exist to show.
-8. **Records** — the record holder in each category for the current scope, plus **Avg Drivers
+9. **Records** — the record holder in each category for the current scope, plus **Avg Drivers
    per Race**: the average field size across every completed race in scope. Empty and upcoming
    events are ignored, and a heat weekend counts its Feature field once rather than each heat.
    **🖼 Share Graphic** posts the record book as one image — a row per category that has a holder
@@ -183,6 +206,21 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      enter its grid, switch to the next. The **Points system** picker next to the grid is that
      class's too on a split event — Pro's Race and Amateur's Race at the same event can score on
      different templates, and switching class swaps the picker with it.
+   - **Require Car Selection / Lock-in** — offered identically on **Series**, **Seasons** and
+     **Classes**, since a league might run one car list across a whole series or a different one
+     per class. Tick it, list the **Available Cars** one per line, and every driver on that
+     roster is asked to lock in their car from the **Series Information** section of their
+     Dashboard. **Instructions for Drivers** ("Please lock in your car for the upcoming
+     season") shows above their dropdown. **Lock the selections** freezes every pick when the
+     entry list is final — untick it to reopen.
+
+     It inherits like everything else here: the requirement is on if *any* level at or above
+     turns it on, and the **most specific car list wins** — a class's list beats the season's,
+     which beats the series'. So the common setup is one list on the series; a class that runs
+     different machinery adds its own and its drivers pick from that instead. A driver is only
+     ever asked once: their class's question if it has one, otherwise the season's. Picks are
+     stored on the driver's roster entry (`entries.selected_car`), so an admin can correct one
+     from the roster like any other entry field.
 2. **Drivers** (`/drivers`) — everyone in the league, under one menu. The buttons at the top
    switch between its three views, so nothing is stacked into one long scroll:
    - **Drivers** — the public directory of every driver profile (admins get Edit / Merge /
@@ -291,7 +329,7 @@ frontend/
   app/
     api/            ← Next.js API routes (all writes require a Firebase ID token)
       games/ series/ seasons/ teams/ entries/ races/ results/ standings/
-      stats/ roster/ users/ upload/
+      stats/ roster/ users/ upload/ car-selection/
     page.js         ← Dashboard (per selected season)
     standings/      ← Driver + team points tables
     stats/          ← Scoped driver stats (season/series/game/league), sortable
@@ -300,6 +338,8 @@ frontend/
     drivers/        ← Driver directory + public profiles (/drivers/[uid]), plus the admin
                       Roster & Teams and User Accounts tabs (?tab=roster / ?tab=accounts)
     races/[id]/     ← Race results view; races/[id]/edit ← admin race info + results editor
+    series-info/    ← A player's series: driver linking, series sign-up, and
+                      series-info/[seasonId] ← that season's car lock-in + who's racing what
     profile/        ← Edit your own profile
     login/          ← Sign in / create account
   lib/              ← Firebase admin + client init, auth guards, standings math, shared CRUD
@@ -350,6 +390,22 @@ fills a blank Class cell with the class the rest of its rows are in — a driver
 carries no class (one created inline while entering results, say) would otherwise be the single row
 in a race paid a different rate per takedown than everyone around them. The filled-in class shows in
 the Class column before anything is saved, and any row still without one is called out above the grid.
+
+### Where a driver's car is configured
+
+A car lock-in is stored on the driver's **roster entry** — the only document that already means
+"this driver, in this season": `entries.selected_car` for a season-wide pick, and
+`entries.selected_cars` (`{ class_id: car }`) for the classes that publish their own car list.
+`selected_car` mirrors the most recent pick whichever slot it came from, exactly as
+`entries.class_id` mirrors `class_ids[0]`, so anything reading a single field still resolves.
+
+The settings behind it (`require_car_selection`, `car_options`, `car_selection_note`,
+`car_selection_locked`) sit on `series`, `seasons` *and* `classes` and resolve down the same
+chain the points structure uses — the rules live once in `lib/carSelection.js` and are shared by
+the API routes and the screens. Players write their own pick through `POST /api/car-selection`,
+which resolves the entry from the driver profile linked to the **caller's** account rather than
+from anything in the request, so there is no way to name someone else's row. It also refuses a
+car that isn't on the list, a locked selection, and any season marked completed.
 
 ### Where points are configured
 

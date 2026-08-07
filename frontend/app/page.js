@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useLeague } from "@/components/LeagueProvider";
 import { useAuth } from "@/components/AuthProvider";
+import { SeriesInfoPanel } from "@/components/SeriesInfoPanel";
 import { api } from "@/lib/api";
 import { formatRaceDate, isPastRaceDate, raceDateSortKey, toDateOnly } from "@/lib/raceDate";
 
@@ -143,6 +144,12 @@ export default function DashboardPage() {
           ))}
         </div>
       </div>
+
+      {/* Series Information — car lock-ins and series sign-ups for the signed-in
+          player. Deliberately here rather than in the sidebar: it renders
+          nothing at all unless this player has a car to choose or a season to
+          join (see components/SeriesInfoPanel.jsx). */}
+      <SeriesInfoPanel />
 
       <div className="section-header" style={{ marginTop: 28 }}>
         <h3>Quick Access</h3>

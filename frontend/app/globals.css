@@ -1852,3 +1852,103 @@ tbody tr:hover {
   color: var(--accent-cyan);
   margin-left: 4px;
 }
+
+/* ── Series Information & car lock-in ──────────────────────────────────────
+   The Dashboard's Series Information card (components/SeriesInfoPanel.jsx) and
+   the /series-info screens behind it. The card is styled like a wider, single
+   .quick-card so it reads as part of the Dashboard rather than as a banner. */
+
+.series-info-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+  border: 1px solid var(--border-accent, var(--border));
+  border-radius: 14px;
+  background: linear-gradient(120deg, var(--accent-cyan-dim), var(--bg-surface));
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.series-info-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent-cyan);
+}
+
+.series-info-icon { font-size: 1.6rem; line-height: 1; }
+
+.series-info-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.series-info-body strong { font-size: 0.98rem; color: var(--ink-0); }
+.series-info-body span { font-size: 0.82rem; color: var(--ink-1); }
+
+.series-info-badge {
+  min-width: 24px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-align: center;
+  color: #1a1000;
+  background: var(--accent-gold);
+}
+
+.series-info-go { color: var(--accent-cyan); font-size: 1.1rem; }
+
+.page-badge.is-muted { background: var(--bg-elevated); color: var(--ink-2); }
+
+/* The sign-up cards and the per-slot lock-in cards both sit on a responsive
+   grid so a league with several open seasons doesn't become one long column. */
+.signup-grid,
+.lockin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+}
+
+.signup-card { margin-bottom: 0; }
+.lockin-card { margin-bottom: 0; }
+
+.lockin-note {
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-cyan);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  font-size: 0.86rem;
+  color: var(--ink-1);
+}
+
+.lockin-current { margin: 0 0 10px; font-size: 0.88rem; color: var(--ink-1); }
+.lockin-current strong { color: var(--accent-cyan); }
+.lockin-current.is-empty { color: var(--ink-2); }
+
+.lockin-tally {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+/* League Setup's "Require Car Selection / Lock-in" block, shared by the Series,
+   Seasons and Classes panels (components/CarSelectionFields.jsx). */
+.car-lockin-block {
+  margin: 14px 0;
+  padding: 12px 14px 2px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-gold);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+}
+
+.lockin-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.lockin-options .badge.is-mine {
+  color: var(--accent-cyan);
+  border-color: var(--border-accent);
+  background: var(--accent-cyan-dim);
+}

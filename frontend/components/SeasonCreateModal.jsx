@@ -148,6 +148,8 @@ export function SeasonCreateModal({ gameId, games = [], seriesId, seriesName, se
           // The derby bonuses belong to the series the season is going into —
           // a season created under a Banger Racing series can set them here.
           banger={isBangerDoc(seriesOptions.find(s => s.id === (seriesId || pickedSeries)) || null)}
+          // …and so does whatever car lock-in the series already requires.
+          seriesDoc={seriesOptions.find(s => s.id === (seriesId || pickedSeries)) || null}
         />
         {error && <p style={{ color: "#e5484d", fontSize: "0.85rem" }}>{error}</p>}
         <button className="btn btn-primary" type="submit" disabled={busy || !form.name.trim() || !gameReady || !seriesReady}>

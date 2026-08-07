@@ -14,6 +14,7 @@
 
 import { ALL_BONUS_TYPES } from "@/lib/standings";
 import { listToTable, tableToList } from "@/lib/pointsTemplates";
+import { BLANK_CAR_SELECTION_FORM, carSelectionFormToBody, carSelectionToForm } from "@/lib/carSelection";
 
 export const BLANK_SERIES_FORM = {
   name: "",
@@ -22,6 +23,9 @@ export const BLANK_SERIES_FORM = {
   // Bracket Style Racing for every season and class in this series — see
   // lib/bracketRacing.js.
   isBracketRacing: false,
+  // Car selection / lock-in for every season and class in this series — see
+  // lib/carSelection.js.
+  ...BLANK_CAR_SELECTION_FORM,
   race_points: "",
   qual_points: "",
   bonuses: Object.fromEntries(ALL_BONUS_TYPES.map(([k]) => [k, "0"])),
@@ -36,6 +40,7 @@ export function seriesToForm(series = {}) {
     logo_url: series.logo_url || "",
     isBangerRacing: !!series.isBangerRacing,
     isBracketRacing: !!series.isBracketRacing,
+    ...carSelectionToForm(series),
     race_points: tableToList(series.race_points),
     qual_points: tableToList(series.qual_points),
     bonuses: Object.fromEntries(ALL_BONUS_TYPES.map(([k]) => [k, String(bonusSrc[k] ?? 0)])),
@@ -48,6 +53,8 @@ export function seriesFormToBody(form) {
   const { bonuses, ...rest } = form;
   return {
     ...rest,
+    // The car list is stored as an array of names, not the textarea's raw text.
+    ...carSelectionFormToBody(form),
     race_points: listToTable(form.race_points),
     qual_points: listToTable(form.qual_points),
     // All zeros is "no bonuses set" — stored as null rather than a map of

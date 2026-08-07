@@ -158,11 +158,22 @@ export const SPECS = {
   // (two 3rd places for the semi-final losers, four 4ths for the quarters).
   // Those finishes are ordinary racing finishes and cascade into Wins, Top 5s,
   // Average Finish and the Overall/Game views exactly like any other result.
+  // `require_car_selection` / `car_options` / `car_selection_note` /
+  // `car_selection_locked` are the car lock-in settings, carried identically by
+  // a series, a season and a class (see lib/carSelection.js). On, every driver
+  // on the roster is asked to lock in the car they'll race from `car_options`,
+  // from the Series Information section of their Dashboard; the pick is stored
+  // on their roster entry. A series' settings cover every season and class in
+  // it, and the most specific car list wins — the same inheritance the points
+  // structure and the season's car use.
   series:  { collection: "series", parentField: "game_id", sortField: "name",
              fields: { name: { required: true }, logo_url: {}, description: {},
                        race_points: {}, qual_points: {}, bonus_points: {},
                        isBangerRacing: { bool: true, default: false },
-                       isBracketRacing: { bool: true, default: false } } },
+                       isBracketRacing: { bool: true, default: false },
+                       require_car_selection: { bool: true, default: false },
+                       car_options: {}, car_selection_note: {},
+                       car_selection_locked: { bool: true, default: false } } },
   seasons: { collection: "seasons", parentField: "series_id", sortField: "created_at",
              // `car` is the free-text car/model this season races (e.g. "NASCAR
              // Next Gen", "GT3"). It's the season-wide default; a race can
@@ -198,13 +209,24 @@ export const SPECS = {
              // season, "off" keeps it a racing season even when one of its
              // classes IS a derby — that class stays a derby on its own. See
              // BANGER_MODES in lib/bangerRacing.js.
+             //
+             // `status` is "active" (the default) or "completed". A completed
+             // season is history: players can neither sign themselves up for it
+             // nor change a locked-in car, which is what keeps the Dashboard's
+             // Series Information section to upcoming and running seasons.
+             //
+             // `require_car_selection` & friends are this season's car lock-in
+             // settings — see SPECS.series above and lib/carSelection.js.
              fields: { name: { required: true }, game_id: {}, logo_url: {}, status: { default: "active" },
                        isBangerRacing: { bool: true, default: false }, banger_mode: {},
                        drop_weeks: { number: true, default: 0 }, points_scale: {}, car: {},
                        race_points: {}, qual_points: {}, bonus_points: {},
                        combined_championship: { bool: true, default: true },
                        per_class_schedules: { bool: true, default: false },
-                       per_class_results: { bool: true, default: false } } },
+                       per_class_results: { bool: true, default: false },
+                       require_car_selection: { bool: true, default: false },
+                       car_options: {}, car_selection_note: {},
+                       car_selection_locked: { bool: true, default: false } } },
   // Classes divide a season's field into separately-scored groups ("Pro" /
   // "Amateur", "GT3" / "LMP2"). A class belongs to exactly one season; a roster
   // entry points at one with `class_id`, and each saved result carries the class
@@ -235,11 +257,20 @@ export const SPECS = {
   // racing classes. Only its results grid takes the bracket layout (and the
   // tied finishing positions that come with it); a flagged series already
   // covers every class under it. See lib/bracketRacing.js.
+  //
+  // `require_car_selection` & friends are this class's car lock-in settings —
+  // see SPECS.series and lib/carSelection.js. A class that sets a list of its
+  // own asks ITS drivers for their own pick, so a GT3 class and an LMP2 class
+  // in one season each lock in from their own machinery; a class that sets
+  // nothing simply inherits the season's question.
   classes: { collection: "classes", parentField: "season_id", sortField: "sort_order",
              fields: { name: { required: true }, color: {}, description: {}, car: {},
                        isBangerRacing: { bool: true, default: false },
                        isBracketRacing: { bool: true, default: false },
                        race_points: {}, qual_points: {}, bonus_points: {},
+                       require_car_selection: { bool: true, default: false },
+                       car_options: {}, car_selection_note: {},
+                       car_selection_locked: { bool: true, default: false },
                        sort_order: { number: true, default: 0 } } },
   teams:   { collection: "teams", parentField: "season_id", sortField: "name",
              fields: { name: { required: true }, logo_url: {}, color: {} } },
@@ -274,10 +305,18 @@ export const SPECS = {
   // overall championship but toward no class championship. `class_id` mirrors
   // the first of them (the primary class) for everything written before
   // multi-class; `normalize` keeps the two in step whichever one is sent.
+  // `selected_car` is the car this driver locked in for the season, and
+  // `selected_cars` ({ class_id: car }) their pick in each class that runs its
+  // own car list — `selected_car` mirrors the most recent of them the same way
+  // `class_id` mirrors `class_ids[0]`, so a single-field reader always
+  // resolves. Players write these themselves through /api/car-selection (which
+  // checks they own the driver profile); they're editable here so an admin can
+  // correct one. See lib/carSelection.js.
   entries: { collection: "entries", parentField: "season_id", sortField: "name",
              normalize: normalizeEntryClasses,
              fields: { name: { required: true }, number: { maxLen: 3 }, team_id: {}, user_id: {},
                        driver_id: {}, class_id: {}, class_ids: {},
+                       selected_car: {}, selected_cars: {}, selected_car_at: {},
                        points_adjustment: { number: true }, adjustment_note: {} } },
   pointsTemplates: { collection: "points_templates", parentField: null, sortField: "name",
              fields: { name: { required: true }, race_points: {}, qual_points: {}, bonus_points: {} } },

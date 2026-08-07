@@ -10,6 +10,7 @@
 
 import { ALL_BONUS_TYPES } from "@/lib/standings";
 import { listToTableOrZero, tableToList } from "@/lib/pointsTemplates";
+import { BLANK_CAR_SELECTION_FORM, carSelectionFormToBody, carSelectionToForm } from "@/lib/carSelection";
 
 export const BLANK_BONUSES = Object.fromEntries(ALL_BONUS_TYPES.map(([k]) => [k, "0"]));
 
@@ -32,6 +33,9 @@ export const BLANK_SEASON_FORM = {
   // directly. See lib/bangerRacing.js.
   isBangerRacing: false,
   banger_mode: "",
+  // Car selection / lock-in for this season and its classes — see
+  // lib/carSelection.js.
+  ...BLANK_CAR_SELECTION_FORM,
   bonuses: { ...BLANK_BONUSES },
 };
 
@@ -55,6 +59,7 @@ export function seasonToForm(season = {}) {
     // "off" predates the strict visibility rule and reads the same as the
     // default now — an ordinary racing season.
     banger_mode: season.isBangerRacing ? "on" : (season.banger_mode === "on" ? "on" : ""),
+    ...carSelectionToForm(season),
     bonuses: Object.fromEntries(ALL_BONUS_TYPES.map(([k]) => [k, String(bonusSrc[k] ?? 0)])),
   };
 }
@@ -71,6 +76,8 @@ export function seasonFormToBody(form) {
     // anything reading either gets the same answer.
     banger_mode: form.banger_mode || "",
     isBangerRacing: form.banger_mode === "on",
+    // The car list is stored as an array of names, not the textarea's raw text.
+    ...carSelectionFormToBody(form),
     race_points: listToTableOrZero(form.race_points),
     qual_points: listToTableOrZero(form.qual_points),
     bonus_points: Object.fromEntries(Object.entries(bonuses).map(([k, v]) => [k, Number(v || 0)])),
