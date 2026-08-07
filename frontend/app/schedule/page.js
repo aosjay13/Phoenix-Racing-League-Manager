@@ -389,8 +389,8 @@ function SeasonSchedule() {
               className="btn btn-ghost"
               style={{ marginTop: 0 }}
               title={completed
-                ? "This season is complete and its champion holds a Title. Click to reopen it."
-                : "Mark this season complete — its champion(s) earn a Championship in career stats."}
+                ? "This season is complete: its champion holds a Title, and it's closed to sign-ups and car changes. Click to reopen it."
+                : "Mark this season complete — its champion(s) earn a Championship in career stats, and it closes to player sign-ups and car lock-ins."}
               onClick={() => setToggleComplete(true)}>
               {completed ? "✓ Season Complete" : "Mark Season Complete"}
             </button>
@@ -432,12 +432,12 @@ function SeasonSchedule() {
         <ConfirmDialog
           title={completed ? "Reopen this season?" : "Mark season complete?"}
           message={completed
-            ? `Reopen "${season?.name}"? It will no longer count as a finished season, and its champion's Title will be removed until you mark it complete again.`
+            ? `Reopen "${season?.name}"? It will no longer count as a finished season, and its champion's Title will be removed until you mark it complete again. Players will be able to sign up for it and change their locked-in car again.`
             : `Mark "${season?.name}" complete? This closes out the season and credits its champion(s) with a Championship in their career and team stats — ${
                 classes.length
                   ? `each class's points leader${season?.combined_championship === false ? " (this season awards no overall title)" : ", plus the overall points leader"}`
                   : "the points leader"
-              }.`}
+              }. It also closes the season to players: nobody else can sign up for it, and nobody can change the car they locked in. Their Dashboard reads "Season over — sign-ups are done". Nothing is deleted, and reopening it undoes all of that.`}
           confirmLabel={completed ? "Reopen season" : "Mark complete"}
           onConfirm={confirmToggleComplete}
           onClose={() => setToggleComplete(false)}

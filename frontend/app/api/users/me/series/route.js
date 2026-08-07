@@ -3,7 +3,8 @@ import { db } from "@/lib/firebase";
 import { getRequestLeagueId, withUser } from "@/lib/serverAuth";
 import { normalizeClassIds } from "@/lib/classFilter";
 import {
-  carSelectionSlots, resolveCarSelection, seasonAcceptsSignups, selectedCarFor, slotsForEntry,
+  carSelectionSlots, resolveCarSelection, seasonAcceptsSignups, seasonIsCompleted,
+  selectedCarFor, slotsForEntry,
 } from "@/lib/carSelection";
 import {
   entriesForDriver, leagueSeasonIndex, linkedDriver, newestFirst, pendingClaim,
@@ -106,13 +107,24 @@ export const GET = withUser(async (request, ctx, user) => {
       };
     });
 
+  // Seasons left OUT of the sign-up list purely because they're finished. The
+  // screens count them so "nothing open" can say WHY — a league whose seasons
+  // are all complete reads as "sign-ups are done", not as an empty page.
+  const closed_signups = seasons.filter(s =>
+    seasonIsCompleted(s) && !enteredSeasonIds.has(s.id) &&
+    seriesById[s.series_id] && gamesById[s.game_id]).length;
+
   return NextResponse.json({
     driver: driver ? { id: driver.id, name: driver.name || "Driver" } : null,
     pending_claim: pending ? { id: pending.id, driver_id: pending.driver_id, driver_name: pending.driver_name } : null,
     my_seasons,
     open_signups,
+    closed_signups,
     // What the Dashboard uses to decide whether to render the section at all.
-    show: my_seasons.some(s => s.requires_car && s.open) || open_signups.length > 0,
+    // A season that has just been marked complete still counts: the player was
+    // being asked for a car right up until it closed, and it going silently
+    // missing reads as "I've been dropped" rather than "the season is over".
+    show: my_seasons.some(s => s.requires_car) || open_signups.length > 0,
     needs_pick_count: my_seasons.filter(s => s.needs_pick).length,
   });
 });
@@ -136,9 +148,13 @@ export const POST = withUser(async (request, ctx, user) => {
   const seasonDoc = await db().collection("seasons").doc(seasonId).get();
   if (!seasonDoc.exists) return NextResponse.json({ error: "Season not found" }, { status: 404 });
   const season = { id: seasonDoc.id, ...seasonDoc.data() };
+  // An admin marked this season complete (from the Schedule or League Setup).
+  // That closes it to players for good — this is the check that makes it true
+  // rather than merely hidden, so a stale tab or a hand-made request can't slip
+  // an entry in after the season is over.
   if (!seasonAcceptsSignups(season)) {
     return NextResponse.json(
-      { error: `${season.name || "That season"} is complete — sign-ups are closed.` },
+      { error: `Season over — sign-ups for ${season.name || "that season"} are done.`, code: "season-over" },
       { status: 400 },
     );
   }

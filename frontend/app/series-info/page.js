@@ -130,10 +130,11 @@ export default function SeriesInfoPage() {
       ) : (
         <div className="list-rows">
           {data.my_seasons.map(s => (
-            <Link key={s.season_id} href={`/series-info/${s.season_id}`} className="list-row">
+            <Link key={s.season_id} href={`/series-info/${s.season_id}`}
+              className={`list-row${s.open ? "" : " is-closed"}`}>
               {s.logo_url
                 ? <img src={s.logo_url} alt="" className="avatar" style={{ borderRadius: 6 }} />
-                : <span className="avatar avatar-fallback" style={{ borderRadius: 6 }}>🏆</span>}
+                : <span className="avatar avatar-fallback" style={{ borderRadius: 6 }}>{s.open ? "🏆" : "🏁"}</span>}
               <span className="list-row-name">
                 <strong>{s.series_name} · {s.season_name}</strong>
                 <span>
@@ -143,9 +144,9 @@ export default function SeriesInfoPage() {
               </span>
               <span className="list-row-meta">
                 {!s.open && (
-                  <span>
+                  <span style={{ minWidth: 160 }}>
                     <span className="list-row-meta-label">Season</span>
-                    <span className="list-row-meta-value">Complete</span>
+                    <span className="list-row-meta-value">Over — sign-ups are done</span>
                   </span>
                 )}
                 {s.picks.map(p => (
@@ -156,7 +157,7 @@ export default function SeriesInfoPage() {
                     </span>
                   </span>
                 ))}
-                {!s.requires_car && (
+                {!s.requires_car && s.open && (
                   <span>
                     <span className="list-row-meta-label">Car lock-in</span>
                     <span className="list-row-meta-value">Not required</span>
@@ -173,7 +174,14 @@ export default function SeriesInfoPage() {
       </div>
       {data.open_signups.length === 0 ? (
         <p style={{ fontSize: "0.85rem", color: "var(--ink-2)" }}>
-          Nothing open right now — every upcoming season already has you on it.
+          {data.closed_signups > 0
+            // Says WHY nothing is open. A league whose seasons have all been
+            // marked complete should read as "sign-ups are done", not as an
+            // empty list that looks like something failed to load.
+            ? <>Nothing open — {data.closed_signups === 1 ? "the other season is" : `all ${data.closed_signups} other seasons are`}{" "}
+                marked complete, so those sign-ups are done. A new season will show up here once an
+                admin creates one.</>
+            : <>Nothing open right now — every upcoming season already has you on it.</>}
         </p>
       ) : (
         <div className="signup-grid">

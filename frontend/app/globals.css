@@ -1952,3 +1952,37 @@ tbody tr:hover {
   border-color: var(--border-accent);
   background: var(--accent-cyan-dim);
 }
+
+/* A season the admin has marked complete: sign-ups and car changes are closed,
+   so its rows and its card read as finished rather than as something to act on
+   (see components/SeriesInfoPanel.jsx and app/series-info). */
+.series-info-card.is-closed {
+  background: var(--bg-surface);
+  border-color: var(--border);
+}
+
+.series-info-card.is-closed .series-info-go { color: var(--ink-2); }
+
+.list-row.is-closed {
+  background: transparent;
+  border-style: dashed;
+}
+
+.list-row.is-closed .list-row-name strong { color: var(--ink-1); }
+.list-row.is-closed .list-row-meta-value { color: var(--ink-1); }
+
+.season-over-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 14px 0 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-gold);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  font-size: 0.86rem;
+  color: var(--ink-1);
+}
+
+.season-over-banner strong { color: var(--ink-0); }

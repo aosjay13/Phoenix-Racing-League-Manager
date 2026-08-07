@@ -116,9 +116,12 @@ export const POST = withUser(async (request, ctx, user) => {
   if (!context) return NextResponse.json({ error: "Season not found" }, { status: 404 });
   const { season, classes, slots } = context;
 
+  // Marked complete by an admin: the season is closed to players, cars
+  // included. Enforced here and not only in the UI, so a tab left open before
+  // the season closed can't still write a change.
   if (!seasonAcceptsSignups(season)) {
     return NextResponse.json(
-      { error: `${season.name || "That season"} is complete — its cars can no longer be changed.` },
+      { error: `Season over — ${season.name || "that season"}'s cars are final and can no longer be changed.`, code: "season-over" },
       { status: 400 },
     );
   }

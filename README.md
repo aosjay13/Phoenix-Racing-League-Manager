@@ -113,6 +113,10 @@ The app runs at `http://localhost:3000`.
      name, an admin merges the two later and every result comes across.)
    - **Signing up.** Every season still upcoming or under way that you're not on yet, with an
      optional class and car number. Seasons marked complete never appear — and can't be joined.
+   - **When a season ends.** The moment an admin marks it complete, it closes to players: nobody
+     else can sign up and nobody can change the car they locked in. It doesn't vanish from your
+     Dashboard (which would read as "I've been dropped") — it stays put and says **Season over —
+     sign-ups are done**, with your car still on record. Reopening the season undoes all of it.
    - **Locking in your car.** Pick from the cars the admin listed and hit **Lock in Car**. You
      can change your mind as often as you like until an admin locks the selections. Under it,
      the full roster shows exactly which car everyone else has taken, with a tally of how
@@ -720,6 +724,24 @@ switched on (`tableScale`), and past a dozen columns the headers wrap so the wid
 the table's width. This is measured, not guessed: a 17-column standings export overflowed the card
 and clipped its last column before that rule existed. The metadata strip uses a padding-based
 thirds grid rather than flex `gap` or CSS grid, both of which html2canvas renders inconsistently.
+
+### Marking a season complete
+
+**Mark Season Complete** on the Schedule (and the matching control in League Setup) flips
+`seasons.status` to `"completed"`, which is the one switch that closes a season out. It does two
+things:
+
+- **Crowns its champions** — see Championships below.
+- **Closes it to players.** No one can sign up for it any more, and nobody can change the car they
+  locked in. Both are enforced in the API (`seasonAcceptsSignups` in `lib/carSelection.js`, checked
+  by `POST /api/users/me/series` and `POST /api/car-selection`), not merely hidden in the UI, so a
+  tab left open from before the season closed still can't write to it. The season also drops out of
+  the sign-up list everywhere it's offered.
+
+On a player's Dashboard the season doesn't disappear — a row that vanishes reads as "I've been
+dropped from the roster". It stays, greyed, saying **Season over — sign-ups are done**, with the
+car they locked in still shown. Nothing is deleted: reopening the season restores sign-ups, car
+changes and the champion's Title exactly as they were.
 
 **Championships (Titles).** A completed season crowns champions, and each one is +1 Championship on
 the winner's career, at every scope — `lib/champions.js` is the only definition, used by the driver

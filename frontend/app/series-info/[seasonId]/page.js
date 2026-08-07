@@ -18,10 +18,14 @@ import { api } from "@/lib/api";
 // and an ordinary season renders exactly one.
 
 // One "pick your car" block — a slot, its instructions and the dropdown.
-function SlotPicker({ slot, current, disabled, onSave, busy }) {
+// `seasonOver` (the admin marked the season complete) and `slot.locked` both
+// make it read-only; the season being over is reported first, since it's the
+// more final of the two.
+function SlotPicker({ slot, current, seasonOver, onSave, busy }) {
   const [choice, setChoice] = useState(current || "");
   useEffect(() => { setChoice(current || ""); }, [current]);
 
+  const disabled = seasonOver || slot.locked;
   const changed = (choice || "") !== (current || "");
   const label = slot.class_name ? `${slot.class_name} — your car` : "Your car";
 
@@ -53,9 +57,9 @@ function SlotPicker({ slot, current, disabled, onSave, busy }) {
 
           {disabled ? (
             <p style={{ fontSize: "0.85rem", color: "var(--ink-2)", margin: 0 }}>
-              {slot.locked
-                ? "Selections have been locked by an admin — your car can no longer be changed."
-                : "This season is complete, so its cars are read-only."}
+              {seasonOver
+                ? "Season over — car selections are final."
+                : "Selections have been locked by an admin — your car can no longer be changed."}
             </p>
           ) : (
             <>
@@ -161,13 +165,26 @@ export default function SeasonCarSelectionPage() {
           ? <img src={season.logo_url || series.logo_url} alt="" className="avatar" style={{ borderRadius: 8 }} />
           : null}
         <h2>{series?.name ?? "Series"} · {season.name}</h2>
-        <span className={`page-badge${open ? "" : " is-muted"}`}>{open ? "Open" : "Season complete"}</span>
+        <span className={`page-badge${open ? "" : " is-muted"}`}>{open ? "Open" : "Season over"}</span>
       </div>
       <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.9rem" }}>
         <Link href="/series-info" style={{ color: "var(--accent-cyan)" }}>← All my series</Link>
       </p>
 
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
+
+      {/* An admin has marked this season complete. Say so once, at the top, so
+          every read-only control below is already explained. */}
+      {!open && (
+        <div className="season-over-banner">
+          <span aria-hidden="true">🏁</span>
+          <span>
+            <strong>Season over — sign-ups are done.</strong> An admin has marked{" "}
+            {season.name} complete, so nobody can join it and the cars below are final. Everything
+            here stays on record.
+          </span>
+        </div>
+      )}
 
       {!user ? (
         <div className="empty-state">
@@ -192,7 +209,7 @@ export default function SeasonCarSelectionPage() {
             </>
           ) : (
             <p style={{ fontSize: "0.85rem", color: "var(--ink-2)", margin: 0 }}>
-              This season is complete, so sign-ups are closed.
+              Season over — sign-ups are done. This one closed before you joined it.
             </p>
           )}
         </div>
@@ -219,7 +236,7 @@ export default function SeasonCarSelectionPage() {
               key={slot.class_id || "season"}
               slot={slot}
               current={me.picks.find(p => String(p.class_id || "") === String(slot.class_id || ""))?.car || ""}
-              disabled={!open || slot.locked}
+              seasonOver={!open}
               busy={busy}
               onSave={saveCar}
             />
