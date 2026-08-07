@@ -230,7 +230,18 @@ export default function StandingsPage() {
     return <div className="empty-state"><span className="empty-state-icon">🏆</span><p>Select a game, series and season above.</p></div>;
   }
 
-  const rows = data?.[tab] ?? [];
+  const baseRows = data?.[tab] ?? [];
+  // With an overall championship on, the combined table IS that championship —
+  // everyone on it is racing the same title, so spelling out each driver's own
+  // classes ("Pro · Sportsman · Rookie") only stretches the row without saying
+  // anything the table doesn't. Read the column as one "All Classes" instead.
+  // Without the overall championship the combined table is just a reference
+  // view of separate class championships, so there each driver's real classes
+  // still matter and stay on show.
+  const collapseClassColumn = tab === "drivers" && classes.length > 0 && !classId && combinedChampionship;
+  const rows = collapseClassColumn
+    ? baseRows.map(r => ({ ...r, class_name: "All Classes" }))
+    : baseRows;
   const heading = `Standings · ${season?.name ?? ""}${className ? ` · ${className}` : ""}`;
   // In the combined view, surface which class each driver runs in; inside a
   // single class the column would be the same value on every row.
