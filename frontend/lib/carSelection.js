@@ -193,6 +193,19 @@ export function seasonAcceptsSignups(season) {
   return !!season && !seasonIsCompleted(season);
 }
 
+// ── Scope ──────────────────────────────────────────────────────────────────
+//
+// Does one of a player's series rows belong to the Game ▸ Series selection at
+// the top of the page? The Dashboard's Series Information section is about the
+// series being viewed, not every series the player has ever raced, so it
+// narrows to the deepest concrete selection — the same chain the Dashboard's
+// own metrics follow. An "All …" choice at a level ("") widens to it.
+export function rowInScope(row, { gameId = "", seriesId = "" } = {}) {
+  if (seriesId) return row?.series_id === seriesId;
+  if (gameId) return row?.game_id === gameId;
+  return true;
+}
+
 // ── The admin form ─────────────────────────────────────────────────────────
 //
 // Shared by the Series, Seasons and Classes panels of League Setup through

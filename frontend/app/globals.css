@@ -1954,15 +1954,9 @@ tbody tr:hover {
 }
 
 /* A season the admin has marked complete: sign-ups and car changes are closed,
-   so its rows and its card read as finished rather than as something to act on
-   (see components/SeriesInfoPanel.jsx and app/series-info). */
-.series-info-card.is-closed {
-  background: var(--bg-surface);
-  border-color: var(--border);
-}
-
-.series-info-card.is-closed .series-info-go { color: var(--ink-2); }
-
+   so its row reads as finished rather than as something to act on. Only
+   /series-info renders these — the Dashboard section lists running seasons
+   only, so a league's back catalogue never piles up there. */
 .list-row.is-closed {
   background: transparent;
   border-style: dashed;

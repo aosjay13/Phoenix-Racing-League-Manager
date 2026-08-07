@@ -69,8 +69,11 @@ export const GET = withUser(async (request, ctx, user) => {
       open,
       series_id: season.series_id || "",
       series_name: series?.name || "Series",
-      game_id: season.game_id || "",
-      game_name: gamesById[season.game_id]?.name || "",
+      // Through the series when the season itself carries no game_id — some
+      // early seasons were written before it was stamped, and the Dashboard
+      // scopes on this.
+      game_id: season.game_id || series?.game_id || "",
+      game_name: gamesById[season.game_id || series?.game_id]?.name || "",
       logo_url: season.logo_url || series?.logo_url || "",
       entry_id: entry.id,
       number: entry.number ?? null,
@@ -83,12 +86,18 @@ export const GET = withUser(async (request, ctx, user) => {
     };
   });
 
+  // A season is listable only while both the series it's in and the game that
+  // series belongs to still exist — a season orphaned by a deleted game is
+  // hidden everywhere else too. The game is resolved through the series when the
+  // season predates its own game_id stamp.
+  const gameOf = season => season.game_id || seriesById[season.series_id]?.game_id;
+  const listable = season => !!seriesById[season.series_id] && !!gamesById[gameOf(season)];
+
   // Sign-ups: every season in the league still to run that this driver isn't
-  // already on. A season whose series or game has been deleted is left out —
-  // it's hidden everywhere else too.
+  // already on.
   const open_signups = newestFirst(seasons)
     .filter(s => seasonAcceptsSignups(s) && !enteredSeasonIds.has(s.id))
-    .filter(s => seriesById[s.series_id] && gamesById[s.game_id])
+    .filter(listable)
     .map(season => {
       const series = seriesById[season.series_id];
       const classes = classesBySeason[season.id] || [];
@@ -98,8 +107,8 @@ export const GET = withUser(async (request, ctx, user) => {
         season_name: season.name || "Season",
         series_id: season.series_id,
         series_name: series.name || "Series",
-        game_id: season.game_id || "",
-        game_name: gamesById[season.game_id]?.name || "",
+        game_id: season.game_id || series.game_id || "",
+        game_name: gamesById[season.game_id || series.game_id]?.name || "",
         logo_url: season.logo_url || series.logo_url || "",
         classes: classes.map(c => ({ id: c.id, name: c.name, car: c.car || "" })),
         requires_car: carSelectionSlots({ series, season, classes }).length > 0,
@@ -111,8 +120,7 @@ export const GET = withUser(async (request, ctx, user) => {
   // screens count them so "nothing open" can say WHY — a league whose seasons
   // are all complete reads as "sign-ups are done", not as an empty page.
   const closed_signups = seasons.filter(s =>
-    seasonIsCompleted(s) && !enteredSeasonIds.has(s.id) &&
-    seriesById[s.series_id] && gamesById[s.game_id]).length;
+    seasonIsCompleted(s) && !enteredSeasonIds.has(s.id) && listable(s)).length;
 
   return NextResponse.json({
     driver: driver ? { id: driver.id, name: driver.name || "Driver" } : null,
@@ -120,12 +128,12 @@ export const GET = withUser(async (request, ctx, user) => {
     my_seasons,
     open_signups,
     closed_signups,
-    // What the Dashboard uses to decide whether to render the section at all.
-    // A season that has just been marked complete still counts: the player was
-    // being asked for a car right up until it closed, and it going silently
-    // missing reads as "I've been dropped" rather than "the season is over".
-    show: my_seasons.some(s => s.requires_car) || open_signups.length > 0,
-    needs_pick_count: my_seasons.filter(s => s.needs_pick).length,
+    // No league-wide "should the Dashboard show this?" flag on purpose: the
+    // Dashboard's section is scoped to the selected Game/Series and counts only
+    // running seasons, so any total computed here would be answering a
+    // different question than the one being asked. Each row carries `open`,
+    // `requires_car`, `needs_pick`, `series_id` and `game_id`; the caller
+    // decides from those.
   });
 });
 

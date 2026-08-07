@@ -103,8 +103,10 @@ The app runs at `http://localhost:3000`.
    broken out per game and combined across all games (starts, wins, podiums, poles, average
    finish, titles, etc.).
 4. **Series Information** — a section on your **Dashboard** (not the sidebar) that appears only
-   when there's something for you to do: a series that wants you to lock in a car, or a season
-   open to sign up for. Click through and you get:
+   when there's something for you to do **in the series you're currently viewing**: a running
+   season that wants you to lock in a car, or a season open to sign up for. It follows the
+   Game/Series menus at the top of the page like everything else, and lists **active seasons
+   only** — finished ones aren't shown there. Click through and you get:
    - **Linking your driver.** Sign-ups and car choices are recorded against a *driver*, not an
      account, so the first screen asks you to point yours at one. If you've raced here before,
      find yourself in the list and hit **That's me** — an admin approves it, because it hands
@@ -114,9 +116,10 @@ The app runs at `http://localhost:3000`.
    - **Signing up.** Every season still upcoming or under way that you're not on yet, with an
      optional class and car number. Seasons marked complete never appear — and can't be joined.
    - **When a season ends.** The moment an admin marks it complete, it closes to players: nobody
-     else can sign up and nobody can change the car they locked in. It doesn't vanish from your
-     Dashboard (which would read as "I've been dropped") — it stays put and says **Season over —
-     sign-ups are done**, with your car still on record. Reopening the season undoes all of it.
+     else can sign up and nobody can change the car they locked in. It drops off the Dashboard
+     section, which is about what's still to do — but it stays on this page, marked **Season over
+     — sign-ups are done** with your car still on record, and its own screen says the same.
+     Reopening the season undoes all of it.
    - **Locking in your car.** Pick from the cars the admin listed and hit **Lock in Car**. You
      can change your mind as often as you like until an admin locks the selections. Under it,
      the full roster shows exactly which car everyone else has taken, with a tally of how
@@ -738,10 +741,13 @@ things:
   tab left open from before the season closed still can't write to it. The season also drops out of
   the sign-up list everywhere it's offered.
 
-On a player's Dashboard the season doesn't disappear — a row that vanishes reads as "I've been
-dropped from the roster". It stays, greyed, saying **Season over — sign-ups are done**, with the
-car they locked in still shown. Nothing is deleted: reopening the season restores sign-ups, car
-changes and the champion's Title exactly as they were.
+Where a player sees that depends on the screen's job. The **Dashboard**'s Series Information
+section is about what's still to do, so it drops the season and lists running ones only — scoped,
+like the rest of that page, to the Game/Series currently selected. **Series Information** itself
+(`/series-info`) is the full record and keeps it, greyed, saying **Season over — sign-ups are
+done** with the locked-in car still shown; the season's own screen leads with the same line and
+turns every control below it read-only. Nothing is deleted: reopening the season restores
+sign-ups, car changes and the champion's Title exactly as they were.
 
 **Championships (Titles).** A completed season crowns champions, and each one is +1 Championship on
 the winner's career, at every scope — `lib/champions.js` is the only definition, used by the driver
