@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useAuth } from "@/components/AuthProvider";
-import { USERS_SEEN_KEY, USERS_SEEN_EVENT } from "@/components/AppShell";
+import { USERS_SEEN_KEY, USERS_SEEN_EVENT, markUserAccountsSeen } from "@/lib/userAccountsAlerts";
 import { api } from "@/lib/api";
 import { ROLE_LABELS, roleLevel, canManage, assignableRoles } from "@/lib/roles";
 
@@ -257,12 +257,12 @@ export function UserAccountsManager() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  // Opening this page acknowledges every account that exists right now, clearing
-  // the red "new signups" badge in the sidebar (see AppShell useNewAccountCount).
+  // Opening this tab acknowledges every account that exists right now, clearing
+  // the red "new signups" badges on the sidebar's Drivers link and on this tab
+  // (see lib/userAccountsAlerts).
   useEffect(() => {
     if (users == null) return;
-    localStorage.setItem(USERS_SEEN_KEY, new Date().toISOString());
-    window.dispatchEvent(new Event(USERS_SEEN_EVENT));
+    markUserAccountsSeen();
   }, [users]);
 
   async function patchUser(uid, body, successMsg) {

@@ -11,6 +11,7 @@ import { DriverPoolCreateModal } from "@/components/DriverPoolCreateModal";
 import { DriverEditModal } from "@/components/DriverEditModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Modal } from "@/components/Modal";
+import { useUserAccountsAlerts, alertsTitle } from "@/lib/userAccountsAlerts";
 
 // The global driver directory — the "Drivers" tab, and the only one every
 // visitor sees.
@@ -318,6 +319,9 @@ function DriversTabs() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const wanted = searchParams.get("tab") || "directory";
+  // Same alert count the sidebar puts on the Drivers link, so an admin who
+  // follows that badge here can see which tab it was pointing at.
+  const alerts = useUserAccountsAlerts(isAdmin);
 
   const visible = TABS.filter(t => !t.admin || isAdmin);
   // A non-admin (or an admin whose role is still loading) can only ever be on
@@ -334,12 +338,18 @@ function DriversTabs() {
     <section>
       {visible.length > 1 && (
         <div className="tab-row" style={{ marginTop: 0, marginBottom: 18, flexWrap: "wrap" }}>
-          {visible.map(t => (
-            <button key={t.key} type="button" className={`tab${tab === t.key ? " active" : ""}`}
-              onClick={() => selectTab(t.key)}>
-              <span style={{ marginRight: 6 }}>{t.icon}</span>{t.label}
-            </button>
-          ))}
+          {visible.map(t => {
+            const badge = t.key === "accounts" ? alerts.total : 0;
+            return (
+              <button key={t.key} type="button" className={`tab${tab === t.key ? " active" : ""}`}
+                onClick={() => selectTab(t.key)} title={badge > 0 ? alertsTitle(alerts) : undefined}>
+                <span style={{ marginRight: 6 }}>{t.icon}</span>{t.label}
+                {badge > 0 && (
+                  <span className="nav-badge tab-badge">{badge > 99 ? "99+" : badge}</span>
+                )}
+              </button>
+            );
+          })}
         </div>
       )}
 

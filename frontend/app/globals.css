@@ -1075,6 +1075,8 @@ tbody tr:hover {
 .tab-row { display: flex; gap: 8px; margin-top: 14px; }
 
 .tab {
+  display: inline-flex;
+  align-items: center;
   padding: 8px 18px;
   border-radius: 999px;
   border: 1px solid var(--border);
@@ -1092,6 +1094,16 @@ tbody tr:hover {
   background: var(--accent-cyan-dim);
   color: var(--accent-cyan);
   border-color: var(--border-accent);
+}
+
+/* The sidebar's red count badge, riding on a tab pill (User Accounts) instead
+   of a nav link — so it sits next to the label rather than being pushed to the
+   far end of the row. */
+.tab .tab-badge {
+  margin-left: 8px;
+  min-width: 18px;
+  height: 18px;
+  font-size: 0.68rem;
 }
 
 /* ── Two-column layout / uploads / login ────── */
