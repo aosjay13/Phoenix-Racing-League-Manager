@@ -11,6 +11,7 @@ import {
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
 import { fetchSeasonClasses } from "@/lib/classServer";
 import { describeCrowns, seasonChampions, titlesByEntry } from "@/lib/champions";
+import { raceDateSortKey } from "@/lib/raceDate";
 
 // Builds a driver's career stats grouped per game (and all games combined),
 // from every entry that matches the given global driver id and/or linked
@@ -22,7 +23,12 @@ export async function buildCareerProfile({ driverId = null, userId = null }) {
   const queries = [];
   if (driverId) queries.push(db().collection("entries").where("driver_id", "==", driverId).get());
   if (userId) queries.push(db().collection("entries").where("user_id", "==", userId).get());
-  if (!queries.length) return { all_games: aggregateCareerStats([], 0), by_game: [], by_track: [], seasons_raced: 0 };
+  if (!queries.length) {
+    return {
+      all_games: aggregateCareerStats([], 0),
+      by_game: [], by_track: [], race_history: [], titles_detail: [], seasons_raced: 0,
+    };
+  }
 
   const snaps = await Promise.all(queries);
   // Dedupe by entry id — the same entry can match both queries.
@@ -42,6 +48,7 @@ export async function buildCareerProfile({ driverId = null, userId = null }) {
   const titlesPerGame = {}; // gameId -> count
   const perTrack = {};      // trackKey -> { track_id, track_name, results[] }
   const allResults = [];
+  const raceHistory = [];   // one row per race session this driver started
   const titleList = [];     // one row per season won, newest resolved by caller
   let totalTitles = 0;
   const templatesById = await fetchTemplatesById();
@@ -97,6 +104,57 @@ export async function buildCareerProfile({ driverId = null, userId = null }) {
       bucket.results.push(r);
     }
 
+    // ── Race history ────────────────────────────────────────────────────────
+    // Every individual race this driver ran, as its own row, so a profile shows
+    // not just what they've accumulated but what actually happened — and links
+    // through to each event's own results page. Per-track stats answer "how do
+    // they go at Bristol?"; this answers "what did they do in Race 4?".
+    //
+    // Race sessions only: a qualifying result is not a race, it's the grid slot
+    // for one, so it's folded into its race row as the start position instead
+    // of listing itself. Where the result carries its own `start_pos` (entered
+    // on the grid) that wins, since it's what the driver actually started from
+    // after any penalty.
+    const myQualPos = {};
+    for (const r of mine) {
+      if (!isQualifying(r)) continue;
+      const pos = Number(r.finish_pos);
+      if (pos > 0) myQualPos[r.race_id] ??= pos;
+    }
+    const classNameById = Object.fromEntries(seasonClasses.map(c => [c.id, c.name]));
+    for (const r of mine) {
+      if (isQualifying(r)) continue;
+      const race = racesById[r.race_id];
+      if (!race) continue;
+      const startPos = Number(r.start_pos) > 0 ? Number(r.start_pos) : (myQualPos[r.race_id] ?? null);
+      raceHistory.push({
+        race_id: r.race_id,
+        race_name: race.name || "Race",
+        round_number: race.round_number ?? null,
+        date: race.date || null,
+        // A single event can hold several race sessions (heats, a consolation,
+        // a feature), each scored on its own — so each is its own row, named.
+        session: r.session || "",
+        track_id: race.track_id || null,
+        track_name: (race.track || "").trim() || null,
+        season_id: seasonId,
+        season_name: season.name || "Season",
+        series_id: season.series_id || null,
+        series_name: seriesById[season.series_id]?.name || null,
+        game_id: season.game_id || null,
+        game_name: games[season.game_id]?.name || null,
+        class_name: classNameById[r.class_id] || null,
+        finish_pos: Number(r.finish_pos) || null,
+        start_pos: startPos,
+        laps: Number(r.laps || 0),
+        laps_led: Number(r.laps_led || 0),
+        status: r.status || "finished",
+        provisional: !!r.provisional,
+        fastest_lap: !!r.fastest_lap,
+        points: Number(r.points || 0),
+      });
+    }
+
     // Championships. Every crown the season handed out is considered — each
     // class's champion as well as the overall one, and no overall at all when
     // the season runs class-only titles — then narrowed to this driver. A
@@ -128,7 +186,10 @@ export async function buildCareerProfile({ driverId = null, userId = null }) {
 
   // Resolve current track names/logos for venues linked by id (a track may have
   // been renamed since the race ran; the profile should show today's name).
-  const trackIds = [...new Set(Object.values(perTrack).map(t => t.track_id).filter(Boolean))];
+  const trackIds = [...new Set([
+    ...Object.values(perTrack).map(t => t.track_id),
+    ...raceHistory.map(r => r.track_id),
+  ].filter(Boolean))];
   const trackDocs = await Promise.all(trackIds.map(id => db().collection("tracks").doc(id).get()));
   const trackInfo = {};
   for (const doc of trackDocs) if (doc.exists) trackInfo[doc.id] = doc.data();
@@ -149,10 +210,27 @@ export async function buildCareerProfile({ driverId = null, userId = null }) {
       b.stats.wins - a.stats.wins || b.stats.starts - a.stats.starts ||
       String(a.track_name).localeCompare(String(b.track_name)));
 
+  // Newest race first — the same order a season's schedule reads backwards, and
+  // the order someone opening a profile wants: what did they do last time out?
+  // An undated race sorts to the top of its season (it's usually the one just
+  // added), with the round number breaking ties inside a single day.
+  const race_history = raceHistory
+    .map(r => ({
+      ...r,
+      track_name: (r.track_id && trackInfo[r.track_id]?.name) || r.track_name,
+    }))
+    .sort((a, b) =>
+      raceDateSortKey(b.date, Infinity) - raceDateSortKey(a.date, Infinity) ||
+      (Number(b.round_number ?? 0) - Number(a.round_number ?? 0)) ||
+      String(a.session).localeCompare(String(b.session)));
+
   return {
     all_games: aggregateCareerStats(allResults, totalTitles),
     by_game: byGame,
     by_track: byTrack,
+    // Every race this driver has started, newest first, each linking to the
+    // event's own results page — the full race history behind the totals.
+    race_history,
     // Every championship won, so the profile can name them ("Season 4 —
     // Overall + GT3") rather than just showing a count.
     titles_detail: titleList,

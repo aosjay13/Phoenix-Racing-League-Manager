@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { adminAuth, db } from "@/lib/firebase";
-import { normalizeRole, isStaffRole } from "@/lib/roles";
+import { normalizeRole, isStaffRole, roleLevel } from "@/lib/roles";
 
 // The active league for a request. The client stamps it as an `X-League-Id`
 // header (see lib/api.js), with a `league_id` query-param fallback for direct
@@ -96,6 +96,23 @@ export function withAdmin(handler) {
     if (!isVerified(user)) return unverified();
     if (!(await isAdmin(user))) return forbidden();
     return handler(request, ctx, user);
+  };
+}
+
+// Wraps a handler that requires a staff role AT OR ABOVE a given level — for
+// the routes where "any staff" is too wide but "owner only" is too narrow. The
+// pending-approvals count is one: it's for the people who action the queue
+// (Moderator and up), not for a Statistician who only reads stats.
+export function withRole(minLevel, handler) {
+  return async (request, ctx) => {
+    const user = await getRequestUser(request);
+    if (!user) return unauthorized();
+    if (!isVerified(user)) return unverified();
+    const role = await getUserRole(user);
+    if (roleLevel(role) < minLevel) {
+      return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
+    }
+    return handler(request, ctx, user, role);
   };
 }
 

@@ -1,0 +1,43 @@
+"use client";
+
+import Link from "next/link";
+import { AdminGate } from "@/components/AdminGate";
+import { PendingSignups } from "@/components/PendingSignups";
+import { APPROVALS_MIN_LEVEL } from "@/lib/pendingSignupAlerts";
+
+// The league-wide approvals queue — where the sidebar's red badge points.
+//
+// The same queue is on Drivers ▸ Roster & Teams, but scoped to the season being
+// worked on. This page answers the question the badge asks: "somebody is
+// waiting — who, and for what?", across every series in the league at once, so
+// nobody sits in the queue merely because an admin never selected their season.
+//
+// Moderator and above. A Statistician clears the general staff gate but doesn't
+// action sign-ups, so they get neither this page nor the badge; the API behind
+// both enforces the same floor.
+export default function ApprovalsPage() {
+  return (
+    <section>
+      <div className="page-title">
+        <h2>Approvals</h2>
+      </div>
+      <p style={{ marginTop: 0, color: "var(--ink-1)", fontSize: "0.9rem", maxWidth: 760 }}>
+        Every player sign-up waiting on a decision, across the whole league. Approving one puts that
+        driver on the season&rsquo;s roster with the number and car they asked for.
+      </p>
+
+      <AdminGate minLevel={APPROVALS_MIN_LEVEL}>
+        <PendingSignups
+          scope="league"
+          empty={(
+            <div className="empty-state">
+              <span className="empty-state-icon">✅</span>
+              <p>Nothing waiting — every sign-up has been dealt with.</p>
+              <Link href="/drivers?tab=roster" className="btn btn-ghost">Go to Roster &amp; Teams</Link>
+            </div>
+          )}
+        />
+      </AdminGate>
+    </section>
+  );
+}

@@ -58,6 +58,43 @@ export function withDefaults(stored) {
   return rows;
 }
 
+// Fold newly-submitted aliases into the ones a driver profile already carries,
+// so a platform username typed once during a series sign-up is on the profile
+// for good and never has to be typed again (see POST /api/signup-requests).
+//
+// The rules, in order:
+//   • matching is by LABEL, case-insensitively — "psn username" updates the
+//     saved "PSN Username" row rather than adding a second one,
+//   • a non-empty incoming value wins (they just typed it, so it's current),
+//   • a blank incoming value NEVER erases a saved one — a sign-up form that
+//     doesn't ask for Xbox mustn't wipe the gamertag on the profile,
+//   • a label the profile has never seen is appended, keeping the saved rows in
+//     their existing order,
+//   • `game_id` / `is_display` are only taken from the incoming row when it
+//     actually sets them, so a sign-up can't unmap an alias from its game.
+export function mergeAliases(existing, incoming) {
+  const rows = normalizeAliases(existing);
+  const byLabel = new Map(rows.map((a, i) => [a.label.toLowerCase(), i]));
+  const merged = [...rows];
+  for (const add of normalizeAliases(incoming)) {
+    const at = byLabel.get(add.label.toLowerCase());
+    if (at === undefined) {
+      // Nothing worth storing in an empty row for a platform they've never used.
+      if (!add.value && !add.game_id) continue;
+      byLabel.set(add.label.toLowerCase(), merged.length);
+      merged.push(add);
+      continue;
+    }
+    merged[at] = {
+      ...merged[at],
+      value: add.value || merged[at].value,
+      game_id: add.game_id || merged[at].game_id,
+      is_display: add.is_display || merged[at].is_display,
+    };
+  }
+  return merged;
+}
+
 // The non-empty alias value strings — the extra names the importer fuzzy-matches
 // against alongside the driver's primary name.
 export function aliasValues(stored) {

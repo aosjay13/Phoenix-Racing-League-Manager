@@ -342,6 +342,7 @@ export default function SeasonCarSelectionPage() {
             series_name: series?.name ?? "Series",
             game_id: data.game_id || "",
             game_name: data.game_name || "",
+            game_requirements: data.game_requirements || {},
             classes: data.classes,
             rules: data.rules,
             class_rules: data.class_rules,
