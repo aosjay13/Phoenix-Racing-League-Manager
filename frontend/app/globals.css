@@ -2075,6 +2075,21 @@ tbody tr:hover {
 
 .signup-required-note strong { color: var(--accent-cyan); }
 
+/* The sign-up requirement switches an admin sets per game / series / season /
+   class (components/CarSelectionFields.jsx). Each is a three-way choice —
+   Inherit / Required / Not required — because "never configured" and "off here"
+   are different answers. */
+.requirement-intro {
+  margin: 0 0 12px;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--ink-1);
+}
+
+.requirement-field > select {
+  max-width: 420px;
+}
+
 /* The contact & platform details a sign-up can't go in without — the Discord
    name every league sign-up needs, plus whatever the parent game requires
    (components/SignupForm.jsx). */

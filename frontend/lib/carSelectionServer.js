@@ -32,7 +32,13 @@ export async function pendingClaim(uid) {
   return { id: snap.docs[0].id, ...snap.docs[0].data() };
 }
 
-// A season plus everything the lock-in rules need to resolve against it.
+// A season plus everything the sign-up rules need to resolve against it.
+//
+// The GAME is part of that: it's the top of the game → series → season → class
+// requirement chain (a league can say "everything in iRacing needs a car
+// number" once), and it carries the platform identities every sign-up under it
+// must give. Resolving a season without its game would silently drop both, so
+// it's loaded here rather than by each caller.
 export async function seasonContext(seasonId) {
   const doc = await db().collection("seasons").doc(seasonId).get();
   if (!doc.exists) return null;
@@ -44,11 +50,16 @@ export async function seasonContext(seasonId) {
     db().collection("classes").where("season_id", "==", seasonId).get(),
   ]);
   const series = seriesDoc?.exists ? { id: seriesDoc.id, ...seriesDoc.data() } : null;
+  // A season written before it stamped its own game_id resolves through its
+  // series, the same fallback every other screen uses.
+  const gameId = season.game_id || series?.game_id || "";
+  const gameDoc = gameId ? await db().collection("games").doc(gameId).get() : null;
+  const game = gameDoc?.exists ? { id: gameDoc.id, ...gameDoc.data() } : null;
   const classes = classesSnap.docs
     .map(d => ({ id: d.id, ...d.data() }))
     .sort((a, b) => (Number(a.sort_order || 0) - Number(b.sort_order || 0)) ||
       String(a.name || "").localeCompare(String(b.name || "")));
-  return { season, series, classes, slots: carSelectionSlots({ series, season, classes }) };
+  return { season, series, game, classes, slots: carSelectionSlots({ game, series, season, classes }) };
 }
 
 // Every roster entry in a season, with each driver's classes put into the

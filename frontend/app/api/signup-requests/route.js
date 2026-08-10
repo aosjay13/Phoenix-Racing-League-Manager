@@ -60,7 +60,7 @@ export const POST = withUser(async (request, ctx, user) => {
 
   const context = await seasonContext(seasonId);
   if (!context) return NextResponse.json({ error: "Season not found" }, { status: 404 });
-  const { season, series, classes } = context;
+  const { season, series, game, classes } = context;
 
   if (!seasonAcceptsSignups(season)) {
     return NextResponse.json(
@@ -89,7 +89,7 @@ export const POST = withUser(async (request, ctx, user) => {
   // The rules in force for what they picked: a class they're joining can ask
   // for more than the season does.
   const rules = resolveSignupRules({
-    series, season,
+    game, series, season,
     cls: classIds.length ? validClasses.get(classIds[0]) : null,
   });
 
@@ -122,9 +122,9 @@ export const POST = withUser(async (request, ctx, user) => {
   // What this game demands of a sign-up: the Discord name every sign-up needs,
   // plus the platform identities an admin switched on for the game in League
   // Setup (Steam / PSN / Xbox / iRacing). Checked here as well as on the form,
-  // because the form is not the security boundary.
-  const gameDoc = season.game_id ? await db().collection("games").doc(season.game_id).get() : null;
-  const game = gameDoc?.exists ? gameDoc.data() : null;
+  // because the form is not the security boundary. `game` comes from
+  // seasonContext, which resolves it through the series for a season written
+  // before it stamped its own game_id.
   const gameName = game?.name || "";
   const missingAliases = missingRequiredAliases(aliases, game);
   if (missingAliases.length) {

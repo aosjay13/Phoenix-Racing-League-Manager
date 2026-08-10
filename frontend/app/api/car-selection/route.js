@@ -25,7 +25,7 @@ export async function GET(request) {
 
   const context = await seasonContext(seasonId);
   if (!context) return NextResponse.json({ error: "Season not found" }, { status: 404 });
-  const { season, series, classes, slots } = context;
+  const { season, series, game, classes, slots } = context;
 
   const [entries, user, pendings] = await Promise.all([
     seasonEntries(seasonId, classes),
@@ -38,11 +38,7 @@ export async function GET(request) {
   // The game's NAME, not just its id — the sign-up dialog decides what extra
   // information to insist on from it (an iRacing season needs the driver's
   // customer ID before the league can invite them). See lib/signupRequest.js.
-  const [names, gameDoc] = await Promise.all([
-    fetchDriverNames(entries.map(e => e.driver_id), gameId),
-    gameId ? db().collection("games").doc(gameId).get() : Promise.resolve(null),
-  ]);
-  const game = gameDoc?.exists ? gameDoc.data() : null;
+  const names = await fetchDriverNames(entries.map(e => e.driver_id), gameId);
   const gameName = game?.name || "";
 
   const classNameById = Object.fromEntries(classes.map(c => [c.id, c.name]));
@@ -90,7 +86,7 @@ export async function GET(request) {
     // What a sign-up for this season has to carry, so the sign-up dialog on
     // this screen renders itself exactly as the Dashboard's does.
     rules: (() => {
-      const r = resolveSignupRules({ series, season });
+      const r = resolveSignupRules({ game, series, season });
       return {
         require_car: r.require_car, require_number: r.require_number,
         require_manufacturer: r.require_manufacturer,
@@ -99,7 +95,7 @@ export async function GET(request) {
       };
     })(),
     class_rules: Object.fromEntries(classes.map(c => {
-      const r = resolveSignupRules({ series, season, cls: c });
+      const r = resolveSignupRules({ game, series, season, cls: c });
       return [c.id, {
         require_car: r.require_car, require_number: r.require_number,
         require_manufacturer: r.require_manufacturer,

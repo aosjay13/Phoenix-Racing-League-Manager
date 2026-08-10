@@ -65,7 +65,8 @@ export const GET = withUser(async (request, ctx, user) => {
     const entry = mine.find(e => e.season_id === season.id);
     const series = seriesById[season.series_id] || null;
     const classes = classesBySeason[season.id] || [];
-    const slots = carSelectionSlots({ series, season, classes });
+    const game = gamesById[season.game_id || series?.game_id] || null;
+    const slots = carSelectionSlots({ game, series, season, classes });
     const classIds = normalizeClassIds(entry.class_ids?.length ? entry.class_ids : (entry.class_id ? [entry.class_id] : []));
     const mySlots = slotsForEntry(slots, classIds);
     const open = seasonAcceptsSignups(season);
@@ -125,15 +126,16 @@ export const GET = withUser(async (request, ctx, user) => {
   const open_signups = openSeasons
     .map(season => {
       const series = seriesById[season.series_id];
+      const game = gamesById[season.game_id || series.game_id] || null;
       const classes = classesBySeason[season.id] || [];
-      const resolved = resolveCarSelection({ series, season });
+      const resolved = resolveCarSelection({ game, series, season });
       const roster = rosters[season.id] || [];
       const pending = pendings[season.id] || [];
       const classNameById = Object.fromEntries(classes.map(c => [c.id, c.name]));
       // What this season asks of a sign-up — a number, a car, a manufacturer —
       // resolved down the series → season chain. A class that asks for more is
       // resolved on the form once one is picked.
-      const rules = resolveSignupRules({ series, season });
+      const rules = resolveSignupRules({ game, series, season });
       return {
         season_id: season.id,
         season_name: season.name || "Season",
@@ -145,10 +147,10 @@ export const GET = withUser(async (request, ctx, user) => {
         // iRacing), so the sign-up form can render an input for each one and
         // refuse to submit until it's answered. Discord is required for every
         // game and needs no flag. See lib/signupRequest.js.
-        game_requirements: gameRequirementFlags(gamesById[season.game_id || series.game_id]),
+        game_requirements: gameRequirementFlags(game),
         logo_url: season.logo_url || series.logo_url || "",
         classes: classes.map(c => ({ id: c.id, name: c.name, car: c.car || "" })),
-        requires_car: carSelectionSlots({ series, season, classes }).length > 0,
+        requires_car: carSelectionSlots({ game, series, season, classes }).length > 0,
         car_count: resolved.options.length,
         // Everything the sign-up form renders itself from.
         rules: {
@@ -161,7 +163,7 @@ export const GET = withUser(async (request, ctx, user) => {
         },
         // Per class, so picking one on the form can tighten what's asked for.
         class_rules: Object.fromEntries(classes.map(c => {
-          const r = resolveSignupRules({ series, season, cls: c });
+          const r = resolveSignupRules({ game, series, season, cls: c });
           return [c.id, {
             require_car: r.require_car, require_number: r.require_number,
             require_manufacturer: r.require_manufacturer,

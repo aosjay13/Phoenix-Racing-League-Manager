@@ -63,7 +63,7 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
 - 🔔 **Approvals badge** — a red count beside the sidebar's **Approvals** link shows how many
   sign-ups are waiting on a decision league-wide, so nobody sits in the queue unnoticed. Moderator
   and above only — the badge, the page and the API call behind them
-- 🚗 **Car selection & lock-in** — flag a **series, a season, or one class** as requiring a car
+- 🚗 **Car selection & lock-in** — flag a **game, a series, a season, or one class** as requiring a car
   selection and publish the list of cars on offer. Every driver on that roster gets a **Series
   Information** section on their Dashboard where they pick their car from a dropdown and lock it
   in, see the instructions the admin left, and see the whole roster's picks side by side so
@@ -294,15 +294,15 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      enter its grid, switch to the next. The **Points system** picker next to the grid is that
      class's too on a split event — Pro's Race and Amateur's Race at the same event can score on
      different templates, and switching class swaps the picker with it.
-   - **Require Car Selection / Lock-in** — offered identically on **Series**, **Seasons** and
-     **Classes**, since a league might run one car list across a whole series or a different one
-     per class. Tick it, list the **Available Cars** one per line, and every driver on that
-     roster is asked to lock in their car from the **Series Information** section of their
-     Dashboard. **Instructions for Drivers** ("Please lock in your car for the upcoming
-     season") shows above their dropdown. **Lock the selections** freezes every pick when the
-     entry list is final — untick it to reopen.
+   - **Require Car Selection / Lock-in** — offered identically on **Games**, **Series**,
+     **Seasons** and **Classes**, since a league might run one car list across a whole game or a
+     different one per class. Set it to **Required**, list the **Available Cars** one per line,
+     and every driver on that roster is asked to lock in their car from the **Series
+     Information** section of their Dashboard. **Instructions for Drivers** ("Please lock in your
+     car for the upcoming season") shows above their dropdown. **Lock the selections** freezes
+     every pick when the entry list is final — set it back to reopen.
 
-     Two more toggles sit beside it, each independent: **Require Car Number Selection** (no
+     Two more switches sit beside it, each independent: **Require Car Number Selection** (no
      sign-up without a number) and **Require Car Manufacturer / Model Selection** (pick a make
      from the **Available Manufacturers / Models** list, or from the car list when you leave that
      blank — which is what you want when the car and the make are one choice). A league can demand
@@ -310,13 +310,33 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      Whatever you switch on is what the player's sign-up form renders and refuses to submit
      without.
 
-     It all inherits like everything else here: a requirement is on if *any* level at or above
-     turns it on, and the **most specific car list wins** — a class's list beats the season's,
-     which beats the series'. So the common setup is one list on the series; a class that runs
-     different machinery adds its own and its drivers pick from that instead. A driver is only
-     ever asked once: their class's question if it has one, otherwise the season's. Picks are
-     stored on the driver's roster entry (`entries.selected_car`), so an admin can correct one
-     from the roster like any other entry field.
+     **The inheritance rule, in one line: the most specific level with an opinion wins.**
+
+         game  →  series  →  season  →  class
+
+     A class overrides its season, a season overrides its series, a series overrides its game.
+     That's why each switch is a **three-way choice**, not a checkbox — "I never touched this"
+     and "I want this off *here*" are different answers:
+
+     | Setting | What it means |
+     |---|---|
+     | **Inherit** (default) | Whatever the level above says. The dropdown spells out what that is right now — *"Inherit — required by the series"*. |
+     | **Required** | Required at this level, whatever the level above says. |
+     | **Not required** | **Not** required here, even when the level above requires it. |
+
+     So a series can require a car number for everything in it while one class of one season opts
+     out, and a game can set the league's house rule once instead of on every season. Lists follow
+     the same shape — the **most specific car list wins**: a class's list beats the season's, which
+     beats the series', which beats the game's. The common setup is one list on the series; a class
+     that runs different machinery adds its own and its drivers pick from that instead.
+
+     A driver is only ever asked once: their class's question if it has one, otherwise the
+     season's. Picks are stored on the driver's roster entry (`entries.selected_car`), so an admin
+     can correct one from the roster like any other entry field.
+
+     Not part of this chain: the **platform identities** (Discord, Steam, PSN, Xbox, iRacing).
+     Those belong to the **Game** alone and apply to every series, season and class under it,
+     however many are made — nothing below overrides them. See the Games panel above.
 2. **Drivers** (`/drivers`) — everyone in the league, under one menu. The buttons at the top
    switch between its three views, so nothing is stacked into one long scroll:
    - **Drivers** — the public directory of every driver profile (admins get Edit / Merge /
@@ -589,6 +609,30 @@ profile *and* the roster entry together. Those two steps are independent on purp
 has been marked complete, or their car number was taken while the request sat in the queue, the
 profile is still created and the admin is told what didn't carry over — a stale detail never costs
 them the whole approval.
+
+### The sign-up requirement chain
+
+Everything a sign-up can be made to carry — a car lock-in, a car number, a manufacturer, and the
+lock itself — is set on any of **four** levels and resolved in `lib/carSelection.js` by one rule:
+
+    game  →  series  →  season  →  class        the most specific level with an OPINION wins
+
+"An opinion" is the load-bearing half: a level that was never configured must not override the
+level above it. Each switch is therefore stored as a three-state `<field>_mode` — `""` (inherit),
+`"on"`, `"off"` — beside the original boolean, which is still written (true only for `"on"`) so
+every older reader keeps working.
+
+A document saved before modes existed has no mode, and is read through its boolean: `true` means
+"required here", `false` means "never configured". That is exactly what those values meant when
+they were written, so **no existing league's setup changes** — a series requiring car numbers keeps
+requiring them under seasons that store a bare `false`, while an admin now has a real way to switch
+one season off.
+
+`resolveSignupRules({ game, series, season, cls })` returns the resolved answers plus
+`require_number_from` / `require_car_from` / `require_manufacturer_from`, naming the level that
+decided — which is what lets League Setup label a switch *"Inherit — required by the series"*
+instead of leaving an admin to guess. `seasonContext` loads the game alongside the series, so no
+caller can accidentally resolve a season without the top of its chain.
 
 **Required contact & platform information.** Two rules decide what a sign-up has to carry, both in
 `lib/signupRequest.js` so the form, the API and the approval step apply exactly one set:

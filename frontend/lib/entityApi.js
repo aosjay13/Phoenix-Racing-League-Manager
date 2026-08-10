@@ -149,6 +149,32 @@ export function makeDocRoutes({ collection, fields, normalize = null }) {
   return { PATCH, DELETE };
 }
 
+// The sign-up requirement switches, carried IDENTICALLY by a game, a series, a
+// season and a class — the four levels of the chain in lib/carSelection.js, so
+// each one can set or override what a sign-up must carry.
+//
+// Each switch is stored twice, and both halves matter:
+//
+//   <field>_mode  "" (inherit — the default) | "on" | "off". The admin's actual
+//                 answer, and the only one the resolver reads first. "off" is
+//                 what lets a class opt out of something its season requires.
+//   <field>       the original boolean, kept in step (true only for "on"), so
+//                 every reader written before modes existed still works.
+//
+// A document saved before modes existed has no mode at all, and is read through
+// its boolean: `true` means "on", `false` means "never configured". That is
+// precisely what those values meant when they were written, so no existing
+// league's setup changes.
+const SIGNUP_REQUIREMENT_FIELDS = Object.fromEntries([
+  "require_car_selection",
+  "require_car_number",
+  "require_car_manufacturer",
+  "car_selection_locked",
+].flatMap(field => [
+  [field, { bool: true, default: false }],
+  [`${field}_mode`, { default: "" }],
+]));
+
 // Field specs shared between the list POST and doc PATCH routes.
 export const SPECS = {
   // `requires_*` are the platform identities a sign-up for ANY series in this
@@ -164,13 +190,20 @@ export const SPECS = {
   // A game NAMED "iRacing" carries the two iRacing requirements implicitly,
   // whether or not the boxes are ticked — that rule predates these fields and
   // upgrading a league mustn't quietly drop it.
+  //
+  // `require_car_selection` & friends are the TOP of the sign-up requirement
+  // chain — game → series → season → class, most specific opinion winning (see
+  // lib/carSelection.js). Setting them here is how a league says "everything in
+  // this game asks for a car number" once instead of on every season, and any
+  // series, season or class under it can still say otherwise.
   games:   { collection: "games", parentField: null, sortField: "name",
              fields: { name: { required: true }, logo_url: {}, description: {},
                        requires_steam: { bool: true, default: false },
                        requires_psn: { bool: true, default: false },
                        requires_xbox: { bool: true, default: false },
                        requires_iracing_name: { bool: true, default: false },
-                       requires_iracing_id: { bool: true, default: false } } },
+                       requires_iracing_id: { bool: true, default: false },
+                       ...SIGNUP_REQUIREMENT_FIELDS } },
   // `isBangerRacing` flags the series as Demo Derby / Banger Racing. It turns on
   // the mode-specific stats (Takedowns, Survival Bonus, Most Lethal Bonus — see
   // lib/bangerRacing.js): the results grids of its events grow inputs for them,
@@ -207,11 +240,8 @@ export const SPECS = {
                        race_points: {}, qual_points: {}, bonus_points: {},
                        isBangerRacing: { bool: true, default: false },
                        isBracketRacing: { bool: true, default: false },
-                       require_car_selection: { bool: true, default: false },
-                       require_car_number: { bool: true, default: false },
-                       require_car_manufacturer: { bool: true, default: false },
                        car_options: {}, manufacturer_options: {}, car_selection_note: {},
-                       car_selection_locked: { bool: true, default: false } } },
+                       ...SIGNUP_REQUIREMENT_FIELDS } },
   // Seasons come back NEWEST FIRST, ordered by the race dates on their
   // schedules rather than by when the admin happened to type them in — so a
   // Season 5 entered before 2, 3 and 4 still sits above them in every dropdown.
@@ -269,11 +299,8 @@ export const SPECS = {
                        combined_championship: { bool: true, default: true },
                        per_class_schedules: { bool: true, default: false },
                        per_class_results: { bool: true, default: false },
-                       require_car_selection: { bool: true, default: false },
-                       require_car_number: { bool: true, default: false },
-                       require_car_manufacturer: { bool: true, default: false },
                        car_options: {}, manufacturer_options: {}, car_selection_note: {},
-                       car_selection_locked: { bool: true, default: false } } },
+                       ...SIGNUP_REQUIREMENT_FIELDS } },
   // Classes divide a season's field into separately-scored groups ("Pro" /
   // "Amateur", "GT3" / "LMP2"). A class belongs to exactly one season; a roster
   // entry points at one with `class_id`, and each saved result carries the class
@@ -315,11 +342,8 @@ export const SPECS = {
                        isBangerRacing: { bool: true, default: false },
                        isBracketRacing: { bool: true, default: false },
                        race_points: {}, qual_points: {}, bonus_points: {},
-                       require_car_selection: { bool: true, default: false },
-                       require_car_number: { bool: true, default: false },
-                       require_car_manufacturer: { bool: true, default: false },
                        car_options: {}, manufacturer_options: {}, car_selection_note: {},
-                       car_selection_locked: { bool: true, default: false },
+                       ...SIGNUP_REQUIREMENT_FIELDS,
                        sort_order: { number: true, default: 0 } } },
   teams:   { collection: "teams", parentField: "season_id", sortField: "name",
              fields: { name: { required: true }, logo_url: {}, color: {} } },

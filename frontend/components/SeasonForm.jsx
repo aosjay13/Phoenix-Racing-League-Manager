@@ -6,7 +6,7 @@ import { PointsFields } from "@/components/PointsFields";
 import { CarSelectionFields } from "@/components/CarSelectionFields";
 import { scoresNoPoints } from "@/lib/seasonForm";
 import { BANGER_MODES, bangerEntryScope } from "@/lib/bangerRacing";
-import { resolveCarSelection } from "@/lib/carSelection";
+import { resolveSignupRules } from "@/lib/carSelection";
 
 // Every season field, in one place. Rendered identically by League Setup's
 // Seasons panel and by the Schedule page's "+ New Season" dialog, so the two
@@ -20,12 +20,13 @@ import { resolveCarSelection } from "@/lib/carSelection";
 // `banger` — the series this season belongs to is a Demo Derby / Banger Racing
 // series — adds the derby bonus values (points per takedown, survival, most
 // lethal) to the Points & Bonuses block. See lib/bangerRacing.js.
-// `seriesDoc` is the series this season belongs to, read only to show what the
-// season already inherits from it — its car lock-in settings today.
+// `gameDoc` / `seriesDoc` are the game and series this season belongs to, read
+// only to show what the season already inherits from them — the sign-up
+// requirements in force above it (see lib/carSelection.js).
 export function SeasonForm({
   value, onChange, templates = [], onTemplatesChanged,
   disabled = false, defaultPointsOpen = false, onError, banger = false, classesAreBanger = false,
-  seriesDoc = null,
+  seriesDoc = null, gameDoc = null,
 }) {
   // `banger` here means the SERIES runs derby, which already covers every
   // season in it; the season's own switch below is for a derby season inside an
@@ -142,7 +143,7 @@ export function SeasonForm({
       {/* Car selection / lock-in for this season — the same block the Series
           and Classes panels render, so all three levels offer one setting. */}
       <CarSelectionFields value={value} onChange={onChange} level="season" disabled={disabled}
-        inherited={resolveCarSelection({ series: seriesDoc })} />
+        inherited={resolveSignupRules({ game: gameDoc, series: seriesDoc })} />
 
       <button type="button" className="btn btn-ghost" style={{ marginTop: 14 }} onClick={() => setShowPoints(v => !v)}>
         {showPoints ? "▾" : "▸"} Points &amp; Bonuses

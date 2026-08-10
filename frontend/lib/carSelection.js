@@ -1,23 +1,46 @@
-// Car selection & lock-in — "this series/season/class makes its drivers pick a
-// car, from this list, before it runs".
+// Car selection & lock-in — "this game/series/season/class makes its drivers
+// pick a car, from this list, before it runs" — and the other things a sign-up
+// can be made to carry.
 //
-// The settings live on THREE levels (series, season, class) and resolve exactly
-// the way every other inherited setting in the app does:
+// ── THE ONE INHERITANCE RULE ────────────────────────────────────────────────
 //
-//   required : ON anywhere at or above the level being asked about. A series
-//              that requires a selection covers every season and class in it;
-//              a season covers its classes; a class can require one on its own
-//              while the rest of the season doesn't (see isBangerRacing for the
-//              same additive shape).
-//   options  : the MOST SPECIFIC list wins — class, else season, else series —
-//              so a league publishes its car list once on the series and a
-//              single class overrides it with its own machinery (same rule as
-//              carForRace in lib/classFilter.js).
-//   note     : the admin's instructions, resolved most-specific-first like the
-//              options.
-//   locked   : locked anywhere at or above → locked. Freezing the series
-//              freezes every season and class under it, and a locked selection
-//              can no longer be changed by the player.
+// The settings live on FOUR levels and every one of them resolves the same way:
+//
+//     game  →  series  →  season  →  class
+//
+//   THE MOST SPECIFIC LEVEL WITH AN OPINION WINS.
+//
+// A class overrides its season, a season overrides its series, a series
+// overrides its game. That holds for the switches (require a car / a number / a
+// manufacturer, and the lock) exactly as it already held for the car list and
+// the instructions note: class, else season, else series, else game.
+//
+// "An opinion" is the important half, because a level that was never configured
+// must not silently override the level above it. Each switch is therefore a
+// THREE-state setting, not a boolean:
+//
+//     ""     Inherit — no opinion. Whatever the level above says (the default).
+//     "on"   Required here, whatever the level above says.
+//     "off"  Not required here, even if the level above requires it.
+//
+// stored in `<field>_mode` beside the original boolean. The boolean is still
+// written (true when the mode is "on") so every older reader keeps working, and
+// it's still *read* as an opinion when no mode is stored — a doc written before
+// modes existed with `require_car_number: true` means "on", and one with
+// `false` means "never configured", which is exactly what it meant then. That's
+// what stops this change flipping any league's existing setup: a stored `false`
+// has never been an admin saying "off", so it isn't treated as one.
+//
+// Lists resolve most-specific-first as they always have:
+//
+//   options  : class, else season, else series, else game — so a league
+//              publishes its car list once and a single class overrides it with
+//              its own machinery (same rule as carForRace in lib/classFilter.js)
+//   note     : the admin's instructions, same order.
+//
+// Platform identities (Discord, Steam, PSN, Xbox, iRacing) are NOT here and are
+// not per-level: they belong to the GAME and apply to every series, season and
+// class under it, however many are made. See lib/signupRequest.js.
 //
 // Deliberately dependency-free so the API routes and the client screens apply
 // one set of rules.
@@ -118,33 +141,87 @@ export function matchCarOption(options = [], car) {
 
 // ── Resolution ─────────────────────────────────────────────────────────────
 
-const LEVELS = ["class", "season", "series"];
+// Most specific first. Everything below walks this order and stops at the first
+// level that has something to say.
+const LEVELS = ["class", "season", "series", "game"];
+
+// The three-state switches, and the human names of the levels.
+export const REQUIREMENT_FIELDS = [
+  "require_car_selection",
+  "require_car_number",
+  "require_car_manufacturer",
+  "car_selection_locked",
+];
+
+export const LEVEL_LABELS = {
+  class: "class",
+  season: "season",
+  series: "series",
+  game: "game",
+};
+
+export const INHERIT = "";
+export const ON = "on";
+export const OFF = "off";
+
+// What ONE level says about one switch: true (on), false (off), or null when it
+// has no opinion and the level above answers.
+//
+// A stored `<field>_mode` is the admin's explicit answer. With no mode stored we
+// fall back to the original boolean, where `true` has always meant "required
+// here" and `false` has only ever meant "left alone" — so pre-mode documents
+// resolve exactly as they did before modes existed.
+export function levelOpinion(doc, field) {
+  if (!doc) return null;
+  const mode = String(doc[`${field}_mode`] ?? "").trim().toLowerCase();
+  if (mode === ON) return true;
+  if (mode === OFF) return false;
+  return doc[field] === true ? true : null;
+}
+
+// Does this level say anything at all about any of the switches? Used to show
+// an admin whether a level is configured or purely inheriting.
+export function definesAnyRequirement(doc) {
+  return REQUIREMENT_FIELDS.some(field => levelOpinion(doc, field) !== null);
+}
+
+// Resolve one switch down game → series → season → class: the most specific
+// level with an opinion wins, and `from` names it so the UI can say who decided.
+export function resolveRequirement(docs, field) {
+  for (const level of LEVELS) {
+    const opinion = levelOpinion(docs[level], field);
+    if (opinion !== null) return { on: opinion, from: level };
+  }
+  return { on: false, from: null };
+}
 
 // The car-selection settings in force for a scope. Pass whichever levels apply
-// — {series, season} for a season-wide answer, {series, season, cls} for one
-// class's.
-export function resolveCarSelection({ series = null, season = null, cls = null } = {}) {
-  const docs = { class: cls, season, series };
+// — {game, series, season} for a season-wide answer, plus `cls` for one class's.
+export function resolveCarSelection({ game = null, series = null, season = null, cls = null } = {}) {
+  const docs = { class: cls, season, series, game };
   const present = LEVELS.filter(level => docs[level]);
   const optionLevel = present.find(level => carOptionList(docs[level]).length) ?? null;
   const noteLevel = present.find(level => String(docs[level].car_selection_note || "").trim()) ?? null;
+  const required = resolveRequirement(docs, "require_car_selection");
+  const locked = resolveRequirement(docs, "car_selection_locked");
   return {
-    required: present.some(level => !!docs[level].require_car_selection),
-    locked: present.some(level => !!docs[level].car_selection_locked),
+    required: required.on,
+    locked: locked.on,
     options: optionLevel ? carOptionList(docs[optionLevel]) : [],
     options_from: optionLevel,
     note: noteLevel ? String(docs[noteLevel].car_selection_note).trim() : "",
     note_from: noteLevel,
-    // Which level turned the requirement on, for "Required by the series" text.
-    required_from: present.find(level => !!docs[level].require_car_selection) ?? null,
+    // Which level decided it, for "Required by the series" text.
+    required_from: required.on ? required.from : null,
+    locked_from: locked.on ? locked.from : null,
   };
 }
 
 // ── What a sign-up must carry ──────────────────────────────────────────────
 //
 // Three separate things an admin can insist on, each resolved down the same
-// series → season → class chain as the car lock-in above ("on anywhere at or
-// above", "the most specific list wins"):
+// game → series → season → class chain as the car lock-in above (most specific
+// opinion wins; most specific list wins):
 //
 //   require_car_selection    — lock in the car you'll race, from `car_options`.
 //                              Answered on the season's own screen, and also
@@ -156,11 +233,16 @@ export function resolveCarSelection({ series = null, season = null, cls = null }
 // They're independent on purpose: a league can demand numbers without caring
 // what anyone drives, or run a spec series where the car is fixed but the
 // manufacturer isn't.
-export function resolveSignupRules({ series = null, season = null, cls = null } = {}) {
-  const docs = { class: cls, season, series };
+//
+// Not here: the platform identities (Discord/Steam/PSN/Xbox/iRacing). Those are
+// the GAME's and are never overridden by anything under it — see
+// lib/signupRequest.js.
+export function resolveSignupRules({ game = null, series = null, season = null, cls = null } = {}) {
+  const docs = { class: cls, season, series, game };
   const present = LEVELS.filter(level => docs[level]);
-  const anyOn = field => present.some(level => !!docs[level][field]);
-  const car = resolveCarSelection({ series, season, cls });
+  const car = resolveCarSelection({ game, series, season, cls });
+  const number = resolveRequirement(docs, "require_car_number");
+  const manufacturer = resolveRequirement(docs, "require_car_manufacturer");
   const manufacturerLevel = present.find(level => manufacturerOptionList(docs[level]).length) ?? null;
   return {
     // The car lock-in, unchanged — kept whole so callers can pass it straight
@@ -168,14 +250,19 @@ export function resolveSignupRules({ series = null, season = null, cls = null } 
     car,
     require_car: car.required,
     car_options: car.options,
-    require_number: anyOn("require_car_number"),
-    require_manufacturer: anyOn("require_car_manufacturer"),
+    require_number: number.on,
+    require_manufacturer: manufacturer.on,
     manufacturer_options: manufacturerLevel ? manufacturerOptionList(docs[manufacturerLevel]) : [],
     note: car.note,
     locked: car.locked,
+    // Which level decided each one, so a screen can say "required by the
+    // season" rather than leaving an admin to guess where it came from.
+    require_car_from: car.required_from,
+    require_number_from: number.on ? number.from : null,
+    require_manufacturer_from: manufacturer.on ? manufacturer.from : null,
     // Does this scope ask a player for ANYTHING beyond their name at sign-up?
     get asksAnything() {
-      return car.required || anyOn("require_car_number") || anyOn("require_car_manufacturer");
+      return car.required || number.on || manufacturer.on;
     },
   };
 }
@@ -212,8 +299,8 @@ export function missingSignupMessage(missing = []) {
 // inheriting the season's? That's what makes it a separate lock-in slot below:
 // a class with its own machinery asks its drivers for their own pick.
 export function classDefinesCarSelection(cls) {
-  return !!cls?.require_car_selection
-    || !!cls?.car_selection_locked
+  return levelOpinion(cls, "require_car_selection") !== null
+    || levelOpinion(cls, "car_selection_locked") !== null
     || carOptionList(cls).length > 0
     || !!String(cls?.car_selection_note || "").trim();
 }
@@ -222,8 +309,8 @@ export function classDefinesCarSelection(cls) {
 // decide whether picking a class on the form changes what's being asked for.
 export function classDefinesSignupRules(cls) {
   return classDefinesCarSelection(cls)
-    || !!cls?.require_car_number
-    || !!cls?.require_car_manufacturer
+    || levelOpinion(cls, "require_car_number") !== null
+    || levelOpinion(cls, "require_car_manufacturer") !== null
     || manufacturerOptionList(cls).length > 0;
 }
 
@@ -240,13 +327,13 @@ export function classDefinesSignupRules(cls) {
 // A driver answers the slots of the classes they race, and the season-wide one
 // only when no class of theirs has its own — see slotsForEntry. That's what
 // stops a driver being asked twice for the same car.
-export function carSelectionSlots({ series = null, season = null, classes = [] } = {}) {
+export function carSelectionSlots({ game = null, series = null, season = null, classes = [] } = {}) {
   const slots = [];
-  const seasonWide = resolveCarSelection({ series, season });
+  const seasonWide = resolveCarSelection({ game, series, season });
   if (seasonWide.required) slots.push({ class_id: "", class_name: "", ...seasonWide });
   for (const cls of classes) {
     if (!classDefinesCarSelection(cls)) continue;
-    const resolved = resolveCarSelection({ series, season, cls });
+    const resolved = resolveCarSelection({ game, series, season, cls });
     if (!resolved.required) continue;
     slots.push({ class_id: cls.id, class_name: cls.name || "Class", ...resolved });
   }
@@ -349,16 +436,21 @@ export function rowInScope(row, { gameId = "", seriesId = "" } = {}) {
 //
 // Shared by the Series, Seasons and Classes panels of League Setup through
 // <CarSelectionFields>, so all three offer exactly the same settings.
+// Each switch is held in the form as its MODE ("" inherit / "on" / "off"), which
+// is what the three-way selects in <CarSelectionFields> bind to.
 export const BLANK_CAR_SELECTION_FORM = {
-  require_car_selection: false,
-  require_car_number: false,
-  require_car_manufacturer: false,
+  require_car_selection_mode: INHERIT,
+  require_car_number_mode: INHERIT,
+  require_car_manufacturer_mode: INHERIT,
+  car_selection_locked_mode: INHERIT,
   car_options: "",
   manufacturer_options: "",
   car_selection_note: "",
-  car_selection_locked: false,
 };
 
+// A saved doc → form state. A document written before modes existed shows up as
+// "on" where its boolean was true and as "inherit" where it was false, which is
+// exactly what those documents have always meant.
 export function carSelectionToForm(doc = {}) {
   // The manufacturer box shows only what this level SET, not what it inherits
   // from the car list — otherwise saving would copy the fallback into it and
@@ -366,25 +458,35 @@ export function carSelectionToForm(doc = {}) {
   const ownManufacturers = Array.isArray(doc.manufacturer_options) || typeof doc.manufacturer_options === "string"
     ? parseCarOptions(doc.manufacturer_options)
     : [];
+  const mode = field => {
+    const opinion = levelOpinion(doc, field);
+    return opinion === null ? INHERIT : (opinion ? ON : OFF);
+  };
   return {
-    require_car_selection: !!doc.require_car_selection,
-    require_car_number: !!doc.require_car_number,
-    require_car_manufacturer: !!doc.require_car_manufacturer,
+    require_car_selection_mode: mode("require_car_selection"),
+    require_car_number_mode: mode("require_car_number"),
+    require_car_manufacturer_mode: mode("require_car_manufacturer"),
+    car_selection_locked_mode: mode("car_selection_locked"),
     car_options: carOptionList(doc).join("\n"),
     manufacturer_options: ownManufacturers.join("\n"),
     car_selection_note: doc.car_selection_note || "",
-    car_selection_locked: !!doc.car_selection_locked,
   };
 }
 
+// Form state → the POST/PATCH body. Both halves are written: the mode is the
+// answer, and the original boolean is kept in step (true only for "on") so
+// anything still reading the raw flag sees the same thing.
 export function carSelectionFormToBody(form = {}) {
-  return {
-    require_car_selection: !!form.require_car_selection,
-    require_car_number: !!form.require_car_number,
-    require_car_manufacturer: !!form.require_car_manufacturer,
+  const body = {
     car_options: parseCarOptions(form.car_options),
     manufacturer_options: parseCarOptions(form.manufacturer_options),
     car_selection_note: String(form.car_selection_note || "").trim(),
-    car_selection_locked: !!form.car_selection_locked,
   };
+  for (const field of REQUIREMENT_FIELDS) {
+    const raw = String(form[`${field}_mode`] ?? "").trim().toLowerCase();
+    const mode = raw === ON || raw === OFF ? raw : INHERIT;
+    body[`${field}_mode`] = mode;
+    body[field] = mode === ON;
+  }
+  return body;
 }

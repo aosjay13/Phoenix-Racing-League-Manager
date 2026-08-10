@@ -150,6 +150,7 @@ export function SeasonCreateModal({ gameId, games = [], seriesId, seriesName, se
           banger={isBangerDoc(seriesOptions.find(s => s.id === (seriesId || pickedSeries)) || null)}
           // …and so does whatever car lock-in the series already requires.
           seriesDoc={seriesOptions.find(s => s.id === (seriesId || pickedSeries)) || null}
+          gameDoc={games.find(g => g.id === (gameId || pickedGame)) || null}
         />
         {error && <p style={{ color: "#e5484d", fontSize: "0.85rem" }}>{error}</p>}
         <button className="btn btn-primary" type="submit" disabled={busy || !form.name.trim() || !gameReady || !seriesReady}>

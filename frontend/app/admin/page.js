@@ -26,14 +26,28 @@ import { classScoresOwnPoints, definesPoints } from "@/lib/standings";
 import { bangerEntryScope, isBangerDoc } from "@/lib/bangerRacing";
 import { isBracketDoc } from "@/lib/bracketRacing";
 import { CarSelectionFields } from "@/components/CarSelectionFields";
-import { carOptionList, resolveCarSelection } from "@/lib/carSelection";
+import {
+  BLANK_CAR_SELECTION_FORM, carOptionList, carSelectionFormToBody, carSelectionToForm,
+  levelOpinion, resolveSignupRules,
+} from "@/lib/carSelection";
 import { DISCORD_LABEL, GAME_PLATFORM_REQUIREMENTS, isIracingGame } from "@/lib/signupRequest";
 
-// A game and the platform identities its sign-ups must carry. Every flag is off
-// by default, which is exactly how every game behaved before they existed.
+// A game carries two independent sets of settings, and they behave differently
+// on purpose:
+//
+//   • the PLATFORM identities its sign-ups must carry (Discord/Steam/PSN/Xbox/
+//     iRacing) — these are the game's alone and apply to everything under it,
+//     however many series, seasons and classes are made. Nothing overrides them.
+//   • the sign-up REQUIREMENTS (car / number / manufacturer / lock) — the top of
+//     the game → series → season → class chain, which any level below may
+//     override.
+//
+// Every flag starts off / inherit, which is exactly how every game behaved
+// before they existed.
 const BLANK_GAME_FORM = {
   name: "", logo_url: "",
   ...Object.fromEntries(GAME_PLATFORM_REQUIREMENTS.map(r => [r.field, false])),
+  ...BLANK_CAR_SELECTION_FORM,
 };
 
 function gameToForm(g) {
@@ -41,7 +55,12 @@ function gameToForm(g) {
     name: g.name || "",
     logo_url: g.logo_url || "",
     ...Object.fromEntries(GAME_PLATFORM_REQUIREMENTS.map(r => [r.field, !!g[r.field]])),
+    ...carSelectionToForm(g),
   };
+}
+
+function gameFormToBody(form) {
+  return { ...form, ...carSelectionFormToBody(form) };
 }
 
 function Panel({ title, sub, step, muted, children }) {
@@ -113,9 +132,9 @@ const SECTIONS = [
 // car selection of its own — so a glance down the Series / Seasons / Classes
 // lists shows where the lock-in is switched on.
 function carLockinMeta(doc) {
-  if (!doc?.require_car_selection) return null;
+  if (levelOpinion(doc, "require_car_selection") !== true) return null;
   const n = carOptionList(doc).length;
-  return `🚗 car lock-in${n ? ` · ${n} car${n === 1 ? "" : "s"}` : " · no cars listed"}${doc.car_selection_locked ? " · locked" : ""}`;
+  return `🚗 car lock-in${n ? ` · ${n} car${n === 1 ? "" : "s"}` : " · no cars listed"}${levelOpinion(doc, "car_selection_locked") === true ? " · locked" : ""}`;
 }
 
 function toArray(str) {
@@ -421,7 +440,7 @@ function AdminInner() {
         <Panel title="Games" step={1} sub="e.g. iRacing, F1 25, Gran Turismo 7">
           <form onSubmit={e => {
             e.preventDefault();
-            save("/api/games", gameForm, editIds.game, () => { setGameForm(BLANK_GAME_FORM); setEditId("game", null); });
+            save("/api/games", gameFormToBody(gameForm), editIds.game, () => { setGameForm(BLANK_GAME_FORM); setEditId("game", null); });
           }}>
             <div className="field"><label>Game Name</label>
               <input required value={gameForm.name} onChange={e => setGameForm(f => ({ ...f, name: e.target.value }))} placeholder="iRacing" /></div>
@@ -463,6 +482,11 @@ function AdminInner() {
                 })}
               </div>
             </div>
+
+            {/* The top of the sign-up requirement chain. Set here, it covers
+                every series, season and class in this game — and any of them
+                can still override it. See lib/carSelection.js. */}
+            <CarSelectionFields value={gameForm} onChange={setGameForm} level="game" />
 
             <button className="btn btn-primary" type="submit">{editIds.game ? "Save Changes" : "Add Game"}</button>
             {editIds.game && (
@@ -540,7 +564,8 @@ function AdminInner() {
             {/* Car selection / lock-in for every season and class in this
                 series — the same block the Seasons and Classes panels render.
                 See lib/carSelection.js. */}
-            <CarSelectionFields value={seriesForm} onChange={setSeriesForm} level="series" disabled={!gameId} />
+            <CarSelectionFields value={seriesForm} onChange={setSeriesForm} level="series" disabled={!gameId}
+              inherited={resolveSignupRules({ game })} />
 
             {/* The series' points are the league DEFAULT: every season in it
                 scores on these unless the season (or one of its classes)
@@ -607,6 +632,7 @@ function AdminInner() {
               banger={bangerSeries}
               classesAreBanger={classes.some(isBangerDoc)}
               seriesDoc={series}
+              gameDoc={game}
             />
 
             <span style={{ display: "block" }}>
@@ -775,7 +801,7 @@ function AdminInner() {
                 sets its own list asks ITS drivers for their own pick, while
                 the rest of the season keeps picking from the season's. */}
             <CarSelectionFields value={classForm} onChange={setClassForm} level="class" disabled={!seasonId}
-              inherited={resolveCarSelection({ series, season })} />
+              inherited={resolveSignupRules({ game, series, season })} />
 
             <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
               <input type="checkbox" id="class_own_points" disabled={!seasonId} checked={!!classForm.own_points}
