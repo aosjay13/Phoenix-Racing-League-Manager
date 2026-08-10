@@ -8,6 +8,7 @@ import {
 } from "@/lib/carSelection";
 import { linkedDriver, pendingForSeasons, seasonContext, seasonEntries } from "@/lib/carSelectionServer";
 import { gameRequirementFlags } from "@/lib/signupRequest";
+import { numberRequestFor } from "@/lib/signupQueue";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +48,9 @@ export async function GET(request) {
     return {
       entry_id: entry.id,
       driver_id: entry.driver_id ?? null,
+      // What this entry has asked to change its number TO, if anything — shown
+      // beside their current number so nobody picks a number already spoken for.
+      wants_number: pending.find(p => p.entry_id === entry.id)?.number ?? null,
       // The name this driver races under in this game, falling back to the
       // entry's own alias — the same rule the roster and results grids use.
       name: (entry.driver_id ? names[entry.driver_id]?.display : null) || entry.name || "Driver",
@@ -106,6 +110,7 @@ export async function GET(request) {
     // Sign-ups waiting on an admin — shown beside the roster so a number
     // somebody has already asked for isn't offered as free.
     pending: pending.map(p => ({
+      kind: p.kind, entry_id: p.entry_id,
       name: p.name, number: p.number, car: p.car,
       manufacturer: p.manufacturer, class_names: p.class_names,
     })),
@@ -123,6 +128,16 @@ export async function GET(request) {
         // Seeds the sign-up dialog's alias editor from what they already have.
         aliases: driver?.aliases ?? [],
         entry_id: myEntry?.id ?? null,
+        // The number they run today, and the change they've already asked for
+        // (if any) — what the "Request a different number" card renders itself
+        // from. See lib/signupQueue.js.
+        number: myEntry?.number ?? "",
+        number_request: (() => {
+          const r = numberRequestFor(pending, {
+            uid: user.uid, driverId: driver?.id, entryId: myEntry?.id,
+          });
+          return r ? { id: r.id, number: r.number ?? "", reason: r.reason || "" } : null;
+        })(),
         class_ids: myEntry?.class_ids ?? [],
         slots: myEntry ? slotsForEntry(slots, myEntry.class_ids) : [],
         picks: myEntry

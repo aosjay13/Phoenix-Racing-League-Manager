@@ -313,15 +313,37 @@ export function RosterManager() {
     } catch (err) { showToast("error", err.message); }
   }
 
-  async function deleteDriver(row) {
-    if (!row.entry_id) return;
-    if (!confirm(`Remove ${row.name} from this roster?`)) return;
+  // Removing a driver from a roster deletes their entry, and their results in
+  // that season go with it — there's nothing left to attach them to. The API
+  // refuses at the first attempt when there ARE results and says how many, so
+  // the admin is told what they're about to destroy and confirms that
+  // specifically, rather than a bare "Remove?" quietly taking eight races of
+  // somebody's history with it. Returns true when the entry was removed.
+  async function removeEntry(entryId, name, where) {
+    if (!entryId) return false;
+    if (!confirm(`Remove ${name} from ${where}?`)) return false;
     try {
-      await api(`/api/entries/${row.entry_id}`, { method: "DELETE" });
-      if (rowKey === row.key) cancelRowEdit();
-      if (seriesPanelKey === row.key) setSeriesPanelKey(null);
-      await load();
-    } catch (err) { showToast("error", err.message); }
+      await api(`/api/entries/${entryId}`, { method: "DELETE" });
+      return true;
+    } catch (err) {
+      // 409 has-results: the one case worth a second question.
+      if (!/recorded result/i.test(err.message)) { showToast("error", err.message); return false; }
+      if (!confirm(`${err.message}\n\nDelete ${name} and those results anyway? This can't be undone.`)) {
+        return false;
+      }
+      try {
+        await api(`/api/entries/${entryId}?confirm=results`, { method: "DELETE" });
+        return true;
+      } catch (err2) { showToast("error", err2.message); return false; }
+    }
+  }
+
+  async function deleteDriver(row) {
+    if (!(await removeEntry(row.entry_id, row.name, "this roster"))) return;
+    if (rowKey === row.key) cancelRowEdit();
+    if (seriesPanelKey === row.key) setSeriesPanelKey(null);
+    showToast("success", `${row.name} removed from the roster.`);
+    await load();
   }
 
   // Resolve the latest/active season id for an arbitrary series, so a driver
@@ -360,12 +382,9 @@ export function RosterManager() {
   }
 
   async function removeFromSeries(entry, seriesName) {
-    if (!confirm(`Remove this driver from ${seriesName}?`)) return;
-    try {
-      await api(`/api/entries/${entry.entry_id}`, { method: "DELETE" });
-      showToast("success", "Removed from series.");
-      await load();
-    } catch (err) { showToast("error", err.message); }
+    if (!(await removeEntry(entry.entry_id, entry.name || "this driver", seriesName))) return;
+    showToast("success", "Removed from series.");
+    await load();
   }
 
   // Drivers elsewhere in this game who aren't yet on the currently selected

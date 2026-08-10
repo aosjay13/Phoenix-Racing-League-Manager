@@ -60,9 +60,15 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   anything already on the driver's profile, and **Submit** stays disabled until they're answered.
   Whatever a player types is saved back onto their driver profile, so it's asked for once and
   never again
+- 🔢 **Car number changes by request** — a driver already on a roster can ask for a different
+  number from their own season screen, seeing which numbers are free before they choose. It goes
+  into the same approvals queue a sign-up does and changes nothing until an admin grants it, so
+  two drivers can never end up sharing a number. They can withdraw it while it's still waiting;
+  admins can also set or clear any number, and remove anyone from a roster, directly
 - 🔔 **Approvals badge** — a red count beside the sidebar's **Approvals** link shows how many
-  sign-ups are waiting on a decision league-wide, so nobody sits in the queue unnoticed. Moderator
-  and above only — the badge, the page and the API call behind them
+  requests are waiting on a decision league-wide — sign-ups and number changes alike — so nobody
+  sits in the queue unnoticed. Moderator and above only — the badge, the page and the API call
+  behind them
 - 🚗 **Car selection & lock-in** — flag a **game, a series, a season, or one class** as requiring a car
   selection and publish the list of cars on offer. Every driver on that roster gets a **Series
   Information** section on their Dashboard where they pick their car from a dropdown and lock it
@@ -169,6 +175,13 @@ The app runs at `http://localhost:3000`.
      **Submitting doesn't put you on the roster.** It goes to the league's admins as a pending
      sign-up; you're on the official roster once one of them approves it. The form says so before
      you send it.
+
+     **Once you're on the roster**, your season's screen carries a **Your car number** card beside
+     your car pickers: it shows the number you run and lets you **request a different one**. The
+     numbers already taken (and the ones other drivers have asked for) are right there, and one
+     that's spoken for is rejected as you type. Like a sign-up it changes nothing on its own — it
+     goes to the admins, and your number moves when one of them approves it. You can withdraw the
+     request any time while it's still waiting, which frees the number for somebody else.
 
      **An iRacing season won't take a sign-up without your iRacing Name and iRacing ID#**, because
      iRacing leagues are invite-only and the organiser can't send you an invite without your
@@ -358,19 +371,30 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
    - **Approvals** *(`/approvals`, Moderator and above)* — the same queue as below, but for the
      **whole league** in one list, and the place the sidebar's red badge points at. Each row names
      the series and season being asked for, so nothing sits unnoticed just because no admin
-     happened to select that season. The badge counts every `pending` sign-up in the active league
+     happened to select that season. Two kinds of row share it: a **sign-up** (approving creates
+     the roster entry) and a **number change** (approving edits the entry that driver already
+     has — the row is marked *number change* and reads `Car number #7 → #24`, with whatever
+     reason they gave). The badge counts every `pending` request in the active league
      and refreshes on a timer, when the tab regains focus, and the instant one is resolved. It is
      Moderator-and-above throughout — the nav item, the page and `GET
      /api/admin/signup-requests/count` behind them — so a Statistician (who clears the general
      staff gate) and every ordinary player see neither the badge nor the count.
-   - **Pending Sign-ups** *(admin, on Roster & Teams)* — players who submitted a sign-up from
-     their Dashboard, waiting to be let in. Nothing they sent is live: the row shows the number,
-     car and manufacturer they asked for and the platform usernames they gave, and
-     **Approve** puts them on the roster with exactly those choices — creating their driver
-     profile too when they're new to the league. **Deny** leaves them off, with an optional reason.
-     Approval re-checks what could have gone stale while they waited: if the season has since been
-     marked complete it refuses and says so, and if their number was taken meanwhile they're seated
-     without one rather than the approval failing outright.
+   - **Pending Approvals** *(admin, on Roster & Teams)* — the selected season's slice of the
+     queue above: players who submitted a sign-up from their Dashboard waiting to be let in, plus
+     anyone already on the roster asking for a different car number. Nothing they sent is live.
+
+     A **sign-up** row shows the number, car and manufacturer they asked for and the platform
+     usernames they gave; **Approve** puts them on the roster with exactly those choices — creating
+     their driver profile too when they're new to the league. A **number change** row is marked as
+     one and reads `Car number #7 → #24`, with whatever reason they gave; **Approve** moves the
+     number on the entry they already have. **Deny** leaves things as they are, with an optional
+     reason.
+
+     Approval re-checks whatever could have gone stale while a request waited. If the season has
+     since been marked complete it refuses and says so. If a sign-up's number was taken meanwhile
+     they're seated without one rather than the approval failing outright — but a number *change*
+     whose number has gone is refused instead, since granting it would either clash or silently do
+     nothing, and neither is what the driver asked for.
    - **⬆ Bulk Import Drivers** *(admin, on Roster & Teams)* — the season-rollover shortcut, for
      everyone who never goes near the Dashboard sign-up. Pick a source — **every driver in this
      series** (across all its seasons) or **clone one past season's roster** — and they're added in
@@ -572,12 +596,46 @@ one, since that's what the driver actually started from after any penalty. Rows 
 first (by race date, then round number), and each links to `/races/<id>` — the same event page the
 Schedule opens — so a driver's profile is a way *into* every race they ran.
 
-### The pending sign-up queue
+### The pending request queue
 
-`signup_requests` holds every sign-up a player has submitted and no admin has resolved. It is the
-whole of the approval workflow: `POST /api/signup-requests` only ever writes a `pending` row —
-there is no path from the Dashboard to the `entries` collection — and
-`PATCH /api/admin/signup-requests/[id]`, admin-gated, is what creates the roster entry. The car
+`signup_requests` holds everything a player has asked for and no admin has resolved. It carries
+**two kinds**, told apart by `kind`:
+
+| `kind` | The ask | Approving it |
+|---|---|---|
+| `signup` (or absent) | "let me onto this season's roster" | creates the roster entry |
+| `number_change` | "change my car number to #12" | edits the entry they already have |
+
+They share one collection on purpose: it's the same job — a player asked, an admin decides — so the
+Approvals page, the sidebar badge and the approve/deny buttons cover both with no second set of
+plumbing. Rows written before number changes existed carry no `kind` at all, which is why absent
+means `signup`.
+
+Both kinds **spend a car number** while they wait: whether somebody is asking to join on #24 or to
+move to #24, offering it to the next player as free would only make work for whoever resolves them.
+`claimedNumbers` in `lib/signupQueue.js` reads the roster and the whole queue together. A number
+change is not another person, though, so it never adds a row to a roster view — it hangs off the
+row that driver already has, as "→ #24".
+
+A player can **withdraw** their own pending request (`DELETE /api/signup-requests/[id]`, owner-only,
+never staff): the row is marked `withdrawn` rather than deleted, so "asked and changed their mind"
+stays readable, and the number it was holding is free immediately.
+
+**A car number is unique within its season, on every path that can set one.** The sign-up form
+checks as you type, the queue re-checks before granting a change (the number may have gone while
+the request waited), and `PATCH /api/entries/[id]` checks when an admin types one by hand — that
+last one being the path most likely to be used to *fix* a clash, and the one that used to be able
+to create one. Clearing a number is always allowed; racing without one is legal.
+
+**Removing a driver from a roster** deletes their entry, and their results in that season go with
+it — there is nothing left to attach them to. So `DELETE /api/entries/[id]` refuses outright when
+the entry has results, answering with how many; the roster's dialog reports that number and asks
+again before passing `?confirm=results`. Dropping somebody who signed up and never raced stays one
+click; deleting eight races of history is never one.
+
+`POST /api/signup-requests` only ever writes a `pending` row — there is no path from the Dashboard
+to the `entries` collection — and `PATCH /api/admin/signup-requests/[id]`, admin-gated, is what
+creates the roster entry. The car
 and manufacturer chosen at sign-up are written onto that entry in the same fields the lock-in
 screen uses (`selected_car`, `selected_manufacturer`), so an approved sign-up needs no second trip
 to choose what was already chosen.

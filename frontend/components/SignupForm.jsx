@@ -7,7 +7,7 @@ import { withDefaults } from "@/lib/aliases";
 import {
   NUMBER_TAKEN_MESSAGE, missingSignupFields, missingSignupMessage, sortRosterByNumber,
 } from "@/lib/carSelection";
-import { numberClaimed, rosterWithPending } from "@/lib/signupQueue";
+import { isNumberChange, numberClaimed, rosterWithPending } from "@/lib/signupQueue";
 import {
   IRACING_ID_LABEL, IRACING_NAME_LABEL,
   cleanSignupDriverInfo, missingAliasMessage, missingRequiredAliases,
@@ -121,6 +121,12 @@ export function SignupForm({ season, driver, onDone, onCancel }) {
   const roster = useMemo(
     () => rosterWithPending(season.roster || [], season.pending || []),
     [season.roster, season.pending]);
+  // People waiting to get IN. A pending car-number change is in the same queue
+  // and its number is just as spoken for, but it isn't another driver joining,
+  // so it doesn't belong in this count.
+  const pendingJoins = useMemo(
+    () => (season.pending || []).filter(p => !isNumberChange(p)),
+    [season.pending]);
   const numberTaken = numberClaimed(season.roster || [], season.pending || [], number);
   const takenCars = useMemo(() => {
     const counts = {};
@@ -250,7 +256,7 @@ export function SignupForm({ season, driver, onDone, onCancel }) {
         <summary>
           Series roster — {roster.filter(r => String(r.number ?? "").trim()).length} number
           {roster.filter(r => String(r.number ?? "").trim()).length === 1 ? "" : "s"} spoken for
-          {season.pending?.length ? ` · ${season.pending.length} awaiting approval` : ""}
+          {pendingJoins.length ? ` · ${pendingJoins.length} awaiting approval` : ""}
         </summary>
         {roster.length === 0 ? (
           <p className="roster-peek-empty">Nobody has signed up yet — every number is free.</p>

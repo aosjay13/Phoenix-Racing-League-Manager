@@ -1075,7 +1075,10 @@ export function SessionEditor({
     if (!confirm(`Remove ${row.driver_name} from the season? This removes them from every race and session, not just ${session}, and deletes any results already saved for them. This cannot be undone.`)) return;
     setBusy(true);
     try {
-      await api(`/api/entries/${row.entry_id}`, { method: "DELETE" });
+      // `confirm=results` because the dialog above has already said, in as many
+      // words, that saved results go with them — the server refuses a silent
+      // cascade without it (see /api/entries/[id]).
+      await api(`/api/entries/${row.entry_id}?confirm=results`, { method: "DELETE" });
       // Clear the slot rather than deleting the row, so the finishing
       // position stays available to reassign.
       setRows(prev => prev.map(r => (r.entry_id === row.entry_id ? { ...makeRow(r.finish_pos), slot_id: r.slot_id } : r)));

@@ -2190,6 +2190,22 @@ tbody tr:hover {
   border: 1px solid rgba(244, 162, 40, 0.3);
 }
 
+/* Marks a queue row as a car-number change rather than a sign-up — the driver
+   is already on the roster, so approving edits rather than adds. */
+.pending-kind-badge {
+  margin-left: 8px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  color: var(--accent-cyan);
+  background: var(--accent-cyan-dim);
+  border: 1px solid var(--border-accent);
+}
+
 .roster-peek-pending {
   margin-left: 6px;
   font-size: 0.66rem;

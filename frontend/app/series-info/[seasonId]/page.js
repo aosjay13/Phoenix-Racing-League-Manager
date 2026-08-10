@@ -7,6 +7,8 @@ import { useAuth } from "@/components/AuthProvider";
 import { DriverLinkGate } from "@/components/DriverLinkGate";
 import { SeriesSignupModal } from "@/components/SeriesSignupModal";
 import { api } from "@/lib/api";
+import { NUMBER_CHANGE_KIND } from "@/lib/signupQueue";
+import { NUMBER_TAKEN_MESSAGE } from "@/lib/carSelection";
 
 // One season's car lock-in screen: what the admin is asking for, the cars on
 // offer, what the rest of the field has already taken, and the player's own
@@ -17,6 +19,86 @@ import { api } from "@/lib/api";
 // question this driver is being asked (see lib/carSelection.js). A season with
 // classes that run their own car lists therefore renders one picker per class,
 // and an ordinary season renders exactly one.
+
+// "Your car number", for a driver already on the roster — what they run today,
+// and a way to ask for a different one.
+//
+// It asks; it never changes anything. A car number is unique in a season and
+// handing them out is the league's call, so the request goes into the SAME
+// queue a sign-up does and an admin approving it is what moves the number (see
+// lib/signupQueue.js). The numbers already spoken for are listed right here, so
+// the usual request is for one that's actually free.
+function NumberCard({ current, request, taken, seasonOver, onRequest, onCancel, busy }) {
+  const [wanted, setWanted] = useState("");
+  const [reason, setReason] = useState("");
+  const [asking, setAsking] = useState(false);
+
+  const value = wanted.trim();
+  const isMine = value && value === String(current ?? "").trim();
+  const isTaken = !!value && taken.some(t => String(t).trim() === value);
+  const problem = isMine
+    ? "That's the number you already run."
+    : isTaken ? NUMBER_TAKEN_MESSAGE : "";
+
+  return (
+    <div className="form-card lockin-card">
+      <h3 style={{ marginTop: 0 }}>Your car number</h3>
+      {current
+        ? <p className="lockin-current">You run <strong>#{current}</strong></p>
+        : <p className="lockin-current is-empty">You don&rsquo;t have a car number in this season.</p>}
+
+      {request ? (
+        <>
+          <p style={{ margin: "0 0 10px", fontSize: "0.85rem", color: "var(--ink-1)" }}>
+            You&rsquo;ve asked to change to <strong>#{request.number}</strong>. It&rsquo;s with the
+            admins — your number changes when one of them approves it.
+          </p>
+          <button className="btn btn-ghost" type="button" style={{ marginTop: 0 }}
+            disabled={busy} onClick={onCancel}>
+            {busy ? "Working…" : "Withdraw the request"}
+          </button>
+        </>
+      ) : seasonOver ? (
+        <p style={{ fontSize: "0.85rem", color: "var(--ink-2)", margin: 0 }}>
+          Season over — the roster is final, so numbers can&rsquo;t be changed.
+        </p>
+      ) : !asking ? (
+        <button className="btn btn-ghost" type="button" style={{ marginTop: 0 }}
+          onClick={() => setAsking(true)}>
+          Request a different number
+        </button>
+      ) : (
+        <form onSubmit={e => { e.preventDefault(); onRequest(value, reason.trim()); }}>
+          <div className="field">
+            <label htmlFor="wanted_number">The number you&rsquo;d like</label>
+            <input id="wanted_number" type="text" inputMode="numeric" maxLength={3}
+              className={problem ? "is-invalid" : undefined} aria-invalid={!!problem || undefined}
+              value={wanted} onChange={e => setWanted(e.target.value)} placeholder="e.g. 07" />
+            {problem && <p className="field-error">{problem}</p>}
+          </div>
+          <div className="field">
+            <label htmlFor="wanted_reason">Why (optional)</label>
+            <input id="wanted_reason" maxLength={300} value={reason}
+              onChange={e => setReason(e.target.value)}
+              placeholder="e.g. it's the number I've always raced" />
+          </div>
+          <p style={{ margin: "0 0 10px", fontSize: "0.78rem", color: "var(--ink-2)" }}>
+            This goes to the league&rsquo;s admins. Your number doesn&rsquo;t change until one of
+            them approves it.
+          </p>
+          <button className="btn btn-primary" type="submit" style={{ marginTop: 0 }}
+            disabled={busy || !value || !!problem}>
+            {busy ? "Sending…" : "Send Request"}
+          </button>
+          <button className="btn btn-ghost" type="button" style={{ marginTop: 0, marginLeft: 8 }}
+            disabled={busy} onClick={() => { setAsking(false); setWanted(""); setReason(""); }}>
+            Cancel
+          </button>
+        </form>
+      )}
+    </div>
+  );
+}
 
 // One "pick your car" block — a slot, its instructions and the dropdown.
 // `seasonOver` (the admin marked the season complete) and `slot.locked` both
@@ -126,6 +208,35 @@ export default function SeasonCarSelectionPage() {
     finally { setBusy(false); }
   }
 
+  // Ask for a different car number. Files a pending request through the same
+  // queue a sign-up uses and changes nothing on the roster — see
+  // /api/signup-requests.
+  async function requestNumber(number, reason) {
+    setBusy(true);
+    try {
+      await api("/api/signup-requests", {
+        method: "POST",
+        body: { kind: NUMBER_CHANGE_KIND, season_id: seasonId, number, reason },
+      });
+      await load();
+      showToast("success",
+        `Asked for #${number}. An admin will review it — your number changes once they approve.`);
+    } catch (err) { showToast("error", err.message); }
+    finally { setBusy(false); }
+  }
+
+  // Changed their mind before an admin got to it. Withdrawing frees the number
+  // they had asked for straight away, so somebody else can have it.
+  async function cancelNumberRequest(id) {
+    setBusy(true);
+    try {
+      await api(`/api/signup-requests/${id}`, { method: "DELETE" });
+      await load();
+      showToast("success", "Number request withdrawn.");
+    } catch (err) { showToast("error", err.message); }
+    finally { setBusy(false); }
+  }
+
   // Sign-up is the shared dialog, so this screen asks for exactly the same
   // things the Dashboard's sign-up panel does — and, like it, files a pending
   // request rather than putting anyone on the roster.
@@ -157,6 +268,12 @@ export default function SeasonCarSelectionPage() {
   // is required — the roster is then just the numbered entry list.
   const columns = slots;
   const carFor = (row, classId) => row.cars.find(c => String(c.class_id || "") === String(classId || ""))?.car || "";
+  // Numbers somebody ELSE holds or has asked for. The caller's own entry is
+  // excluded — that's the row a change would move, not a clash with it.
+  const numbersSpokenFor = [
+    ...roster.filter(r => r.entry_id !== me?.entry_id).flatMap(r => [r.number, r.wants_number]),
+    ...(data.pending || []).map(p => p.number),
+  ].map(n => String(n ?? "").trim()).filter(Boolean);
   const taken = {};
   for (const row of roster) {
     for (const c of row.cars) if (c.car) taken[c.car] = (taken[c.car] || 0) + 1;
@@ -224,35 +341,46 @@ export default function SeasonCarSelectionPage() {
             </p>
           )}
         </div>
-      ) : slots.length === 0 ? (
-        <div className="empty-state">
-          <span className="empty-state-icon">✅</span>
-          <p>No car selection is required for this season.</p>
-          <p style={{ fontSize: "0.85rem", color: "var(--ink-2)", margin: 0 }}>
-            You&rsquo;re on the roster{me.class_ids.length ? "" : " (unclassified)"} — nothing else to do here.
-          </p>
-        </div>
-      ) : me.slots.length === 0 ? (
-        <div className="empty-state">
-          <span className="empty-state-icon">✅</span>
-          <p>Nothing to pick in your class.</p>
-          <p style={{ fontSize: "0.85rem", color: "var(--ink-2)", margin: 0 }}>
-            The car lock-in for this season applies to other classes.
-          </p>
-        </div>
       ) : (
-        <div className="lockin-grid">
-          {me.slots.map(slot => (
-            <SlotPicker
-              key={slot.class_id || "season"}
-              slot={slot}
-              current={me.picks.find(p => String(p.class_id || "") === String(slot.class_id || ""))?.car || ""}
+        <>
+          {/* Their own answers for this season, in one grid: the car number
+              they run (and a way to ask for a different one) beside whatever
+              car pickers the season asks of them. The number card is always
+              here — a season needn't require a car for numbers to matter. */}
+          <div className="lockin-grid">
+            <NumberCard
+              current={me.number}
+              request={me.number_request}
+              taken={numbersSpokenFor}
               seasonOver={!open}
               busy={busy}
-              onSave={saveCar}
+              onRequest={requestNumber}
+              onCancel={() => cancelNumberRequest(me.number_request.id)}
             />
-          ))}
-        </div>
+            {me.slots.map(slot => (
+              <SlotPicker
+                key={slot.class_id || "season"}
+                slot={slot}
+                current={me.picks.find(p => String(p.class_id || "") === String(slot.class_id || ""))?.car || ""}
+                seasonOver={!open}
+                busy={busy}
+                onSave={saveCar}
+              />
+            ))}
+          </div>
+
+          {slots.length === 0 ? (
+            <p style={{ marginTop: 10, fontSize: "0.85rem", color: "var(--ink-2)" }}>
+              No car selection is required for this season — you&rsquo;re on the roster
+              {me.class_ids.length ? "" : " (unclassified)"}.
+            </p>
+          ) : me.slots.length === 0 ? (
+            <p style={{ marginTop: 10, fontSize: "0.85rem", color: "var(--ink-2)" }}>
+              The car lock-in for this season applies to other classes, so there&rsquo;s nothing
+              for you to pick.
+            </p>
+          ) : null}
+        </>
       )}
 
       {/* Transparency: the season's public roster — who's racing, under which
@@ -285,7 +413,17 @@ export default function SeasonCarSelectionPage() {
               <tbody>
                 {roster.map(row => (
                   <tr key={row.entry_id} style={row.mine ? { background: "var(--accent-cyan-dim)" } : undefined}>
-                    <td><span className="badge">{String(row.number ?? "").trim() || "—"}</span></td>
+                    <td>
+                      <span className="badge">{String(row.number ?? "").trim() || "—"}</span>
+                      {/* Somebody has asked to move to this number and is
+                          waiting on an admin — worth showing, so the next
+                          driver choosing one doesn't ask for it too. */}
+                      {row.wants_number && (
+                        <span className="roster-peek-pending" title="Number change waiting on an admin">
+                          → #{row.wants_number}
+                        </span>
+                      )}
+                    </td>
                     <td className="driver-name-cell">
                       {row.driver_id
                         ? <Link href={`/drivers/${row.driver_id}`} style={{ color: "var(--accent-cyan)" }}>{row.name}</Link>

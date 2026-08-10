@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { requestSummary } from "@/lib/signupQueue";
+import { isNumberChange, requestSummary } from "@/lib/signupQueue";
 import { normalizeAliases } from "@/lib/aliases";
 import { signupsChanged } from "@/lib/pendingSignupAlerts";
 
@@ -64,14 +64,20 @@ export function PendingSignups({ seasonId = null, seasonName, scope = "season", 
       // One fewer job in the queue — drop the sidebar badge now rather than on
       // its next poll.
       signupsChanged();
-      if (action === "approve") {
+      if (action === "approve" && isNumberChange(req)) {
+        showToast("success",
+          `${res.driver_name || req.name} now runs ${res.number ? `#${res.number}` : "no number"}.`);
+        onApproved?.();
+      } else if (action === "approve") {
         showToast(res.note ? "error" : "success",
           `${res.driver_name || req.name} is on the roster.`
           + (res.created_driver ? " Their driver profile was created." : "")
           + (res.note ? ` ${res.note}` : ""));
         onApproved?.();
       } else {
-        showToast("success", `Denied ${req.name}'s sign-up.`);
+        showToast("success", isNumberChange(req)
+          ? `Denied ${req.name}'s number change.`
+          : `Denied ${req.name}'s sign-up.`);
       }
     } catch (err) {
       showToast("error", err.message);
@@ -91,23 +97,28 @@ export function PendingSignups({ seasonId = null, seasonName, scope = "season", 
   return (
     <div className="form-card pending-signups" style={{ maxWidth: "100%" }}>
       <h3 style={{ marginTop: 0, display: "flex", alignItems: "center", gap: 8 }}>
-        Pending Sign-ups
+        Pending Approvals
         <span className="nav-badge" style={{ position: "static" }}>{rows.length}</span>
       </h3>
       <p style={{ marginTop: 0, color: "var(--ink-1)", fontSize: "0.85rem", maxWidth: 760 }}>
-        Players who have signed up {leagueWide
-          ? <>for <strong>any series in this league</strong></>
-          : <>for <strong>{seasonName || "this season"}</strong></>} from their
-        Dashboard. None of them is on the roster yet — <strong>Approve</strong> adds them with the
-        number and car they asked for (and creates the driver profile, for anyone new to the
-        league). <strong>Deny</strong> leaves them off.
+        What players have asked for {leagueWide
+          ? <>across <strong>any series in this league</strong></>
+          : <>in <strong>{seasonName || "this season"}</strong></>}, from their
+        Dashboard. Nothing they sent is live yet. A <strong>sign-up</strong> is approved onto the
+        roster with the number and car they asked for (creating their driver profile, for anyone
+        new to the league); a <strong>number change</strong> is approved onto the roster entry they
+        already have. <strong>Deny</strong> leaves things as they are.
       </p>
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {rows.map(req => {
           const rBusy = !!busy[req.id];
-          const aliases = normalizeAliases(req.aliases).filter(a => a.value);
+          const numberChange = isNumberChange(req);
+          // A number change is about one field on a row that already exists, so
+          // its platform usernames aren't the thing being decided — don't
+          // repeat them under every row.
+          const aliases = numberChange ? [] : normalizeAliases(req.aliases).filter(a => a.value);
           const summary = requestSummary(req);
           return (
             <div key={req.id} className="pending-signup-row">
@@ -116,7 +127,10 @@ export function PendingSignups({ seasonId = null, seasonName, scope = "season", 
                 : <span className="avatar avatar-sm avatar-fallback">{String(req.name || "?")[0]?.toUpperCase()}</span>}
               <span style={{ flex: 1, minWidth: 240 }}>
                 <strong>{req.name}</strong>
-                {req.new_driver && (
+                {numberChange && (
+                  <span className="pending-kind-badge" title="Already on the roster — approving changes their car number">number change</span>
+                )}
+                {!numberChange && req.new_driver && (
                   <span className="pending-new-badge" title="No driver profile yet — approving creates one">new driver</span>
                 )}
                 {req.user_email && (
@@ -136,6 +150,11 @@ export function PendingSignups({ seasonId = null, seasonName, scope = "season", 
                 <span style={{ display: "block", fontSize: "0.85rem", color: "var(--ink-1)" }}>
                   {summary || "No number or car requested"}
                 </span>
+                {numberChange && req.reason && (
+                  <span style={{ display: "block", marginTop: 2, fontSize: "0.8rem", color: "var(--ink-2)" }}>
+                    &ldquo;{req.reason}&rdquo;
+                  </span>
+                )}
                 {aliases.length > 0 && (
                   <span style={{ display: "block", marginTop: 2, fontSize: "0.76rem", color: "var(--ink-2)" }}>
                     {aliases.map(a => `${a.label}: ${a.value}`).join(" · ")}

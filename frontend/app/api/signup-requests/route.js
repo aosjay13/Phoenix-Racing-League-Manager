@@ -6,7 +6,10 @@ import {
   NUMBER_TAKEN_MESSAGE, matchCarOption, missingSignupFields, missingSignupMessage,
   resolveSignupRules, seasonAcceptsSignups,
 } from "@/lib/carSelection";
-import { PENDING, numberClaimed, pendingForSeason } from "@/lib/signupQueue";
+import {
+  NUMBER_CHANGE_KIND, PENDING, SIGNUP_KIND, isOwnNumber, numberClaimed, numberRequestFor,
+  pendingForSeason, requestKind,
+} from "@/lib/signupQueue";
 import { linkedDriver, seasonContext, seasonEntries } from "@/lib/carSelectionServer";
 import { missingAliasMessage, missingRequiredAliases } from "@/lib/signupRequest";
 import { mergeAliases, normalizeAliases } from "@/lib/aliases";
@@ -31,6 +34,8 @@ export async function GET(request) {
     const r = d.data();
     return {
       id: d.id,
+      kind: r.kind || SIGNUP_KIND,
+      entry_id: r.entry_id ?? null,
       name: r.name || r.driver_name || "Driver",
       number: r.number ?? null,
       car: r.car || "",
@@ -42,6 +47,101 @@ export async function GET(request) {
     };
   });
   return NextResponse.json(rows);
+}
+
+// "Please change my car number to #12", from a driver already on the roster.
+//
+// Files a pending row and edits NOTHING — the number only moves when an admin
+// approves it (see /api/admin/signup-requests/[id]), because a car number is
+// unique in a season and handing them out is the league's call. The number is
+// checked against the roster AND the queue here so an obviously-taken one is
+// refused up front rather than sitting in the queue to be denied later; it's
+// checked again at approval, since the queue is exactly where stale data comes
+// from.
+async function numberChangeRequest({ request, user, driver, season, series, game, body }) {
+  if (!driver) {
+    return NextResponse.json(
+      { error: "Link your driver profile before asking for a number change.", code: "no-driver" },
+      { status: 403 },
+    );
+  }
+
+  const [entries, pendingSnap] = await Promise.all([
+    seasonEntries(season.id, []),
+    db().collection("signup_requests")
+      .where("season_id", "==", season.id).where("status", "==", PENDING).get(),
+  ]);
+  const pending = pendingSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  // Their own roster entry — resolved from THEIR driver profile and account, so
+  // a request can't name somebody else's row.
+  const entry = entries.find(e => e.driver_id === driver.id || (e.user_id && e.user_id === user.uid));
+  if (!entry) {
+    return NextResponse.json(
+      { error: `You're not on ${season.name || "this season"}'s roster, so there's no number to change.`, code: "not-entered" },
+      { status: 409 },
+    );
+  }
+
+  const number = String(body.number ?? "").trim().slice(0, 3);
+  if (!number) {
+    return NextResponse.json({ error: "Enter the car number you'd like.", code: "no-number" }, { status: 400 });
+  }
+  if (isOwnNumber(entry.number, number)) {
+    return NextResponse.json(
+      { error: `You already run #${number}.`, code: "same-number" },
+      { status: 400 },
+    );
+  }
+  if (numberRequestFor(pending, { uid: user.uid, driverId: driver.id, entryId: entry.id })) {
+    return NextResponse.json(
+      { error: "You've already got a number change waiting for this season. An admin will review it shortly.", code: "already-pending" },
+      { status: 409 },
+    );
+  }
+  // Taken by anyone else on the roster, or already asked for by anyone in the
+  // queue. Their OWN entry is excluded — it's the row being changed.
+  const others = entries.filter(e => e.id !== entry.id);
+  if (numberClaimed(others, pending, number)) {
+    return NextResponse.json({ error: NUMBER_TAKEN_MESSAGE, code: "number-taken", number }, { status: 409 });
+  }
+
+  const userDoc = await db().collection("users").doc(user.uid).get();
+  const u = userDoc.exists ? userDoc.data() : {};
+  const leagueId = season.league_id || getRequestLeagueId(request);
+
+  const doc = {
+    kind: NUMBER_CHANGE_KIND,
+    status: PENDING,
+    season_id: season.id,
+    season_name: season.name || "Season",
+    series_id: season.series_id || "",
+    series_name: series?.name || "Series",
+    game_id: season.game_id || "",
+    game_name: game?.name || "",
+    uid: user.uid,
+    user_name: u.display_name || user.name || user.email || "Unknown",
+    user_email: u.email || user.email || null,
+    user_photo: u.photo_url || null,
+    driver_id: driver.id,
+    driver_name: driver.name ?? null,
+    // The row that will be edited, and what it runs today — so the admin sees
+    // the change rather than just the destination, and so approving can tell
+    // whether the entry moved on while the request waited.
+    entry_id: entry.id,
+    current_number: String(entry.number ?? "").trim(),
+    name: entry.name || driver.name || "Driver",
+    number,
+    reason: String(body.reason ?? "").trim().slice(0, 300),
+    class_ids: entry.class_ids || [],
+    class_names: [],
+    created_at: new Date().toISOString(),
+    resolved_at: null,
+    resolved_by: null,
+    ...(leagueId ? { league_id: leagueId } : {}),
+  };
+  const ref = await db().collection("signup_requests").add(doc);
+  return NextResponse.json({ id: ref.id, ...doc }, { status: 201 });
 }
 
 // A player submits a sign-up for a season. This NEVER puts them on the roster:
@@ -70,6 +170,14 @@ export const POST = withUser(async (request, ctx, user) => {
   }
 
   const driver = await linkedDriver(user.uid);
+
+  // A driver already ON the roster asking to change their car number. It goes
+  // through the same queue as a sign-up for the same reason a sign-up does: a
+  // car number is the league's to hand out, and two drivers can't share one.
+  // Nothing is changed here — approving it is what edits the roster entry.
+  if (requestKind(body) === NUMBER_CHANGE_KIND) {
+    return numberChangeRequest({ request, user, driver, season, series, game, body });
+  }
 
   // A player with no driver profile submits the driver's details with the
   // sign-up; approving the request is what creates the profile. Nothing here

@@ -22,8 +22,10 @@ export default function ApprovalsPage() {
         <h2>Approvals</h2>
       </div>
       <p style={{ marginTop: 0, color: "var(--ink-1)", fontSize: "0.9rem", maxWidth: 760 }}>
-        Every player sign-up waiting on a decision, across the whole league. Approving one puts that
-        driver on the season&rsquo;s roster with the number and car they asked for.
+        Everything players have asked for and nobody has decided yet, across the whole league —
+        <strong> sign-ups</strong> (approving puts that driver on the season&rsquo;s roster with the
+        number and car they asked for) and <strong>car number changes</strong> (approving moves the
+        number on the roster entry they already have).
       </p>
 
       <AdminGate minLevel={APPROVALS_MIN_LEVEL}>

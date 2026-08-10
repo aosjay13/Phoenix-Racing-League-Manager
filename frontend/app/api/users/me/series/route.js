@@ -171,7 +171,12 @@ export const GET = withUser(async (request, ctx, user) => {
             note: r.note,
           }];
         })),
+        // Both kinds: a sign-up is another person waiting for a place, a
+        // number change is somebody already racing who wants a different
+        // number. The form shows them differently but counts both numbers as
+        // spoken for — see rosterWithPending in lib/signupQueue.js.
         pending: pending.map(p => ({
+          kind: p.kind, entry_id: p.entry_id,
           name: p.name, number: p.number, car: p.car,
           manufacturer: p.manufacturer, class_names: p.class_names,
         })),

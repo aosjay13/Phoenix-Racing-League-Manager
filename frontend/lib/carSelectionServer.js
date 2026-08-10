@@ -11,6 +11,7 @@ import { db } from "@/lib/firebase";
 import { entryClassIds, orderClassIds } from "@/lib/classFilter";
 import { carSelectionSlots, sortRosterByNumber } from "@/lib/carSelection";
 import { scopeByLeague } from "@/lib/serverAuth";
+import { SIGNUP_KIND } from "@/lib/signupQueue";
 import { sortSeasons } from "@/lib/seasonOrder";
 import { attachRaceDates, fetchSeasonRaceDates } from "@/lib/seasonOrderServer";
 
@@ -99,10 +100,11 @@ export async function rostersForSeasons(seasonIds = []) {
   ]));
 }
 
-// The pending sign-ups of several seasons at once, as
-// { [seasonId]: [{ id, name, number, car, manufacturer, class_names, uid }] }.
-// Feeds the sign-up form's "already requested" list — a number somebody is
-// waiting on shouldn't be offered to the next player as if it were free.
+// The pending requests of several seasons at once, keyed by season id. Carries
+// BOTH kinds — sign-ups and car-number changes — because both spend a number:
+// whether somebody is asking to join on #24 or asking to move to #24, offering
+// it to the next player as free just makes work for the admin resolving them.
+// `kind` is what tells them apart downstream (see lib/signupQueue.js).
 export async function pendingForSeasons(seasonIds = []) {
   const ids = [...new Set(seasonIds.filter(Boolean))];
   if (!ids.length) return {};
@@ -115,10 +117,18 @@ export async function pendingForSeasons(seasonIds = []) {
       const r = d.data();
       return {
         id: d.id,
+        // Which kind of request this is — a sign-up ("let me in") or a number
+        // change ("move my number"). Everything downstream branches on it: the
+        // roster peek must not render a number change as another person waiting
+        // to join, but its number IS spoken for. See lib/signupQueue.js.
+        kind: r.kind || SIGNUP_KIND,
         uid: r.uid,
         driver_id: r.driver_id ?? null,
+        entry_id: r.entry_id ?? null,
         name: r.name || r.driver_name || "Driver",
         number: r.number ?? null,
+        current_number: r.current_number ?? null,
+        reason: r.reason || "",
         car: r.car || "",
         manufacturer: r.manufacturer || "",
         class_names: r.class_names || [],

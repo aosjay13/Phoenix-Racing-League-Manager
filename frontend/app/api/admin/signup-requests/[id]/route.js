@@ -3,7 +3,7 @@ import { db } from "@/lib/firebase";
 import { withAdmin } from "@/lib/serverAuth";
 import { normalizeClassIds } from "@/lib/classFilter";
 import { carNumberTaken, seasonAcceptsSignups } from "@/lib/carSelection";
-import { APPROVED, DENIED, PENDING } from "@/lib/signupQueue";
+import { APPROVED, DENIED, NUMBER_CHANGE_KIND, PENDING, isNumberChange } from "@/lib/signupQueue";
 import { mergeAliases, normalizeAliases } from "@/lib/aliases";
 
 // Admin-only: let a pending sign-up onto the roster, or turn it down.
@@ -51,6 +51,48 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
     return NextResponse.json({ error: "That season no longer exists." }, { status: 404 });
   }
   const season = { id: seasonDoc.id, ...seasonDoc.data() };
+
+  // ── A number change ──────────────────────────────────────────────────────
+  // Nobody is added or removed: one roster entry's number moves. Everything
+  // that could have shifted while it waited is re-checked, because a queue is
+  // exactly where stale data comes from — the entry may have been deleted, the
+  // driver may have been given the number by hand already, or somebody else may
+  // have taken the number they asked for.
+  if (isNumberChange(req)) {
+    if (!seasonAcceptsSignups(season)) {
+      return NextResponse.json({
+        error: `${season.name || "That season"} has been marked complete, so its roster is final. Reopen the season first, or deny this request.`,
+      }, { status: 400 });
+    }
+    const entryRef = db().collection("entries").doc(String(req.entry_id || ""));
+    const entryDoc = req.entry_id ? await entryRef.get() : null;
+    if (!entryDoc?.exists) {
+      return NextResponse.json({
+        error: "That driver is no longer on this season's roster, so there's no number to change. Deny this request.",
+      }, { status: 404 });
+    }
+    const number = String(req.number ?? "").trim().slice(0, 3);
+    const rosterSnap = await db().collection("entries").where("season_id", "==", req.season_id).get();
+    const takenByOthers = rosterSnap.docs
+      .filter(d => d.id !== entryDoc.id)
+      .map(d => d.data().number);
+    if (number && carNumberTaken(takenByOthers, number)) {
+      return NextResponse.json({
+        error: `#${number} was taken while this request was waiting, so it can't be granted. Deny it and ask them to pick another.`,
+        code: "number-taken",
+      }, { status: 409 });
+    }
+    const previous = String(entryDoc.data().number ?? "").trim();
+    await entryRef.update({ number });
+    await reqRef.update({ status: APPROVED, ...stamp, applied_number: number, previous_number: previous });
+    return NextResponse.json({
+      ok: true, id, status: APPROVED, kind: NUMBER_CHANGE_KIND,
+      driver_id: req.driver_id ?? null,
+      driver_name: req.driver_name || req.name || "Driver",
+      entry_id: entryDoc.id, number, previous_number: previous,
+    });
+  }
+
   if (!seasonAcceptsSignups(season)) {
     return NextResponse.json({
       error: `${season.name || "That season"} has been marked complete, so nobody can be added to it. Reopen the season first, or deny this sign-up.`,
