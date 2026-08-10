@@ -4,6 +4,7 @@ import { withAdmin } from "@/lib/serverAuth";
 import { normalizeClassIds } from "@/lib/classFilter";
 import { carNumberTaken, seasonAcceptsSignups } from "@/lib/carSelection";
 import { APPROVED, DENIED, PENDING } from "@/lib/signupQueue";
+import { mergeAliases, normalizeAliases } from "@/lib/aliases";
 
 // Admin-only: let a pending sign-up onto the roster, or turn it down.
 //
@@ -78,7 +79,10 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
         name,
         user_id: req.uid,
         notes: "",
-        aliases: Array.isArray(req.new_driver?.aliases) ? req.new_driver.aliases : (req.aliases || []),
+        // Every platform username they gave at sign-up, so the profile this
+        // creates already knows their Discord/Steam/PSN/Xbox/iRacing names and
+        // never asks again.
+        aliases: mergeAliases(req.new_driver?.aliases, normalizeAliases(req.aliases)),
         created_at: new Date().toISOString(),
         created_by: admin.uid,
         created_from_signup: id,
@@ -91,7 +95,13 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
     }
   } else if (Array.isArray(req.aliases) && req.aliases.length) {
     // Keep the profile's connected accounts current with what they submitted.
-    await db().collection("drivers").doc(driverId).update({ aliases: req.aliases });
+    // MERGED, not replaced: the sign-up form only asks for what its game
+    // requires, so overwriting would drop every platform it didn't ask about.
+    // (The submission normally syncs at POST time; this covers a request filed
+    // before that existed, and a profile that appeared while it waited.)
+    const driverDoc = await db().collection("drivers").doc(driverId).get();
+    await db().collection("drivers").doc(driverId)
+      .update({ aliases: mergeAliases(driverDoc.data()?.aliases, req.aliases) });
   }
 
   // ── The roster entry ─────────────────────────────────────────────────────

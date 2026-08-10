@@ -2075,6 +2075,65 @@ tbody tr:hover {
 
 .signup-required-note strong { color: var(--accent-cyan); }
 
+/* The contact & platform details a sign-up can't go in without — the Discord
+   name every league sign-up needs, plus whatever the parent game requires
+   (components/SignupForm.jsx). */
+.signup-required-fields {
+  margin: 16px 0 0;
+  padding: 12px 14px 4px;
+  border: 1px solid var(--border-accent);
+  border-radius: 10px;
+  background: var(--accent-cyan-dim);
+}
+
+.signup-required-fields > label { color: var(--accent-cyan); }
+
+.signup-required-why {
+  margin: 4px 0 0;
+  font-size: 0.74rem;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+
+/* "✓ from your profile" — this answer was auto-filled, not asked for. */
+.signup-prefilled {
+  margin-left: 8px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 1px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+  color: var(--positive, #34d399);
+  background: rgba(52, 211, 153, 0.12);
+  border: 1px solid rgba(52, 211, 153, 0.3);
+}
+
+/* The full alias editor, tucked away: the fields this sign-up actually needs
+   are answered above, so this is only for the platforms it doesn't ask about. */
+.signup-alias-more {
+  margin: 14px 0 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+}
+
+.signup-alias-more > summary {
+  cursor: pointer;
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-1);
+  list-style: none;
+}
+
+.signup-alias-more > summary::-webkit-details-marker { display: none; }
+.signup-alias-more > summary::before { content: "▸ "; color: var(--ink-2); }
+.signup-alias-more[open] > summary::before { content: "▾ "; }
+.signup-alias-more > summary:hover { color: var(--ink-0); }
+.signup-alias-more > .field { padding: 0 12px 12px; }
+
 .alias-required {
   font-size: 0.68rem;
   font-weight: 700;

@@ -7,6 +7,7 @@ import {
   selectedCarFor, slotsForEntry, sortRosterByNumber,
 } from "@/lib/carSelection";
 import { linkedDriver, pendingForSeasons, seasonContext, seasonEntries } from "@/lib/carSelectionServer";
+import { gameRequirementFlags } from "@/lib/signupRequest";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +42,8 @@ export async function GET(request) {
     fetchDriverNames(entries.map(e => e.driver_id), gameId),
     gameId ? db().collection("games").doc(gameId).get() : Promise.resolve(null),
   ]);
-  const gameName = gameDoc?.exists ? (gameDoc.data().name || "") : "";
+  const game = gameDoc?.exists ? gameDoc.data() : null;
+  const gameName = game?.name || "";
 
   const classNameById = Object.fromEntries(classes.map(c => [c.id, c.name]));
   const rows = entries.map(entry => {
@@ -80,6 +82,10 @@ export async function GET(request) {
     series: series ? { id: series.id, name: series.name || "Series", logo_url: series.logo_url || "" } : null,
     game_id: gameId,
     game_name: gameName,
+    // The platform identities this game insists on (Steam / PSN / Xbox /
+    // iRacing) — the sign-up dialog renders an input for each. Discord is
+    // required everywhere and carries no flag. See lib/signupRequest.js.
+    game_requirements: gameRequirementFlags(game),
     open: seasonAcceptsSignups(season),
     // What a sign-up for this season has to carry, so the sign-up dialog on
     // this screen renders itself exactly as the Dashboard's does.

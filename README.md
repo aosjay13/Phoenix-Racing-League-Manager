@@ -53,6 +53,16 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   for (creating their driver profile too, if they're new to the league) and **Deny** leaves them off.
   Admins choose per **series, season or class** what a sign-up must carry: a **car number**, a **car**,
   a **manufacturer / model**, or nothing at all
+- 🎮 **Account requirements per game** — every sign-up in every game needs the player's **Discord
+  name**, and each **Game** carries its own switches for the platform identity it actually needs:
+  **Steam**, **PSN**, **Xbox Gamertag**, **iRacing Name** and **iRacing Customer ID**. The sign-up
+  form reads the game the series belongs to and renders exactly those fields, pre-filled from
+  anything already on the driver's profile, and **Submit** stays disabled until they're answered.
+  Whatever a player types is saved back onto their driver profile, so it's asked for once and
+  never again
+- 🔔 **Approvals badge** — a red count beside the sidebar's **Approvals** link shows how many
+  sign-ups are waiting on a decision league-wide, so nobody sits in the queue unnoticed. Moderator
+  and above only — the badge, the page and the API call behind them
 - 🚗 **Car selection & lock-in** — flag a **series, a season, or one class** as requiring a car
   selection and publish the list of cars on offer. Every driver on that roster gets a **Series
   Information** section on their Dashboard where they pick their car from a dropdown and lock it
@@ -76,7 +86,8 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   everywhere, with sortable columns and per-series car numbers
 - 🖼 **Custom branding** — upload game, series, season, team, and track logos
 - 👑 **Admin roles** — set `ADMIN_EMAILS`; admins get results entry from the Schedule, the
-  Roster & Teams and User Accounts tabs on Drivers, and League Setup
+  Roster & Teams and User Accounts tabs on Drivers, League Setup, and (Moderator and above)
+  the Approvals queue
 - 💾 **Backup & restore** — the Owner can export the *entire* application to one JSON file and
   import it back after a crash, a corruption or a hack, with every record keeping its original ID
   so all the links survive; plus an automatic backup every Saturday at 3 AM Eastern, filed into the
@@ -106,9 +117,18 @@ The app runs at `http://localhost:3000`.
    profile automatically.
 2. **Profile** — edit your display name, avatar, bio, country, and car number. Ask a league
    admin to link your roster entry to your account so your race results feed your stats.
-3. **Drivers** — browse every registered player; open a profile to see career stats,
-   broken out per game and combined across all games (starts, wins, podiums, poles, average
-   finish, titles, etc.).
+3. **Drivers** — browse every registered player; open a profile for three tabs of their record:
+   - **Career Stats** — the totals, per game and combined across all games (starts, wins,
+     podiums, poles, average finish, titles, etc.), plus every championship won and a by-game
+     breakdown.
+   - **Race History** — *every individual race they have started*, newest first, with the start
+     and finish position, laps, laps led and points they scored in each. Filter it by **game** and
+     by **season**, and click any race to open that event's full results — so you can go from a
+     driver's profile straight to a specific race of theirs without knowing which season it was
+     in. An event that ran several sessions (heats, a consolation, a feature) lists each session
+     as its own row, because each is scored on its own.
+   - **Per Track Stats** — the same career broken down by venue, each track linking to its own
+     page.
 4. **Series Information** — a section on your **Dashboard** (not the sidebar) that appears only
    when there's something for you to do **in the series you're currently viewing**: a running
    season that wants you to lock in a car, or a season open to sign up for. It follows the
@@ -128,9 +148,18 @@ The app runs at `http://localhost:3000`.
      dropdown, a manufacturer / model dropdown — each appears only if the series, season or class
      you're joining wants it, marked *required* where it's mandatory, and **Submit Sign Up** stays
      disabled until every required choice is made. Alongside them: the name you race under, your
-     class, and your **Aliases / Connected Accounts** — the platform usernames (Discord, PSN,
-     Xbox, Steam, iRacing…) the Smart Importer matches results against, so a result posted under
-     any of them lands on your profile.
+     class, and a **Contact & Platform Details** panel — the accounts this league needs to reach
+     you and to find you in-game. Under those, collapsed, sits the full **Aliases / Connected
+     Accounts** list — every platform username (Discord, PSN, Xbox, Steam, iRacing…) the Smart
+     Importer matches results against, so a result posted under any of them lands on your profile.
+
+     **Your Discord name is required for every sign-up**, in every game, series, season and class:
+     it's how the league reaches you. On top of that, each game asks for whatever identifies you
+     *there* — a Steam name, a PSN ID, an Xbox gamertag, an iRacing name and customer ID — as
+     switched on by an admin in **League Setup ▸ Games**. Anything already saved on your driver
+     profile is filled in for you and marked *✓ from your profile*, so the usual sign-up is
+     read-and-submit; anything you type is saved back to your profile, so no series ever asks you
+     for it twice.
 
      The season's **roster** sits in the form, in car-number order, showing who's racing under
      which number *and* who has already asked for one (marked **pending**) — so you can see what's
@@ -141,9 +170,10 @@ The app runs at `http://localhost:3000`.
      sign-up; you're on the official roster once one of them approves it. The form says so before
      you send it.
 
-     Some games ask for more. **An iRacing season won't take a sign-up without your iRacing ID#**,
-     because iRacing leagues are invite-only and the organiser can't send you an invite without
-     your customer ID — the field is marked required and the form won't submit until it's filled.
+     **An iRacing season won't take a sign-up without your iRacing Name and iRacing ID#**, because
+     iRacing leagues are invite-only and the organiser can't send you an invite without your
+     customer ID — both fields are marked required and the form won't submit until they're filled.
+     A game *named* iRacing carries that rule whether or not an admin has ticked its boxes.
 
      If the league already knows you, the form puts you straight on the roster. If you're not in
      the driver list yet, **nothing is created**: the whole form is filed as a request, and an
@@ -214,7 +244,14 @@ link leaves out falls back to the reader's own saved selection, so an old bare l
 Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setup below).
 
 1. **League Setup** (`/admin`) — build the hierarchy top-down:
-   - **Game** — name + logo (e.g. "iRacing").
+   - **Game** — name + logo (e.g. "iRacing"), plus **Account Requirements for Sign-ups**: tick
+     **Requires Steam ID/Name**, **Requires PlayStation Network (PSN) ID**, **Requires Xbox
+     Gamertag**, **Requires iRacing Name** and/or **Requires iRacing Customer ID** and every
+     sign-up for every series in this game must answer them. Each box maps to one row of the
+     driver's **Aliases / Connected Accounts**, so an answer given at sign-up is saved to their
+     profile and fills itself in next time. A player's **Discord name** is required for every game
+     and has no box to tick; a game *named* iRacing shows its two boxes ticked and locked, because
+     that rule holds whether or not anyone sets it.
    - **Series** — name + logo under a game (e.g. "Asphalt Assault Series").
    - **Season** — name (e.g. "Season 3") under a series; set drop weeks, the points scale
      (or pick a built-in template), qualifying points, and bonus points (most laps led,
@@ -298,6 +335,14 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
        names back to one profile. An alias mapped to a game still acts as that game's display
        name when no per-game Display Name is set, so nothing set up before this existed
        changes.
+   - **Approvals** *(`/approvals`, Moderator and above)* — the same queue as below, but for the
+     **whole league** in one list, and the place the sidebar's red badge points at. Each row names
+     the series and season being asked for, so nothing sits unnoticed just because no admin
+     happened to select that season. The badge counts every `pending` sign-up in the active league
+     and refreshes on a timer, when the tab regains focus, and the instant one is resolved. It is
+     Moderator-and-above throughout — the nav item, the page and `GET
+     /api/admin/signup-requests/count` behind them — so a Statistician (who clears the general
+     staff gate) and every ordinary player see neither the badge nor the count.
    - **Pending Sign-ups** *(admin, on Roster & Teams)* — players who submitted a sign-up from
      their Dashboard, waiting to be let in. Nothing they sent is live: the row shows the number,
      car and manufacturer they asked for and the platform usernames they gave, and
@@ -418,8 +463,10 @@ frontend/
     stats/          ← Scoped driver stats (season/series/game/league), sortable
     schedule/       ← Season calendar (admin: ⏱ enter results, ✎ edit event, 🗑 delete)
     admin/          ← Admin: League Setup — build games/series/seasons/races, upload logos
-    drivers/        ← Driver directory + public profiles (/drivers/[uid]), plus the admin
-                      Roster & Teams and User Accounts tabs (?tab=roster / ?tab=accounts)
+    drivers/        ← Driver directory + public profiles (/drivers/[uid]: career stats,
+                      race history, per-track stats), plus the admin Roster & Teams and
+                      User Accounts tabs (?tab=roster / ?tab=accounts)
+    approvals/      ← League-wide pending sign-up queue (Moderator+), behind the sidebar badge
     races/[id]/     ← Race results view; races/[id]/edit ← admin race info + results editor
     series-info/    ← A player's series: driver linking, series sign-up, and
                       series-info/[seasonId] ← that season's car lock-in + who's racing what
@@ -491,6 +538,20 @@ which resolves the entry from the driver profile linked to the **caller's** acco
 from anything in the request, so there is no way to name someone else's row. It also refuses a
 car that isn't on the list, a locked selection, and any season marked completed.
 
+### A driver's race history
+
+`buildCareerProfile` (`lib/careerStatsServer.js`) already walked every result belonging to a
+driver's entries to build their career totals and per-track breakdown; `race_history` falls out of
+the same pass, so the profile costs no extra reads. One row per **race session** the driver
+started, carrying the race, its date and venue, the season/series/game it belonged to, the class
+they ran in, their start and finish positions, laps, laps led, status and points.
+
+Qualifying is not a race, so it never gets a row of its own — it's folded into the race it set the
+grid for, as that row's start position. A result's own `start_pos` wins where the grid recorded
+one, since that's what the driver actually started from after any penalty. Rows come back newest
+first (by race date, then round number), and each links to `/races/<id>` — the same event page the
+Schedule opens — so a driver's profile is a way *into* every race they ran.
+
 ### The pending sign-up queue
 
 `signup_requests` holds every sign-up a player has submitted and no admin has resolved. It is the
@@ -529,12 +590,29 @@ has been marked complete, or their car number was taken while the request sat in
 profile is still created and the admin is told what didn't carry over — a stale detail never costs
 them the whole approval.
 
-**Per-game required information.** A game can insist on an alias before it will take a sign-up.
-Today that's iRacing, which is invite-only at the league level: without the driver's **iRacing ID#**
-the organiser can't send them an invite, so the sign-up form marks it required and refuses to
-submit, and the API repeats the check. Which game that is comes from the game's *name*
-(`isIracingGame` in `lib/signupRequest.js`) rather than a flag on the game document, so it works
-with no extra setup for a game called "iRacing", "i-Racing" or "iRacing Oval Series".
+**Required contact & platform information.** Two rules decide what a sign-up has to carry, both in
+`lib/signupRequest.js` so the form, the API and the approval step apply exactly one set:
+
+1. **Discord, always.** Every sign-up, for every game, series, season and class, needs the player's
+   Discord name. There is no toggle — it's how a league talks to its drivers.
+2. **Whatever the game asks for.** A `Game` document carries `requires_steam`, `requires_psn`,
+   `requires_xbox`, `requires_iracing_name` and `requires_iracing_id` (all default `false`), set
+   from **League Setup ▸ Games**. `requiredAliases(game)` turns them into the labelled rows the
+   form renders, and `missingRequiredAliases()` is what disables **Submit** — and what the API
+   rejects on, since the form is not the security boundary.
+
+A game *named* iRacing carries `requires_iracing_name` and `requires_iracing_id` implicitly
+(`isIracingGame`), whether or not the boxes are ticked, so no league loses the invite-only rule by
+upgrading to the toggles.
+
+**The answers sync to the driver profile.** Labels match `DEFAULT_ALIAS_LABELS` in `lib/aliases.js`
+exactly, so a sign-up writes to the same alias rows the admin's Driver Edit dialog does. `POST
+/api/signup-requests` folds what was typed into `drivers/<id>.aliases` with `mergeAliases()` the
+moment it's submitted — approval isn't waited for, because a platform username is a fact about the
+person, not about the roster place. The merge is by label and case-insensitive: a new value wins, a
+blank one **never** erases a saved one, and a platform this game didn't ask about is left alone.
+A player with no driver profile yet carries their answers on the request; approving it writes them
+onto the profile it creates.
 
 ### Car numbers on a self-service sign-up
 

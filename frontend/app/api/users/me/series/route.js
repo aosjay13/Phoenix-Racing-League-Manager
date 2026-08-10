@@ -10,6 +10,7 @@ import {
   pendingForSeasons, rostersForSeasons,
 } from "@/lib/carSelectionServer";
 import { pendingForSeason } from "@/lib/signupQueue";
+import { gameRequirementFlags } from "@/lib/signupRequest";
 
 export const dynamic = "force-dynamic";
 
@@ -140,6 +141,11 @@ export const GET = withUser(async (request, ctx, user) => {
         series_name: series.name || "Series",
         game_id: season.game_id || series.game_id || "",
         game_name: gamesById[season.game_id || series.game_id]?.name || "",
+        // The platform identities this game insists on (Steam / PSN / Xbox /
+        // iRacing), so the sign-up form can render an input for each one and
+        // refuse to submit until it's answered. Discord is required for every
+        // game and needs no flag. See lib/signupRequest.js.
+        game_requirements: gameRequirementFlags(gamesById[season.game_id || series.game_id]),
         logo_url: season.logo_url || series.logo_url || "",
         classes: classes.map(c => ({ id: c.id, name: c.name, car: c.car || "" })),
         requires_car: carSelectionSlots({ series, season, classes }).length > 0,

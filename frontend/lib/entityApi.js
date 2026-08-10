@@ -151,8 +151,26 @@ export function makeDocRoutes({ collection, fields, normalize = null }) {
 
 // Field specs shared between the list POST and doc PATCH routes.
 export const SPECS = {
+  // `requires_*` are the platform identities a sign-up for ANY series in this
+  // game has to carry — a Steam name for a PC title, a PSN ID for Gran Turismo,
+  // a gamertag for Forza, an iRacing name and customer ID for iRacing. The
+  // sign-up form renders an input for each one that's on and refuses to submit
+  // until it's answered, and whatever is typed is saved back to the driver's
+  // profile so it's never asked for twice (see lib/signupRequest.js).
+  //
+  // The Discord name is NOT a toggle: it is required for every sign-up in every
+  // game, so there's nothing to configure.
+  //
+  // A game NAMED "iRacing" carries the two iRacing requirements implicitly,
+  // whether or not the boxes are ticked — that rule predates these fields and
+  // upgrading a league mustn't quietly drop it.
   games:   { collection: "games", parentField: null, sortField: "name",
-             fields: { name: { required: true }, logo_url: {}, description: {} } },
+             fields: { name: { required: true }, logo_url: {}, description: {},
+                       requires_steam: { bool: true, default: false },
+                       requires_psn: { bool: true, default: false },
+                       requires_xbox: { bool: true, default: false },
+                       requires_iracing_name: { bool: true, default: false },
+                       requires_iracing_id: { bool: true, default: false } } },
   // `isBangerRacing` flags the series as Demo Derby / Banger Racing. It turns on
   // the mode-specific stats (Takedowns, Survival Bonus, Most Lethal Bonus — see
   // lib/bangerRacing.js): the results grids of its events grow inputs for them,

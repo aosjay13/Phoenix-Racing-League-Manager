@@ -125,11 +125,14 @@ export const POST = withUser(async (request, ctx, user) => {
       season.series_id ? db().collection("series").doc(season.series_id).get() : null,
       season.game_id ? db().collection("games").doc(season.game_id).get() : null,
     ]);
-    const gameName = gameDoc?.exists ? gameDoc.data().name : "";
+    const game = gameDoc?.exists ? gameDoc.data() : null;
+    const gameName = game?.name || "";
 
-    // Whatever this game insists on (an iRacing customer ID, so the organiser
-    // can send a league invite) has to be in the request before it's filed.
-    const missing = missingRequiredAliases(info.aliases, gameName);
+    // Whatever this game insists on — the Discord name every sign-up carries,
+    // plus the platform identities configured on the game (Steam / PSN / Xbox /
+    // iRacing) — has to be in the request before it's filed. Same rules as a
+    // sign-up from a player the league already knows; see lib/signupRequest.js.
+    const missing = missingRequiredAliases(info.aliases, game);
     if (missing.length) {
       return NextResponse.json(
         { error: missingAliasMessage(missing), code: "missing-alias" },

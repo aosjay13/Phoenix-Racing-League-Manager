@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { api } from "@/lib/api";
 import { formatStat } from "@/lib/standings";
+import { formatRaceDate } from "@/lib/raceDate";
 
 const STAT_LABELS = [
   ["starts", "Starts"], ["wins", "Wins"], ["podiums", "Podiums"], ["top5", "Top 5s"],
@@ -35,13 +36,136 @@ const TRACK_COLUMNS = [
   ["avg_finish", "Avg Finish"], ["laps_led", "Laps Led"],
 ];
 
+// Their whole race history, one row per race. `Pos` links through to the event
+// itself, so a profile is a way INTO every race the driver ran rather than a
+// dead end of totals.
+function RaceHistory({ rows }) {
+  const [gameFilter, setGameFilter] = useState("all");
+  const [seasonFilter, setSeasonFilter] = useState("all");
+
+  // The games and seasons this driver actually raced, in the order the history
+  // is already in (newest first), so the menus only ever offer real answers.
+  const games = useMemo(() => {
+    const seen = new Map();
+    for (const r of rows) if (r.game_id && !seen.has(r.game_id)) seen.set(r.game_id, r.game_name || "Unknown Game");
+    return [...seen].map(([id, name]) => ({ id, name }));
+  }, [rows]);
+
+  const seasons = useMemo(() => {
+    const seen = new Map();
+    for (const r of rows) {
+      if (gameFilter !== "all" && r.game_id !== gameFilter) continue;
+      if (r.season_id && !seen.has(r.season_id)) {
+        seen.set(r.season_id, [r.series_name, r.season_name].filter(Boolean).join(" · "));
+      }
+    }
+    return [...seen].map(([id, name]) => ({ id, name }));
+  }, [rows, gameFilter]);
+
+  // A season picked under one game can't survive switching to another.
+  useEffect(() => {
+    if (seasonFilter !== "all" && !seasons.some(s => s.id === seasonFilter)) setSeasonFilter("all");
+  }, [seasons, seasonFilter]);
+
+  const shown = rows.filter(r =>
+    (gameFilter === "all" || r.game_id === gameFilter) &&
+    (seasonFilter === "all" || r.season_id === seasonFilter));
+
+  return (
+    <>
+      <div className="section-header">
+        <h3>Race History</h3>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div className="context-select">
+            <select value={gameFilter} onChange={e => setGameFilter(e.target.value)}>
+              <option value="all">All Games</option>
+              {games.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </select>
+          </div>
+          {seasons.length > 1 && (
+            <div className="context-select">
+              <select value={seasonFilter} onChange={e => setSeasonFilter(e.target.value)}>
+                <option value="all">All Seasons</option>
+                {seasons.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+          )}
+        </div>
+      </div>
+      <p style={{ marginTop: 0, marginBottom: 12, color: "var(--ink-1)", fontSize: "0.88rem" }}>
+        Every race this driver has started, newest first. Click a race to open its full results.
+      </p>
+
+      {shown.length === 0 ? (
+        <div className="empty-state"><span className="empty-state-icon">🏁</span><p>No races recorded yet.</p></div>
+      ) : (
+        <div className="table-wrap">
+          <table className="stats-table">
+            <thead>
+              <tr>
+                <th className="sticky-col" style={{ textAlign: "left" }}>Race</th>
+                <th style={{ textAlign: "left" }}>Season</th>
+                <th style={{ textAlign: "left" }}>Track</th>
+                <th title="Grid position">Start</th>
+                <th title="Finishing position">Finish</th>
+                <th>Laps</th>
+                <th title="Laps led">Led</th>
+                <th>Points</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((r, i) => (
+                // A driver can hold more than one entry in a season (the old
+                // one-entry-per-class workaround), so race+session isn't unique
+                // on its own — the index keeps the keys distinct.
+                <tr key={`${r.race_id}-${r.session}-${i}`}>
+                  <td className="driver-name-cell sticky-col" style={{ textAlign: "left" }}>
+                    <Link href={`/races/${r.race_id}`} style={{ color: "var(--accent-cyan)", fontWeight: 600 }}>
+                      {r.race_name}
+                    </Link>
+                    {r.session && <span style={{ color: "var(--ink-2)" }}> · {r.session}</span>}
+                    <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.76rem" }}>
+                      {formatRaceDate(r.date, "short", "Date TBA")}
+                      {r.class_name ? ` · ${r.class_name}` : ""}
+                      {r.status && r.status !== "finished" ? ` · ${String(r.status).toUpperCase()}` : ""}
+                    </span>
+                  </td>
+                  <td style={{ textAlign: "left", color: "var(--ink-1)" }}>
+                    {[r.series_name, r.season_name].filter(Boolean).join(" · ") || "—"}
+                    {r.game_name && (
+                      <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.76rem" }}>{r.game_name}</span>
+                    )}
+                  </td>
+                  <td style={{ textAlign: "left" }}>
+                    {r.track_id
+                      ? <Link href={`/tracks/${r.track_id}`} style={{ color: "var(--accent-cyan)" }}>{r.track_name}</Link>
+                      : (r.track_name || "—")}
+                  </td>
+                  <td>{r.start_pos ?? "—"}</td>
+                  <td style={{ fontWeight: 700, color: r.finish_pos === 1 ? "var(--accent-gold)" : undefined }}>
+                    {r.finish_pos ?? "—"}
+                    {r.fastest_lap && <span title="Fastest lap" style={{ marginLeft: 4 }}>⚡</span>}
+                  </td>
+                  <td>{r.laps || "—"}</td>
+                  <td>{r.laps_led || "—"}</td>
+                  <td className="points-cell">{r.points}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  );
+}
+
 export default function DriverProfilePage() {
   const { uid } = useParams();
   const { user, profile: myProfile } = useAuth();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [gameFilter, setGameFilter] = useState("all");
-  const [view, setView] = useState("career"); // "career" | "tracks"
+  const [view, setView] = useState("career"); // "career" | "races" | "tracks"
   // Claim flow: "idle" (button), "pending" (already requested), "done" (just sent)
   const [claimState, setClaimState] = useState("idle");
   const [otherPending, setOtherPending] = useState(false); // pending request for a different driver
@@ -86,7 +210,7 @@ export default function DriverProfilePage() {
   if (error) return <div className="empty-state"><span className="empty-state-icon">🏎</span><p>{error}</p></div>;
   if (!data) return <div className="skeleton" style={{ height: 280 }} />;
 
-  const { profile, all_games, by_game, by_track = [], titles_detail = [], linked, skill_ratings_by_game = [], aliases = [], former_names = [] } = data;
+  const { profile, all_games, by_game, by_track = [], race_history = [], titles_detail = [], linked, skill_ratings_by_game = [], aliases = [], former_names = [] } = data;
   const selectedGame = gameFilter === "all" ? null : by_game.find(g => g.game_id === gameFilter);
   const stats = gameFilter === "all" ? all_games : selectedGame?.stats ?? all_games;
   // Games where this driver is shown under a different name than their profile
@@ -234,10 +358,18 @@ export default function DriverProfilePage() {
 
       <div className="tab-row" style={{ marginTop: 24 }}>
         <button className={`tab${view === "career" ? " active" : ""}`} onClick={() => setView("career")}>Career Stats</button>
+        <button className={`tab${view === "races" ? " active" : ""}`} onClick={() => setView("races")}>
+          Race History
+          {race_history.length > 0 && (
+            <span style={{ marginLeft: 6, color: "var(--ink-2)", fontWeight: 400 }}>{race_history.length}</span>
+          )}
+        </button>
         <button className={`tab${view === "tracks" ? " active" : ""}`} onClick={() => setView("tracks")}>Per Track Stats</button>
       </div>
 
-      {view === "career" ? (
+      {view === "races" ? (
+        <RaceHistory rows={race_history} />
+      ) : view === "career" ? (
         <>
           <div className="section-header">
             <h3>Career Stats</h3>

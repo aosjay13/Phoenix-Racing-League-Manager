@@ -4,18 +4,31 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { requestSummary } from "@/lib/signupQueue";
 import { normalizeAliases } from "@/lib/aliases";
+import { signupsChanged } from "@/lib/pendingSignupAlerts";
 
 // The approvals queue: players who have submitted a sign-up from their
-// Dashboard and are waiting to be let onto this season's roster.
+// Dashboard and are waiting to be let onto a roster.
 //
 // Nothing they submitted is live yet. Approving is what creates the roster
 // entry — with the number, car and manufacturer they asked for — and, for a
 // player the league has never seen, their driver profile as well. Denying
 // leaves them off and records why.
 //
-// Rendered at the top of Drivers ▸ Roster & Teams, above the roster itself,
-// because "who's waiting to get in" belongs next to "who's in".
-export function PendingSignups({ seasonId, seasonName, onApproved }) {
+// It renders in two places, off the same component so the two can't drift:
+//
+//   • with a `seasonId` — at the top of Drivers ▸ Roster & Teams, showing that
+//     ONE season's queue, because "who's waiting to get in" belongs next to
+//     "who's in";
+//   • with no `seasonId` (`scope="league"`) — on /approvals, the whole league's
+//     queue in one list, which is where the sidebar's red badge points. Each
+//     row then names the series and season it's for.
+//
+// `empty` is what to render when nothing is waiting. The roster panel passes
+// nothing and disappears; the Approvals page says so out loud.
+export function PendingSignups({ seasonId = null, seasonName, scope = "season", onApproved, empty = null }) {
+  // Only an explicit league scope widens the query — a season-scoped panel with
+  // no season selected yet asks for nothing rather than for everything.
+  const leagueWide = scope === "league";
   const [rows, setRows] = useState(null);
   const [busy, setBusy] = useState({});
   const [denying, setDenying] = useState(null);   // request id being denied
@@ -23,11 +36,15 @@ export function PendingSignups({ seasonId, seasonName, onApproved }) {
   const [toast, setToast] = useState(null);
 
   const load = useCallback(() => {
-    if (!seasonId) { setRows([]); return Promise.resolve(); }
-    return api(`/api/admin/signup-requests?season_id=${seasonId}`)
+    // Season-scoped with no season chosen yet has nothing to ask for; the
+    // league-wide queue omits the filter and gets everything pending.
+    if (!leagueWide && !seasonId) { setRows([]); return Promise.resolve(); }
+    return api(leagueWide
+      ? "/api/admin/signup-requests"
+      : `/api/admin/signup-requests?season_id=${seasonId}`)
       .then(setRows)
       .catch(() => setRows([]));
-  }, [seasonId]);
+  }, [seasonId, leagueWide]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -44,6 +61,9 @@ export function PendingSignups({ seasonId, seasonName, onApproved }) {
         body: { action, ...(denyReason ? { reason: denyReason } : {}) },
       });
       await load();
+      // One fewer job in the queue — drop the sidebar badge now rather than on
+      // its next poll.
+      signupsChanged();
       if (action === "approve") {
         showToast(res.note ? "error" : "success",
           `${res.driver_name || req.name} is on the roster.`
@@ -62,9 +82,11 @@ export function PendingSignups({ seasonId, seasonName, onApproved }) {
     }
   }
 
+  if (rows === null) return empty === null ? null : <div className="skeleton" style={{ height: 120 }} />;
   // Nothing waiting is the normal state — stay silent rather than showing an
-  // empty panel above every roster.
-  if (!rows || rows.length === 0) return null;
+  // empty panel above every roster. The Approvals page passes an `empty` to
+  // say so instead, since a blank page there reads as broken.
+  if (rows.length === 0) return empty;
 
   return (
     <div className="form-card pending-signups" style={{ maxWidth: "100%" }}>
@@ -73,7 +95,9 @@ export function PendingSignups({ seasonId, seasonName, onApproved }) {
         <span className="nav-badge" style={{ position: "static" }}>{rows.length}</span>
       </h3>
       <p style={{ marginTop: 0, color: "var(--ink-1)", fontSize: "0.85rem", maxWidth: 760 }}>
-        Players who have signed up for <strong>{seasonName || "this season"}</strong> from their
+        Players who have signed up {leagueWide
+          ? <>for <strong>any series in this league</strong></>
+          : <>for <strong>{seasonName || "this season"}</strong></>} from their
         Dashboard. None of them is on the roster yet — <strong>Approve</strong> adds them with the
         number and car they asked for (and creates the driver profile, for anyone new to the
         league). <strong>Deny</strong> leaves them off.
@@ -97,6 +121,17 @@ export function PendingSignups({ seasonId, seasonName, onApproved }) {
                 )}
                 {req.user_email && (
                   <span style={{ color: "var(--ink-2)", fontSize: "0.78rem" }}> · {req.user_email}</span>
+                )}
+                {/* Which season they're asking to join. Only worth saying on
+                    the league-wide queue — the roster panel is already inside
+                    one season. */}
+                {leagueWide && (
+                  <span style={{ display: "block", fontSize: "0.8rem", color: "var(--accent-cyan)", fontWeight: 600 }}>
+                    {[req.series_name, req.season_name].filter(Boolean).join(" · ") || "Unknown season"}
+                    {req.game_name && (
+                      <span style={{ color: "var(--ink-2)", fontWeight: 400 }}> · {req.game_name}</span>
+                    )}
+                  </span>
                 )}
                 <span style={{ display: "block", fontSize: "0.85rem", color: "var(--ink-1)" }}>
                   {summary || "No number or car requested"}

@@ -9,7 +9,7 @@ import {
 import { PENDING, numberClaimed, pendingForSeason } from "@/lib/signupQueue";
 import { linkedDriver, seasonContext, seasonEntries } from "@/lib/carSelectionServer";
 import { missingAliasMessage, missingRequiredAliases } from "@/lib/signupRequest";
-import { normalizeAliases } from "@/lib/aliases";
+import { mergeAliases, normalizeAliases } from "@/lib/aliases";
 
 export const dynamic = "force-dynamic";
 
@@ -119,9 +119,14 @@ export const POST = withUser(async (request, ctx, user) => {
     return NextResponse.json({ error: missingSignupMessage(missing), code: "missing-fields" }, { status: 400 });
   }
 
+  // What this game demands of a sign-up: the Discord name every sign-up needs,
+  // plus the platform identities an admin switched on for the game in League
+  // Setup (Steam / PSN / Xbox / iRacing). Checked here as well as on the form,
+  // because the form is not the security boundary.
   const gameDoc = season.game_id ? await db().collection("games").doc(season.game_id).get() : null;
-  const gameName = gameDoc?.exists ? (gameDoc.data().name || "") : "";
-  const missingAliases = missingRequiredAliases(aliases, gameName);
+  const game = gameDoc?.exists ? gameDoc.data() : null;
+  const gameName = game?.name || "";
+  const missingAliases = missingRequiredAliases(aliases, game);
   if (missingAliases.length) {
     return NextResponse.json({ error: missingAliasMessage(missingAliases), code: "missing-alias" }, { status: 400 });
   }
@@ -187,5 +192,27 @@ export const POST = withUser(async (request, ctx, user) => {
     ...(leagueId ? { league_id: leagueId } : {}),
   };
   const ref = await db().collection("signup_requests").add(doc);
+
+  // Sync what they typed straight back onto their global driver profile, so a
+  // platform username is asked for ONCE: the next sign-up — for any series, in
+  // any game — finds it already saved and fills the field in for them.
+  //
+  // This happens whether or not the request is ever approved: the answers are
+  // about the person, not the roster place, and nothing here touches the
+  // roster. A driver with no profile yet carries their answers on the request
+  // itself; approving it is what writes them to the profile it creates (see
+  // /api/admin/signup-requests/[id]).
+  //
+  // Merged rather than overwritten — a blank field never erases something the
+  // profile already had. Never fail a sign-up over the sync.
+  if (driver && aliases.length) {
+    try {
+      await db().collection("drivers").doc(driver.id)
+        .update({ aliases: mergeAliases(driver.aliases, aliases) });
+    } catch (err) {
+      console.error("Sign-up alias sync failed", err);
+    }
+  }
+
   return NextResponse.json({ id: ref.id, ...doc }, { status: 201 });
 });

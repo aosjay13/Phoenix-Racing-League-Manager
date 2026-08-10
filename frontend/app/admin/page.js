@@ -27,6 +27,22 @@ import { bangerEntryScope, isBangerDoc } from "@/lib/bangerRacing";
 import { isBracketDoc } from "@/lib/bracketRacing";
 import { CarSelectionFields } from "@/components/CarSelectionFields";
 import { carOptionList, resolveCarSelection } from "@/lib/carSelection";
+import { DISCORD_LABEL, GAME_PLATFORM_REQUIREMENTS, isIracingGame } from "@/lib/signupRequest";
+
+// A game and the platform identities its sign-ups must carry. Every flag is off
+// by default, which is exactly how every game behaved before they existed.
+const BLANK_GAME_FORM = {
+  name: "", logo_url: "",
+  ...Object.fromEntries(GAME_PLATFORM_REQUIREMENTS.map(r => [r.field, false])),
+};
+
+function gameToForm(g) {
+  return {
+    name: g.name || "",
+    logo_url: g.logo_url || "",
+    ...Object.fromEntries(GAME_PLATFORM_REQUIREMENTS.map(r => [r.field, !!g[r.field]])),
+  };
+}
 
 function Panel({ title, sub, step, muted, children }) {
   return (
@@ -132,7 +148,7 @@ function AdminInner() {
   // admin actually edits.
   const [section, setSection] = useState("games");
 
-  const [gameForm, setGameForm] = useState({ name: "", logo_url: "" });
+  const [gameForm, setGameForm] = useState(BLANK_GAME_FORM);
   // `isBangerRacing` turns this series into a Demo Derby / Banger Racing series
   // — see lib/bangerRacing.js and the toggle in the Series panel below.
   const [seriesForm, setSeriesForm] = useState(BLANK_SERIES_FORM);
@@ -405,20 +421,58 @@ function AdminInner() {
         <Panel title="Games" step={1} sub="e.g. iRacing, F1 25, Gran Turismo 7">
           <form onSubmit={e => {
             e.preventDefault();
-            save("/api/games", gameForm, editIds.game, () => { setGameForm({ name: "", logo_url: "" }); setEditId("game", null); });
+            save("/api/games", gameForm, editIds.game, () => { setGameForm(BLANK_GAME_FORM); setEditId("game", null); });
           }}>
             <div className="field"><label>Game Name</label>
               <input required value={gameForm.name} onChange={e => setGameForm(f => ({ ...f, name: e.target.value }))} placeholder="iRacing" /></div>
             <ImageUpload label="Game Logo" kind="game-logo" value={gameForm.logo_url} onUploaded={url => setGameForm(f => ({ ...f, logo_url: url }))} />
+
+            {/* What a sign-up for ANY series in this game must carry. Each box
+                adds an input to the sign-up form and blocks Submit until it's
+                answered — and whatever a player types is saved onto their
+                driver profile, so it's asked for once and never again. See
+                lib/signupRequest.js. */}
+            <div className="field" style={{ marginTop: 6 }}>
+              <label style={{ display: "block" }}>Account Requirements for Sign-ups</label>
+              <p style={{ margin: "0 0 8px", fontSize: "0.78rem", color: "var(--ink-2)" }}>
+                The platform identities a player must give when signing up for a series in this game.
+                Anything they&rsquo;ve already saved on their driver profile is filled in for them.
+                <strong> {DISCORD_LABEL}</strong> is required for every sign-up in every game, so
+                there&rsquo;s nothing to switch on for it.
+              </p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {GAME_PLATFORM_REQUIREMENTS.map(req => {
+                  // A game named "iRacing" carries its two requirements whether
+                  // or not the boxes are ticked, so show them as on and say why.
+                  const implied = isIracingGame(gameForm.name) && req.field.startsWith("requires_iracing");
+                  return (
+                    <div key={req.field} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                      <input type="checkbox" id={`game_${req.field}`}
+                        checked={implied || !!gameForm[req.field]} disabled={implied}
+                        onChange={e => setGameForm(f => ({ ...f, [req.field]: e.target.checked }))}
+                        style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+                      <label htmlFor={`game_${req.field}`} style={{ margin: 0 }}>
+                        {req.title}
+                        <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
+                          Saved on the driver&rsquo;s profile as &ldquo;{req.label}&rdquo;.
+                          {implied ? " Always required for iRacing." : ""}
+                        </span>
+                      </label>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
             <button className="btn btn-primary" type="submit">{editIds.game ? "Save Changes" : "Add Game"}</button>
             {editIds.game && (
               <button className="btn btn-ghost" type="button" style={{ marginLeft: 8 }}
-                onClick={() => { setEditId("game", null); setGameForm({ name: "", logo_url: "" }); }}>Cancel</button>
+                onClick={() => { setEditId("game", null); setGameForm(BLANK_GAME_FORM); }}>Cancel</button>
             )}
           </form>
           <div style={{ marginTop: 16 }}>
             {games.map(g => <ItemRow key={g.id} logo={g.logo_url} name={g.name} editing={editIds.game === g.id}
-              onEdit={() => { setEditId("game", g.id); setGameForm({ name: g.name, logo_url: g.logo_url || "" }); }}
+              onEdit={() => { setEditId("game", g.id); setGameForm(gameToForm(g)); }}
               onDelete={() => remove(`/api/games/${g.id}`, `Delete game "${g.name}"? Its series/seasons remain in the database but will be hidden.`)} />)}
           </div>
         </Panel>

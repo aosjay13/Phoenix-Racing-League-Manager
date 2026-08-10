@@ -7,6 +7,9 @@ import { useAuth } from "@/components/AuthProvider";
 import { useLeague } from "@/components/LeagueProvider";
 import { copyCurrentLink } from "@/lib/scopeLink";
 import { useUserAccountsAlerts, alertsTitle } from "@/lib/userAccountsAlerts";
+import {
+  APPROVALS_MIN_LEVEL, pendingSignupsTitle, usePendingSignupCount,
+} from "@/lib/pendingSignupAlerts";
 
 // Re-exported for callers that used to import these from the shell; the alert
 // plumbing itself now lives in lib/userAccountsAlerts so the Drivers page can
@@ -29,8 +32,14 @@ const publicNav = [
 // page it belongs to: races are edited from the Schedule, and the roster, teams
 // and user accounts are tabs on Drivers. Only the league hierarchy itself is
 // admin-only enough to keep its own entry.
+//
+// Approvals is the exception that earned one: a player's sign-up sits waiting
+// until somebody looks at it, so it needs a place that can carry a badge and be
+// seen from every page. `minLevel` keeps it to the staff who actually work the
+// queue — Moderator and up (see lib/pendingSignupAlerts.js).
 const adminNav = [
   { href: "/admin",       label: "League Setup",   icon: "⚙", exact: true },
+  { href: "/approvals",   label: "Approvals",      icon: "✅", minLevel: APPROVALS_MIN_LEVEL },
 ];
 
 function NavLinks({ items, pathname, badges }) {
@@ -181,14 +190,21 @@ function UserChip() {
 
 export function AppShell({ children }) {
   const pathname = usePathname();
-  const { isAdmin } = useAuth();
+  const { isAdmin, roleLevel } = useAuth();
   const league = useLeague();
   const userAccountsAlerts = useUserAccountsAlerts(isAdmin);
+  // Sign-ups waiting on an approval. The hook makes no API call at all below
+  // Moderator, so a player's browser never asks for a count it isn't allowed.
+  const pendingSignups = usePendingSignupCount(roleLevel);
   // New signups / pending claims are handled on the Drivers page's User
   // Accounts tab, so the badge rides along with that nav item.
   const navBadges = {
     "/drivers": { count: userAccountsAlerts.total, title: alertsTitle(userAccountsAlerts) },
+    "/approvals": { count: pendingSignups, title: pendingSignupsTitle(pendingSignups) },
   };
+  // Admin entries the signed-in staff account is high enough to see.
+  const adminItems = adminNav.filter(
+    item => item.minLevel == null || roleLevel >= item.minLevel);
 
   return (
     <div className="shell">
@@ -207,7 +223,7 @@ export function AppShell({ children }) {
         {isAdmin && (
           <>
             <span className="nav-section-label" style={{ marginTop: 16 }}>Admin</span>
-            <nav><NavLinks items={adminNav} pathname={pathname} /></nav>
+            <nav><NavLinks items={adminItems} pathname={pathname} badges={navBadges} /></nav>
           </>
         )}
 
