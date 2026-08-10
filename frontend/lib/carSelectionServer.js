@@ -86,6 +86,34 @@ export async function rostersForSeasons(seasonIds = []) {
   ]));
 }
 
+// The pending sign-ups of several seasons at once, as
+// { [seasonId]: [{ id, name, number, car, manufacturer, class_names, uid }] }.
+// Feeds the sign-up form's "already requested" list — a number somebody is
+// waiting on shouldn't be offered to the next player as if it were free.
+export async function pendingForSeasons(seasonIds = []) {
+  const ids = [...new Set(seasonIds.filter(Boolean))];
+  if (!ids.length) return {};
+  const snaps = await Promise.all(ids.map(id =>
+    db().collection("signup_requests")
+      .where("season_id", "==", id).where("status", "==", "pending").get()));
+  return Object.fromEntries(ids.map((id, i) => [
+    id,
+    snaps[i].docs.map(d => {
+      const r = d.data();
+      return {
+        id: d.id,
+        uid: r.uid,
+        driver_id: r.driver_id ?? null,
+        name: r.name || r.driver_name || "Driver",
+        number: r.number ?? null,
+        car: r.car || "",
+        manufacturer: r.manufacturer || "",
+        class_names: r.class_names || [],
+      };
+    }),
+  ]));
+}
+
 // Every entry this driver holds anywhere, by both routes into an entry (the
 // driver profile, and the older direct account link). Deduped by entry id.
 export async function entriesForDriver({ driverId, uid }) {

@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/firebase";
 import { getRequestLeagueId, withUser } from "@/lib/serverAuth";
 import { normalizeClassIds } from "@/lib/classFilter";
 import {
-  NUMBER_TAKEN_MESSAGE, carNumberTaken, carSelectionSlots, normalizeCarNumber,
-  resolveCarSelection, seasonAcceptsSignups, seasonIsCompleted, selectedCarFor, slotsForEntry,
+  carSelectionSlots, normalizeCarNumber, resolveCarSelection, resolveSignupRules,
+  seasonAcceptsSignups, seasonIsCompleted, selectedCarFor, slotsForEntry,
 } from "@/lib/carSelection";
 import {
-  entriesForDriver, leagueSeasonIndex, linkedDriver, newestFirst, pendingClaim, rostersForSeasons,
+  entriesForDriver, leagueSeasonIndex, linkedDriver, newestFirst, pendingClaim,
+  pendingForSeasons, rostersForSeasons,
 } from "@/lib/carSelectionServer";
+import { pendingForSeason } from "@/lib/signupQueue";
 
 export const dynamic = "force-dynamic";
 
@@ -103,7 +104,10 @@ export const GET = withUser(async (request, ctx, user) => {
   // numbers are already taken and reject a clash the moment it's typed rather
   // than on submit. One query per season being offered — a league only has a
   // handful running at once, and it saves a round trip per card.
-  const rosters = await rostersForSeasons(openSeasons.map(s => s.id));
+  const [rosters, pendings] = await Promise.all([
+    rostersForSeasons(openSeasons.map(s => s.id)),
+    pendingForSeasons(openSeasons.map(s => s.id)),
+  ]);
 
   const open_signups = openSeasons
     .map(season => {
@@ -111,7 +115,12 @@ export const GET = withUser(async (request, ctx, user) => {
       const classes = classesBySeason[season.id] || [];
       const resolved = resolveCarSelection({ series, season });
       const roster = rosters[season.id] || [];
+      const pending = pendings[season.id] || [];
       const classNameById = Object.fromEntries(classes.map(c => [c.id, c.name]));
+      // What this season asks of a sign-up — a number, a car, a manufacturer —
+      // resolved down the series → season chain. A class that asks for more is
+      // resolved on the form once one is picked.
+      const rules = resolveSignupRules({ series, season });
       return {
         season_id: season.id,
         season_name: season.name || "Season",
@@ -123,6 +132,32 @@ export const GET = withUser(async (request, ctx, user) => {
         classes: classes.map(c => ({ id: c.id, name: c.name, car: c.car || "" })),
         requires_car: carSelectionSlots({ series, season, classes }).length > 0,
         car_count: resolved.options.length,
+        // Everything the sign-up form renders itself from.
+        rules: {
+          require_car: rules.require_car,
+          require_number: rules.require_number,
+          require_manufacturer: rules.require_manufacturer,
+          car_options: rules.car_options,
+          manufacturer_options: rules.manufacturer_options,
+          note: rules.note,
+        },
+        // Per class, so picking one on the form can tighten what's asked for.
+        class_rules: Object.fromEntries(classes.map(c => {
+          const r = resolveSignupRules({ series, season, cls: c });
+          return [c.id, {
+            require_car: r.require_car, require_number: r.require_number,
+            require_manufacturer: r.require_manufacturer,
+            car_options: r.car_options, manufacturer_options: r.manufacturer_options,
+            note: r.note,
+          }];
+        })),
+        pending: pending.map(p => ({
+          name: p.name, number: p.number, car: p.car,
+          manufacturer: p.manufacturer, class_names: p.class_names,
+        })),
+        // This account's own sign-up already waiting on an admin, if any.
+        my_pending: pendingForSeason(pending, { uid: user.uid, driverId: driver?.id })
+          ? true : false,
         // The season's public roster, in car-number order — the "which numbers
         // are gone?" list a driver reads before picking one, and the source of
         // the instant clash check on the number field.
@@ -162,85 +197,9 @@ export const GET = withUser(async (request, ctx, user) => {
   });
 });
 
-// Register the signed-in player for a season. The entry is created against
-// THEIR OWN driver profile — resolved from the account, never taken from the
-// request — so nobody can sign anyone else up.
-export const POST = withUser(async (request, ctx, user) => {
-  const body = await request.json().catch(() => ({}));
-  const seasonId = String(body.season_id ?? "").trim();
-  if (!seasonId) return NextResponse.json({ error: "Missing season_id" }, { status: 400 });
-
-  const driver = await linkedDriver(user.uid);
-  if (!driver) {
-    return NextResponse.json(
-      { error: "Link a driver profile to your account before signing up.", code: "no-driver" },
-      { status: 403 },
-    );
-  }
-
-  const seasonDoc = await db().collection("seasons").doc(seasonId).get();
-  if (!seasonDoc.exists) return NextResponse.json({ error: "Season not found" }, { status: 404 });
-  const season = { id: seasonDoc.id, ...seasonDoc.data() };
-  // An admin marked this season complete (from the Schedule or League Setup).
-  // That closes it to players for good — this is the check that makes it true
-  // rather than merely hidden, so a stale tab or a hand-made request can't slip
-  // an entry in after the season is over.
-  if (!seasonAcceptsSignups(season)) {
-    return NextResponse.json(
-      { error: `Season over — sign-ups for ${season.name || "that season"} are done.`, code: "season-over" },
-      { status: 400 },
-    );
-  }
-
-  // Already on this roster? Say so rather than creating a second entry — a
-  // duplicate is exactly what the roster's "Combine" tool exists to undo.
-  const roster = await db().collection("entries").where("season_id", "==", seasonId).get();
-  const existing = roster.docs.find(d => {
-    const e = d.data();
-    return e.driver_id === driver.id || (e.user_id && e.user_id === user.uid);
-  });
-  if (existing) {
-    return NextResponse.json({ id: existing.id, ...existing.data(), already_entered: true });
-  }
-
-  // Only classes that belong to this season, so a stray id can't attach an
-  // entry to another season's class.
-  const seasonClasses = await db().collection("classes").where("season_id", "==", seasonId).get();
-  const validClassIds = new Set(seasonClasses.docs.map(d => d.id));
-  const classIds = normalizeClassIds(body.class_ids).filter(id => validClassIds.has(id));
-
-  // Both free-text fields are capped, the same way the admin entry route caps a
-  // car number — a self-service write shouldn't be able to store an essay.
-  const number = String(body.number ?? "").trim().slice(0, 3);
-
-  // Two drivers can't run the same number in one season. The form checks this
-  // as it's typed off the roster it already holds; this is the check that makes
-  // it true, since two people can reach the form at the same moment and the
-  // first to submit takes the number. Compared as text, so a league running
-  // both a 1 and an 01 keeps them as the different numbers they are.
-  if (number && carNumberTaken(roster.docs.map(d => d.data().number), number)) {
-    return NextResponse.json(
-      { error: NUMBER_TAKEN_MESSAGE, code: "number-taken", number },
-      { status: 409 },
-    );
-  }
-
-  const doc = {
-    season_id: seasonId,
-    // The name they race under in this series; defaults to their profile name.
-    name: String(body.name ?? "").trim().slice(0, 60) || driver.name || "Driver",
-    driver_id: driver.id,
-    user_id: user.uid,
-    team_id: "",
-    number,
-    class_ids: classIds,
-    class_id: classIds[0] || "",
-    created_at: new Date().toISOString(),
-    created_by: user.uid,
-    // Flags an entry the player made themselves rather than one an admin added.
-    self_signup: true,
-    ...(season.league_id ? { league_id: season.league_id } : (getRequestLeagueId(request) ? { league_id: getRequestLeagueId(request) } : {})),
-  };
-  const ref = await db().collection("entries").add(doc);
-  return NextResponse.json({ id: ref.id, ...doc }, { status: 201 });
-});
+// There is deliberately no POST here any more. A player joining a season goes
+// through POST /api/signup-requests, which only ever files a PENDING row for an
+// admin to approve — see lib/signupQueue.js. This route used to create the
+// roster entry directly; leaving it in place would have been a way onto the
+// official roster with nobody reviewing it, which is the one thing the approval
+// queue exists to prevent.

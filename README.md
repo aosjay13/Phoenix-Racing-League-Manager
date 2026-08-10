@@ -46,6 +46,13 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   on. Unlike Demo Derby these are ordinary racing finishes — a bracket 3rd is a straight **3** in
   Average Finish, both 3rd-place drivers are paid identical points, and it all cascades into Wins,
   Podiums, Top 5s and the Overall and per-Game stats like any other result
+- 📝 **Player sign-ups with admin approval** — players join a series from their Dashboard: pick the
+  season from a selector listing only what's open, fill in a form the league configured, and submit.
+  Nothing reaches the official roster on its own — every sign-up lands in a **Pending Sign-ups**
+  queue on the admin's roster screen, where **Approve** adds them with the number and car they asked
+  for (creating their driver profile too, if they're new to the league) and **Deny** leaves them off.
+  Admins choose per **series, season or class** what a sign-up must carry: a **car number**, a **car**,
+  a **manufacturer / model**, or nothing at all
 - 🚗 **Car selection & lock-in** — flag a **series, a season, or one class** as requiring a car
   selection and publish the list of cars on offer. Every driver on that roster gets a **Series
   Information** section on their Dashboard where they pick their car from a dropdown and lock it
@@ -113,17 +120,26 @@ The app runs at `http://localhost:3000`.
      approves it** — a driver profile is never created or linked automatically. Brand new
      players don't have to do this first: signing up for a series asks for the same details and
      files the same request, with the season attached.
-   - **Signing up.** Every season still upcoming or under way that you're not on yet. Seasons
-     marked complete never appear — and can't be joined. Each card carries that season's
-     **series roster** — who's racing under which number, listed in car-number order — so you can
-     see what's free before you start.
+   - **Signing up.** A selector lists every season still upcoming or under way that you're not on
+     yet — pick one and its form appears underneath. Seasons marked complete never appear, and
+     can't be joined.
 
-     **Sign Up** opens a form covering everything the league needs to put you on a roster: the
-     name you race under, your class, your car number, and your **Aliases / Connected Accounts**
-     — the platform usernames (Discord, PSN, Xbox, Steam, iRacing…) the Smart Importer matches
-     results against, so a result posted under any of them lands on your profile. Type a number
-     somebody already has and it's rejected as you type, with *"That number is already taken,
-     please choose another number."*
+     **The form renders itself from what that league asked for.** A car number box, a car
+     dropdown, a manufacturer / model dropdown — each appears only if the series, season or class
+     you're joining wants it, marked *required* where it's mandatory, and **Submit Sign Up** stays
+     disabled until every required choice is made. Alongside them: the name you race under, your
+     class, and your **Aliases / Connected Accounts** — the platform usernames (Discord, PSN,
+     Xbox, Steam, iRacing…) the Smart Importer matches results against, so a result posted under
+     any of them lands on your profile.
+
+     The season's **roster** sits in the form, in car-number order, showing who's racing under
+     which number *and* who has already asked for one (marked **pending**) — so you can see what's
+     spoken for before you choose. Type a number somebody has, or has requested, and it's rejected
+     as you type with *"That number is already taken, please choose another number."*
+
+     **Submitting doesn't put you on the roster.** It goes to the league's admins as a pending
+     sign-up; you're on the official roster once one of them approves it. The form says so before
+     you send it.
 
      Some games ask for more. **An iRacing season won't take a sign-up without your iRacing ID#**,
      because iRacing leagues are invite-only and the organiser can't send you an invite without
@@ -243,7 +259,15 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      season") shows above their dropdown. **Lock the selections** freezes every pick when the
      entry list is final — untick it to reopen.
 
-     It inherits like everything else here: the requirement is on if *any* level at or above
+     Two more toggles sit beside it, each independent: **Require Car Number Selection** (no
+     sign-up without a number) and **Require Car Manufacturer / Model Selection** (pick a make
+     from the **Available Manufacturers / Models** list, or from the car list when you leave that
+     blank — which is what you want when the car and the make are one choice). A league can demand
+     numbers without caring what anyone drives, or run a spec car where only the make varies.
+     Whatever you switch on is what the player's sign-up form renders and refuses to submit
+     without.
+
+     It all inherits like everything else here: a requirement is on if *any* level at or above
      turns it on, and the **most specific car list wins** — a class's list beats the season's,
      which beats the series'. So the common setup is one list on the series; a class that runs
      different machinery adds its own and its drivers pick from that instead. A driver is only
@@ -268,6 +292,21 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
        names back to one profile. An alias mapped to a game still acts as that game's display
        name when no per-game Display Name is set, so nothing set up before this existed
        changes.
+   - **Pending Sign-ups** *(admin, on Roster & Teams)* — players who submitted a sign-up from
+     their Dashboard, waiting to be let in. Nothing they sent is live: the row shows the number,
+     car and manufacturer they asked for and the platform usernames they gave, and
+     **Approve** puts them on the roster with exactly those choices — creating their driver
+     profile too when they're new to the league. **Deny** leaves them off, with an optional reason.
+     Approval re-checks what could have gone stale while they waited: if the season has since been
+     marked complete it refuses and says so, and if their number was taken meanwhile they're seated
+     without one rather than the approval failing outright.
+   - **⬆ Bulk Import Drivers** *(admin, on Roster & Teams)* — the season-rollover shortcut, for
+     everyone who never goes near the Dashboard sign-up. Pick a source — **every driver in this
+     series** (across all its seasons) or **clone one past season's roster** — and they're added in
+     one shot, carrying their name, car number, driver profile and linked account. Anyone already
+     on the target roster is **skipped, never duplicated and never an error**, so it's safe to press
+     twice or to top up a half-built roster. Team and class don't carry over: those are per-season
+     records whose ids mean nothing in the new season.
    - **User Accounts** *(admin)* — every account that has signed up: set its **role**, link it to
      the driver profile it races as, rename it, delete it, and approve or deny **pending driver
      requests**. The red badge on the Drivers nav item counts new signups + pending requests.
@@ -408,7 +447,8 @@ scoped to the active league (sent as an `X-League-Id` header; see `lib/serverAut
 `getRequestLeagueId`/`scopeByLeague`). `users` and `claim_requests` are **not** league-scoped —
 accounts and their roles span leagues. That partition map lives once, in `lib/backup.js`
 (`SCOPED_COLLECTIONS` / `GLOBAL_COLLECTIONS`), and is imported by both the containment migration
-and the backup engine, so adding a collection can't leave one of them behind.
+and the backup engine, so adding a collection can't leave one of them behind. `signup_requests`
+(players waiting to be approved onto a roster) is league-scoped like the rest.
 
 Two collections are internal bookkeeping and are excluded from backups: `backup_log` (the
 export/restore history shown on the Backup & Restore screen — restoring an old copy of it would
@@ -444,6 +484,28 @@ the API routes and the screens. Players write their own pick through `POST /api/
 which resolves the entry from the driver profile linked to the **caller's** account rather than
 from anything in the request, so there is no way to name someone else's row. It also refuses a
 car that isn't on the list, a locked selection, and any season marked completed.
+
+### The pending sign-up queue
+
+`signup_requests` holds every sign-up a player has submitted and no admin has resolved. It is the
+whole of the approval workflow: `POST /api/signup-requests` only ever writes a `pending` row —
+there is no path from the Dashboard to the `entries` collection — and
+`PATCH /api/admin/signup-requests/[id]`, admin-gated, is what creates the roster entry. The car
+and manufacturer chosen at sign-up are written onto that entry in the same fields the lock-in
+screen uses (`selected_car`, `selected_manufacturer`), so an approved sign-up needs no second trip
+to choose what was already chosen.
+
+Pending rows count as **spoken for** when a later player picks a number: `numberClaimed` in
+`lib/signupQueue.js` reads the roster and the queue together, so two people can't both be waiting
+on #24. They're shown, marked *pending*, in the roster the sign-up form displays.
+
+Approval re-reads everything that could have changed while a request sat in the queue — the season
+closing (refused, with a message), the driver having been added by hand (no second entry), the
+number being taken (seated without one, and the admin is told). A queue is exactly where stale data
+comes from, so none of it is trusted at approval time.
+
+The collection is league-scoped and included in backups: a restore that dropped it would silently
+lose everyone who had signed up but not yet been approved.
 
 ### Who may create a driver profile
 

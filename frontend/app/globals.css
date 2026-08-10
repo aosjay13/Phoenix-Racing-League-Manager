@@ -2099,3 +2099,54 @@ tbody tr:hover {
   background: rgba(244, 162, 40, 0.12);
   border: 1px solid rgba(244, 162, 40, 0.3);
 }
+
+/* Pending sign-ups: players waiting for an admin to let them onto a roster
+   (components/PendingSignups.jsx and the roster peek's "pending" marker). */
+.pending-signups { border-color: var(--accent-gold); }
+
+.pending-signup-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--card-hover);
+}
+
+.pending-new-badge {
+  margin-left: 8px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  color: var(--accent-gold);
+  background: rgba(244, 162, 40, 0.12);
+  border: 1px solid rgba(244, 162, 40, 0.3);
+}
+
+.roster-peek-pending {
+  margin-left: 6px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent-gold);
+}
+
+/* Marks a sign-up field the admin made mandatory for this series. */
+.field-req {
+  margin-left: 6px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 7px;
+  border-radius: 999px;
+  color: var(--accent-gold);
+  background: rgba(244, 162, 40, 0.12);
+  border: 1px solid rgba(244, 162, 40, 0.3);
+}

@@ -29,6 +29,10 @@ export const BACKUP_VERSION = 1;
 export const SCOPED_COLLECTIONS = [
   "games", "series", "seasons", "classes", "races", "entries", "teams",
   "results", "drivers", "tracks", "points_templates",
+  // Players waiting for an admin to let them onto a roster. Backed up like
+  // anything else: a restore that dropped the queue would silently lose
+  // everyone who had signed up but not yet been approved.
+  "signup_requests",
 ];
 
 // Collections that belong to the app as a whole rather than to one league.

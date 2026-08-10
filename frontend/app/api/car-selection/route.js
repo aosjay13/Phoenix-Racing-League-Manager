@@ -3,10 +3,10 @@ import { db } from "@/lib/firebase";
 import { getRequestUser, withUser } from "@/lib/serverAuth";
 import { fetchDriverNames } from "@/lib/driverNamesServer";
 import {
-  carSelectionPatch, findSlot, matchCarOption, seasonAcceptsSignups, selectedCarFor,
-  slotsForEntry, sortRosterByNumber,
+  carSelectionPatch, findSlot, matchCarOption, resolveSignupRules, seasonAcceptsSignups,
+  selectedCarFor, slotsForEntry, sortRosterByNumber,
 } from "@/lib/carSelection";
-import { linkedDriver, seasonContext, seasonEntries } from "@/lib/carSelectionServer";
+import { linkedDriver, pendingForSeasons, seasonContext, seasonEntries } from "@/lib/carSelectionServer";
 
 export const dynamic = "force-dynamic";
 
@@ -26,10 +26,12 @@ export async function GET(request) {
   if (!context) return NextResponse.json({ error: "Season not found" }, { status: 404 });
   const { season, series, classes, slots } = context;
 
-  const [entries, user] = await Promise.all([
+  const [entries, user, pendings] = await Promise.all([
     seasonEntries(seasonId, classes),
     getRequestUser(request),
+    pendingForSeasons([seasonId]),
   ]);
+  const pending = pendings[seasonId] || [];
   const driver = user ? await linkedDriver(user.uid) : null;
   const gameId = season.game_id || series?.game_id || null;
   // The game's NAME, not just its id — the sign-up dialog decides what extra
@@ -79,6 +81,34 @@ export async function GET(request) {
     game_id: gameId,
     game_name: gameName,
     open: seasonAcceptsSignups(season),
+    // What a sign-up for this season has to carry, so the sign-up dialog on
+    // this screen renders itself exactly as the Dashboard's does.
+    rules: (() => {
+      const r = resolveSignupRules({ series, season });
+      return {
+        require_car: r.require_car, require_number: r.require_number,
+        require_manufacturer: r.require_manufacturer,
+        car_options: r.car_options, manufacturer_options: r.manufacturer_options,
+        note: r.note,
+      };
+    })(),
+    class_rules: Object.fromEntries(classes.map(c => {
+      const r = resolveSignupRules({ series, season, cls: c });
+      return [c.id, {
+        require_car: r.require_car, require_number: r.require_number,
+        require_manufacturer: r.require_manufacturer,
+        car_options: r.car_options, manufacturer_options: r.manufacturer_options,
+        note: r.note,
+      }];
+    })),
+    // Sign-ups waiting on an admin — shown beside the roster so a number
+    // somebody has already asked for isn't offered as free.
+    pending: pending.map(p => ({
+      name: p.name, number: p.number, car: p.car,
+      manufacturer: p.manufacturer, class_names: p.class_names,
+    })),
+    my_pending: !!(driver && pending.some(p => p.driver_id === driver.id))
+      || !!(user && pending.some(p => p.uid === user.uid)),
     classes: classes.map(c => ({ id: c.id, name: c.name, car: c.car || "" })),
     slots,
     roster: sortedRows,

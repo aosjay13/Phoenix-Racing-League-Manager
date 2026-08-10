@@ -98,6 +98,15 @@ export function carOptionList(doc) {
   return [];
 }
 
+// The manufacturer / model list. A league that runs one make per driver
+// (Chevrolet / Ford / Toyota) sets this; leaving it blank falls back to the car
+// list, so an admin who thinks of the two as one thing only fills in one field.
+export function manufacturerOptionList(doc) {
+  const raw = doc?.manufacturer_options;
+  const own = Array.isArray(raw) || typeof raw === "string" ? parseCarOptions(raw) : [];
+  return own.length ? own : carOptionList(doc);
+}
+
 // Is `car` one of the offered cars? Compared case-insensitively so a pick made
 // before the admin re-cased the list still matches, and answers the canonical
 // spelling from the list rather than what the caller sent.
@@ -131,6 +140,74 @@ export function resolveCarSelection({ series = null, season = null, cls = null }
   };
 }
 
+// ── What a sign-up must carry ──────────────────────────────────────────────
+//
+// Three separate things an admin can insist on, each resolved down the same
+// series → season → class chain as the car lock-in above ("on anywhere at or
+// above", "the most specific list wins"):
+//
+//   require_car_selection    — lock in the car you'll race, from `car_options`.
+//                              Answered on the season's own screen, and also
+//                              asked up front on the sign-up form.
+//   require_car_number       — a sign-up must name a car number.
+//   require_car_manufacturer — a sign-up must pick a manufacturer / model,
+//                              from `manufacturer_options` (or the car list).
+//
+// They're independent on purpose: a league can demand numbers without caring
+// what anyone drives, or run a spec series where the car is fixed but the
+// manufacturer isn't.
+export function resolveSignupRules({ series = null, season = null, cls = null } = {}) {
+  const docs = { class: cls, season, series };
+  const present = LEVELS.filter(level => docs[level]);
+  const anyOn = field => present.some(level => !!docs[level][field]);
+  const car = resolveCarSelection({ series, season, cls });
+  const manufacturerLevel = present.find(level => manufacturerOptionList(docs[level]).length) ?? null;
+  return {
+    // The car lock-in, unchanged — kept whole so callers can pass it straight
+    // to the lock-in screen.
+    car,
+    require_car: car.required,
+    car_options: car.options,
+    require_number: anyOn("require_car_number"),
+    require_manufacturer: anyOn("require_car_manufacturer"),
+    manufacturer_options: manufacturerLevel ? manufacturerOptionList(docs[manufacturerLevel]) : [],
+    note: car.note,
+    locked: car.locked,
+    // Does this scope ask a player for ANYTHING beyond their name at sign-up?
+    get asksAnything() {
+      return car.required || anyOn("require_car_number") || anyOn("require_car_manufacturer");
+    },
+  };
+}
+
+// Which of a season's requirements a submission hasn't met, as
+// [{ field, label }] — the list the form disables its submit button on and the
+// API refuses the request with.
+export function missingSignupFields(rules, { number = "", car = "", manufacturer = "" } = {}) {
+  const missing = [];
+  if (rules.require_number && !String(number).trim()) {
+    missing.push({ field: "number", label: "a car number" });
+  }
+  if (rules.require_car && rules.car_options.length && !String(car).trim()) {
+    missing.push({ field: "car", label: "a car" });
+  }
+  if (rules.require_manufacturer && rules.manufacturer_options.length && !String(manufacturer).trim()) {
+    missing.push({ field: "manufacturer", label: "a manufacturer / model" });
+  }
+  return missing;
+}
+
+// "This series needs a car number and a manufacturer / model." — one sentence
+// for the form and for the API's refusal, worded the same either way.
+export function missingSignupMessage(missing = []) {
+  if (!missing.length) return "";
+  const names = missing.map(m => m.label);
+  const list = names.length === 1
+    ? names[0]
+    : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  return `This series needs ${list} before you can sign up.`;
+}
+
 // Does this class carry car-selection settings of its OWN, rather than just
 // inheriting the season's? That's what makes it a separate lock-in slot below:
 // a class with its own machinery asks its drivers for their own pick.
@@ -139,6 +216,15 @@ export function classDefinesCarSelection(cls) {
     || !!cls?.car_selection_locked
     || carOptionList(cls).length > 0
     || !!String(cls?.car_selection_note || "").trim();
+}
+
+// Does this class ask anything of a sign-up that its season doesn't? Used to
+// decide whether picking a class on the form changes what's being asked for.
+export function classDefinesSignupRules(cls) {
+  return classDefinesCarSelection(cls)
+    || !!cls?.require_car_number
+    || !!cls?.require_car_manufacturer
+    || manufacturerOptionList(cls).length > 0;
 }
 
 // ── Slots ──────────────────────────────────────────────────────────────────
@@ -265,15 +351,27 @@ export function rowInScope(row, { gameId = "", seriesId = "" } = {}) {
 // <CarSelectionFields>, so all three offer exactly the same settings.
 export const BLANK_CAR_SELECTION_FORM = {
   require_car_selection: false,
+  require_car_number: false,
+  require_car_manufacturer: false,
   car_options: "",
+  manufacturer_options: "",
   car_selection_note: "",
   car_selection_locked: false,
 };
 
 export function carSelectionToForm(doc = {}) {
+  // The manufacturer box shows only what this level SET, not what it inherits
+  // from the car list — otherwise saving would copy the fallback into it and
+  // the two could never diverge again.
+  const ownManufacturers = Array.isArray(doc.manufacturer_options) || typeof doc.manufacturer_options === "string"
+    ? parseCarOptions(doc.manufacturer_options)
+    : [];
   return {
     require_car_selection: !!doc.require_car_selection,
+    require_car_number: !!doc.require_car_number,
+    require_car_manufacturer: !!doc.require_car_manufacturer,
     car_options: carOptionList(doc).join("\n"),
+    manufacturer_options: ownManufacturers.join("\n"),
     car_selection_note: doc.car_selection_note || "",
     car_selection_locked: !!doc.car_selection_locked,
   };
@@ -282,7 +380,10 @@ export function carSelectionToForm(doc = {}) {
 export function carSelectionFormToBody(form = {}) {
   return {
     require_car_selection: !!form.require_car_selection,
+    require_car_number: !!form.require_car_number,
+    require_car_manufacturer: !!form.require_car_manufacturer,
     car_options: parseCarOptions(form.car_options),
+    manufacturer_options: parseCarOptions(form.manufacturer_options),
     car_selection_note: String(form.car_selection_note || "").trim(),
     car_selection_locked: !!form.car_selection_locked,
   };

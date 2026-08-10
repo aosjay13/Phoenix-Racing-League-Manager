@@ -8,6 +8,7 @@ import { DriverForm } from "@/components/DriverForm";
 import { ClassPicker } from "@/components/ClassPicker";
 import { Modal } from "@/components/Modal";
 import { RosterImportModal } from "@/components/RosterImportModal";
+import { PendingSignups } from "@/components/PendingSignups";
 import { ensureDriverId } from "@/lib/driverPool";
 import { entryClassIds } from "@/lib/classFilter";
 import { api } from "@/lib/api";
@@ -534,10 +535,10 @@ export function RosterManager() {
         <span style={{ display: "flex", gap: 10, alignItems: "center" }}>
           {roster && <span className="page-badge">{rows.length} Drivers · {roster.seasons_counted} Season{roster.seasons_counted === 1 ? "" : "s"}</span>}
           {canManage && (
-            <button className="btn btn-ghost" style={{ marginTop: 0 }}
-              title="Bulk-add drivers from this series or a past season — duplicates are skipped"
+            <button className="btn btn-primary" style={{ marginTop: 0 }}
+              title="Bulk-add every driver from this series, or clone a past season's roster — anyone already here is skipped"
               onClick={() => setImporting(true)}>
-              ⬆ Import Roster
+              ⬆ Bulk Import Drivers
             </button>
           )}
           {canManage && (
@@ -554,6 +555,17 @@ export function RosterManager() {
         {canManage && !editMode && " Click “Edit Roster” to add, edit, or reassign drivers directly in the table."}
       </p>
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
+
+      {/* Players waiting to be let onto this season's roster. Nothing they
+          submitted is live until an admin approves it here — see
+          components/PendingSignups.jsx. */}
+      {canManage && (
+        <PendingSignups
+          seasonId={editSeasonId}
+          seasonName={league.seasons.find(s => s.id === editSeasonId)?.name}
+          onApproved={() => load().catch(err => showToast("error", err.message))}
+        />
+      )}
 
       <div className="form-card" style={{ maxWidth: "100%" }}>
         <h3 style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>

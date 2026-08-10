@@ -127,14 +127,13 @@ export default function SeasonCarSelectionPage() {
   }
 
   // Sign-up is the shared dialog, so this screen asks for exactly the same
-  // driver information the sign-up list does — including anything the game
-  // insists on, like an iRacing customer ID.
-  async function afterSignup({ requested }) {
+  // things the Dashboard's sign-up panel does — and, like it, files a pending
+  // request rather than putting anyone on the roster.
+  async function afterSignup() {
     setSigningUp(false);
     await load();
-    showToast("success", requested
-      ? "Request sent. An admin will review it, and you'll be on the roster once they approve."
-      : "You're on the roster — now pick your car.");
+    showToast("success",
+      "Sign-up submitted. An admin will review it, and you'll be on the roster once they approve.");
   }
 
   if (loading || (!data && !error)) return <div className="skeleton" style={{ height: 300 }} />;
@@ -204,14 +203,21 @@ export default function SeasonCarSelectionPage() {
           <span className="empty-state-icon">📋</span>
           <p>You&rsquo;re not on this season&rsquo;s roster.</p>
           {open ? (
+            data.my_pending ? (
+              <p style={{ fontSize: "0.85rem", color: "var(--ink-2)", margin: 0 }}>
+                Your sign-up is with the admins. You&rsquo;ll be on the roster as soon as one of
+                them approves it.
+              </p>
+            ) : (
             <>
               <p style={{ fontSize: "0.85rem", color: "var(--ink-2)", margin: "0 0 12px" }}>
-                Sign up and you&rsquo;ll be able to pick your car straight away.
+                Sign up and an admin will review it — once approved you&rsquo;re on the roster.
               </p>
               <button className="btn btn-primary" type="button" onClick={() => setSigningUp(true)}>
                 Sign Up for this Season
               </button>
             </>
+            )
           ) : (
             <p style={{ fontSize: "0.85rem", color: "var(--ink-2)", margin: 0 }}>
               Season over — sign-ups are done. This one closed before you joined it.
@@ -337,9 +343,11 @@ export default function SeasonCarSelectionPage() {
             game_id: data.game_id || "",
             game_name: data.game_name || "",
             classes: data.classes,
+            rules: data.rules,
+            class_rules: data.class_rules,
             requires_car: slots.length > 0,
             roster: roster.map(r => ({ number: r.number, name: r.name, class_names: r.class_names })),
-            taken_numbers: roster.map(r => String(r.number ?? "").trim()).filter(Boolean),
+            pending: data.pending || [],
           }}
           driver={me?.driver_id ? { id: me.driver_id, name: me.driver_name, aliases: me.aliases } : null}
           onClose={() => setSigningUp(false)}

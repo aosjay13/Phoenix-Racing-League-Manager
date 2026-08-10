@@ -22,6 +22,7 @@ export function CarSelectionFields({ value, onChange, level = "season", disabled
   const set = patch => onChange(f => ({ ...f, ...patch }));
   const id = suffix => `${level}_car_${suffix}`;
   const parsed = parseCarOptions(value.car_options);
+  const parsedManufacturers = parseCarOptions(value.manufacturer_options);
   // A requirement above this level is already in force here, so the switch below
   // can only add to it — say so rather than letting an admin think turning it
   // off here opts this level out.
@@ -69,6 +70,52 @@ export function CarSelectionFields({ value, onChange, level = "season", disabled
               </>}
           {" "}The most specific list wins, so a class can run its own machinery while the rest of
           the season picks from the series&rsquo; list.
+        </span>
+      </div>
+
+      {/* The other two things a sign-up can be made to carry. Independent of
+          the lock-in above: a league can demand numbers without caring what
+          anyone drives, or run a spec car where only the make varies. */}
+      <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
+        <input type="checkbox" id={id("require_number")} disabled={disabled}
+          checked={!!value.require_car_number}
+          onChange={e => set({ require_car_number: e.target.checked })}
+          style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+        <label htmlFor={id("require_number")} style={{ margin: 0 }}>
+          Require Car Number Selection
+          <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
+            Off (default): a car number is optional on a sign-up. On: nobody in {COVERS[level]} can
+            submit a sign-up without one. Numbers are still unique per season either way — a driver
+            can&rsquo;t take one somebody already has.
+          </span>
+        </label>
+      </div>
+
+      <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
+        <input type="checkbox" id={id("require_manufacturer")} disabled={disabled}
+          checked={!!value.require_car_manufacturer}
+          onChange={e => set({ require_car_manufacturer: e.target.checked })}
+          style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+        <label htmlFor={id("require_manufacturer")} style={{ margin: 0 }}>
+          Require Car Manufacturer / Model Selection
+          <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
+            Off (default): nothing is asked. On: a sign-up must pick a manufacturer or model from
+            the list below — the Chevrolet / Ford / Toyota question a spec series asks even though
+            everyone races the same car.
+          </span>
+        </label>
+      </div>
+
+      <div className="field">
+        <label htmlFor={id("manufacturers")}>Available Manufacturers / Models — one per line</label>
+        <textarea id={id("manufacturers")} rows={4} disabled={disabled} value={value.manufacturer_options}
+          onChange={e => set({ manufacturer_options: e.target.value })}
+          placeholder={"Chevrolet\nFord\nToyota"} />
+        <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
+          {parsedManufacturers.length > 0
+            ? <>{parsedManufacturers.length} offered: {parsedManufacturers.join(" · ")}.</>
+            : <>Leave blank and the <strong>Available Cars</strong> list above is used instead — which is
+                what you want when the car and the make are the same choice.</>}
         </span>
       </div>
 

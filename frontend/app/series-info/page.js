@@ -4,92 +4,65 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { DriverLinkGate } from "@/components/DriverLinkGate";
-import { SeriesSignupModal } from "@/components/SeriesSignupModal";
-import { sortRosterByNumber } from "@/lib/carSelection";
+import { SignupForm } from "@/components/SignupForm";
 import { api } from "@/lib/api";
 
-// One season a player can join. Its own card, because the car number needs
-// checking against that season's roster as it's typed and the roster has to sit
-// next to the field doing the checking.
+// The "Open Sign-ups" panel: a selector listing only the seasons still open to
+// join, and the sign-up form for whichever is picked.
 //
-// The roster shown here is the PUBLIC one — no admin controls, no account
-// details, just who's racing under which number — and it's listed in car-number
-// order rather than alphabetically, because the question being asked of it is
-// "which numbers are gone?".
-function SignupCard({ season, onOpen, blockedReason }) {
-  const roster = sortRosterByNumber(season.roster || []);
-  const numbered = roster.filter(r => String(r.number ?? "").trim());
+// A selector rather than a wall of cards because the form under it is long — it
+// renders whatever the admin asked that series for — and showing several at once
+// buried the one being filled in. Completed seasons never reach this list; the
+// API leaves them out.
+function OpenSignups({ seasons, driver, onDone }) {
+  const [seasonId, setSeasonId] = useState(seasons[0]?.season_id ?? "");
+  const chosen = seasons.find(s => s.season_id === seasonId) ?? seasons[0] ?? null;
+
+  // A season can drop off the list (approved, or marked complete) while it's
+  // the one selected — fall back rather than showing an empty panel.
+  useEffect(() => {
+    if (!seasons.some(s => s.season_id === seasonId)) setSeasonId(seasons[0]?.season_id ?? "");
+  }, [seasons, seasonId]);
+
+  if (!chosen) return null;
 
   return (
-    <div className="form-card signup-card">
-      <h3 style={{ marginTop: 0 }}>{season.series_name}</h3>
-      <p style={{ margin: "0 0 10px", color: "var(--ink-2)", fontSize: "0.82rem" }}>
-        {season.season_name}{season.game_name ? ` · ${season.game_name}` : ""}
-        {season.requires_car && (
-          <> · <span style={{ color: "var(--accent-cyan)" }}>
-            car lock-in required{season.car_count ? ` (${season.car_count} to choose from)` : ""}
-          </span></>
-        )}
-      </p>
+    <div className="form-card" style={{ maxWidth: "100%" }}>
+      <div className="field">
+        <label htmlFor="signup_season">Choose a series to sign up for</label>
+        <select id="signup_season" value={chosen.season_id} onChange={e => setSeasonId(e.target.value)}>
+          {seasons.map(s => (
+            <option key={s.season_id} value={s.season_id}>
+              {s.series_name} · {s.season_name}{s.game_name ? ` (${s.game_name})` : ""}
+            </option>
+          ))}
+        </select>
+        <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
+          {seasons.length} season{seasons.length === 1 ? "" : "s"} open. Completed seasons aren&rsquo;t
+          listed — those sign-ups are done.
+        </span>
+      </div>
 
-      {/* The series roster, so a driver can see what's taken before they even
-          open the form. Listed by number, not alphabetically. */}
-      <details className="roster-peek" open={roster.length > 0 && roster.length <= 8}>
-        <summary>
-          Series roster — {numbered.length} number{numbered.length === 1 ? "" : "s"} taken
-          {roster.length !== numbered.length && ` · ${roster.length} driver${roster.length === 1 ? "" : "s"}`}
-        </summary>
-        {roster.length === 0 ? (
-          <p className="roster-peek-empty">Nobody has signed up yet — every number is free.</p>
-        ) : (
-          <ul className="roster-peek-list">
-            {roster.map((r, i) => (
-              <li key={`${r.number ?? ""}-${r.name}-${i}`}>
-                <span className="badge">{String(r.number ?? "").trim() || "—"}</span>
-                <span className="roster-peek-name">{r.name}</span>
-                {r.class_names?.length > 0 && (
-                  <span className="roster-peek-class">{r.class_names.join(" · ")}</span>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </details>
-
-      {blockedReason
-        ? <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--ink-2)" }}>{blockedReason}</p>
-        : (
-          <button className="btn btn-primary" type="button" onClick={() => onOpen(season)}>
-            Sign Up
-          </button>
-        )}
+      {chosen.my_pending ? (
+        <div className="signup-approval-note" style={{ marginBottom: 0 }}>
+          <strong>Your sign-up for this season is with the admins.</strong> You&rsquo;ll be on the
+          official roster as soon as one of them approves it. Pick another series above to sign up
+          for that one too.
+        </div>
+      ) : (
+        // Keyed by season so switching series starts the form clean rather than
+        // carrying the last one's number and car across.
+        <SignupForm key={chosen.season_id} season={chosen} driver={driver} onDone={onDone} />
+      )}
     </div>
   );
 }
 
-// "My Active Series" — reached from the Dashboard's Series Information card
-// rather than the sidebar, because it's only ever relevant to a signed-in
-// player with something to answer.
-//
-// Three things live here, in the order a player meets them:
-//   1. The driver-linking gate. Nothing below it works until the account points
-//      at a driver profile, so it replaces the rest of the page rather than
-//      sitting alongside it (see components/DriverLinkGate.jsx).
-//   2. The series they're on the roster of, with the car they've locked in for
-//      each — click through to change it.
-//   3. Sign-ups: seasons still to run that they're not on yet.
-//
-// A season an admin has marked completed never appears as a sign-up, and shows
-// as closed in the list — its roster and its cars are history.
 export default function SeriesInfoPage() {
   const { user, loading } = useAuth();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [toast, setToast] = useState(null);
-  // The season whose sign-up dialog is open. Sign-up is a dialog rather than an
-  // inline form because it collects the driver's whole identity, not just a
-  // number — see components/SeriesSignupModal.jsx.
-  const [signingUp, setSigningUp] = useState(null);
 
   const load = useCallback(() => {
     if (!user) { setData(null); return; }
@@ -105,16 +78,13 @@ export default function SeriesInfoPage() {
     setTimeout(() => setToast(null), 4000);
   }
 
-  // The dialog did the writing (or filed the request); this just closes it and
-  // says what happened.
-  async function afterSignup({ requested, season, already_entered }) {
-    setSigningUp(null);
+  // Every sign-up goes to the pending queue — nobody reaches the official
+  // roster without an admin approving it, so this always says "waiting".
+  async function afterSignup({ season }) {
     await load();
-    showToast("success", requested
-      ? `Request sent for ${season.series_name} · ${season.season_name}. An admin will review it and you'll be added to the roster once they approve.`
-      : already_entered
-        ? `You were already on ${season.season_name}'s roster.`
-        : `You're signed up for ${season.series_name} · ${season.season_name}.`);
+    showToast("success",
+      `Sign-up submitted for ${season.series_name} · ${season.season_name}. An admin will review it, `
+      + "and you'll be on the roster once they approve.");
   }
 
   if (loading) return <div className="skeleton" style={{ height: 240 }} />;
@@ -239,25 +209,7 @@ export default function SeriesInfoPage() {
             : <>Nothing open right now — every upcoming season already has you on it.</>}
         </p>
       ) : (
-        <div className="signup-grid">
-          {data.open_signups.map(s => (
-            <SignupCard key={s.season_id} season={s} onOpen={setSigningUp}
-              // One open request at a time: filing a second while the first is
-              // still with an admin would only be refused by the API.
-              blockedReason={unlinked && data.pending_claim
-                ? "You already have a request with the admins — you can sign up for more series once it's approved."
-                : ""} />
-          ))}
-        </div>
-      )}
-
-      {signingUp && (
-        <SeriesSignupModal
-          season={signingUp}
-          driver={data.driver}
-          onClose={() => setSigningUp(null)}
-          onDone={afterSignup}
-        />
+        <OpenSignups seasons={data.open_signups} driver={data.driver} onDone={afterSignup} />
       )}
     </section>
   );
