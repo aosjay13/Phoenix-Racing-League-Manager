@@ -6,6 +6,8 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useAuth } from "@/components/AuthProvider";
 import { USERS_SEEN_KEY, USERS_SEEN_EVENT, markUserAccountsSeen } from "@/lib/userAccountsAlerts";
 import { api } from "@/lib/api";
+import { normalizeAliases } from "@/lib/aliases";
+import { NEW_DRIVER_KIND, requestKind } from "@/lib/signupRequest";
 import { ROLE_LABELS, roleLevel, canManage, assignableRoles } from "@/lib/roles";
 
 // Small coloured pill showing a role, keyed by the role's rank so Owner reads
@@ -281,14 +283,23 @@ export function UserAccountsManager() {
   async function resolveRequest(req, action) {
     setReqBusy(b => ({ ...b, [req.id]: true }));
     try {
-      await api(`/api/admin/claim-requests/${req.id}`, { method: "PATCH", body: { action } });
+      const res = await api(`/api/admin/claim-requests/${req.id}`, { method: "PATCH", body: { action } });
       await load();
       // Refresh the sidebar alert badge (pending count changed).
       window.dispatchEvent(new Event(USERS_SEEN_EVENT));
-      showToast("success",
-        action === "approve"
-          ? `Linked ${req.user_name} → ${req.driver_name}.`
-          : `Denied ${req.user_name}'s request for ${req.driver_name}.`);
+      if (action !== "approve") {
+        showToast("success", `Denied ${req.user_name}'s request for ${req.driver_name}.`);
+      } else if (requestKind(req) === NEW_DRIVER_KIND) {
+        // The roster entry can fail to carry over on its own (season closed, or
+        // their number went while they waited) — the route says so rather than
+        // refusing the whole approval, and the admin needs to hear it.
+        showToast(res.signup_note ? "error" : "success",
+          `Added ${res.driver_name || req.driver_name} and linked ${req.user_name}.`
+          + (res.entry_id ? " They're on the roster." : "")
+          + (res.signup_note ? ` ${res.signup_note}` : ""));
+      } else {
+        showToast("success", `Linked ${req.user_name} → ${req.driver_name}.`);
+      }
     } catch (err) {
       showToast("error", err.message);
     } finally {
@@ -348,33 +359,64 @@ export function UserAccountsManager() {
       {requests.length > 0 && (
         <div className="form-card" style={{ marginTop: 16, borderColor: "var(--accent-amber, #ffb224)" }}>
           <h3 style={{ marginTop: 0, display: "flex", alignItems: "center", gap: 8 }}>
-            Pending Profile Claims
+            Pending Driver Requests
             <span className="nav-badge" style={{ position: "static" }}>{requests.length}</span>
           </h3>
           <p style={{ marginTop: 0, color: "var(--ink-1)", fontSize: "0.85rem", maxWidth: 720 }}>
-            Players asking to link a <strong>Driver Profile</strong> to their account. Approving writes the link;
-            approving one profile auto-denies any other requests for the same profile.
+            Players asking for a <strong>Driver Profile</strong>. Some are claiming one that already exists
+            (approving writes the link, and auto-denies any other request for that same profile); the rest
+            are new drivers asking to be added, which is the <strong>only</strong> way a player-created
+            profile ever comes into being. Approving one of those creates the profile from what they
+            submitted — and, when they asked to join a series, puts them on its roster too.
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {requests.map(req => {
               const rBusy = !!reqBusy[req.id];
+              const isNew = requestKind(req) === NEW_DRIVER_KIND;
+              const aliases = normalizeAliases(req.aliases).filter(a => a.value);
+              // A new driver whose name already exists in the pool is almost
+              // certainly a duplicate — worth saying before it's approved.
+              const clash = isNew && drivers.find(d =>
+                String(d.name || "").trim().toLowerCase() === String(req.driver_name || "").trim().toLowerCase());
               return (
                 <div key={req.id} style={{
-                  display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+                  display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap",
                   padding: "10px 12px", borderRadius: 10, background: "var(--card-hover)",
                 }}>
                   {req.user_photo
                     ? <img src={req.user_photo} alt="" className="avatar avatar-sm" />
                     : <span className="avatar avatar-sm avatar-fallback">{String(req.user_name || "?")[0]?.toUpperCase()}</span>}
-                  <span style={{ flex: 1, minWidth: 220 }}>
+                  <span style={{ flex: 1, minWidth: 240 }}>
                     <strong>{req.user_name}</strong>
                     {req.user_email && <span style={{ color: "var(--ink-2)", fontSize: "0.78rem" }}> · {req.user_email}</span>}
                     <span style={{ display: "block", fontSize: "0.85rem", color: "var(--ink-1)" }}>
-                      wants to claim{" "}
-                      <Link href={`/drivers/${req.driver_id}`} style={{ color: "var(--accent-cyan)", fontWeight: 600 }}>
-                        {req.driver_name}
-                      </Link>
+                      {isNew ? (
+                        <>wants to be added as <strong style={{ color: "var(--accent-cyan)" }}>{req.driver_name}</strong></>
+                      ) : (
+                        <>wants to claim{" "}
+                          <Link href={`/drivers/${req.driver_id}`} style={{ color: "var(--accent-cyan)", fontWeight: 600 }}>
+                            {req.driver_name}
+                          </Link>
+                        </>
+                      )}
+                      {req.signup?.season_id && (
+                        <> and to join{" "}
+                          <strong>{req.signup.series_name} · {req.signup.season_name}</strong>
+                          {req.signup.number ? ` as #${req.signup.number}` : ""}
+                        </>
+                      )}
                     </span>
+                    {aliases.length > 0 && (
+                      <span style={{ display: "block", marginTop: 4, fontSize: "0.78rem", color: "var(--ink-2)" }}>
+                        {aliases.map(a => `${a.label}: ${a.value}`).join(" · ")}
+                      </span>
+                    )}
+                    {clash && (
+                      <span style={{ display: "block", marginTop: 4, fontSize: "0.78rem", color: "var(--accent-amber, #ffb224)" }}>
+                        ⚠ A driver called “{clash.name}” already exists. Approving makes a second profile —
+                        deny this and have them claim that one instead, or merge the two afterwards.
+                      </span>
+                    )}
                   </span>
                   <span style={{ display: "flex", gap: 8 }}>
                     <button className="btn btn-primary" style={{ marginTop: 0, padding: "6px 14px" }}

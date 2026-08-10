@@ -1,25 +1,29 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { NEW_DRIVER_KIND, requestKind } from "@/lib/signupRequest";
 import { api } from "@/lib/api";
 
 // The pre-requisite for everything on the Series Information screens: a player
 // account has to be attached to a driver profile from the global roster before
-// they can sign up for a series or lock in a car, because the car is stored on
-// that driver's roster entry.
+// they can be on a roster or lock in a car, because the car is stored on that
+// driver's roster entry.
 //
-// Two ways through, in the order a new player should try them:
+// Both ways through go to an admin — a driver profile is never created or
+// linked automatically:
 //
 //   1. Claim an existing profile — you're already in the league's driver list
-//      because your results have been entered. This goes to an admin for
-//      approval (/api/claim-requests): it hands over somebody's race history.
-//   2. Add yourself as a new driver — you're genuinely new. This links straight
-//      away (/api/users/me/driver), so nobody is stuck waiting to sign up. If
-//      the league did already have you under another name, an admin folds the
-//      two together with Drivers ▸ Merge and every result comes across.
+//      because your results have been entered. Approving hands over that
+//      driver's whole race history.
+//   2. Ask to be added as a new driver — you're genuinely new. Approving
+//      creates the profile from what you submit here.
 //
-// `onLinked` fires once the account is linked (or a claim has been filed), so
-// the caller can reload.
+// Both file into the same queue (/api/claim-requests), reviewed on
+// Drivers ▸ User Accounts. Signing up for a series does the same thing with the
+// season attached, so a new player can do it in one step — see
+// components/SeriesSignupModal.jsx.
+//
+// `onLinked` fires once a request has been filed, so the caller can reload.
 export function DriverLinkGate({ onLinked, pendingClaim = null }) {
   const [pool, setPool] = useState(null);
   const [query, setQuery] = useState("");
@@ -36,12 +40,17 @@ export function DriverLinkGate({ onLinked, pendingClaim = null }) {
   }, []);
 
   if (pendingClaim) {
+    const asking = requestKind(pendingClaim) === NEW_DRIVER_KIND;
     return (
       <div className="form-card">
         <h3 style={{ marginTop: 0 }}>Waiting on an admin</h3>
         <p style={{ color: "var(--ink-1)", fontSize: "0.9rem", margin: 0 }}>
-          You&rsquo;ve asked to claim <strong>{pendingClaim.driver_name}</strong>. As soon as an admin
-          approves it, your series and car selections show up here.
+          {asking
+            ? <>You&rsquo;ve asked to be added as <strong>{pendingClaim.driver_name}</strong>.</>
+            : <>You&rsquo;ve asked to claim <strong>{pendingClaim.driver_name}</strong>.</>}
+          {pendingClaim.signup?.season_name
+            ? <> Once an admin approves it you&rsquo;ll be on <strong>{pendingClaim.signup.series_name} · {pendingClaim.signup.season_name}</strong>&rsquo;s roster and can pick your car.</>
+            : <> As soon as an admin approves it, your series and car selections show up here.</>}
         </p>
       </div>
     );
@@ -60,13 +69,18 @@ export function DriverLinkGate({ onLinked, pendingClaim = null }) {
     finally { setBusy(false); }
   }
 
-  async function createDriver(e) {
+  // Files a request — deliberately creates nothing. Only an admin approving it
+  // on Drivers ▸ User Accounts makes the driver profile exist.
+  async function requestDriver(e) {
     e.preventDefault();
     if (!newName.trim()) return;
     setBusy(true); setError(null);
     try {
-      await api("/api/users/me/driver", { method: "POST", body: { name: newName.trim() } });
-      setNotice(`You're now racing as ${newName.trim()}.`);
+      await api("/api/claim-requests", {
+        method: "POST",
+        body: { kind: NEW_DRIVER_KIND, driver_name: newName.trim(), aliases: [] },
+      });
+      setNotice(`Request sent to add ${newName.trim()} as a driver. An admin will review it.`);
       onLinked?.();
     } catch (err) { setError(err.message); }
     finally { setBusy(false); }
@@ -74,12 +88,16 @@ export function DriverLinkGate({ onLinked, pendingClaim = null }) {
 
   return (
     <div className="form-card">
-      <h3 style={{ marginTop: 0 }}>First, link your driver profile</h3>
+      <h3 style={{ marginTop: 0 }}>Link your driver profile</h3>
       <p style={{ color: "var(--ink-1)", fontSize: "0.9rem", marginTop: 0 }}>
-        Series sign-ups and car choices are recorded against a <strong>driver</strong>, not an
-        account — so your account needs to point at one before you can do either. If you&rsquo;ve
-        raced in this league before you&rsquo;re already in the list below: claim yourself. If
-        you&rsquo;re new, add yourself as a driver.
+        Rosters and car choices are recorded against a <strong>driver</strong>, not an account. If
+        you&rsquo;ve raced in this league before you&rsquo;re already in the list below — claim
+        yourself and your race history comes with you. Either way an admin reviews it before
+        anything is linked.
+      </p>
+      <p style={{ color: "var(--ink-2)", fontSize: "0.82rem", marginTop: 0 }}>
+        Brand new? You can skip this and just <strong>sign up for a series</strong> below — the
+        sign-up form asks for the same details and goes to the same admins.
       </p>
 
       <div className="tab-row" style={{ marginTop: 0, marginBottom: 14 }}>
@@ -87,7 +105,7 @@ export function DriverLinkGate({ onLinked, pendingClaim = null }) {
           I&rsquo;m already on the roster
         </button>
         <button type="button" className={`tab${mode === "create" ? " active" : ""}`} onClick={() => setMode("create")}>
-          I&rsquo;m new — add me
+          I&rsquo;m new — ask to be added
         </button>
       </div>
 
@@ -126,19 +144,20 @@ export function DriverLinkGate({ onLinked, pendingClaim = null }) {
           )}
         </>
       ) : (
-        <form onSubmit={createDriver}>
+        <form onSubmit={requestDriver}>
           <div className="field">
             <label>The name you race under</label>
             <input required value={newName} onChange={e => setNewName(e.target.value)} maxLength={60}
               placeholder="e.g. J. May" />
             <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
-              This creates a new driver in the league&rsquo;s roster and links it to your account right
-              away — no waiting. If it turns out the league already had you under a different name, an
-              admin can merge the two and every result comes across.
+              This asks the league admins to add you as a driver — nothing is created until one of
+              them approves it. If you already know which series you want, sign up for it instead:
+              that form asks for your platform usernames too, so an admin can approve everything at
+              once.
             </span>
           </div>
           <button className="btn btn-primary" type="submit" disabled={busy || !newName.trim()}>
-            {busy ? "Adding…" : "Add me as a driver"}
+            {busy ? "Sending…" : "Send Request to Admins"}
           </button>
         </form>
       )}

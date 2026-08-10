@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { Modal } from "@/components/Modal";
+import { AliasEditor } from "@/components/AliasEditor";
 import { withDefaults, normalizeAliases } from "@/lib/aliases";
 import { normalizeGameNames } from "@/lib/driverNames";
 
@@ -48,29 +49,6 @@ export function DriverEditModal({ driver, onClose, onSaved }) {
   // Games already claimed by another row can't be picked twice — one display
   // name per game.
   const takenGameIds = i => new Set(gameNames.filter((_, j) => j !== i).map(r => r.game_id).filter(Boolean));
-
-  function setAlias(i, patch) {
-    setAliases(rows => rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
-  }
-  function addAlias() { setAliases(rows => [...rows, { label: "", value: "", game_id: "", is_display: false }]); }
-  function removeAlias(i) { setAliases(rows => rows.filter((_, j) => j !== i)); }
-
-  // Pick which alias is the on-track display name for a given game. Marks row i
-  // as the display alias and clears the flag on every other alias mapped to the
-  // same game, so each game has exactly one display alias.
-  function setDisplayAlias(i) {
-    setAliases(rows => {
-      const gid = rows[i].game_id;
-      return rows.map((r, j) => (r.game_id === gid ? { ...r, is_display: j === i } : r));
-    });
-  }
-
-  // How many aliases are mapped to each game — used to show the "display" chooser
-  // only where there's an actual choice (2+ aliases sharing one game).
-  const gameCounts = aliases.reduce((m, a) => {
-    if (a.game_id) m[a.game_id] = (m[a.game_id] || 0) + 1;
-    return m;
-  }, {});
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -163,63 +141,9 @@ export function DriverEditModal({ driver, onClose, onSaved }) {
           </button>
         </div>
 
-        <div className="field" style={{ marginTop: 8 }}>
-          <label style={{ display: "block" }}>Aliases / Connected Accounts</label>
-          <p style={{ margin: "0 0 8px", fontSize: "0.78rem", color: "var(--ink-2)" }}>
-            Platform usernames this driver races under. The Smart Importer matches imported names against
-            all of these, so results using any of them map back to this profile. Mapping an alias to a
-            <strong> Game</strong> also makes it that game's display name as a fallback — but a name set
-            under <strong>Display Names</strong> above always wins. When more than one alias is mapped to
-            the same game, use <strong>Display</strong> to pick which one is the fallback.
-          </p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {aliases.map((a, i) => (
-              <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                <input
-                  value={a.label}
-                  onChange={e => setAlias(i, { label: e.target.value })}
-                  placeholder="Platform"
-                  style={{ flex: "0 0 30%", minWidth: 90 }}
-                />
-                <input
-                  value={a.value}
-                  onChange={e => setAlias(i, { value: e.target.value })}
-                  placeholder="Username / ID"
-                  style={{ flex: 1, minWidth: 100 }}
-                />
-                <select
-                  value={a.game_id || ""}
-                  onChange={e => setAlias(i, { game_id: e.target.value, is_display: false })}
-                  title="Game this name is used in"
-                  style={{ flex: "0 0 26%", minWidth: 100 }}
-                >
-                  <option value="">Any game</option>
-                  {games.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                </select>
-                {a.game_id && gameCounts[a.game_id] > 1 ? (
-                  <label
-                    title="Show this name on this game's Standings & Results"
-                    style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: "0.74rem", color: "var(--ink-2)", cursor: "pointer" }}
-                  >
-                    <input
-                      type="radio"
-                      name={`display-${a.game_id}`}
-                      checked={!!a.is_display}
-                      onChange={() => setDisplayAlias(i)}
-                    />
-                    Display
-                  </label>
-                ) : null}
-                <button type="button" className="btn btn-ghost" title="Remove field"
-                  style={{ marginTop: 0, padding: "4px 10px", color: "var(--ink-2)" }}
-                  onClick={() => removeAlias(i)}>✕</button>
-              </div>
-            ))}
-          </div>
-          <button type="button" className="btn btn-ghost" style={{ marginTop: 8, padding: "4px 12px" }} onClick={addAlias}>
-            ＋ Add platform
-          </button>
-        </div>
+        {/* Shared with the player's own series sign-up dialog, so a driver is
+            described the same way whoever fills it in — see AliasEditor. */}
+        <AliasEditor aliases={aliases} onChange={setAliases} games={games} />
 
         {driver.linked && (
           <p style={{ margin: "10px 0 0", fontSize: "0.8rem", color: "var(--ink-2)" }}>

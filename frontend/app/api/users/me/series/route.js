@@ -144,7 +144,11 @@ export const GET = withUser(async (request, ctx, user) => {
     seasonIsCompleted(s) && !enteredSeasonIds.has(s.id) && listable(s)).length;
 
   return NextResponse.json({
-    driver: driver ? { id: driver.id, name: driver.name || "Driver" } : null,
+    // `aliases` seeds the sign-up dialog's Aliases / Connected Accounts editor
+    // from what this driver already has, so they confirm rather than retype.
+    driver: driver
+      ? { id: driver.id, name: driver.name || "Driver", aliases: driver.aliases || [] }
+      : null,
     pending_claim: pending ? { id: pending.id, driver_id: pending.driver_id, driver_name: pending.driver_name } : null,
     my_seasons,
     open_signups,

@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { DriverLinkGate } from "@/components/DriverLinkGate";
-import { NUMBER_TAKEN_MESSAGE, carNumberTaken, sortRosterByNumber } from "@/lib/carSelection";
+import { SeriesSignupModal } from "@/components/SeriesSignupModal";
+import { sortRosterByNumber } from "@/lib/carSelection";
 import { api } from "@/lib/api";
 
 // One season a player can join. Its own card, because the car number needs
@@ -15,15 +16,9 @@ import { api } from "@/lib/api";
 // details, just who's racing under which number — and it's listed in car-number
 // order rather than alphabetically, because the question being asked of it is
 // "which numbers are gone?".
-function SignupCard({ season, busy, onSignUp }) {
-  const [classId, setClassId] = useState("");
-  const [number, setNumber] = useState("");
-
+function SignupCard({ season, onOpen, blockedReason }) {
   const roster = sortRosterByNumber(season.roster || []);
   const numbered = roster.filter(r => String(r.number ?? "").trim());
-  // Instant: the roster came down with the season, so a clash is known as the
-  // driver types rather than after a submit that would be refused anyway.
-  const taken = carNumberTaken(season.taken_numbers, number);
 
   return (
     <div className="form-card signup-card">
@@ -37,28 +32,8 @@ function SignupCard({ season, busy, onSignUp }) {
         )}
       </p>
 
-      {season.classes.length > 0 && (
-        <div className="field">
-          <label>Class</label>
-          <select value={classId} onChange={e => setClassId(e.target.value)}>
-            <option value="">Decide later / unclassified</option>
-            {season.classes.map(c => (
-              <option key={c.id} value={c.id}>{c.car ? `${c.name} · ${c.car}` : c.name}</option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      <div className="field">
-        <label htmlFor={`num_${season.season_id}`}>Car Number (optional)</label>
-        <input id={`num_${season.season_id}`} type="text" inputMode="numeric" maxLength={3}
-          className={taken ? "is-invalid" : undefined}
-          aria-invalid={taken || undefined}
-          value={number} onChange={e => setNumber(e.target.value)} placeholder="e.g. 07" />
-        {taken && <p className="field-error">{NUMBER_TAKEN_MESSAGE}</p>}
-      </div>
-
-      {/* The series roster, so a driver can see what's taken before choosing. */}
+      {/* The series roster, so a driver can see what's taken before they even
+          open the form. Listed by number, not alphabetically. */}
       <details className="roster-peek" open={roster.length > 0 && roster.length <= 8}>
         <summary>
           Series roster — {numbered.length} number{numbered.length === 1 ? "" : "s"} taken
@@ -81,10 +56,13 @@ function SignupCard({ season, busy, onSignUp }) {
         )}
       </details>
 
-      <button className="btn btn-primary" type="button" disabled={busy || taken}
-        onClick={() => onSignUp(season, { classId, number })}>
-        {busy ? "Signing up…" : "Sign Up"}
-      </button>
+      {blockedReason
+        ? <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--ink-2)" }}>{blockedReason}</p>
+        : (
+          <button className="btn btn-primary" type="button" onClick={() => onOpen(season)}>
+            Sign Up
+          </button>
+        )}
     </div>
   );
 }
@@ -107,8 +85,11 @@ export default function SeriesInfoPage() {
   const { user, loading } = useAuth();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
-  const [busyId, setBusyId] = useState(null);
   const [toast, setToast] = useState(null);
+  // The season whose sign-up dialog is open. Sign-up is a dialog rather than an
+  // inline form because it collects the driver's whole identity, not just a
+  // number — see components/SeriesSignupModal.jsx.
+  const [signingUp, setSigningUp] = useState(null);
 
   const load = useCallback(() => {
     if (!user) { setData(null); return; }
@@ -124,23 +105,16 @@ export default function SeriesInfoPage() {
     setTimeout(() => setToast(null), 4000);
   }
 
-  async function signUp(season, { classId, number }) {
-    setBusyId(season.season_id);
-    try {
-      const res = await api("/api/users/me/series", {
-        method: "POST",
-        body: {
-          season_id: season.season_id,
-          class_ids: classId ? [classId] : [],
-          number: number || "",
-        },
-      });
-      await load();
-      showToast("success", res.already_entered
+  // The dialog did the writing (or filed the request); this just closes it and
+  // says what happened.
+  async function afterSignup({ requested, season, already_entered }) {
+    setSigningUp(null);
+    await load();
+    showToast("success", requested
+      ? `Request sent for ${season.series_name} · ${season.season_name}. An admin will review it and you'll be added to the roster once they approve.`
+      : already_entered
         ? `You were already on ${season.season_name}'s roster.`
         : `You're signed up for ${season.series_name} · ${season.season_name}.`);
-    } catch (err) { showToast("error", err.message); }
-    finally { setBusyId(null); }
   }
 
   if (loading) return <div className="skeleton" style={{ height: 240 }} />;
@@ -175,27 +149,26 @@ export default function SeriesInfoPage() {
     </div>
   );
 
-  if (!data.driver) {
-    return (
-      <section>
-        {header}
-        <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.9rem", maxWidth: 640 }}>
-          Sign up for a series and lock in the car you&rsquo;ll race — all from here.
-        </p>
-        <DriverLinkGate pendingClaim={data.pending_claim} onLinked={load} />
-      </section>
-    );
-  }
+  // A player with no driver profile yet still gets the sign-up list: signing up
+  // IS how they ask to be added (the dialog files a request for an admin). The
+  // claim panel sits above it for the other route in — someone the league
+  // already has on its books, whose race history should come with them.
+  const unlinked = !data.driver;
 
   return (
     <section>
       {header}
       <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.9rem", maxWidth: 660 }}>
-        The series you&rsquo;re racing, the car you&rsquo;ve locked in for each, and anything still open
-        to sign up for. Only seasons that are upcoming or under way can be joined or changed.
+        {unlinked
+          ? "Sign up for a series and lock in the car you'll race — all from here. You're not in the league's driver list yet, so your first sign-up goes to an admin to approve."
+          : "The series you're racing, the car you've locked in for each, and anything still open to sign up for. Only seasons that are upcoming or under way can be joined or changed."}
       </p>
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
 
+      {unlinked && <DriverLinkGate pendingClaim={data.pending_claim} onLinked={load} />}
+
+      {!unlinked && (
+      <>
       <div className="section-header" style={{ marginTop: 22 }}>
         <h3>My Series</h3>
       </div>
@@ -248,6 +221,8 @@ export default function SeriesInfoPage() {
           ))}
         </div>
       )}
+      </>
+      )}
 
       <div className="section-header" style={{ marginTop: 26 }}>
         <h3>Open Sign-ups</h3>
@@ -266,9 +241,23 @@ export default function SeriesInfoPage() {
       ) : (
         <div className="signup-grid">
           {data.open_signups.map(s => (
-            <SignupCard key={s.season_id} season={s} busy={busyId === s.season_id} onSignUp={signUp} />
+            <SignupCard key={s.season_id} season={s} onOpen={setSigningUp}
+              // One open request at a time: filing a second while the first is
+              // still with an admin would only be refused by the API.
+              blockedReason={unlinked && data.pending_claim
+                ? "You already have a request with the admins — you can sign up for more series once it's approved."
+                : ""} />
           ))}
         </div>
+      )}
+
+      {signingUp && (
+        <SeriesSignupModal
+          season={signingUp}
+          driver={data.driver}
+          onClose={() => setSigningUp(null)}
+          onDone={afterSignup}
+        />
       )}
     </section>
   );

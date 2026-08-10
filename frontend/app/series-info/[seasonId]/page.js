@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { DriverLinkGate } from "@/components/DriverLinkGate";
+import { SeriesSignupModal } from "@/components/SeriesSignupModal";
 import { api } from "@/lib/api";
 
 // One season's car lock-in screen: what the admin is asking for, the cars on
@@ -125,14 +126,15 @@ export default function SeasonCarSelectionPage() {
     finally { setBusy(false); }
   }
 
-  async function signUp() {
-    setSigningUp(true);
-    try {
-      await api("/api/users/me/series", { method: "POST", body: { season_id: seasonId } });
-      await load();
-      showToast("success", "You're on the roster — now pick your car.");
-    } catch (err) { showToast("error", err.message); }
-    finally { setSigningUp(false); }
+  // Sign-up is the shared dialog, so this screen asks for exactly the same
+  // driver information the sign-up list does — including anything the game
+  // insists on, like an iRacing customer ID.
+  async function afterSignup({ requested }) {
+    setSigningUp(false);
+    await load();
+    showToast("success", requested
+      ? "Request sent. An admin will review it, and you'll be on the roster once they approve."
+      : "You're on the roster — now pick your car.");
   }
 
   if (loading || (!data && !error)) return <div className="skeleton" style={{ height: 300 }} />;
@@ -206,8 +208,8 @@ export default function SeasonCarSelectionPage() {
               <p style={{ fontSize: "0.85rem", color: "var(--ink-2)", margin: "0 0 12px" }}>
                 Sign up and you&rsquo;ll be able to pick your car straight away.
               </p>
-              <button className="btn btn-primary" type="button" disabled={signingUp} onClick={signUp}>
-                {signingUp ? "Signing up…" : "Sign Up for this Season"}
+              <button className="btn btn-primary" type="button" onClick={() => setSigningUp(true)}>
+                Sign Up for this Season
               </button>
             </>
           ) : (
@@ -324,6 +326,25 @@ export default function SeasonCarSelectionPage() {
             </div>
           )}
         </>
+      )}
+
+      {signingUp && (
+        <SeriesSignupModal
+          season={{
+            season_id: season.id,
+            season_name: season.name,
+            series_name: series?.name ?? "Series",
+            game_id: data.game_id || "",
+            game_name: data.game_name || "",
+            classes: data.classes,
+            requires_car: slots.length > 0,
+            roster: roster.map(r => ({ number: r.number, name: r.name, class_names: r.class_names })),
+            taken_numbers: roster.map(r => String(r.number ?? "").trim()).filter(Boolean),
+          }}
+          driver={me?.driver_id ? { id: me.driver_id, name: me.driver_name, aliases: me.aliases } : null}
+          onClose={() => setSigningUp(false)}
+          onDone={afterSignup}
+        />
       )}
     </section>
   );

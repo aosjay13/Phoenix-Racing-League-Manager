@@ -2052,3 +2052,50 @@ tbody tr:hover {
 .roster-peek-name { color: var(--ink-0); flex: 1; min-width: 0; }
 .roster-peek-class { color: var(--ink-2); font-size: 0.74rem; white-space: nowrap; }
 .roster-peek-empty { margin: 0; padding: 0 12px 10px; font-size: 0.8rem; color: var(--ink-2); }
+
+/* The series sign-up dialog: what a player fills in before they're on a roster
+   (components/SeriesSignupModal.jsx). */
+
+/* Says up front that this submission goes to an admin rather than taking
+   effect — a new driver is never added automatically. */
+.signup-approval-note {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-gold);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--ink-1);
+}
+
+.signup-approval-note strong { color: var(--ink-0); }
+
+/* Why a particular game insists on a field — an iRacing customer ID, so the
+   organiser can send a league invite. */
+.signup-required-note {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-accent);
+  border-radius: 10px;
+  background: var(--accent-cyan-dim);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--ink-1);
+}
+
+.signup-required-note strong { color: var(--accent-cyan); }
+
+.alias-required {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  color: var(--accent-gold);
+  background: rgba(244, 162, 40, 0.12);
+  border: 1px solid rgba(244, 162, 40, 0.3);
+}

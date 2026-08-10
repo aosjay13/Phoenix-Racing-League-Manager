@@ -108,18 +108,31 @@ The app runs at `http://localhost:3000`.
    Game/Series menus at the top of the page like everything else, and lists **active seasons
    only** — finished ones aren't shown there. Click through and you get:
    - **Linking your driver.** Sign-ups and car choices are recorded against a *driver*, not an
-     account, so the first screen asks you to point yours at one. If you've raced here before,
-     find yourself in the list and hit **That's me** — an admin approves it, because it hands
-     over that driver's whole race history. If you're new, **add yourself as a driver** and
-     you're linked straight away, no waiting. (If the league already had you under a different
-     name, an admin merges the two later and every result comes across.)
-   - **Signing up.** Every season still upcoming or under way that you're not on yet, with an
-     optional class and car number. Seasons marked complete never appear — and can't be joined.
-     Each one carries that season's **series roster** — who's racing under which number, listed
-     in car-number order — so you can see what's free before you choose. Type a number somebody
-     already has and it's rejected as you type, with *"That number is already taken, please
-     choose another number."* Two drivers can't share a number in a season; leaving it blank is
-     always fine.
+     account, so you need to point yours at one. If you've raced here before, find yourself in
+     the list and hit **That's me**. If you're new, ask to be added. **Either way an admin
+     approves it** — a driver profile is never created or linked automatically. Brand new
+     players don't have to do this first: signing up for a series asks for the same details and
+     files the same request, with the season attached.
+   - **Signing up.** Every season still upcoming or under way that you're not on yet. Seasons
+     marked complete never appear — and can't be joined. Each card carries that season's
+     **series roster** — who's racing under which number, listed in car-number order — so you can
+     see what's free before you start.
+
+     **Sign Up** opens a form covering everything the league needs to put you on a roster: the
+     name you race under, your class, your car number, and your **Aliases / Connected Accounts**
+     — the platform usernames (Discord, PSN, Xbox, Steam, iRacing…) the Smart Importer matches
+     results against, so a result posted under any of them lands on your profile. Type a number
+     somebody already has and it's rejected as you type, with *"That number is already taken,
+     please choose another number."*
+
+     Some games ask for more. **An iRacing season won't take a sign-up without your iRacing ID#**,
+     because iRacing leagues are invite-only and the organiser can't send you an invite without
+     your customer ID — the field is marked required and the form won't submit until it's filled.
+
+     If the league already knows you, the form puts you straight on the roster. If you're not in
+     the driver list yet, **nothing is created**: the whole form is filed as a request, and an
+     admin approving it creates your driver profile *and* your roster entry in one click. The
+     form says so before you send it.
    - **When a season ends.** The moment an admin marks it complete, it closes to players: nobody
      else can sign up and nobody can change the car they locked in. It drops off the Dashboard
      section, which is about what's still to do — but it stays on this page, marked **Season over
@@ -256,8 +269,17 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
        name when no per-game Display Name is set, so nothing set up before this existed
        changes.
    - **User Accounts** *(admin)* — every account that has signed up: set its **role**, link it to
-     the driver profile it races as, rename it, delete it, and approve or deny pending profile
-     claims. The red badge on the Drivers nav item counts new signups + pending claims.
+     the driver profile it races as, rename it, delete it, and approve or deny **pending driver
+     requests**. The red badge on the Drivers nav item counts new signups + pending requests.
+
+     Two kinds land in that queue, and this screen is the **only** place either is ever applied —
+     a player-requested driver profile is never created automatically. *Claims* ("that existing
+     driver is me") write the account↔driver link, and approving one auto-denies any other
+     request for the same profile. *New driver* requests come from players the league has never
+     seen; the row shows the name they asked for, the platform usernames they submitted, and the
+     series they want to join, and approving it creates the profile **and** the roster entry in
+     one click. If a driver of that name already exists the row warns you, so you can deny it and
+     have them claim that profile instead — or approve and merge the two afterwards.
      The roster is listed from Firebase Auth, so a signup appears here immediately, with a
      **Status** pill saying where it stands — *Unverified* (hasn't clicked the emailed link yet)
      or *Not opened yet* (verified, but hasn't returned to the app since, so its profile document
@@ -422,6 +444,29 @@ the API routes and the screens. Players write their own pick through `POST /api/
 which resolves the entry from the driver profile linked to the **caller's** account rather than
 from anything in the request, so there is no way to name someone else's row. It also refuses a
 car that isn't on the list, a locked selection, and any season marked completed.
+
+### Who may create a driver profile
+
+Only an admin. There is no player-facing route that writes a `drivers` document: asking for one
+files a pending row in `claim_requests` (`POST /api/claim-requests`, kinds `claim` and
+`new_driver`), and `PATCH /api/admin/claim-requests/[id]` — admin-gated — is the single place any
+of it is applied. A player may edit exactly one field of their own profile once it exists, its
+**aliases** (`PATCH /api/users/me/driver`), because keeping their platform usernames current is
+their own job; name, display names and notes stay admin-only, since those decide how the whole
+league sees them.
+
+A `new_driver` request carries the season the player wanted to join, so approving it creates the
+profile *and* the roster entry together. Those two steps are independent on purpose: if the season
+has been marked complete, or their car number was taken while the request sat in the queue, the
+profile is still created and the admin is told what didn't carry over — a stale detail never costs
+them the whole approval.
+
+**Per-game required information.** A game can insist on an alias before it will take a sign-up.
+Today that's iRacing, which is invite-only at the league level: without the driver's **iRacing ID#**
+the organiser can't send them an invite, so the sign-up form marks it required and refuses to
+submit, and the API repeats the check. Which game that is comes from the game's *name*
+(`isIracingGame` in `lib/signupRequest.js`) rather than a flag on the game document, so it works
+with no extra setup for a game called "iRacing", "i-Racing" or "iRacing Oval Series".
 
 ### Car numbers on a self-service sign-up
 

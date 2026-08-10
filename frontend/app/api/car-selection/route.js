@@ -31,8 +31,15 @@ export async function GET(request) {
     getRequestUser(request),
   ]);
   const driver = user ? await linkedDriver(user.uid) : null;
-  const gameId = season.game_id || null;
-  const names = await fetchDriverNames(entries.map(e => e.driver_id), gameId);
+  const gameId = season.game_id || series?.game_id || null;
+  // The game's NAME, not just its id — the sign-up dialog decides what extra
+  // information to insist on from it (an iRacing season needs the driver's
+  // customer ID before the league can invite them). See lib/signupRequest.js.
+  const [names, gameDoc] = await Promise.all([
+    fetchDriverNames(entries.map(e => e.driver_id), gameId),
+    gameId ? db().collection("games").doc(gameId).get() : Promise.resolve(null),
+  ]);
+  const gameName = gameDoc?.exists ? (gameDoc.data().name || "") : "";
 
   const classNameById = Object.fromEntries(classes.map(c => [c.id, c.name]));
   const rows = entries.map(entry => {
@@ -70,6 +77,7 @@ export async function GET(request) {
     },
     series: series ? { id: series.id, name: series.name || "Series", logo_url: series.logo_url || "" } : null,
     game_id: gameId,
+    game_name: gameName,
     open: seasonAcceptsSignups(season),
     classes: classes.map(c => ({ id: c.id, name: c.name, car: c.car || "" })),
     slots,
@@ -80,6 +88,8 @@ export async function GET(request) {
       ? {
         driver_id: driver?.id ?? null,
         driver_name: driver?.name ?? null,
+        // Seeds the sign-up dialog's alias editor from what they already have.
+        aliases: driver?.aliases ?? [],
         entry_id: myEntry?.id ?? null,
         class_ids: myEntry?.class_ids ?? [],
         slots: myEntry ? slotsForEntry(slots, myEntry.class_ids) : [],
