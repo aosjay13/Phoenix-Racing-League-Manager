@@ -150,10 +150,11 @@ The app runs at `http://localhost:3000`.
      admin approving it creates your driver profile *and* your roster entry in one click. The
      form says so before you send it.
    - **When a season ends.** The moment an admin marks it complete, it closes to players: nobody
-     else can sign up and nobody can change the car they locked in. It drops off the Dashboard
-     section, which is about what's still to do — but it stays on this page, marked **Season over
-     — sign-ups are done** with your car still on record, and its own screen says the same.
-     Reopening the season undoes all of it.
+     else can sign up and nobody can change the car they locked in. It also **drops out of Series
+     Information entirely** — off the Dashboard section and off this page — because this flow is
+     about what you still have to do. A series whose seasons have all finished disappears with
+     them. Your results are on **Standings** and **Stats** as always, and the season's own page
+     still opens from a direct link, marked **Season over**. Reopening the season undoes all of it.
    - **The series roster.** Every season's own screen shows its roster — number, driver, class
      and locked-in car — to anyone who opens it, admin or not. It's ordered by car number rather
      than alphabetically, because "who has 24?" and "which numbers are free?" are what it's read
@@ -870,12 +871,14 @@ things:
   tab left open from before the season closed still can't write to it. The season also drops out of
   the sign-up list everywhere it's offered.
 
-Where a player sees that depends on the screen's job. The **Dashboard**'s Series Information
-section is about what's still to do, so it drops the season and lists running ones only — scoped,
-like the rest of that page, to the Game/Series currently selected. **Series Information** itself
-(`/series-info`) is the full record and keeps it, greyed, saying **Season over — sign-ups are
-done** with the locked-in car still shown; the season's own screen leads with the same line and
-turns every control below it read-only. Nothing is deleted: reopening the season restores
+Series Information is about what a player still has to do, so a completed season leaves it
+altogether — the Dashboard section and `/series-info` alike. That's enforced once, in
+`/api/users/me/series`, which filters `my_seasons` through `seasonAcceptsSignups` before either
+screen sees it, so no screen can reinstate them. A series whose seasons are all complete therefore
+disappears from the flow on its own; there is no separate "series is over" flag, and none is
+needed. The season's own page (`/series-info/[id]`, fed by `/api/car-selection`) still opens from a
+direct link and leads with **Season over**, turning every control below it read-only — so the
+record is reachable, just not in the way. Nothing is deleted: reopening the season restores
 sign-ups, car changes and the champion's Title exactly as they were.
 
 **Championships (Titles).** A completed season crowns champions, and each one is +1 Championship on

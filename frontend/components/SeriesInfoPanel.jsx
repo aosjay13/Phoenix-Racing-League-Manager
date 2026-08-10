@@ -10,12 +10,13 @@ import { api } from "@/lib/api";
 // The Dashboard's "Series Information" section — deliberately NOT a sidebar
 // item, so it only takes up room when it has something to say.
 //
-// It shows ACTIVE seasons only, in the scope the page is already on. Finished
-// seasons are left out entirely: the Dashboard is about what to do next, and a
-// league's back catalogue of completed seasons stacking up here just buries the
-// one season that actually wants an answer. They're still on /series-info,
-// which lists everything and says "Season over — sign-ups are done" against
-// each, and on the season's own screen.
+// It shows ACTIVE seasons only, in the scope the page is already on. A season
+// an admin marked complete is gone from here AND from /series-info behind it —
+// the API drops them (see /api/users/me/series), so a series whose seasons have
+// all finished disappears from the flow entirely. Series Information is about
+// what a player still has to do; finished racing lives on Standings and Stats.
+// The season's own page still opens from a direct link and still says
+// "Season over".
 //
 // So it renders for a signed-in player when, WITHIN the selected scope, either:
 //   • they're on the roster of a running season that requires a car lock-in, or
@@ -47,8 +48,9 @@ export function SeriesInfoPanel() {
   const inScope = row => rowInScope(row, { gameId, seriesId });
 
   const needsDriver = !data.driver;
-  // Running seasons only — `open` is false for anything an admin has marked
-  // complete.
+  // Running seasons only. The API already drops finished ones from my_seasons;
+  // re-checking `open` here costs nothing and keeps a stale cached response
+  // from putting a season that ended since the last load back on the page.
   const openSeasons = data.my_seasons.filter(s => s.open && s.requires_car && inScope(s));
   const signups = data.open_signups.filter(inScope);
   const toPick = openSeasons.filter(s => s.needs_pick).length;

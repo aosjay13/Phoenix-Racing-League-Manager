@@ -142,22 +142,25 @@ export default function SeriesInfoPage() {
       <div className="section-header" style={{ marginTop: 22 }}>
         <h3>My Series</h3>
       </div>
+      {/* Running seasons only. A season an admin marked complete is dropped by
+          the API, so a finished series simply isn't here — its results live on
+          Standings and Stats, which is where finished racing belongs. */}
       {data.my_seasons.length === 0 ? (
         <div className="empty-state">
           <span className="empty-state-icon">🏁</span>
-          <p>You&rsquo;re not on any season&rsquo;s roster yet.</p>
+          <p>Nothing running right now.</p>
           <p style={{ fontSize: "0.85rem", color: "var(--ink-2)", margin: 0 }}>
-            Anything open to join is listed below.
+            Seasons you&rsquo;ve finished aren&rsquo;t listed here — see <Link href="/standings" style={{ color: "var(--accent-cyan)" }}>Standings</Link>{" "}
+            for those. Anything open to join is below.
           </p>
         </div>
       ) : (
         <div className="list-rows">
           {data.my_seasons.map(s => (
-            <Link key={s.season_id} href={`/series-info/${s.season_id}`}
-              className={`list-row${s.open ? "" : " is-closed"}`}>
+            <Link key={s.season_id} href={`/series-info/${s.season_id}`} className="list-row">
               {s.logo_url
                 ? <img src={s.logo_url} alt="" className="avatar" style={{ borderRadius: 6 }} />
-                : <span className="avatar avatar-fallback" style={{ borderRadius: 6 }}>{s.open ? "🏆" : "🏁"}</span>}
+                : <span className="avatar avatar-fallback" style={{ borderRadius: 6 }}>🏆</span>}
               <span className="list-row-name">
                 <strong>{s.series_name} · {s.season_name}</strong>
                 <span>
@@ -166,21 +169,15 @@ export default function SeriesInfoPage() {
                 </span>
               </span>
               <span className="list-row-meta">
-                {!s.open && (
-                  <span style={{ minWidth: 160 }}>
-                    <span className="list-row-meta-label">Season</span>
-                    <span className="list-row-meta-value">Over — sign-ups are done</span>
-                  </span>
-                )}
                 {s.picks.map(p => (
                   <span key={p.class_id || "season"}>
                     <span className="list-row-meta-label">{p.class_name || "My Car"}</span>
                     <span className="list-row-meta-value">
-                      {p.car || (s.open && !p.locked ? "Choose →" : "—")}
+                      {p.car || (p.locked ? "—" : "Choose →")}
                     </span>
                   </span>
                 ))}
-                {!s.requires_car && s.open && (
+                {!s.requires_car && (
                   <span>
                     <span className="list-row-meta-label">Car lock-in</span>
                     <span className="list-row-meta-value">Not required</span>

@@ -47,7 +47,19 @@ export const GET = withUser(async (request, ctx, user) => {
   // its classes and its picks — and it's the same entry /api/car-selection
   // writes to, so the two never disagree. (The roster's "Combine" button folds
   // such entries into one; see /api/admin/entries/combine.)
-  const mySeasonDocs = [...enteredSeasonIds].map(id => seasonsById[id]);
+  //
+  // FINISHED SEASONS ARE LEFT OUT ENTIRELY. Series Information is about what a
+  // player still has to do; a season an admin marked complete has nothing left
+  // to answer, and a league's back catalogue piling up here buried the one
+  // season that actually wanted something. A series whose seasons are all
+  // complete therefore disappears from the flow on its own — there's no
+  // separate "series is over" flag to set. It's filtered HERE rather than on
+  // each screen so there is one place it's true and no screen can reinstate it;
+  // the season's own page (/series-info/[id], fed by /api/car-selection) still
+  // opens from a direct link and still says "Season over", so nothing is lost.
+  const mySeasonDocs = [...enteredSeasonIds]
+    .map(id => seasonsById[id])
+    .filter(seasonAcceptsSignups);
   const my_seasons = newestFirst(mySeasonDocs).map(season => {
     const entry = mine.find(e => e.season_id === season.id);
     const series = seriesById[season.series_id] || null;
