@@ -4,7 +4,90 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { DriverLinkGate } from "@/components/DriverLinkGate";
+import { NUMBER_TAKEN_MESSAGE, carNumberTaken, sortRosterByNumber } from "@/lib/carSelection";
 import { api } from "@/lib/api";
+
+// One season a player can join. Its own card, because the car number needs
+// checking against that season's roster as it's typed and the roster has to sit
+// next to the field doing the checking.
+//
+// The roster shown here is the PUBLIC one — no admin controls, no account
+// details, just who's racing under which number — and it's listed in car-number
+// order rather than alphabetically, because the question being asked of it is
+// "which numbers are gone?".
+function SignupCard({ season, busy, onSignUp }) {
+  const [classId, setClassId] = useState("");
+  const [number, setNumber] = useState("");
+
+  const roster = sortRosterByNumber(season.roster || []);
+  const numbered = roster.filter(r => String(r.number ?? "").trim());
+  // Instant: the roster came down with the season, so a clash is known as the
+  // driver types rather than after a submit that would be refused anyway.
+  const taken = carNumberTaken(season.taken_numbers, number);
+
+  return (
+    <div className="form-card signup-card">
+      <h3 style={{ marginTop: 0 }}>{season.series_name}</h3>
+      <p style={{ margin: "0 0 10px", color: "var(--ink-2)", fontSize: "0.82rem" }}>
+        {season.season_name}{season.game_name ? ` · ${season.game_name}` : ""}
+        {season.requires_car && (
+          <> · <span style={{ color: "var(--accent-cyan)" }}>
+            car lock-in required{season.car_count ? ` (${season.car_count} to choose from)` : ""}
+          </span></>
+        )}
+      </p>
+
+      {season.classes.length > 0 && (
+        <div className="field">
+          <label>Class</label>
+          <select value={classId} onChange={e => setClassId(e.target.value)}>
+            <option value="">Decide later / unclassified</option>
+            {season.classes.map(c => (
+              <option key={c.id} value={c.id}>{c.car ? `${c.name} · ${c.car}` : c.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      <div className="field">
+        <label htmlFor={`num_${season.season_id}`}>Car Number (optional)</label>
+        <input id={`num_${season.season_id}`} type="text" inputMode="numeric" maxLength={3}
+          className={taken ? "is-invalid" : undefined}
+          aria-invalid={taken || undefined}
+          value={number} onChange={e => setNumber(e.target.value)} placeholder="e.g. 07" />
+        {taken && <p className="field-error">{NUMBER_TAKEN_MESSAGE}</p>}
+      </div>
+
+      {/* The series roster, so a driver can see what's taken before choosing. */}
+      <details className="roster-peek" open={roster.length > 0 && roster.length <= 8}>
+        <summary>
+          Series roster — {numbered.length} number{numbered.length === 1 ? "" : "s"} taken
+          {roster.length !== numbered.length && ` · ${roster.length} driver${roster.length === 1 ? "" : "s"}`}
+        </summary>
+        {roster.length === 0 ? (
+          <p className="roster-peek-empty">Nobody has signed up yet — every number is free.</p>
+        ) : (
+          <ul className="roster-peek-list">
+            {roster.map((r, i) => (
+              <li key={`${r.number ?? ""}-${r.name}-${i}`}>
+                <span className="badge">{String(r.number ?? "").trim() || "—"}</span>
+                <span className="roster-peek-name">{r.name}</span>
+                {r.class_names?.length > 0 && (
+                  <span className="roster-peek-class">{r.class_names.join(" · ")}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </details>
+
+      <button className="btn btn-primary" type="button" disabled={busy || taken}
+        onClick={() => onSignUp(season, { classId, number })}>
+        {busy ? "Signing up…" : "Sign Up"}
+      </button>
+    </div>
+  );
+}
 
 // "My Active Series" — reached from the Dashboard's Series Information card
 // rather than the sidebar, because it's only ever relevant to a signed-in
@@ -26,8 +109,6 @@ export default function SeriesInfoPage() {
   const [error, setError] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [toast, setToast] = useState(null);
-  const [joinClasses, setJoinClasses] = useState({});   // season id -> class id ("" = none)
-  const [joinNumbers, setJoinNumbers] = useState({});   // season id -> car number
 
   const load = useCallback(() => {
     if (!user) { setData(null); return; }
@@ -43,16 +124,15 @@ export default function SeriesInfoPage() {
     setTimeout(() => setToast(null), 4000);
   }
 
-  async function signUp(season) {
+  async function signUp(season, { classId, number }) {
     setBusyId(season.season_id);
     try {
-      const classId = joinClasses[season.season_id] || "";
       const res = await api("/api/users/me/series", {
         method: "POST",
         body: {
           season_id: season.season_id,
           class_ids: classId ? [classId] : [],
-          number: joinNumbers[season.season_id] || "",
+          number: number || "",
         },
       });
       await load();
@@ -186,40 +266,7 @@ export default function SeriesInfoPage() {
       ) : (
         <div className="signup-grid">
           {data.open_signups.map(s => (
-            <div className="form-card signup-card" key={s.season_id}>
-              <h3 style={{ marginTop: 0 }}>{s.series_name}</h3>
-              <p style={{ margin: "0 0 10px", color: "var(--ink-2)", fontSize: "0.82rem" }}>
-                {s.season_name}{s.game_name ? ` · ${s.game_name}` : ""}
-                {s.requires_car && (
-                  <> · <span style={{ color: "var(--accent-cyan)" }}>
-                    car lock-in required{s.car_count ? ` (${s.car_count} to choose from)` : ""}
-                  </span></>
-                )}
-              </p>
-              {s.classes.length > 0 && (
-                <div className="field">
-                  <label>Class</label>
-                  <select value={joinClasses[s.season_id] ?? ""}
-                    onChange={e => setJoinClasses(m => ({ ...m, [s.season_id]: e.target.value }))}>
-                    <option value="">Decide later / unclassified</option>
-                    {s.classes.map(c => (
-                      <option key={c.id} value={c.id}>{c.car ? `${c.name} · ${c.car}` : c.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              <div className="field">
-                <label>Car Number (optional)</label>
-                <input type="text" inputMode="numeric" maxLength={3}
-                  value={joinNumbers[s.season_id] ?? ""}
-                  onChange={e => setJoinNumbers(m => ({ ...m, [s.season_id]: e.target.value }))}
-                  placeholder="e.g. 07" />
-              </div>
-              <button className="btn btn-primary" type="button" disabled={busyId === s.season_id}
-                onClick={() => signUp(s)}>
-                {busyId === s.season_id ? "Signing up…" : "Sign Up"}
-              </button>
-            </div>
+            <SignupCard key={s.season_id} season={s} busy={busyId === s.season_id} onSignUp={signUp} />
           ))}
         </div>
       )}

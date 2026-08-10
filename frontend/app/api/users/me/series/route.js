@@ -3,11 +3,11 @@ import { db } from "@/lib/firebase";
 import { getRequestLeagueId, withUser } from "@/lib/serverAuth";
 import { normalizeClassIds } from "@/lib/classFilter";
 import {
-  carSelectionSlots, resolveCarSelection, seasonAcceptsSignups, seasonIsCompleted,
-  selectedCarFor, slotsForEntry,
+  NUMBER_TAKEN_MESSAGE, carNumberTaken, carSelectionSlots, normalizeCarNumber,
+  resolveCarSelection, seasonAcceptsSignups, seasonIsCompleted, selectedCarFor, slotsForEntry,
 } from "@/lib/carSelection";
 import {
-  entriesForDriver, leagueSeasonIndex, linkedDriver, newestFirst, pendingClaim,
+  entriesForDriver, leagueSeasonIndex, linkedDriver, newestFirst, pendingClaim, rostersForSeasons,
 } from "@/lib/carSelectionServer";
 
 export const dynamic = "force-dynamic";
@@ -95,13 +95,23 @@ export const GET = withUser(async (request, ctx, user) => {
 
   // Sign-ups: every season in the league still to run that this driver isn't
   // already on.
-  const open_signups = newestFirst(seasons)
+  const openSeasons = newestFirst(seasons)
     .filter(s => seasonAcceptsSignups(s) && !enteredSeasonIds.has(s.id))
-    .filter(listable)
+    .filter(listable);
+
+  // Each of those seasons' rosters, so the sign-up form can show which car
+  // numbers are already taken and reject a clash the moment it's typed rather
+  // than on submit. One query per season being offered — a league only has a
+  // handful running at once, and it saves a round trip per card.
+  const rosters = await rostersForSeasons(openSeasons.map(s => s.id));
+
+  const open_signups = openSeasons
     .map(season => {
       const series = seriesById[season.series_id];
       const classes = classesBySeason[season.id] || [];
       const resolved = resolveCarSelection({ series, season });
+      const roster = rosters[season.id] || [];
+      const classNameById = Object.fromEntries(classes.map(c => [c.id, c.name]));
       return {
         season_id: season.id,
         season_name: season.name || "Season",
@@ -113,6 +123,17 @@ export const GET = withUser(async (request, ctx, user) => {
         classes: classes.map(c => ({ id: c.id, name: c.name, car: c.car || "" })),
         requires_car: carSelectionSlots({ series, season, classes }).length > 0,
         car_count: resolved.options.length,
+        // The season's public roster, in car-number order — the "which numbers
+        // are gone?" list a driver reads before picking one, and the source of
+        // the instant clash check on the number field.
+        roster: roster.map(r => ({
+          number: r.number,
+          name: r.name,
+          class_names: r.class_ids.map(id => classNameById[id]).filter(Boolean),
+        })),
+        taken_numbers: roster
+          .map(r => normalizeCarNumber(r.number))
+          .filter(Boolean),
       };
     });
 
@@ -187,6 +208,19 @@ export const POST = withUser(async (request, ctx, user) => {
   // Both free-text fields are capped, the same way the admin entry route caps a
   // car number — a self-service write shouldn't be able to store an essay.
   const number = String(body.number ?? "").trim().slice(0, 3);
+
+  // Two drivers can't run the same number in one season. The form checks this
+  // as it's typed off the roster it already holds; this is the check that makes
+  // it true, since two people can reach the form at the same moment and the
+  // first to submit takes the number. Compared as text, so a league running
+  // both a 1 and an 01 keeps them as the different numbers they are.
+  if (number && carNumberTaken(roster.docs.map(d => d.data().number), number)) {
+    return NextResponse.json(
+      { error: NUMBER_TAKEN_MESSAGE, code: "number-taken", number },
+      { status: 409 },
+    );
+  }
+
   const doc = {
     season_id: seasonId,
     // The name they race under in this series; defaults to their profile name.

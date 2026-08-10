@@ -115,11 +115,20 @@ The app runs at `http://localhost:3000`.
      name, an admin merges the two later and every result comes across.)
    - **Signing up.** Every season still upcoming or under way that you're not on yet, with an
      optional class and car number. Seasons marked complete never appear — and can't be joined.
+     Each one carries that season's **series roster** — who's racing under which number, listed
+     in car-number order — so you can see what's free before you choose. Type a number somebody
+     already has and it's rejected as you type, with *"That number is already taken, please
+     choose another number."* Two drivers can't share a number in a season; leaving it blank is
+     always fine.
    - **When a season ends.** The moment an admin marks it complete, it closes to players: nobody
      else can sign up and nobody can change the car they locked in. It drops off the Dashboard
      section, which is about what's still to do — but it stays on this page, marked **Season over
      — sign-ups are done** with your car still on record, and its own screen says the same.
      Reopening the season undoes all of it.
+   - **The series roster.** Every season's own screen shows its roster — number, driver, class
+     and locked-in car — to anyone who opens it, admin or not. It's ordered by car number rather
+     than alphabetically, because "who has 24?" and "which numbers are free?" are what it's read
+     to answer.
    - **Locking in your car.** Pick from the cars the admin listed and hit **Lock in Car**. You
      can change your mind as often as you like until an admin locks the selections. Under it,
      the full roster shows exactly which car everyone else has taken, with a tally of how
@@ -413,6 +422,19 @@ the API routes and the screens. Players write their own pick through `POST /api/
 which resolves the entry from the driver profile linked to the **caller's** account rather than
 from anything in the request, so there is no way to name someone else's row. It also refuses a
 car that isn't on the list, a locked selection, and any season marked completed.
+
+### Car numbers on a self-service sign-up
+
+Two drivers can't run the same number in one season. The sign-up form checks it **as you type**,
+against the season roster it already holds, and `POST /api/users/me/series` checks it again before
+writing — two people can have the form open at the same moment, and the first to submit takes the
+number. A blank number is always allowed.
+
+Numbers are compared as **text**, never as parsed integers, which is the same reason they're stored
+as strings (`entries.number`, max 3 chars): a league that runs both a **1** and an **01** has two
+different numbers, and neither blocks the other. Ordering is by value though — `compareCarNumbers`
+in `lib/carSelection.js` puts 2 before 10 rather than after it, keeps `01` beside `1`, and drops
+drivers with no number to the end. Every roster a player reads is sorted through it.
 
 ### Where points are configured
 

@@ -1992,3 +1992,63 @@ tbody tr:hover {
 }
 
 .season-over-banner strong { color: var(--ink-0); }
+
+/* A field the user has to fix before the form will go through — today the car
+   number on a series sign-up, when someone already races it. */
+.field input.is-invalid,
+.field select.is-invalid {
+  border-color: var(--accent-red);
+  background: var(--accent-red-dim);
+}
+
+.field-error {
+  margin: 6px 0 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--accent-red);
+}
+
+/* The public series roster folded into a sign-up card: who's racing under which
+   number, in car-number order, so a driver can pick a free one without leaving
+   the form. */
+.roster-peek {
+  margin: 0 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+}
+
+.roster-peek > summary {
+  cursor: pointer;
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-1);
+  list-style: none;
+}
+
+.roster-peek > summary::-webkit-details-marker { display: none; }
+.roster-peek > summary::before { content: "▸ "; color: var(--ink-2); }
+.roster-peek[open] > summary::before { content: "▾ "; }
+.roster-peek > summary:hover { color: var(--ink-0); }
+
+.roster-peek-list {
+  margin: 0;
+  padding: 0 12px 10px;
+  list-style: none;
+  max-height: 190px;
+  overflow-y: auto;
+}
+
+.roster-peek-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border-top: 1px solid var(--border);
+  font-size: 0.82rem;
+}
+
+.roster-peek-name { color: var(--ink-0); flex: 1; min-width: 0; }
+.roster-peek-class { color: var(--ink-2); font-size: 0.74rem; white-space: nowrap; }
+.roster-peek-empty { margin: 0; padding: 0 12px 10px; font-size: 0.8rem; color: var(--ink-2); }

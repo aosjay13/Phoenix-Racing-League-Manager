@@ -9,7 +9,7 @@
 
 import { db } from "@/lib/firebase";
 import { entryClassIds, orderClassIds } from "@/lib/classFilter";
-import { carSelectionSlots } from "@/lib/carSelection";
+import { carSelectionSlots, sortRosterByNumber } from "@/lib/carSelection";
 import { scopeByLeague } from "@/lib/serverAuth";
 
 // The one driver profile linked to this account, or null. (The claim flow
@@ -59,6 +59,31 @@ export async function seasonEntries(seasonId, classes = []) {
     const class_ids = orderClassIds(entryClassIds(entry), classes);
     return { ...entry, class_ids, class_id: class_ids[0] || "" };
   });
+}
+
+// The public (non-admin) roster of several seasons at once, as
+// { [seasonId]: [{ number, name, class_ids }] } in car-number order.
+//
+// This is what a driver signing up reads to find a free number, so it carries
+// the name each driver races under in THAT series (entries.name) rather than
+// resolving profile names — the per-series alias is the right label here, and
+// it keeps the read to one query per season.
+export async function rostersForSeasons(seasonIds = []) {
+  const ids = [...new Set(seasonIds.filter(Boolean))];
+  if (!ids.length) return {};
+  const snaps = await Promise.all(
+    ids.map(id => db().collection("entries").where("season_id", "==", id).get()));
+  return Object.fromEntries(ids.map((id, i) => [
+    id,
+    sortRosterByNumber(snaps[i].docs.map(d => {
+      const entry = d.data();
+      return {
+        number: entry.number ?? null,
+        name: entry.name || "Driver",
+        class_ids: entryClassIds(entry),
+      };
+    })),
+  ]));
 }
 
 // Every entry this driver holds anywhere, by both routes into an entry (the

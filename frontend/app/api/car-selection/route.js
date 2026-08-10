@@ -3,7 +3,8 @@ import { db } from "@/lib/firebase";
 import { getRequestUser, withUser } from "@/lib/serverAuth";
 import { fetchDriverNames } from "@/lib/driverNamesServer";
 import {
-  carSelectionPatch, findSlot, matchCarOption, seasonAcceptsSignups, selectedCarFor, slotsForEntry,
+  carSelectionPatch, findSlot, matchCarOption, seasonAcceptsSignups, selectedCarFor,
+  slotsForEntry, sortRosterByNumber,
 } from "@/lib/carSelection";
 import { linkedDriver, seasonContext, seasonEntries } from "@/lib/carSelectionServer";
 
@@ -55,7 +56,10 @@ export async function GET(request) {
       mine: !!driver && entry.driver_id === driver.id,
     };
   });
-  rows.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  // Car-number order, not alphabetical: this roster is read to find out who has
+  // which number, and a numbered grid is how a racing roster is always listed.
+  // Drivers with no number yet fall to the end.
+  const sortedRows = sortRosterByNumber(rows);
 
   const myEntry = driver ? entries.find(e => e.driver_id === driver.id) ?? null : null;
 
@@ -69,7 +73,7 @@ export async function GET(request) {
     open: seasonAcceptsSignups(season),
     classes: classes.map(c => ({ id: c.id, name: c.name, car: c.car || "" })),
     slots,
-    roster: rows,
+    roster: sortedRows,
     // The caller's own standing on this screen, so the client needn't re-derive
     // it: are they linked, are they on the roster, which slots are theirs.
     me: user

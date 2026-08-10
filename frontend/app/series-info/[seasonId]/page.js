@@ -151,7 +151,10 @@ export default function SeasonCarSelectionPage() {
   const { season, series, slots, roster, me, open } = data;
   // Which columns the transparency grid needs: one per slot the season offers,
   // so a season whose classes run their own lists shows a column per class.
-  const columns = slots.length ? slots : [{ class_id: "", class_name: "" }];
+  // A Car column per slot the season offers, so a season whose classes run
+  // their own lists shows a column per class. None at all when no car lock-in
+  // is required — the roster is then just the numbered entry list.
+  const columns = slots;
   const carFor = (row, classId) => row.cars.find(c => String(c.class_id || "") === String(classId || ""))?.car || "";
   const taken = {};
   for (const row of roster) {
@@ -244,17 +247,21 @@ export default function SeasonCarSelectionPage() {
         </div>
       )}
 
-      {/* Transparency: the whole roster and what everyone has taken. Shown to
-          anyone who opens the screen, signed in or not — knowing what the rest
-          of the field is running is the point of it. */}
-      {slots.length > 0 && (
+      {/* Transparency: the season's public roster — who's racing, under which
+          number, in which car. Shown to anyone who opens the screen, signed in
+          or not, and listed in car-number order because "which numbers are
+          taken?" is the question it's read to answer. It renders even when no
+          car lock-in is required, since the roster itself is the point. */}
+      {(
         <>
           <div className="section-header" style={{ marginTop: 26 }}>
-            <h3>Who&rsquo;s Racing What</h3>
+            <h3>{slots.length > 0 ? "Who’s Racing What" : "Series Roster"}</h3>
           </div>
           <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.82rem" }}>
             {roster.length} driver{roster.length === 1 ? "" : "s"} on the roster ·{" "}
-            {roster.filter(r => r.cars.some(c => c.car)).length} locked in.
+            {roster.filter(r => String(r.number ?? "").trim()).length} number
+            {roster.filter(r => String(r.number ?? "").trim()).length === 1 ? "" : "s"} taken
+            {slots.length > 0 && <> · {roster.filter(r => r.cars.some(c => c.car)).length} locked in</>}.
           </p>
           <div className="table-wrap">
             <table>
@@ -270,7 +277,7 @@ export default function SeasonCarSelectionPage() {
               <tbody>
                 {roster.map(row => (
                   <tr key={row.entry_id} style={row.mine ? { background: "var(--accent-cyan-dim)" } : undefined}>
-                    <td><span className="badge">{row.number ?? "—"}</span></td>
+                    <td><span className="badge">{String(row.number ?? "").trim() || "—"}</span></td>
                     <td className="driver-name-cell">
                       {row.driver_id
                         ? <Link href={`/drivers/${row.driver_id}`} style={{ color: "var(--accent-cyan)" }}>{row.name}</Link>

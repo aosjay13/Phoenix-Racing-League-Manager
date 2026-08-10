@@ -193,6 +193,59 @@ export function seasonAcceptsSignups(season) {
   return !!season && !seasonIsCompleted(season);
 }
 
+// ── Car numbers ────────────────────────────────────────────────────────────
+//
+// A car number is stored as a STRING (max 3 chars) so racing numbers with
+// leading zeros survive — "01", "007" and "1" are three different numbers, and
+// a league that runs both a 1 and an 01 is exactly why (see SPECS.entries).
+// Everything below therefore compares the trimmed text, never a parsed integer.
+
+export function normalizeCarNumber(value) {
+  return String(value ?? "").trim();
+}
+
+// Is this number already on the roster? `taken` is a list of numbers (or of
+// rows carrying one). A blank number is never "taken" — running without one is
+// always allowed.
+export function carNumberTaken(taken = [], value) {
+  const wanted = normalizeCarNumber(value);
+  if (!wanted) return false;
+  return taken.some(t => normalizeCarNumber(typeof t === "object" ? t?.number : t) === wanted);
+}
+
+// What a driver is told when they pick a number someone else already has.
+// Defined once so the instant check in the sign-up form and the server's own
+// rejection say exactly the same thing.
+export const NUMBER_TAKEN_MESSAGE =
+  "That number is already taken, please choose another number. " +
+  "You may look at the series roster to see what numbers are already taken.";
+
+// Order car numbers the way a grid does: by value, so 2 comes before 10 rather
+// than after it as a plain string sort would have it. A tie in value ("01" and
+// "1") falls back to the text, anything non-numeric sorts after the numbers,
+// and a driver with no number at all goes last.
+export function compareCarNumbers(a, b) {
+  const na = normalizeCarNumber(a);
+  const nb = normalizeCarNumber(b);
+  if (!na || !nb) return (!na ? 1 : 0) - (!nb ? 1 : 0);
+  const va = Number(na);
+  const vb = Number(nb);
+  const aNumeric = na !== "" && Number.isFinite(va);
+  const bNumeric = nb !== "" && Number.isFinite(vb);
+  if (aNumeric && bNumeric) return (va - vb) || na.localeCompare(nb);
+  if (aNumeric !== bNumeric) return aNumeric ? -1 : 1;
+  return na.localeCompare(nb);
+}
+
+// A roster in car-number order — what a driver reads to find a free number, and
+// how a non-admin roster is listed. Ties (and the unnumbered tail) fall back to
+// the driver's name so the order is stable rather than arbitrary.
+export function sortRosterByNumber(rows = []) {
+  return [...rows].sort((a, b) =>
+    compareCarNumbers(a?.number, b?.number) ||
+    String(a?.name ?? "").localeCompare(String(b?.name ?? "")));
+}
+
 // ── Scope ──────────────────────────────────────────────────────────────────
 //
 // Does one of a player's series rows belong to the Game ▸ Series selection at
