@@ -3,6 +3,7 @@ import { db } from "@/lib/firebase";
 import { withAdmin, getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
 import { toDateOnly } from "@/lib/raceDate";
 import { normalizeClassIds } from "@/lib/classFilter";
+import { orderSeasons } from "@/lib/seasonOrderServer";
 
 // A roster entry's classes are stored twice on purpose: `class_ids` is the real
 // list (a driver can race several classes in one season) and `class_id` mirrors
@@ -30,9 +31,19 @@ function normalizeEntryClasses(patch) {
 // (see lib/raceDate.js — a date with a time in it is what makes a race display
 // a day early in western timezones). `bool: true` stores a real boolean, so an
 // explicit `false` is preserved rather than read back as "unset".
+// `nullableNumber: true` is a number whose ABSENCE is meaningful — a season's
+// hand-set `sort_order`, where 0 is the top of the list and null is "no custom
+// order at all". Blank clears it to null rather than being parsed to a 0 that
+// would read as a real position.
 export function coerceField(opts, raw) {
   if (opts.dateOnly) return { value: toDateOnly(raw) };
   if (opts.bool) return { value: !!raw };
+  if (opts.nullableNumber) {
+    if (raw === "" || raw === null || raw === undefined) return { value: null };
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return { error: "must be a number" };
+    return { value: n };
+  }
   if (opts.maxLen != null) {
     const value = String(raw ?? "").trim();
     if (value.length > opts.maxLen) return { error: `must be at most ${opts.maxLen} characters` };
@@ -43,7 +54,13 @@ export function coerceField(opts, raw) {
 
 // Shared CRUD factory for the hierarchy collections (games, series, seasons,
 // teams, entries, races). Reads are public; writes require an admin.
-export function makeCollectionRoutes({ collection, parentField, fields, sortField = "created_at", normalize = null }) {
+//
+// `orderDocs` replaces the plain `sortField` sort for a collection whose order
+// is computed rather than read off one field — seasons, which are ordered by
+// the race dates inside them (see lib/seasonOrderServer.js). It may be async,
+// since working that out means a second read, and whatever it returns is the
+// response body, so it can decorate the docs on the way past.
+export function makeCollectionRoutes({ collection, parentField, fields, sortField = "created_at", normalize = null, orderDocs = null }) {
   async function GET(request) {
     const { searchParams } = new URL(request.url);
     let query = db().collection(collection);
@@ -59,6 +76,7 @@ export function makeCollectionRoutes({ collection, parentField, fields, sortFiel
     query = scopeByLeague(query, getRequestLeagueId(request));
     const snap = await query.get();
     const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    if (orderDocs) return NextResponse.json(await orderDocs(docs));
     docs.sort((a, b) => {
       const av = a[sortField], bv = b[sortField];
       if (typeof av === "number" && typeof bv === "number") return av - bv;
@@ -176,7 +194,13 @@ export const SPECS = {
                        require_car_manufacturer: { bool: true, default: false },
                        car_options: {}, manufacturer_options: {}, car_selection_note: {},
                        car_selection_locked: { bool: true, default: false } } },
-  seasons: { collection: "seasons", parentField: "series_id", sortField: "created_at",
+  // Seasons come back NEWEST FIRST, ordered by the race dates on their
+  // schedules rather than by when the admin happened to type them in — so a
+  // Season 5 entered before 2, 3 and 4 still sits above them in every dropdown.
+  // `sort_order` is the hand-set override an admin arranges in League Setup
+  // (null = none, which is the default); see lib/seasonOrder.js and
+  // /api/seasons/reorder.
+  seasons: { collection: "seasons", parentField: "series_id", orderDocs: orderSeasons,
              // `car` is the free-text car/model this season races (e.g. "NASCAR
              // Next Gen", "GT3"). It's the season-wide default; a race can
              // override it with its own `car` (see SPECS.races).
@@ -220,6 +244,7 @@ export const SPECS = {
              // `require_car_selection` & friends are this season's car lock-in
              // settings — see SPECS.series above and lib/carSelection.js.
              fields: { name: { required: true }, game_id: {}, logo_url: {}, status: { default: "active" },
+                       sort_order: { nullableNumber: true },
                        isBangerRacing: { bool: true, default: false }, banger_mode: {},
                        drop_weeks: { number: true, default: 0 }, points_scale: {}, car: {},
                        race_points: {}, qual_points: {}, bonus_points: {},

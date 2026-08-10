@@ -170,7 +170,9 @@ export function LeagueProvider({ children }) {
           const current = prev === null ? saved.seasonId : prev;
           if (current === "" && prev !== null) return "";
           if (s.find(x => x.id === current)) return current;
-          return prev === null && saved.seasonId === "" ? "" : (s[s.length - 1]?.id ?? "");
+          // The list arrives newest first (by race date — see lib/seasonOrder.js),
+          // so the season being raced now is the one at the top.
+          return prev === null && saved.seasonId === "" ? "" : (s[0]?.id ?? "");
         });
       })
       .catch(() => { setSeasons([]); setSeasonsForSeries(seriesId); });

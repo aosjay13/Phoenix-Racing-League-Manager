@@ -28,9 +28,11 @@ export function RosterImportModal({ seasonId, seriesId, seasonName, seriesName, 
     api(`/api/seasons?series_id=${seriesId}`)
       .then(list => {
         if (!live) return;
+        // Newest first (by race date — see lib/seasonOrder.js), so the season
+        // most worth cloning is both at the top of the menu and preselected.
         const others = list.filter(s => s.id !== seasonId);
         setSeasons(others);
-        setFromSeasonId(others[others.length - 1]?.id ?? "");
+        setFromSeasonId(others[0]?.id ?? "");
       })
       .catch(() => setSeasons([]));
     return () => { live = false; };

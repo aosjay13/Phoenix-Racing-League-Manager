@@ -221,6 +221,11 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      fastest lap, etc.). There is no separate pole bonus — pole is position 1 of the qualifying
      points list, so a pole is worth whatever the first number in that list says. **Enable Overall Championship** decides whether a multi-class season
      also crowns one champion across the whole field on top of the per-class titles.
+     Seasons list **newest first**, ordered by the **race dates** on their schedules rather than
+     by the order they were typed in — so a Season 5 entered before Seasons 2, 3 and 4 still sits
+     above them in the Season dropdown and in League Setup. A season with no dated races yet
+     (one being set up now) sits at the top. Use the **▲ ▼** arrows in the Seasons list to
+     arrange your own order instead; **↺ Sort by race date** hands it back to the dates.
    - **Classes** *(optional)* — split the season's field into separately-scored groups
      ("Pro"/"Amateur", "GT3"/"LMP2"). Leave it empty for an ordinary single-class season —
      nothing changes. Classes created here fill the **Class** menu in the top bar, which scopes
@@ -929,6 +934,23 @@ that string to `new Date()` parses it as *UTC midnight*, which renders a day ear
 timezone (July 20 showing as July 19) — so the helpers parse to local midnight and compare dates as
 strings instead. There are no time-of-day inputs in the scheduler; the date an admin picks is the
 date everyone sees, in every timezone.
+
+**Seasons are ordered by the racing, not by data entry.** A season's position is derived from the
+race dates on its schedule — earliest race first, latest race as the tie-break — and every list runs
+**newest at the top**. That's what stops a league that entered Season 5 before Seasons 2, 3 and 4
+from being stuck reading `1, 5, 2, 3, 4` in the Season dropdown forever. The dates are never stored
+on the season doc: `lib/seasonOrderServer.js` reads them from the races collection and stamps
+`first_race_date` / `last_race_date` onto each season the API hands out, so adding, moving or
+deleting a race reorders the menus by itself with nothing to keep in sync. A season with no dated
+races falls back to when it was created, which puts one being set up right now at the top where an
+upcoming season belongs.
+
+Admins can override it: the **▲ ▼** arrows in League Setup → Seasons write a hand-set order through
+`POST /api/seasons/reorder`, which stamps `sort_order` as a contiguous `0,1,2…` run down the whole
+series (a position only means something relative to the rest of the list), and **↺ Sort by race
+date** clears them back to null. The two live on one scale in `sortSeasons` (`lib/seasonOrder.js`):
+a season with no `sort_order` of its own uses its *rank* in the date ordering as its key, so a
+season created after a hand-sort still slots in by date instead of silently landing at the bottom.
 
 **Track types** come from the shared list in `lib/trackTypes.js`, which drives the creation/edit
 forms, the Tracks directory's type filter, and its section grouping. Dirt racing is split by surface

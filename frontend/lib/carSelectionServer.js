@@ -11,6 +11,8 @@ import { db } from "@/lib/firebase";
 import { entryClassIds, orderClassIds } from "@/lib/classFilter";
 import { carSelectionSlots, sortRosterByNumber } from "@/lib/carSelection";
 import { scopeByLeague } from "@/lib/serverAuth";
+import { sortSeasons } from "@/lib/seasonOrder";
+import { attachRaceDates, fetchSeasonRaceDates } from "@/lib/seasonOrderServer";
 
 // The one driver profile linked to this account, or null. (The claim flow
 // enforces at most one — see /api/claim-requests.)
@@ -134,8 +136,11 @@ export async function entriesForDriver({ driverId, uid }) {
 // the whole league rather than one season.
 export async function leagueSeasonIndex(leagueId) {
   const seasonsSnap = await scopeByLeague(db().collection("seasons"), leagueId).get();
-  const seasons = seasonsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-  if (!seasons.length) return { seasons: [], seriesById: {}, gamesById: {}, classesBySeason: {} };
+  const rawSeasons = seasonsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  if (!rawSeasons.length) return { seasons: [], seriesById: {}, gamesById: {}, classesBySeason: {} };
+  // Carry each season's race dates, so this screen orders its seasons by when
+  // they raced exactly like the dropdowns do — see newestFirst below.
+  const seasons = attachRaceDates(rawSeasons, await fetchSeasonRaceDates(rawSeasons.map(s => s.id)));
 
   const seriesIds = [...new Set(seasons.map(s => s.series_id).filter(Boolean))];
   const gameIds = [...new Set(seasons.map(s => s.game_id).filter(Boolean))];
@@ -167,8 +172,10 @@ export async function leagueSeasonIndex(leagueId) {
   };
 }
 
-// Newest first, by creation order — the same ordering the season dropdown uses,
-// reversed, so the season someone is racing now is at the top of their list.
+// Newest first — the same ordering the season dropdown uses (by the race dates
+// on the schedule, with any hand-set order winning; see lib/seasonOrder.js), so
+// the season someone is racing now is at the top of their list. Feed it seasons
+// that have been through attachRaceDates, as leagueSeasonIndex does.
 export function newestFirst(seasons) {
-  return [...seasons].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+  return sortSeasons(seasons);
 }

@@ -19,6 +19,7 @@ import { carForClass } from "@/lib/classFilter";
 import { SeasonForm } from "@/components/SeasonForm";
 import { BangerBonusFields, PointsFields } from "@/components/PointsFields";
 import { BLANK_SEASON_FORM, scoresNoPoints, seasonFormToBody, seasonToForm } from "@/lib/seasonForm";
+import { isCustomOrdered, seasonDateRangeLabel } from "@/lib/seasonOrder";
 import { BLANK_SERIES_FORM, seriesFormToBody, seriesToForm } from "@/lib/seriesForm";
 import { BLANK_CLASS_FORM, classFormToBody, classToForm, seasonPointsAsClassFields } from "@/lib/classForm";
 import { classScoresOwnPoints, definesPoints } from "@/lib/standings";
@@ -298,6 +299,38 @@ function AdminInner() {
     catch (err) { showToast("error", err.message); }
   }
 
+  // ── Season order ────────────────────────────────────────────────────────
+  // Seasons sort themselves newest-first off their race dates (see
+  // lib/seasonOrder.js), which is right for every league that dates its
+  // schedule. The arrows below are the override for the ones that don't — or
+  // that want a particular season pinned to the top. Moving one writes the
+  // whole arrangement at once, since a position only means anything relative to
+  // the rest of the list.
+  const [reorderingSeasons, setReorderingSeasons] = useState(false);
+  const seasonsHandSorted = isCustomOrdered(seasons);
+
+  async function saveSeasonOrder(body, msg) {
+    if (!seriesId) return;
+    setReorderingSeasons(true);
+    try {
+      await api("/api/seasons/reorder", { method: "POST", body: { series_id: seriesId, ...body } });
+      if (msg) showToast("success", msg);
+      refresh();
+    } catch (err) {
+      showToast("error", err.message);
+    } finally {
+      setReorderingSeasons(false);
+    }
+  }
+
+  function moveSeason(index, dir) {
+    const target = index + dir;
+    if (target < 0 || target >= seasons.length) return;
+    const next = [...seasons];
+    [next[index], next[target]] = [next[target], next[index]];
+    saveSeasonOrder({ season_ids: next.map(s => s.id) });
+  }
+
   return (
     <section>
       <div className="page-title"><h2>League Setup</h2><span className="page-badge">Admin</span></div>
@@ -530,10 +563,32 @@ function AdminInner() {
               )}
             </span>
           </form>
+          {/* Season order. Newest at the top by default, judged on the race
+              dates in each season — so a Season 5 entered before 2, 3 and 4
+              still sits above them. The arrows override that when a league
+              wants its own order. */}
+          {seasons.length > 1 && (
+            <div style={{ marginTop: 18, display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+              <span style={{ fontSize: "0.78rem", color: "var(--ink-2)", flex: 1, minWidth: 260 }}>
+                {seasonsHandSorted
+                  ? <>Sorted by hand. These seasons stay in the order below everywhere in the app.</>
+                  : <>Newest first, by <strong>race date</strong> — the season whose schedule starts latest is
+                     at the top, in this list and in the Season dropdown. Use the arrows to set your own order.</>}
+              </span>
+              {seasonsHandSorted && (
+                <button className="btn btn-ghost" type="button" style={{ marginTop: 0, padding: "4px 10px" }}
+                  disabled={reorderingSeasons}
+                  onClick={() => saveSeasonOrder({ reset: true }, "Back to newest-first by race date.")}>
+                  ↺ Sort by race date
+                </button>
+              )}
+            </div>
+          )}
           <div style={{ marginTop: 16 }}>
-            {seasons.map(s => (
+            {seasons.map((s, i) => (
               <ItemRow key={s.id} logo={s.logo_url} name={s.name} editing={editIds.season === s.id}
-                meta={[isBangerDoc(s) ? "💥 Demo Derby / Banger Racing" : null,
+                meta={[seasonDateRangeLabel(s) || "No dated races yet",
+                     isBangerDoc(s) ? "💥 Demo Derby / Banger Racing" : null,
                      definesPoints(s) ? "default points set" : null,
                      carLockinMeta(s)].filter(Boolean).join(" · ")}
                 onEdit={() => {
@@ -541,6 +596,18 @@ function AdminInner() {
                   setSeasonForm(seasonToForm(s));
                 }}
                 onDelete={() => remove(`/api/seasons/${s.id}`, `Delete season "${s.name}"?`)}>
+                {seasons.length > 1 && (
+                  <span style={{ display: "inline-flex", gap: 2 }}>
+                    <button className="btn btn-ghost" type="button" title="Move up"
+                      style={{ marginTop: 0, padding: "4px 8px" }}
+                      disabled={reorderingSeasons || i === 0}
+                      onClick={() => moveSeason(i, -1)}>▲</button>
+                    <button className="btn btn-ghost" type="button" title="Move down"
+                      style={{ marginTop: 0, padding: "4px 8px" }}
+                      disabled={reorderingSeasons || i === seasons.length - 1}
+                      onClick={() => moveSeason(i, 1)}>▼</button>
+                  </span>
+                )}
                 <button className="btn btn-ghost" style={{ marginTop: 0, padding: "4px 10px" }}
                   title="Completed seasons count toward drivers' Titles"
                   onClick={async () => {

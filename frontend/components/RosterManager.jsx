@@ -327,8 +327,10 @@ export function RosterManager() {
   // Resolve the latest/active season id for an arbitrary series, so a driver
   // can be added to a series they aren't currently on from anywhere.
   async function latestSeasonIdFor(sid) {
+    // Newest first (by race date — see lib/seasonOrder.js), so the current
+    // season is the head of the list.
     const seasons = await api(`/api/seasons?series_id=${sid}`);
-    return seasons[seasons.length - 1]?.id ?? null;
+    return seasons[0]?.id ?? null;
   }
 
   async function addToSeries(row, sid, name, number) {
