@@ -119,9 +119,21 @@ export async function GET(request, { params }) {
 
   // Qualifying is the only source of starting position — there's no fallback
   // to anything recorded on a race result.
+  //
+  // The Pts column quotes the scale this grid slot is actually paid under, which
+  // lives on the race the points are folded into (scorer.qualConfigFor — with
+  // nothing assigned to Qualifying, the race's own points system provides the
+  // qualifying scale). Reading it off the qualifying result alone printed the
+  // season default over a race scored on a template, so a pole worth 35 in the
+  // standings showed here as 0. Falls back to the qualifying result itself when
+  // the driver has no race at this event yet.
+  const payingRowFor = qr => raceResults.find(r =>
+    r.entry_id === qr.entry_id
+    && classOfResult(r, entriesById) === classOfResult(qr, entriesById)
+    && scorer.paysQualBonus(r));
   const qualifying = qualResults
     .map(r => {
-      const qc = configFor(r);
+      const qc = scorer.qualConfigFor(payingRowFor(r) || r);
       return { ...joinEntry(r), position: Number(r.finish_pos), qual_points: Number(qc.qualPoints[r.finish_pos] ?? 0) };
     })
     .sort((a, b) => a.position - b.position);

@@ -746,7 +746,22 @@ export function makeScorer(results, { config, classes = [], entriesById = {}, te
   }
 
   const configFor = r => configWith(r, r.points_template_id);
-  const qualConfigFor = r => configWith(r, qualTemplateFor(qualTemplates, r, entriesById));
+  // Which points structure the qualifying-position points are read off.
+  //
+  // Qualifying's OWN assigned template wins — that's the whole reason a session
+  // can carry one. With nothing assigned to Qualifying, the answer is the race
+  // row's own structure (template included), NOT the season/class base beneath
+  // it: picking a points system for the race from the grid's dropdown is a
+  // statement about how that race scores, and its qualifying scale is part of
+  // what was picked. Resolving a missing Qualifying template as "no template"
+  // fell all the way past the race's own, so a race scored on (say) the IMSA
+  // template read its qualifying points off a season scale that was usually
+  // blank — and the pole was worth nothing. Every built-in template defines a
+  // qualifying scale, so this is the ordinary case, not a corner.
+  const qualConfigFor = r => {
+    const templateId = qualTemplateFor(qualTemplates, r, entriesById);
+    return templateId ? configWith(r, templateId) : configFor(r);
+  };
   // The grid bonus goes to the driver's first race of the event that can pay it;
   // every other race they ran there scores its finish alone.
   const posFor = r => (paysQualBonus.has(resultKey(r, entriesById)) ? qualPosFor(qualPosMap, r, entriesById) : null);
@@ -757,6 +772,10 @@ export function makeScorer(results, { config, classes = [], entriesById = {}, te
     baseFor,
     configFor,
     qualConfigFor,
+    // Is this the race the driver's qualifying points are folded into? Lets a
+    // screen showing a Qualifying grid quote the scale that result will actually
+    // be paid under, rather than one the race's own points system overrode.
+    paysQualBonus: r => paysQualBonus.has(resultKey(r, entriesById)),
     points: r => pointsFor(r, configFor(r), posFor(r), qualConfigFor(r)),
   };
 }

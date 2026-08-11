@@ -1278,6 +1278,21 @@ export function SessionEditor({
     : (sessionPoints["Qualifying"] || "");
   const qualTemplate = useMemo(() => templateFor(qualTemplateId), [templates, qualTemplateId]);
 
+  // The template the qualifying points are actually PAID under, for the
+  // Qualifying grid's own Points column. With nothing assigned to Qualifying the
+  // race folds them in off its own structure (qualConfigFor in
+  // lib/standings.js), so quoting the season default here would print a 0 over a
+  // pole the championship pays 35 for. Deliberately not `template` above — that
+  // one still reflects Qualifying's own assignment, which is what the Points
+  // system dropdown must keep showing.
+  const payingQualTemplate = useMemo(() => {
+    if (qualTemplate) return qualTemplate;
+    const first = raceSessionList(race || {})[0];
+    if (!first) return undefined;
+    const byClass = scoped ? (sessionPointsByClass[sessionClass] || {}) : {};
+    return templateFor((first.name in byClass ? byClass[first.name] : sessionPoints[first.name]) || "");
+  }, [qualTemplate, race, scoped, sessionPointsByClass, sessionClass, sessionPoints, templates]);
+
   // What this session pays for each derby stat, resolved through the same
   // season → class → session-template chain the Points column scores on.
   //
@@ -1298,9 +1313,18 @@ export function SessionEditor({
   // A row's own configs. Scoped grids are all one class; a combined grid scores
   // each row under the class on that row.
   const configForRow = row => (scoped ? config : layered(row.class_id || "", template, false));
-  const qualConfigForRow = row => (scoped
-    ? layered(scopeClassId, qualTemplate, qualIsForClass)
-    : layered(row.class_id || "", qualTemplate, false));
+  // Where the qualifying-position points come from — Qualifying's own assigned
+  // template when it has one, otherwise THIS row's own structure, template
+  // included. Falling through to the class/season base instead would read the
+  // qualifying scale off a season that a race scored on a points template has
+  // usually left blank, so the pole would show as worth nothing here while the
+  // rest of the row scored fine. Mirrors qualConfigFor in lib/standings.js.
+  const qualConfigForRow = row => {
+    if (!qualTemplate) return configForRow(row);
+    return scoped
+      ? layered(scopeClassId, qualTemplate, qualIsForClass)
+      : layered(row.class_id || "", qualTemplate, false);
+  };
 
   // Assign a points system to this session — for THIS class when the event runs
   // its classes separately, so switching class and picking a template doesn't
@@ -1363,9 +1387,15 @@ export function SessionEditor({
     ? null
     : (qualPos[row.entry_id] ?? null));
 
+  // The scale the Qualifying grid prints its Points column off — the one the
+  // race will actually fold in, not whatever the season happens to say.
+  const qualGridConfig = row => (scoped
+    ? layered(scopeClassId, payingQualTemplate, qualIsForClass)
+    : layered(row.class_id || "", payingQualTemplate, false));
+
   // Points only meaningful once a driver is in the slot.
   const rowPoints = row => (!row.entry_id ? "" : sessionType === "qualifying"
-    ? Number(configForRow(row).qualPoints[row.finish_pos] ?? 0)
+    ? Number(qualGridConfig(row).qualPoints[row.finish_pos] ?? 0)
     : pointsFor(row, configForRow(row), rowQualPos(row), qualConfigForRow(row)));
   // …and the arithmetic behind it, on hover: every term that made the number,
   // so a total that looks wrong can be read rather than reverse-engineered.

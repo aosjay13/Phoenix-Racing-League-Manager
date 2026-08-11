@@ -968,6 +968,23 @@ re-scoring Pro's Feature leaves Amateur's alone, and clearing it hands that clas
 event-wide assignment rather than to nothing. A class's Qualifying is resolved the same way, so the
 qualifying points folded into a race result come from *that class's* Qualifying structure.
 
+**Which structure the qualifying scale comes from.** Qualifying's own assigned points system wins —
+that is the whole reason a session can carry one. With **nothing** assigned to Qualifying, the scale
+comes from the **race the points are folded into**, its own template included: picking a points
+system for the race from the grid's dropdown is a statement about how that race scores, and the
+qualifying scale is part of what was picked. Only with no template anywhere does the season/class
+structure answer, where a blank scale still honestly means "score 0". Setting Qualifying to **No
+Points** is how a race scored on a template pays nothing for the grid.
+
+Resolving "no template on Qualifying" as *no template at all* used to fall straight past the race's
+own structure to the season beneath it — and a league that scores off templates usually leaves the
+season's own qualifying scale blank, so the pole was worth nothing while the rest of the row scored
+perfectly. Every built-in template (NASCAR, IMSA, ARCA, IndyCar) defines a qualifying scale, so this
+was the ordinary setup rather than a corner: any new race given a points system quietly stopped
+paying qualifying points. `qualConfigFor` in `makeScorer` holds the rule, the results grid's Points
+column resolves the same way, and the event page's Qualifying table quotes the scale the grid slot
+is actually paid under rather than one the race overrode.
+
 The grid *position* those points are paid on is per class too. One roster entry can race several
 classes at the same round, so "where did this driver qualify?" has one answer per class, and
 `buildQualPosMap` keys on race + entry + **class** to keep them apart (`qualPosFor` in
