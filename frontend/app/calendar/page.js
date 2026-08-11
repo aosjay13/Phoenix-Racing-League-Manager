@@ -6,8 +6,9 @@ import { useLeague } from "@/components/LeagueProvider";
 import { api } from "@/lib/api";
 import { todayDateString } from "@/lib/raceDate";
 import {
-  WEEKDAYS, buildMonthGrid, eventPillLabel, eventTitle, groupRacesByDate,
-  initialMonth, monthLabel, monthsWithRaces, seriesAbbrev, shiftMonth,
+  WEEKDAYS, buildMonthGrid, calendarScopeQuery, eventPillLabel, eventTitle,
+  groupRacesByDate, initialMonth, monthLabel, monthsWithRaces, seriesAbbrev,
+  shiftMonth,
 } from "@/lib/calendar";
 
 // The league's whole year on one screen: every event in the league, past and
@@ -31,11 +32,20 @@ export default function CalendarPage() {
   // Once the reader has moved the calendar themselves, loading a new scope must
   // not yank them back to wherever the races happen to be.
   const moved = useRef(false);
+  // Which fetch is the current one. A scope change can fire two requests in
+  // quick succession (the tiers settle one at a time — see calendarScopeQuery),
+  // and the first can answer last; without this, a narrower earlier response
+  // could overwrite the wide "every game" one and leave the calendar showing a
+  // single game's races under an "All Games" heading.
+  const fetchSeq = useRef(0);
 
   useEffect(() => {
-    const qs = seriesId ? `series_id=${seriesId}` : gameId ? `game_id=${gameId}` : "";
+    const qs = calendarScopeQuery({ gameId, seriesId });
+    const seq = ++fetchSeq.current;
     setRows(null);
-    api(`/api/schedule${qs ? `?${qs}` : ""}`).then(setRows).catch(() => setRows([]));
+    api(`/api/schedule${qs ? `?${qs}` : ""}`)
+      .then(data => { if (seq === fetchSeq.current) setRows(data); })
+      .catch(() => { if (seq === fetchSeq.current) setRows([]); });
   }, [gameId, seriesId]);
 
   // Open on the month with racing in it — this one if it has any, else the next
@@ -54,7 +64,11 @@ export default function CalendarPage() {
   const go = delta => { moved.current = true; setView(v => shiftMonth(v.year, v.month, delta)); };
   const jump = (year, month) => { moved.current = true; setView({ year, month }); };
 
-  const scopeLabel = series?.name || game?.name || "All Games";
+  // The heading follows the same rule the fetch does, so it can never claim a
+  // scope the grid isn't showing: with no game selected this is the whole
+  // league, whatever a half-settled series selection still says.
+  const allGames = !gameId;
+  const scopeLabel = allGames ? "All Games" : (series?.name || game?.name || "All Games");
 
   return (
     <section>
@@ -64,9 +78,12 @@ export default function CalendarPage() {
         {rows && <span className="page-badge">{rows.length} Event{rows.length === 1 ? "" : "s"}</span>}
       </div>
       <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.9rem", maxWidth: 760 }}>
-        Every race in the league, month by month — what has run and what is still to come. Narrow it
-        with the Game and Series menus below, or leave them on &ldquo;All&rdquo; for the master view.
-        Click any event to open its race page.
+        {allGames
+          ? <>Every upcoming race in the league — <strong>every game</strong>, every series — month by
+              month, alongside what has already run. Pick a Game below to narrow it.</>
+          : <>Every race in this scope, month by month — what has run and what is still to come. Set
+              Game back to &ldquo;All Games&rdquo; for the whole league.</>}
+        {" "}Click any event to open its race page.
       </p>
 
       <CalendarFilters />
@@ -99,7 +116,11 @@ export default function CalendarPage() {
           {rows.length === 0 && (
             <div className="empty-state">
               <span className="empty-state-icon">📅</span>
-              <p>No races scheduled yet in this scope.</p>
+              <p>
+                {allGames
+                  ? "No races scheduled yet — in any game in this league."
+                  : "No races scheduled yet in this scope. Set Game to “All Games” to see the whole league."}
+              </p>
             </div>
           )}
         </>
@@ -132,7 +153,9 @@ function CalendarFilters() {
         </select>
       </div>
       <span className="calendar-filter-hint">
-        Leave both on &ldquo;All&rdquo; to see every event in the league.
+        {gameId
+          ? "Set Game back to “All Games” for every game in the league."
+          : "Showing every game in the league. Pick a game to narrow it."}
       </span>
     </div>
   );

@@ -11,6 +11,32 @@ import { toDateOnly, todayDateString } from "@/lib/raceDate";
 
 export const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+// ── What the calendar asks for ─────────────────────────────────────────────
+//
+// The scope query for /api/schedule's master feed, and the rule behind it:
+//
+//   NO GAME SELECTED  ⇒  NO NARROWING. Every event in the league, from every
+//                        game, past and upcoming.
+//
+// A series only narrows the calendar while a game is actually selected, because
+// a series belongs to a game — asking for one at "All Games" would quietly show
+// a single game's racing under a heading that says every game.
+//
+// That isn't hypothetical. The scope tiers settle one at a time: choosing "All
+// Games" empties `gameId` immediately, and the provider clears `seriesId` in a
+// follow-up effect — so there is a render where the game is "all" and the series
+// is still the one from before. Reading the series there would fire a narrowed
+// request whose response can land AFTER the wide one and overwrite it (see the
+// request-sequence guard in the calendar page, which handles the other half of
+// that race). Deriving the query from one rule, in one place, is what stops the
+// calendar showing one game's events while claiming to show them all.
+export function calendarScopeQuery({ gameId = "", seriesId = "" } = {}) {
+  const game = String(gameId || "");
+  if (!game) return "";
+  const series = String(seriesId || "");
+  return series ? `series_id=${encodeURIComponent(series)}` : `game_id=${encodeURIComponent(game)}`;
+}
+
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",

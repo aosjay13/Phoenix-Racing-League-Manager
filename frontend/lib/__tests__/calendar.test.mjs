@@ -9,8 +9,9 @@
 // from local date fields and every cell carries its own date string.
 import assert from "node:assert";
 import {
-  buildMonthGrid, eventPillLabel, eventTitle, groupRacesByDate, initialMonth,
-  isoOf, monthLabel, monthOf, monthsWithRaces, seriesAbbrev, shiftMonth,
+  buildMonthGrid, calendarScopeQuery, eventPillLabel, eventTitle,
+  groupRacesByDate, initialMonth, isoOf, monthLabel, monthOf, monthsWithRaces,
+  seriesAbbrev, shiftMonth,
 } from "../calendar.js";
 
 let n = 0;
@@ -115,5 +116,20 @@ check("the tooltip carries the context",
   eventTitle({ name: "Round 4", track: "Watkins Glen", series_name: "GT Cup", season_name: "2026" }),
   "Round 4 · Watkins Glen — GT Cup · 2026");
 check("the tooltip copes with a bare event", eventTitle({ name: "Round 4" }), "Round 4");
+
+// ── 8. No game selected means no narrowing, ever ────────────────────────
+// The whole league — every game, every series, upcoming and past — is what an
+// unfiltered calendar asks for.
+check("no game: the master feed", calendarScopeQuery({ gameId: "", seriesId: "" }), "");
+check("no game, ids not initialized yet", calendarScopeQuery({}), "");
+check("no game, nulls", calendarScopeQuery({ gameId: null, seriesId: null }), "");
+// The load-bearing one: the scope tiers settle one at a time, so "All Games"
+// with a series left over from the previous selection is a state that really
+// happens. It must still ask for everything — a series belongs to a game, so
+// honouring it here would show ONE game's racing under an "All Games" heading.
+check("no game, series not cleared yet", calendarScopeQuery({ gameId: "", seriesId: "s1" }), "");
+check("a game narrows to that game", calendarScopeQuery({ gameId: "g1", seriesId: "" }), "game_id=g1");
+check("a game + series narrows to the series", calendarScopeQuery({ gameId: "g1", seriesId: "s1" }), "series_id=s1");
+check("ids are encoded", calendarScopeQuery({ gameId: "g 1&x" }), "game_id=g%201%26x");
 
 console.log(`all ${n} checks passed — every event lands on the day it was scheduled for`);

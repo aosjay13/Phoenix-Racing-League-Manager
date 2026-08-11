@@ -93,8 +93,8 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
 - 🗓 **Global race calendar** — a month-by-month grid of **every** event in the league, past and
   future, on the day it runs. Each race is a pill carrying its series' abbreviation and the track,
   and clicking one opens that event's page (its results, once it has run). The same **Game ▸
-  Series** menus as everywhere else narrow it to one series, or leave them on *All* for the master
-  view across every game the league runs. It opens on the month that actually has racing in it,
+  Series** menus as everywhere else narrow it; with **no game selected it shows every upcoming
+  event in the league, from every game**. It opens on the month that actually has racing in it,
   and a **Jump to** row skips straight to any other month that does
 - 📊 **Stats & Roster filtering** — Game/Series/Season dropdowns filter Stats and Roster
   everywhere, with sortable columns and per-series car numbers
@@ -228,10 +228,11 @@ The app runs at `http://localhost:3000`.
 6. **Calendar** — every race in the league on a month-by-month grid, past and future, on the day
    it runs. Each event is a pill showing its series (abbreviated) and the track; click one to open
    that race's page. The **Game** and **Series** menus at the top narrow it to a single series —
-   leave them on *All* and you get the master view across every game the league runs. It opens on
-   the month with racing in it rather than on today's empty one, and the **Jump to** row hops
-   straight to any other month that has events. Where the Schedule answers *what's next and what
-   just happened*, the Calendar answers *what does June look like*.
+   with **no game selected you get every upcoming event in the league, from every game**, which is
+   what the page opens on. It lands on the month with racing in it rather than on today's empty
+   one, and the **Jump to** row hops straight to any other month that has events. Where the
+   Schedule answers *what's next and what just happened*, the Calendar answers *what does June
+   look like*.
 7. **Standings** — driver and team championship tables for the selected season, with
    points, gaps to the leader, and per-category stats. Click any column header to sort. Level
    on points? The tie-breaker chain below decides, and every step of it is a column in the
@@ -600,6 +601,20 @@ Days from the neighbouring months pad every week whole (dimmed, so they can't be
 month's), undated events are listed under the grid instead of being dropped, and the page opens on
 `initialMonth()` — the month being lived through if it has racing in it, else the next that does,
 else the last that did.
+
+**No game selected means no narrowing.** `calendarScopeQuery()` is the one place that decides what
+the calendar asks for, and it reads a single rule: with no **Game** chosen, the calendar shows every
+event in the league — every game, every series, upcoming and past. A **Series** narrows it *only*
+while a game is selected, because a series belongs to a game; honouring one at "All Games" would
+show a single game's racing under a heading that says every game.
+
+That isn't a hypothetical. The scope tiers settle one at a time — choosing "All Games" empties
+`gameId` immediately and `LeagueProvider` clears `seriesId` in a follow-up effect — so there is a
+render where the game is "all" and the series is still the previous one. Two things keep the grid
+honest across it: the query rule above ignores the stale series, and the fetch carries a **sequence
+guard**, so an earlier narrow response that lands late can't overwrite the wide one. The page
+heading, the filter hint and the empty state all derive from the same `gameId` check, so none of
+them can claim a scope the grid isn't showing.
 
 ## Data model (Firestore collections)
 
