@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
-import { decorateRaceBonuses, isQualifying, makeScorer, resolveSeasonConfig } from "@/lib/standings";
+import { decorateRaceBonuses, decorateSessionFlags, isQualifying, makeScorer, resolveSeasonConfig } from "@/lib/standings";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
 import { fetchDriverNames } from "@/lib/driverNamesServer";
 import { fetchSeasonClasses, classOfResult, racePerClassResults } from "@/lib/classServer";
@@ -31,7 +31,11 @@ export async function GET(request, { params }) {
   const config = resolveSeasonConfig(season || {}, series);
   const entriesById = Object.fromEntries(entriesSnap.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
   const teamsById = Object.fromEntries(teamsSnap.docs.map(d => [d.id, d.data()]));
-  const all = decorateRaceBonuses(resultsSnap.docs.map(d => d.data()));
+  // The event's own doc is the only race in scope here, and decorating against
+  // it is what tells the scorer which session carries the qualifying points
+  // (and which class each session's points template was assigned to) — so the
+  // points printed on this page are the same numbers the standings total.
+  const all = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), { [event.id]: event }));
   // Points shown per row come from the class that row raced in — its own points
   // structure when it has one — with the session's template on top.
   const scorer = makeScorer(all, { config, classes, entriesById, templatesById });

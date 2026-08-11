@@ -268,15 +268,84 @@ export function defaultSessionFlags(sessionType) {
   return { counts_stats: !preliminary, counts_points: !preliminary };
 }
 
+// The event's first standard race session — the name a result saved before the
+// session field existed belongs to.
+function firstStdSession(race = {}) {
+  return Array.isArray(race.sessions) && race.sessions.length ? race.sessions[0] : "Race";
+}
+
+// The session name a result was recorded under. A qualifying result with no
+// session name recorded (older data) is keyed as "Qualifying" — never as the
+// first race session, whose toggles are its own.
+export function sessionNameOf(result, race = {}) {
+  const type = result.session_type || "race";
+  return result.session || (type === "qualifying" ? "Qualifying" : firstStdSession(race));
+}
+
+// Every RACE-type session an event runs, in the order it runs them, with the
+// session type each one is entered under. A heat-format event runs its heats,
+// then its consolations, then the feature; every other event runs the list on
+// its Race Info tab ("Race", or "Race 1, Race 2, Sprint"). Qualifying is not in
+// here — it is not a race, and it is scored separately.
+export function raceSessionList(race = {}) {
+  if (race.heat_format) {
+    return [
+      ...(race.heats || []).map(name => ({ name, type: "heat" })),
+      ...(race.consolations || []).map(name => ({ name, type: "consolation" })),
+      { name: race.feature_name || "A-Main Feature", type: "feature" },
+    ];
+  }
+  const names = Array.isArray(race.sessions) && race.sessions.length ? race.sessions : ["Race"];
+  return names.map(name => ({ name, type: "race" }));
+}
+
+// Does one named session of an event award championship points? The admin's
+// explicit toggle wins; otherwise the session-type default applies.
+export function sessionCountsPoints(race = {}, name, type = "race") {
+  const map = race.session_points_enabled || {};
+  return name in map ? !!map[name] : defaultSessionFlags(type).counts_points;
+}
+
+// ── Where an event's qualifying points are paid ────────────────────────────
+//
+// Qualifying is run ONCE for an event and sets the grid for it, so what it pays
+// is worth exactly one award — however many races the event then holds. The
+// qualifying points used to be folded into EVERY race-type result of the event,
+// which is fine for the ordinary one-race weekend and wrong the moment an event
+// runs more than one scoring race: a doubleheader ("Race 1, Race 2") paid the
+// pole sitter their pole points twice, and a heat event whose heats are switched
+// on for points paid them once per heat and again in the feature. That is the
+// "the standings are adding up too high" bug — the totals were right for the
+// finishes and inflated by one extra grid bonus per extra race.
+//
+// So exactly one session of an event carries them: the first race it runs that
+// actually scores championship points — the race qualifying set the grid for.
+// A single-race event is unchanged (its one race is the first), and a heat event
+// with the usual toggles is unchanged too (heats and consolations score nothing
+// by default, so the feature is the first scoring race).
+//
+// `present` (optional) is the set of session names results were actually saved
+// under. A session nobody raced can't carry the award, so an event whose results
+// live under a name the race doc no longer declares still pays out.
+export function qualBonusSession(race = {}, present = null) {
+  const scoring = raceSessionList(race).filter(s => sessionCountsPoints(race, s.name, s.type));
+  const raced = present ? scoring.filter(s => present.has(s.name)) : scoring;
+  if (raced.length) return raced[0].name;
+  if (!present) return null;
+  // Results saved under a session the event no longer declares — keep paying
+  // them rather than dropping the award on the floor.
+  for (const name of present) {
+    if (sessionCountsPoints(race, name)) return name;
+  }
+  return null;
+}
+
 // Resolve a result's stats/points flags: an explicit admin toggle on the race
 // doc wins; otherwise the session-type default applies.
 export function resolveSessionFlags(result, racesById = {}) {
   const race = racesById[result.race_id] || {};
-  const firstStd = Array.isArray(race.sessions) && race.sessions.length ? race.sessions[0] : "Race";
   const type = result.session_type || "race";
-  // A qualifying result with no session name recorded (older data) is keyed as
-  // "Qualifying" — never as the first race session, whose toggles are its own.
-  const name = result.session || (type === "qualifying" ? "Qualifying" : firstStd);
+  const name = sessionNameOf(result, race);
   const def = defaultSessionFlags(type);
   const statsMap = race.session_stats || {};
   const pointsMap = race.session_points_enabled || {};
@@ -298,9 +367,7 @@ export function resolveSessionFlags(result, racesById = {}) {
 export function classSessionTemplates(result, racesById = {}) {
   const race = racesById[result.race_id] || {};
   const byClass = race.session_points_by_class || {};
-  const firstStd = Array.isArray(race.sessions) && race.sessions.length ? race.sessions[0] : "Race";
-  const type = result.session_type || "race";
-  const name = result.session || (type === "qualifying" ? "Qualifying" : firstStd);
+  const name = sessionNameOf(result, race);
   const out = {};
   for (const [classId, sessions] of Object.entries(byClass)) {
     const id = sessions?.[name];
@@ -318,14 +385,31 @@ export function classSessionTemplates(result, racesById = {}) {
 //
 // The class-scoped template assignments ride along for the same reason — one
 // pass over the race docs, and every scorer downstream gets both.
+//
+// `pays_qual_bonus` rides along too: the ONE race session of each event that the
+// qualifying points are folded into (see qualBonusSession). Every other race of
+// the event is stamped false and scores its finish alone, which is what stops a
+// multi-race event paying the same grid slot over and over.
 export function decorateSessionFlags(results, racesById = {}) {
-  return results
-    .filter(r => racesById[r.race_id])
-    .map(r => ({
-      ...r,
-      ...resolveSessionFlags(r, racesById),
-      class_session_templates: classSessionTemplates(r, racesById),
-    }));
+  const live = results.filter(r => racesById[r.race_id]);
+
+  // Which race sessions each event actually has results for, so the award can't
+  // land on a session nobody ran.
+  const present = {};
+  for (const r of live) {
+    if (isQualifying(r)) continue;
+    (present[r.race_id] ??= new Set()).add(sessionNameOf(r, racesById[r.race_id]));
+  }
+  const carrier = Object.fromEntries(
+    Object.entries(present).map(([raceId, names]) => [raceId, qualBonusSession(racesById[raceId], names)]),
+  );
+
+  return live.map(r => ({
+    ...r,
+    ...resolveSessionFlags(r, racesById),
+    class_session_templates: classSessionTemplates(r, racesById),
+    pays_qual_bonus: !isQualifying(r) && sessionNameOf(r, racesById[r.race_id]) === carrier[r.race_id],
+  }));
 }
 
 // Mark per-race derived flags (most laps led) before scoring. Events can
@@ -357,6 +441,9 @@ export function decorateRaceBonuses(results) {
 // (looked up separately — see buildQualPosMap), not a copy stored on the
 // race result itself. That's the only source of starting-position info now;
 // there is no editable "Start" field on race/heat/consolation/feature rows.
+// Pass it as null on every race of an event except the one that carries the
+// grid bonus (qualBonusSession) — qualifying is run once, so it pays once,
+// no matter how many races the event holds.
 // `qualConfig` resolves the qualifying-position points against the Qualifying
 // session's OWN assigned points system (see buildQualTemplateMap) — falling
 // back to `config` (the race result's own template) when Qualifying carries
@@ -587,7 +674,11 @@ export function makeScorer(results, { config, classes = [], entriesById = {}, te
 
   const configFor = r => configWith(r, r.points_template_id);
   const qualConfigFor = r => configWith(r, qualTemplateFor(qualTemplates, r, entriesById));
-  const posFor = r => qualPosFor(qualPosMap, r, entriesById);
+  // The grid bonus is paid on ONE race session per event (decorateSessionFlags
+  // stamps which — see qualBonusSession); every other race of that event scores
+  // its finish alone. Results that were never decorated carry no flag at all and
+  // are paid as before, so a caller working off raw docs is unaffected.
+  const posFor = r => (r.pays_qual_bonus === false ? null : qualPosFor(qualPosMap, r, entriesById));
 
   return {
     qualPosMap,

@@ -9,7 +9,7 @@ import { PointsEditorModal } from "@/components/PointsEditorModal";
 import { ImportResultsModal } from "@/components/ImportResultsModal";
 import { NONE_TEMPLATE, isNoPointsTemplate } from "@/lib/pointsTemplates";
 import { classIdForScope, entriesEligibleForRace, entriesInSessionClass, isClassScoped, resultInSessionClass } from "@/lib/classFilter";
-import { pointsFor, pointsBreakdown, classConfigs, classScoresOwnPoints, configForClass, configForTemplate, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
+import { pointsFor, pointsBreakdown, classConfigs, classScoresOwnPoints, configForClass, configForTemplate, resolveSeasonConfig, defaultSessionFlags, qualBonusSession, raceSessionList } from "@/lib/standings";
 import { AUTO_FLAG_FIELDS, applyAutoFlags, detectFlagLocks, autoMostLapsLedSlot } from "@/lib/autoFlags";
 import { BANGER_BOOL_FIELDS, BANGER_RESULT_FIELDS, BANGER_STATS, bangerRates, blankBangerRow, hasBangerBonuses } from "@/lib/bangerRacing";
 import { BRACKET_SIZES, bracketGridError, bracketPositionAt, bracketPositions, bracketRoundFor, bracketRounds, bracketSizeForField, bracketSizeLabel, normalizeBracketSize, ordinal } from "@/lib/bracketRacing";
@@ -1307,14 +1307,31 @@ export function SessionEditor({
   const showStatsToggle = !!onSessionStatsChange;
   const showPointsToggle = !isQual && !!onSessionPointsEnabledChange;
 
+  // ── Does THIS session pay the qualifying points? ─────────────────────────
+  //
+  // Qualifying runs once for the event, so its points are worth one award — not
+  // one per race the event holds. The first race that scores championship points
+  // carries them (qualBonusSession in lib/standings.js, the same rule the
+  // standings score on); every other session of the event scores the finish
+  // alone. On a one-race weekend that's the race, exactly as before; on a
+  // doubleheader it's Race 1, and Race 2 no longer pays the grid a second time.
+  // Turning a session's points toggle off hands the award to the next race, so
+  // the column re-scores the moment the switch is flipped.
+  const qualBonusName = useMemo(
+    () => qualBonusSession({ ...(race || {}), session_points_enabled: sessionPointsEnabled }),
+    [race, sessionPointsEnabled],
+  );
+  const paysQualBonus = sessionType !== "qualifying" && session === qualBonusName;
+  const rowQualPos = row => (paysQualBonus ? (qualPos[row.entry_id] ?? null) : null);
+
   // Points only meaningful once a driver is in the slot.
   const rowPoints = row => (!row.entry_id ? "" : sessionType === "qualifying"
     ? Number(configForRow(row).qualPoints[row.finish_pos] ?? 0)
-    : pointsFor(row, configForRow(row), qualPos[row.entry_id] ?? null, qualConfigForRow(row)));
+    : pointsFor(row, configForRow(row), rowQualPos(row), qualConfigForRow(row)));
   // …and the arithmetic behind it, on hover: every term that made the number,
   // so a total that looks wrong can be read rather than reverse-engineered.
   const rowPointsTitle = row => (!row.entry_id || sessionType === "qualifying" ? undefined
-    : pointsBreakdown(row, configForRow(row), qualPos[row.entry_id] ?? null, qualConfigForRow(row)));
+    : pointsBreakdown(row, configForRow(row), rowQualPos(row), qualConfigForRow(row)));
 
   // ── Provisional points auto-fill ─────────────────────────────────────────
   //
@@ -1707,6 +1724,25 @@ export function SessionEditor({
           whoever finished highest), and the highest <strong>Led</strong> count takes Most Laps Led.
           Tick or untick any of them yourself and that one stops moving — your call sticks.
           These are stats either way; they only affect points if your season or points structure pays a bonus for them.
+        </p>
+      )}
+      {/* Which race of a multi-race event the qualifying points land on. Silent
+          on the ordinary one-race weekend, where there's nothing to explain. */}
+      {!isQual && qualBonusName && raceSessionList(race || {}).length > 1 && (
+        <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.78rem" }}>
+          🏁 {paysQualBonus ? (
+            <>
+              <strong>Qualifying points are paid on this grid.</strong> {session} is the first race of
+              this event that scores championship points, so each driver&rsquo;s qualifying points are
+              folded into the Points column here — <strong>once for the event</strong>, not once per race.
+            </>
+          ) : (
+            <>
+              <strong>Qualifying points are paid on {qualBonusName}</strong>, the first race of this event
+              that scores championship points. Qualifying runs once, so it pays once — this grid scores
+              the finish and its bonuses alone.
+            </>
+          )}
         </p>
       )}
       {hasClasses && unclassedRows.length > 0 && (
