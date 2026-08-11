@@ -82,7 +82,9 @@ export async function buildCareerProfile({ driverId = null, userId = null }) {
       .filter(r => myEntryIds.has(r.entry_id))
       .map(r => ({
         ...r,
-        points: (isQualifying(r) || r.counts_points === false) ? 0 : scorer.points(r),
+        // Qualifying scores itself now, so it is not excluded here — only a
+        // session whose points toggle is off scores nothing.
+        points: r.counts_points === false ? 0 : scorer.points(r),
       }));
     (perGame[gameId] ??= []).push(...mine);
     allResults.push(...mine);
@@ -110,11 +112,14 @@ export async function buildCareerProfile({ driverId = null, userId = null }) {
     // through to each event's own results page. Per-track stats answer "how do
     // they go at Bristol?"; this answers "what did they do in Race 4?".
     //
-    // Race sessions only: a qualifying result is not a race, it's the grid slot
-    // for one, so it's folded into its race row as the start position instead
-    // of listing itself. Where the result carries its own `start_pos` (entered
-    // on the grid) that wins, since it's what the driver actually started from
-    // after any penalty.
+    // Qualifying gets a row of its own, because it scores points of its own:
+    // leaving it out would show a history whose points don't add up to the
+    // career total printed above it. Its finishing position IS the grid slot, so
+    // the row reads as a start rather than a finish.
+    //
+    // A race row still shows the grid slot it started from — its own `start_pos`
+    // where the grid recorded one, since that's what the driver actually started
+    // from after any penalty, else their qualifying position.
     const myQualPos = {};
     for (const r of mine) {
       if (!isQualifying(r)) continue;
@@ -123,10 +128,12 @@ export async function buildCareerProfile({ driverId = null, userId = null }) {
     }
     const classNameById = Object.fromEntries(seasonClasses.map(c => [c.id, c.name]));
     for (const r of mine) {
-      if (isQualifying(r)) continue;
       const race = racesById[r.race_id];
       if (!race) continue;
-      const startPos = Number(r.start_pos) > 0 ? Number(r.start_pos) : (myQualPos[r.race_id] ?? null);
+      const qualifying = isQualifying(r);
+      const startPos = qualifying
+        ? Number(r.finish_pos) || null
+        : (Number(r.start_pos) > 0 ? Number(r.start_pos) : (myQualPos[r.race_id] ?? null));
       raceHistory.push({
         race_id: r.race_id,
         race_name: race.name || "Race",
@@ -144,8 +151,11 @@ export async function buildCareerProfile({ driverId = null, userId = null }) {
         game_id: season.game_id || null,
         game_name: games[season.game_id]?.name || null,
         class_name: classNameById[r.class_id] || null,
-        finish_pos: Number(r.finish_pos) || null,
+        // A qualifying row has no race finish — its position is the grid slot,
+        // reported as the start.
+        finish_pos: qualifying ? null : (Number(r.finish_pos) || null),
         start_pos: startPos,
+        session_type: r.session_type || "race",
         laps: Number(r.laps || 0),
         laps_led: Number(r.laps_led || 0),
         status: r.status || "finished",

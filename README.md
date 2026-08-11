@@ -86,9 +86,10 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
 - ⬆ **Bulk roster import** — roll a whole roster into a new season in one click, from the series
   or a cloned past season, with duplicates skipped automatically
 - ⏱ **Fast race entry** — one grid per race, pre-filled with the roster; supports multiple
-  sessions per race (e.g. Qualifying + Race), scored independently — the qualifying points are
-  paid once per event, in the first race each driver ran that can pay them, never once per race;
-  re-submitting a race overwrites cleanly for corrections
+  sessions per race (e.g. Qualifying + Race), each scoring itself — a driver's championship total
+  is the sum of the Points column on every session they ran, Qualifying included, so the standings
+  can be checked by adding up what's on screen; re-submitting a race overwrites cleanly for
+  corrections
 - 📊 **Stats & Roster filtering** — Game/Series/Season dropdowns filter Stats and Roster
   everywhere, with sortable columns and per-series car numbers
 - 🖼 **Custom branding** — upload game, series, season, team, and track logos
@@ -270,9 +271,9 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
    - **Season** — name (e.g. "Season 3") under a series; set drop weeks, the points scale
      (or pick a built-in template), qualifying points, and bonus points (most laps led,
      fastest lap, etc.). There is no separate pole bonus — pole is position 1 of the qualifying
-     points list, so a pole is worth whatever the first number in that list says — paid **once per
-     event**, in the first race of that event each driver ran that scores points, however many races
-     it runs.
+     points list, so a pole is worth whatever the first number in that list says. The Qualifying
+     session **scores those points itself**, like any other session — they are their own line of the
+     championship, not a bonus hidden inside a race result.
      **Enable Overall Championship** decides whether a multi-class season
      also crowns one champion across the whole field on top of the per-class titles.
      Seasons list **newest first**, ordered by the **race dates** on their schedules rather than
@@ -594,11 +595,13 @@ the same pass, so the profile costs no extra reads. One row per **race session**
 started, carrying the race, its date and venue, the season/series/game it belonged to, the class
 they ran in, their start and finish positions, laps, laps led, status and points.
 
-Qualifying is not a race, so it never gets a row of its own — it's folded into the race it set the
-grid for, as that row's start position. A result's own `start_pos` wins where the grid recorded
-one, since that's what the driver actually started from after any penalty. Rows come back newest
-first (by race date, then round number), and each links to `/races/<id>` — the same event page the
-Schedule opens — so a driver's profile is a way *into* every race they ran.
+Qualifying gets a row of its own, because it scores points of its own — leaving it out would print
+a history whose points don't add up to the career total above it. Its position is a grid slot, so it
+reports as a start with no finish. A race row still shows what it started from: the result's own
+`start_pos` where the grid recorded one, since that's what the driver actually started from after
+any penalty, else their qualifying position. Rows come back newest first (by race date, then round
+number), and each links to `/races/<id>` — the same event page the Schedule opens — so a driver's
+profile is a way *into* every race they ran.
 
 ### The pending request queue
 
@@ -965,67 +968,36 @@ On an event whose classes run separate sessions, the per-session assignment is p
 (`races.session_points_by_class[class][session]`, falling back to the event-wide
 `races.session_points[session]`). Assigning one re-points only that class's saved results, so
 re-scoring Pro's Feature leaves Amateur's alone, and clearing it hands that class back to the
-event-wide assignment rather than to nothing. A class's Qualifying is resolved the same way, so the
-qualifying points folded into a race result come from *that class's* Qualifying structure.
+event-wide assignment rather than to nothing. A class's Qualifying is resolved the same way, so its
+qualifying points are scored under *that class's* Qualifying structure.
 
-**Which structure the qualifying scale comes from.** Qualifying's own assigned points system wins —
-that is the whole reason a session can carry one. With **nothing** assigned to Qualifying, the scale
-comes from the **race the points are folded into**, its own template included: picking a points
-system for the race from the grid's dropdown is a statement about how that race scores, and the
-qualifying scale is part of what was picked. Only with no template anywhere does the season/class
-structure answer, where a blank scale still honestly means "score 0". Setting Qualifying to **No
-Points** is how a race scored on a template pays nothing for the grid.
+**Qualifying scores itself.** Every session scores itself, off its own structure, at the position the
+driver took in it: Qualifying pays the qualifying scale for the grid slot won (pole being position 1
+of it), a race pays the race scale for where they finished. A driver's championship total is the sum
+of those numbers and nothing else, which gives the standings a property they did not have before —
+**you can add up the Points column of every session and land on the total**. `pointsFor` in
+`lib/standings.js` branches on the session type; `calculateStandings` sums every session whose points
+toggle is on.
 
-Resolving "no template on Qualifying" as *no template at all* used to fall straight past the race's
-own structure to the season beneath it — and a league that scores off templates usually leaves the
-season's own qualifying scale blank, so the pole was worth nothing while the rest of the row scored
-perfectly. Every built-in template (NASCAR, IMSA, ARCA, IndyCar) defines a qualifying scale, so this
-was the ordinary setup rather than a corner: any new race given a points system quietly stopped
-paying qualifying points. `qualConfigFor` in `makeScorer` holds the rule, the results grid's Points
-column resolves the same way, and the event page's Qualifying table quotes the scale the grid slot
-is actually paid under rather than one the race overrode.
+Qualifying used to score nothing of its own. Its points were folded invisibly into a race result
+instead, and that is what made the championship impossible to check by hand: the race row showed 385
+where 350 was the win and 35 was the pole, while the Qualifying grid separately printed that same 35
+in a Points column that fed nothing. Adding the two visible numbers double-counted the pole; trusting
+either alone under-counted it — so the identical result could look both double-counted and missing
+depending on which screen you started from.
 
-The grid *position* those points are paid on is per class too. One roster entry can race several
-classes at the same round, so "where did this driver qualify?" has one answer per class, and
-`buildQualPosMap` keys on race + entry + **class** to keep them apart (`qualPosFor` in
-`lib/standings.js` resolves a race result against its own class's Qualifying, falling back to the
-event's single combined Qualifying when a class didn't run one). Keying on race + entry alone
-silently kept whichever class was read last — invisible inside a class championship, where only that
-class's Qualifying is in scope, but wrong in the combined table where all of them are, which is what
-made a multi-class driver's class totals stop adding up to their overall total.
+Folding also forced a question with no good answer: when an event runs several races, which one hides
+the award? The first? The first that scores points? The first the driver actually started? Each
+answer broke a different setup — a session list that happens to name "Qualifying" (which this
+README's own example once suggested) pointed the award at a session holding no race results at all,
+and a race scored on a points template read its qualifying scale off a season scale that leagues
+usually leave blank. Scoring Qualifying where it happens deletes the question: an event has one
+Qualifying, so it pays once, on its own line, and nothing has to be resolved across sessions.
 
-**Qualifying pays once per event.** Qualifying is run once and sets the grid for the event, so what
-it pays is worth exactly one award — however many races the event then holds. A driver collects it in
-**the first race of the event they ran that can pay it**: one that scores championship points at all,
-that they actually started (a DNS scores nothing, so it can't swallow the award), and that isn't a
-provisional entry (paid a flat admin-entered figure instead of position points). Every other race
-they ran at that event scores its finish and its bonuses alone. `qualBonusResults` in
-`lib/standings.js` picks the carrier, keyed by event + driver + **class** — one roster entry can race
-several classes at the same round, each off its own Qualifying, so each collects its own award.
-
-An ordinary one-race weekend is unchanged (its single race *is* the first), and so is a heat event
-with the usual toggles — heats and consolations score nothing by default, so the feature is the first
-race that can pay, exactly where the qualifying points already landed. What changes is an event that
-runs **more than one scoring race**: the qualifying points used to be folded into every race-type
-result of the event, so a doubleheader (`Race 1, Race 2`) paid the pole sitter their pole points
-**twice**, and a heat event whose heats were switched on for points paid them once per heat and again
-in the feature. Totals came out high by one extra grid bonus per extra race, which is what made a
-season's points stop adding up.
-
-**The carrier comes from the results, never from the session list.** `races.sessions` is free text an
-admin typed, and plenty of events name their qualifying session in it (`Qualifying, Race` — the shape
-this README's own example used to suggest), so a name in that list proves nothing about what was
-raced or how it scored. Choosing "the event's first declared race" therefore picked a session holding
-no race results at all, and the qualifying points silently stopped being paid to anybody. The race
-doc is now consulted for one thing only: putting the results that *do* exist into running order
-(`raceSessionRank`, stamped onto each result as `session_rank` by `decorateSessionFlags`; sessions the
-event no longer declares sort last, ties broken by name, so every reader agrees). With no rank
-available at all — results scored straight off the raw docs — every session ties and the first result
-seen wins, so each driver is still paid exactly once.
-
-The results grid runs the same rule off the same results, so its live Points column can't disagree
-with the championship, and it says above the table how many of the drivers on the grid are collecting
-their qualifying points there whenever an event runs more than one race.
+**Turning it off.** Qualifying carries the same championship-points switch every other session has
+(`races.session_points_enabled["Qualifying"]`, on the Qualifying tab). Turn it off for a session that
+sets the grid and pays nothing — it still shows on the event page and still feeds Poles and Average
+Start. Setting Qualifying's points system to **No Points** does the same for one event's scale.
 
 **Which car goes with which class.** The car on track is a three-level fallback, most specific
 first: `races.car` (this one event runs something different) → `classes.car` (this class's machinery

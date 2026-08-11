@@ -74,7 +74,9 @@ export async function GET(request) {
       if (!entry || !teamIds.has(entry.team_id)) continue;
       const scored = {
         ...r,
-        points: (isQualifying(r) || r.counts_points === false) ? 0 : scorer.points(r),
+        // Qualifying scores itself now, so it is not excluded here — only a
+        // session whose points toggle is off scores nothing.
+        points: r.counts_points === false ? 0 : scorer.points(r),
       };
       all.push(scored);
       seasonResults.push(scored);

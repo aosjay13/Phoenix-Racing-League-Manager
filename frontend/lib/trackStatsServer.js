@@ -193,7 +193,9 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
       if (!inFullScope || !inSelectedClass(r)) continue;
       const scored = {
         ...r,
-        points: (isQualifying(r) || r.counts_points === false) ? 0 : scorer.points(r),
+        // Qualifying scores itself now, so it is not excluded here — only a
+        // session whose points toggle is off scores nothing.
+        points: r.counts_points === false ? 0 : scorer.points(r),
       };
       const k = keyFor(entry);
       const bucket = (drivers[k] ??= { driver_name: entry.name, driver_id: entry.driver_id ?? null, user_id: entry.user_id ?? null, results: [] });

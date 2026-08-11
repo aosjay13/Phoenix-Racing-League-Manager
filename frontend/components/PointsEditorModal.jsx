@@ -140,7 +140,7 @@ export function PointsEditorModal({
             <textarea rows={3} value={fields.race} style={monoBox}
               placeholder="350, 320, 300, 280, 260, …"
               onChange={e => edit({ race: e.target.value })} /></div>
-          <div className="field"><label>Qualifying Points — comma-separated, pole first (blank = 0 points){forQualifying ? "" : " · folded into race scores"}</label>
+          <div className="field"><label>Qualifying Points — comma-separated, pole first (blank = 0 points){forQualifying ? "" : " · used by this structure's Qualifying session"}</label>
             <textarea rows={2} value={fields.qual} style={monoBox}
               placeholder="35, 32, 30, 28, 26, …"
               onChange={e => edit({ qual: e.target.value })} /></div>

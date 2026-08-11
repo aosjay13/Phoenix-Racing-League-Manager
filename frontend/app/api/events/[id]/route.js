@@ -31,10 +31,10 @@ export async function GET(request, { params }) {
   const config = resolveSeasonConfig(season || {}, series);
   const entriesById = Object.fromEntries(entriesSnap.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
   const teamsById = Object.fromEntries(teamsSnap.docs.map(d => [d.id, d.data()]));
-  // The event's own doc is the only race in scope here, and decorating against
-  // it is what tells the scorer which session carries the qualifying points
-  // (and which class each session's points template was assigned to) — so the
-  // points printed on this page are the same numbers the standings total.
+  // The event's own doc is the only race in scope here. Decorating against it
+  // resolves each session's stats/points toggles and which class its points
+  // template was assigned to, so the points printed on this page are the same
+  // numbers the standings total.
   const all = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), { [event.id]: event }));
   // Points shown per row come from the class that row raced in — its own points
   // structure when it has one — with the session's template on top.
@@ -120,22 +120,18 @@ export async function GET(request, { params }) {
   // Qualifying is the only source of starting position — there's no fallback
   // to anything recorded on a race result.
   //
-  // The Pts column quotes the scale this grid slot is actually paid under, which
-  // lives on the race the points are folded into (scorer.qualConfigFor — with
-  // nothing assigned to Qualifying, the race's own points system provides the
-  // qualifying scale). Reading it off the qualifying result alone printed the
-  // season default over a race scored on a template, so a pole worth 35 in the
-  // standings showed here as 0. Falls back to the qualifying result itself when
-  // the driver has no race at this event yet.
-  const payingRowFor = qr => raceResults.find(r =>
-    r.entry_id === qr.entry_id
-    && classOfResult(r, entriesById) === classOfResult(qr, entriesById)
-    && scorer.paysQualBonus(r));
+  // The Pts column is what this grid slot is WORTH — scored by the same scorer
+  // the standings use, off Qualifying's own points structure. It is a line of
+  // the championship in its own right, so the Qualifying table below and the
+  // race tables beside it simply add up to what this event contributed.
   const qualifying = qualResults
-    .map(r => {
-      const qc = scorer.qualConfigFor(payingRowFor(r) || r);
-      return { ...joinEntry(r), position: Number(r.finish_pos), qual_points: Number(qc.qualPoints[r.finish_pos] ?? 0) };
-    })
+    .map(r => ({
+      ...joinEntry(r),
+      position: Number(r.finish_pos),
+      points: scorer.points(r),
+      // Kept under its old name too, for anything still reading qual_points.
+      qual_points: scorer.points(r),
+    }))
     .sort((a, b) => a.position - b.position);
 
   // The race stores only the venue's NAME; the exporter's metadata strip wants

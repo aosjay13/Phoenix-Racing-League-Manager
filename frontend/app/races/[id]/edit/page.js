@@ -547,6 +547,7 @@ function UnifiedEditInner() {
             sessionType="qualifying" sessionNames={["Qualifying"]}
             season={season} templates={templates} sessionPoints={sessionPoints} sessionPointsByClass={sessionPointsByClass} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
             sessionStats={sessionStats} onSessionStatsChange={saveSessionStats}
+            sessionPointsEnabled={sessionPointsEnabled} onSessionPointsEnabledChange={saveSessionPointsEnabled}
           />
         </div>
       )}

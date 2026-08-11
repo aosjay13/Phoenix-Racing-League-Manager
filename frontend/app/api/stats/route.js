@@ -172,7 +172,9 @@ async function buildStats(seasons, classId = "", className = "", gameId = null) 
       if (entry.driver_id) bucket.driver_id = entry.driver_id;
       const scored = {
         ...r,
-        points: (isQualifying(r) || r.counts_points === false) ? 0 : scorer.points(r),
+        // Qualifying scores itself now, so it is not excluded here — only a
+        // session whose points toggle is off scores nothing.
+        points: r.counts_points === false ? 0 : scorer.points(r),
       };
       bucket.results.push(scored);
 
