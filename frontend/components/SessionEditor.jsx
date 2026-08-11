@@ -911,6 +911,20 @@ export function SessionEditor({
     setRows(prev => [...prev, makeRow(positionAt(prev.length))]);
   }
   // Drops a finishing position from the grid and renumbers the rest.
+  //
+  // This is what the row's ✕ does, ALWAYS — including on a row that has a driver
+  // in it. It is grid-local: nothing is written until Save, and Save only ever
+  // replaces this race's rows for this session (see POST /api/results), so
+  // taking a driver out here takes them out of THIS session and nothing else.
+  //
+  // It used to branch — an empty row was dropped, but a row WITH a driver called
+  // a removeEntry() that deleted the driver's season roster entry and cascaded
+  // to every result they had in the whole season, wiping weeks of entered stats
+  // from one ✕ on one results row. Removing somebody from a session because they
+  // belong in another one is an everyday edit and must never be able to do that.
+  // Season-roster removal lives on the Roster screen, which asks how many
+  // results would go with them and confirms that specifically (RosterManager's
+  // removeEntry, and the ?confirm=results guard in /api/entries/[id]).
   function removeSlot(idx) {
     setRows(prev => prev.filter((_, i) => i !== idx).map((r, i) => ({ ...r, finish_pos: String(positionAt(i)) })));
   }
@@ -1074,30 +1088,6 @@ export function SessionEditor({
     });
     setJustAddedId(entry.id);
     onEntriesChanged?.();
-  }
-
-  // Removes a driver added by mistake — entries are season-wide (the same
-  // driver can be entered on every race/session), so this deletes their entry
-  // outright rather than just clearing the slot, and the server cascades that
-  // to any results already saved for them anywhere in the season.
-  async function removeEntry(row) {
-    if (!confirm(`Remove ${row.driver_name} from the season? This removes them from every race and session, not just ${session}, and deletes any results already saved for them. This cannot be undone.`)) return;
-    setBusy(true);
-    try {
-      // `confirm=results` because the dialog above has already said, in as many
-      // words, that saved results go with them — the server refuses a silent
-      // cascade without it (see /api/entries/[id]).
-      await api(`/api/entries/${row.entry_id}?confirm=results`, { method: "DELETE" });
-      // Clear the slot rather than deleting the row, so the finishing
-      // position stays available to reassign.
-      setRows(prev => prev.map(r => (r.entry_id === row.entry_id ? { ...makeRow(r.finish_pos), slot_id: r.slot_id } : r)));
-      onEntriesChanged?.();
-      showToast("success", `${row.driver_name} removed.`);
-    } catch (err) {
-      showToast("error", err.message);
-    } finally {
-      setBusy(false);
-    }
   }
 
   // Merge a batch of imported results into the grid, keyed by entry_id. Matched
@@ -1545,7 +1535,9 @@ export function SessionEditor({
     onAssign: entry => assignToSlot(row.slot_id, entry),
     onClear: () => clearSlot(idx),
     onRequestCreate: name => setCreateFor({ slotId: row.slot_id, name }),
-    onRemove: () => (row.entry_id ? removeEntry(row) : removeSlot(idx)),
+    // Always just drops the row from THIS grid. It used to delete the whole
+    // season entry when the row had a driver in it — see removeSlot's note.
+    onRemove: () => removeSlot(idx),
     onPasteColumn: pasteColumn,
   });
 
@@ -2313,11 +2305,12 @@ function DragHandle({ dragging, dragOver, onDragStart, onDragOver, onDrop, onDra
   );
 }
 
-// Rightmost row action: drops an empty slot, or removes a placed driver from
-// the season entirely (destructive — clearing a mis-pick is the ✕ inside the
-// driver cell instead).
+// Rightmost row action: drops this finishing position from the grid. Never
+// touches the season roster or any other session — see removeSlot.
 function RemoveButton({ row, onRemove }) {
-  const title = row.entry_id ? `Remove ${row.driver_name} from the season` : "Remove this finishing position";
+  const title = row.entry_id
+    ? `Remove this position — takes ${row.driver_name} out of this session only, and keeps them on the roster and in every other session`
+    : "Remove this finishing position";
   return (
     <button type="button" className="btn btn-danger" title={title}
       style={{ marginTop: 0, padding: "2px 8px", fontSize: "0.8rem" }} onClick={onRemove}>
