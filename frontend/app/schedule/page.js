@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useLeague } from "@/components/LeagueProvider";
 import { useAuth } from "@/components/AuthProvider";
 import { RaceCreateModal } from "@/components/RaceCreateModal";
+import { RaceCopyModal } from "@/components/RaceCopyModal";
 import { SeasonCreateModal } from "@/components/SeasonCreateModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ShareGraphicButton, ShareGraphicModal } from "@/components/ShareGraphicModal";
@@ -298,6 +299,7 @@ function SeasonSchedule() {
   const [races, setRaces] = useState(null);
   const [sharing, setSharing] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
+  const [showCopy, setShowCopy] = useState(false);
   const [toDelete, setToDelete] = useState(null); // race pending delete confirmation
   const [toggleComplete, setToggleComplete] = useState(false); // season completion pending confirmation
 
@@ -394,6 +396,16 @@ function SeasonSchedule() {
               onClick={() => setToggleComplete(true)}>
               {completed ? "✓ Season Complete" : "Mark Season Complete"}
             </button>
+            {/* Copy an event (and its results) between seasons — either
+                direction, any series. Sits beside + New Race because it's the
+                other way a round joins a calendar. */}
+            <button
+              className="btn btn-ghost"
+              style={{ marginTop: 0 }}
+              title="Copy a race — and the results it scored — from one season into another, in this series or a different one"
+              onClick={() => setShowCopy(true)}>
+              ⧉ Copy Race
+            </button>
             <button className="btn btn-primary" style={{ marginTop: 0 }} onClick={() => setShowCreate(true)}>
               + New Race
             </button>
@@ -424,7 +436,8 @@ function SeasonSchedule() {
         <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.85rem" }}>
           Every event is managed from this table: <strong>⏱</strong> opens its results grid (qualifying,
           races, heats and points), <strong>✎</strong> edits the event itself — name, date, track, sessions
-          and heat racing — and <strong>🗑</strong> deletes it.
+          and heat racing — and <strong>🗑</strong> deletes it. <strong>⧉ Copy Race</strong> above brings an
+          event and its results across from another season, in this series or a different one.
         </p>
       )}
 
@@ -454,6 +467,17 @@ function SeasonSchedule() {
           perClassResults={!!season?.per_class_results}
           onClose={() => setShowCreate(false)}
           onCreated={() => { setShowCreate(false); loadRaces(); }}
+        />
+      )}
+
+      {isAdmin && showCopy && (
+        <RaceCopyModal
+          seasonId={seasonId}
+          onClose={() => { setShowCopy(false); loadRaces(); }}
+          // A copy INTO the season being viewed lands on this calendar, so
+          // reload it as soon as the copy reports back rather than waiting for
+          // the dialog to be dismissed.
+          onCopied={() => loadRaces()}
         />
       )}
 
