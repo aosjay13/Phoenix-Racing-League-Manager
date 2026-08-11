@@ -87,8 +87,8 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   or a cloned past season, with duplicates skipped automatically
 - ⏱ **Fast race entry** — one grid per race, pre-filled with the roster; supports multiple
   sessions per race (e.g. Qualifying + Race), scored independently — the qualifying points are
-  paid once per event, on the first race that scores points, never once per race; re-submitting a
-  race overwrites cleanly for corrections
+  paid once per event, in the first race each driver ran that can pay them, never once per race;
+  re-submitting a race overwrites cleanly for corrections
 - 📊 **Stats & Roster filtering** — Game/Series/Season dropdowns filter Stats and Roster
   everywhere, with sortable columns and per-series car numbers
 - 🖼 **Custom branding** — upload game, series, season, team, and track logos
@@ -271,7 +271,8 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      (or pick a built-in template), qualifying points, and bonus points (most laps led,
      fastest lap, etc.). There is no separate pole bonus — pole is position 1 of the qualifying
      points list, so a pole is worth whatever the first number in that list says — paid **once per
-     event**, on the first race of that event which scores points, however many races it runs.
+     event**, in the first race of that event each driver ran that scores points, however many races
+     it runs.
      **Enable Overall Championship** decides whether a multi-class season
      also crowns one champion across the whole field on top of the per-class titles.
      Seasons list **newest first**, ordered by the **race dates** on their schedules rather than
@@ -977,22 +978,37 @@ class's Qualifying is in scope, but wrong in the combined table where all of the
 made a multi-class driver's class totals stop adding up to their overall total.
 
 **Qualifying pays once per event.** Qualifying is run once and sets the grid for the event, so what
-it pays is worth exactly one award — however many races the event then holds. Exactly one session
-carries it: the **first race the event runs that actually scores championship points**, resolved by
-`qualBonusSession` in `lib/standings.js` and stamped onto every result as `pays_qual_bonus` by
-`decorateSessionFlags`. Every other race of that event scores its finish and its bonuses alone.
+it pays is worth exactly one award — however many races the event then holds. A driver collects it in
+**the first race of the event they ran that can pay it**: one that scores championship points at all,
+that they actually started (a DNS scores nothing, so it can't swallow the award), and that isn't a
+provisional entry (paid a flat admin-entered figure instead of position points). Every other race
+they ran at that event scores its finish and its bonuses alone. `qualBonusResults` in
+`lib/standings.js` picks the carrier, keyed by event + driver + **class** — one roster entry can race
+several classes at the same round, each off its own Qualifying, so each collects its own award.
 
 An ordinary one-race weekend is unchanged (its single race *is* the first), and so is a heat event
 with the usual toggles — heats and consolations score nothing by default, so the feature is the first
-scoring race, exactly where the qualifying points already landed. What changes is an event that runs
-**more than one scoring race**: the qualifying points used to be folded into every race-type result
-of the event, so a doubleheader (`Race 1, Race 2`) paid the pole sitter their pole points **twice**,
-and a heat event whose heats were switched on for points paid them once per heat and again in the
-feature. Totals came out high by one extra grid bonus per extra race, which is what made a season's
-points stop adding up. Switching a session's points toggle off hands the award to the next scoring
-race, and results saved under a session name the race doc no longer declares still collect it rather
-than losing it. The results grid says which race is carrying the award directly above the table
-whenever an event has more than one, so the Points column can be read without guessing.
+race that can pay, exactly where the qualifying points already landed. What changes is an event that
+runs **more than one scoring race**: the qualifying points used to be folded into every race-type
+result of the event, so a doubleheader (`Race 1, Race 2`) paid the pole sitter their pole points
+**twice**, and a heat event whose heats were switched on for points paid them once per heat and again
+in the feature. Totals came out high by one extra grid bonus per extra race, which is what made a
+season's points stop adding up.
+
+**The carrier comes from the results, never from the session list.** `races.sessions` is free text an
+admin typed, and plenty of events name their qualifying session in it (`Qualifying, Race` — the shape
+this README's own example used to suggest), so a name in that list proves nothing about what was
+raced or how it scored. Choosing "the event's first declared race" therefore picked a session holding
+no race results at all, and the qualifying points silently stopped being paid to anybody. The race
+doc is now consulted for one thing only: putting the results that *do* exist into running order
+(`raceSessionRank`, stamped onto each result as `session_rank` by `decorateSessionFlags`; sessions the
+event no longer declares sort last, ties broken by name, so every reader agrees). With no rank
+available at all — results scored straight off the raw docs — every session ties and the first result
+seen wins, so each driver is still paid exactly once.
+
+The results grid runs the same rule off the same results, so its live Points column can't disagree
+with the championship, and it says above the table how many of the drivers on the grid are collecting
+their qualifying points there whenever an event runs more than one race.
 
 **Which car goes with which class.** The car on track is a three-level fallback, most specific
 first: `races.car` (this one event runs something different) → `classes.car` (this class's machinery

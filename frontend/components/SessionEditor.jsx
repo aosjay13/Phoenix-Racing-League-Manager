@@ -8,8 +8,8 @@ import { DriverCreateModal } from "@/components/DriverCreateModal";
 import { PointsEditorModal } from "@/components/PointsEditorModal";
 import { ImportResultsModal } from "@/components/ImportResultsModal";
 import { NONE_TEMPLATE, isNoPointsTemplate } from "@/lib/pointsTemplates";
-import { classIdForScope, entriesEligibleForRace, entriesInSessionClass, isClassScoped, resultInSessionClass } from "@/lib/classFilter";
-import { pointsFor, pointsBreakdown, classConfigs, classScoresOwnPoints, configForClass, configForTemplate, resolveSeasonConfig, defaultSessionFlags, qualBonusSession, raceSessionList } from "@/lib/standings";
+import { classIdForScope, classOfResult, entriesEligibleForRace, entriesInSessionClass, isClassScoped, resultInSessionClass } from "@/lib/classFilter";
+import { pointsFor, pointsBreakdown, classConfigs, classScoresOwnPoints, configForClass, configForTemplate, resolveSeasonConfig, defaultSessionFlags, qualBonusResults, raceSessionList, raceSessionRank, sessionCountsPoints } from "@/lib/standings";
 import { AUTO_FLAG_FIELDS, applyAutoFlags, detectFlagLocks, autoMostLapsLedSlot } from "@/lib/autoFlags";
 import { BANGER_BOOL_FIELDS, BANGER_RESULT_FIELDS, BANGER_STATS, bangerRates, blankBangerRow, hasBangerBonuses } from "@/lib/bangerRacing";
 import { BRACKET_SIZES, bracketGridError, bracketPositionAt, bracketPositions, bracketRoundFor, bracketRounds, bracketSizeForField, bracketSizeLabel, normalizeBracketSize, ordinal } from "@/lib/bracketRacing";
@@ -502,6 +502,11 @@ export function SessionEditor({
   const [flagLocks, setFlagLocks] = useState({});
   const [provRows, setProvRows] = useState([]); // provisional entries (points only, no stats)
   const [qualPos, setQualPos] = useState({}); // entry_id -> this race's Qualifying finish position
+  // The event's saved race results that belong to its OTHER sessions, carrying
+  // the points toggle each one resolves to. They're what tells this grid whether
+  // a driver already collects their qualifying points in an earlier race of the
+  // event — see qualBonusEntries below.
+  const [savedElsewhere, setSavedElsewhere] = useState([]);
   const [toast, setToast] = useState(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -539,6 +544,15 @@ export function SessionEditor({
         all.filter(r => r.session_type === "qualifying").map(r => [r.entry_id, Number(r.finish_pos)])
       );
       setQualPos(qp);
+      // Every OTHER race session of this event, with the points toggle each one
+      // resolves to — the grid below is the truth for `sess` itself, saved or not.
+      setSavedElsewhere(
+        all
+          .filter(r => r.session_type !== "qualifying")
+          .map(r => ({ ...r, session: r.session || names[0] }))
+          .filter(r => !(r.session_type === sessionType && r.session === sess))
+          .map(r => ({ ...r, counts_points: sessionCountsPoints(race, r.session, r.session_type || "race") }))
+      );
       const existing = all.filter(r => r.session_type === sessionType && (r.session || names[0]) === sess);
       // Provisional results live in their own section — keep them out of the
       // finishing-order grid.
@@ -563,6 +577,7 @@ export function SessionEditor({
       }));
     } catch {
       setQualPos({});
+      setSavedElsewhere([]);
       setRows(emptySlots(entries.length, bracketLayout));
       setFlagLocks({});
       setProvRows([]);
@@ -1307,22 +1322,46 @@ export function SessionEditor({
   const showStatsToggle = !!onSessionStatsChange;
   const showPointsToggle = !isQual && !!onSessionPointsEnabledChange;
 
-  // ── Does THIS session pay the qualifying points? ─────────────────────────
+  // ── Which drivers collect their qualifying points on THIS grid? ──────────
   //
   // Qualifying runs once for the event, so its points are worth one award — not
-  // one per race the event holds. The first race that scores championship points
-  // carries them (qualBonusSession in lib/standings.js, the same rule the
-  // standings score on); every other session of the event scores the finish
-  // alone. On a one-race weekend that's the race, exactly as before; on a
-  // doubleheader it's Race 1, and Race 2 no longer pays the grid a second time.
-  // Turning a session's points toggle off hands the award to the next race, so
-  // the column re-scores the moment the switch is flipped.
-  const qualBonusName = useMemo(
-    () => qualBonusSession({ ...(race || {}), session_points_enabled: sessionPointsEnabled }),
-    [race, sessionPointsEnabled],
+  // one per race the event holds. Each driver collects them on the first race of
+  // the event they ran that can pay them, and that is settled from the results,
+  // exactly the way the standings settle it (qualBonusResults in
+  // lib/standings.js) — never by matching this session's name against the race
+  // doc's session list, which is free text that often names Qualifying itself.
+  //
+  // This grid is the truth for the session being edited (its rows may not be
+  // saved yet); `savedElsewhere` covers the event's other sessions. So a
+  // one-race weekend pays here exactly as before, a doubleheader pays on Race 1,
+  // and a driver who sat out Race 1 still collects in Race 2 rather than losing
+  // the award to a race they never started.
+  // Keyed by driver AND class, as the standings key it: one roster entry can
+  // race several classes at the same round, each off its own Qualifying, so each
+  // of those collects its own award.
+  const entriesForClass = useMemo(
+    () => Object.fromEntries(allEntries.map(e => [e.id ?? e.entry_id, e])),
+    [allEntries],
   );
-  const paysQualBonus = sessionType !== "qualifying" && session === qualBonusName;
-  const rowQualPos = row => (paysQualBonus ? (qualPos[row.entry_id] ?? null) : null);
+  const bonusKeyOf = r => `${r.entry_id}|${classOfResult(r, entriesForClass) || ""}`;
+  const qualBonusEntries = useMemo(() => {
+    const mine = rows
+      .filter(r => r.entry_id)
+      .map(r => ({ ...r, session, session_type: sessionType, counts_points: pointsOn }));
+    const candidates = [...mine, ...savedElsewhere];
+    return new Set(
+      [...qualBonusResults(candidates, {
+        keyOf: bonusKeyOf,
+        rankOf: r => raceSessionRank(race || {}, r.session),
+      })]
+        .filter(r => r.session === session && r.session_type === sessionType)
+        .map(bonusKeyOf),
+    );
+  }, [rows, savedElsewhere, session, sessionType, pointsOn, race, entriesForClass]);
+
+  const rowQualPos = row => (sessionType === "qualifying" || !qualBonusEntries.has(bonusKeyOf(row))
+    ? null
+    : (qualPos[row.entry_id] ?? null));
 
   // Points only meaningful once a driver is in the slot.
   const rowPoints = row => (!row.entry_id ? "" : sessionType === "qualifying"
@@ -1726,23 +1765,16 @@ export function SessionEditor({
           These are stats either way; they only affect points if your season or points structure pays a bonus for them.
         </p>
       )}
-      {/* Which race of a multi-race event the qualifying points land on. Silent
+      {/* How the qualifying points are spread across a multi-race event. Silent
           on the ordinary one-race weekend, where there's nothing to explain. */}
-      {!isQual && qualBonusName && raceSessionList(race || {}).length > 1 && (
+      {!isQual && raceSessionList(race || {}).length > 1 && (
         <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.78rem" }}>
-          🏁 {paysQualBonus ? (
-            <>
-              <strong>Qualifying points are paid on this grid.</strong> {session} is the first race of
-              this event that scores championship points, so each driver&rsquo;s qualifying points are
-              folded into the Points column here — <strong>once for the event</strong>, not once per race.
-            </>
-          ) : (
-            <>
-              <strong>Qualifying points are paid on {qualBonusName}</strong>, the first race of this event
-              that scores championship points. Qualifying runs once, so it pays once — this grid scores
-              the finish and its bonuses alone.
-            </>
-          )}
+          🏁 <strong>Qualifying points are paid once per event</strong>, not once per race — this event
+          runs {raceSessionList(race).length}. Each driver collects them in the first race here they
+          started that scores championship points
+          {qualBonusEntries.size > 0
+            ? <> — {qualBonusEntries.size} of the drivers below{qualBonusEntries.size === 1 ? " does" : " do"} so on this grid, and you&rsquo;ll see the qualifying points in their Points total (hover it for the breakdown).</>
+            : <>, which for everyone on this grid was an earlier race — so these rows score the finish and its bonuses alone.</>}
         </p>
       )}
       {hasClasses && unclassedRows.length > 0 && (

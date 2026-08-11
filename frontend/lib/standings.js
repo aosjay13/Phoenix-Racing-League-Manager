@@ -282,11 +282,17 @@ export function sessionNameOf(result, race = {}) {
   return result.session || (type === "qualifying" ? "Qualifying" : firstStdSession(race));
 }
 
-// Every RACE-type session an event runs, in the order it runs them, with the
+// Every RACE-type session an event DECLARES, in the order it runs them, with the
 // session type each one is entered under. A heat-format event runs its heats,
 // then its consolations, then the feature; every other event runs the list on
-// its Race Info tab ("Race", or "Race 1, Race 2, Sprint"). Qualifying is not in
-// here — it is not a race, and it is scored separately.
+// its Race Info tab ("Race", or "Race 1, Race 2, Sprint").
+//
+// This is the race doc's own statement about itself, and it is only ever used to
+// ORDER sessions — never to decide which of them exist. `races.sessions` is free
+// text an admin typed, and plenty of events list their qualifying session in it
+// ("Qualifying, Race", the shape this app's own docs used to suggest), so a name
+// in here proves nothing about what was actually raced or how it was scored. The
+// saved results are the authority on that; see qualBonusResults.
 export function raceSessionList(race = {}) {
   if (race.heat_format) {
     return [
@@ -306,6 +312,23 @@ export function sessionCountsPoints(race = {}, name, type = "race") {
   return name in map ? !!map[name] : defaultSessionFlags(type).counts_points;
 }
 
+// Where a race session sits in its event's running order. A session the event
+// doesn't declare sorts after every one that does — results saved under a
+// renamed or removed session still have a place in the order rather than
+// vanishing from it — and ties are broken by name, so every caller (the scorer,
+// the results grid) picks the same winner without having to compare notes.
+export function raceSessionRank(race = {}, name) {
+  const declared = raceSessionList(race).map(s => s.name);
+  const i = declared.indexOf(name);
+  return i >= 0 ? i : declared.length;
+}
+
+// Which of two race sessions of the same event runs first.
+function earlierSession(a, b) {
+  if (a.rank !== b.rank) return a.rank - b.rank;
+  return String(a.name).localeCompare(String(b.name));
+}
+
 // ── Where an event's qualifying points are paid ────────────────────────────
 //
 // Qualifying is run ONCE for an event and sets the grid for it, so what it pays
@@ -314,30 +337,78 @@ export function sessionCountsPoints(race = {}, name, type = "race") {
 // which is fine for the ordinary one-race weekend and wrong the moment an event
 // runs more than one scoring race: a doubleheader ("Race 1, Race 2") paid the
 // pole sitter their pole points twice, and a heat event whose heats are switched
-// on for points paid them once per heat and again in the feature. That is the
-// "the standings are adding up too high" bug — the totals were right for the
-// finishes and inflated by one extra grid bonus per extra race.
+// on for points paid them once per heat and again in the feature. Totals came
+// out high by one extra grid bonus per extra race.
 //
-// So exactly one session of an event carries them: the first race it runs that
-// actually scores championship points — the race qualifying set the grid for.
-// A single-race event is unchanged (its one race is the first), and a heat event
-// with the usual toggles is unchanged too (heats and consolations score nothing
-// by default, so the feature is the first scoring race).
+// So exactly one race of an event carries the award — and WHICH one is settled
+// per driver, from the results they actually have, rather than by reading a
+// session name off the race doc. A driver collects their qualifying points on
+// the first race of the event they ran that can pay them, which means:
 //
-// `present` (optional) is the set of session names results were actually saved
-// under. A session nobody raced can't carry the award, so an event whose results
-// live under a name the race doc no longer declares still pays out.
-export function qualBonusSession(race = {}, present = null) {
-  const scoring = raceSessionList(race).filter(s => sessionCountsPoints(race, s.name, s.type));
-  const raced = present ? scoring.filter(s => present.has(s.name)) : scoring;
-  if (raced.length) return raced[0].name;
-  if (!present) return null;
-  // Results saved under a session the event no longer declares — keep paying
-  // them rather than dropping the award on the floor.
-  for (const name of present) {
-    if (sessionCountsPoints(race, name)) return name;
-  }
-  return null;
+//   • a race that scores championship points at all (a heat switched off for
+//     points can't hold the award hostage);
+//   • a race they actually started — a DNS scores nothing, so it would swallow
+//     the award; and
+//   • not a provisional entry, which is paid a flat admin-entered figure
+//     instead of position points.
+//
+// Deciding it from the results is the whole point. `races.sessions` is free text
+// and frequently names the qualifying session, so choosing "the event's first
+// declared race" once picked a session that holds no race results at all, and
+// the qualifying points silently stopped being paid to anybody. The results know
+// what was raced and what it scored; the race doc is consulted only to put those
+// results in running order (raceSessionRank).
+//
+// Results that were never decorated carry no counts_points flag at all, which
+// reads here as "counts" — the same way every other reader of that flag treats
+// an absent value.
+export function canCarryQualBonus(result) {
+  if (isQualifying(result)) return false;
+  if (result.counts_points === false) return false;
+  if (isDidNotStart(result)) return false;
+  return !(result.provisional && result.manual_points != null && result.manual_points !== "");
+}
+
+// Identity of one saved result inside its event: the results writer keeps a
+// single row per driver, per class, per session, so these five fields name one
+// result without needing a document id (which most readers never load).
+export function resultKey(result, entriesById = {}) {
+  return [
+    result.race_id,
+    result.entry_id,
+    classOfResult(result, entriesById) || "",
+    result.session_type || "race",
+    result.session || "",
+  ].join("|");
+}
+
+// The subset of `results` that the qualifying points are folded into: one per
+// event, per driver, per class. Returns a Set of the result objects themselves,
+// so a caller marks results rather than session names.
+//
+// `rankOf` puts one result in its event's running order — supplied by the caller
+// because only it knows the race docs (decorateSessionFlags stamps the rank onto
+// each result, so the default reads it straight back off). With no rank
+// available at all every session ties and the first result seen wins, which
+// still pays each driver exactly once.
+export function qualBonusResults(results, { keyOf = r => r.entry_id, rankOf = r => r.session_rank } = {}) {
+  const best = new Map();
+  results.forEach((result, index) => {
+    if (!canCarryQualBonus(result)) return;
+    const key = `${result.race_id}|${keyOf(result)}`;
+    const rank = Number(rankOf(result));
+    const candidate = {
+      result,
+      index,
+      rank: Number.isFinite(rank) ? rank : Number.MAX_SAFE_INTEGER,
+      name: result.session || "",
+    };
+    const current = best.get(key);
+    if (!current) { best.set(key, candidate); return; }
+    const order = earlierSession(candidate, current);
+    if (order < 0 || (order === 0 && candidate.index < current.index)) best.set(key, candidate);
+  });
+  return new Set([...best.values()].map(c => c.result));
 }
 
 // Resolve a result's stats/points flags: an explicit admin toggle on the race
@@ -386,30 +457,18 @@ export function classSessionTemplates(result, racesById = {}) {
 // The class-scoped template assignments ride along for the same reason — one
 // pass over the race docs, and every scorer downstream gets both.
 //
-// `pays_qual_bonus` rides along too: the ONE race session of each event that the
-// qualifying points are folded into (see qualBonusSession). Every other race of
-// the event is stamped false and scores its finish alone, which is what stops a
-// multi-race event paying the same grid slot over and over.
+// `session_rank` rides along too — where this result's session sits in its
+// event's running order, which is how the scorer works out which of a driver's
+// races at an event collects the qualifying points (see qualBonusResults).
 export function decorateSessionFlags(results, racesById = {}) {
-  const live = results.filter(r => racesById[r.race_id]);
-
-  // Which race sessions each event actually has results for, so the award can't
-  // land on a session nobody ran.
-  const present = {};
-  for (const r of live) {
-    if (isQualifying(r)) continue;
-    (present[r.race_id] ??= new Set()).add(sessionNameOf(r, racesById[r.race_id]));
-  }
-  const carrier = Object.fromEntries(
-    Object.entries(present).map(([raceId, names]) => [raceId, qualBonusSession(racesById[raceId], names)]),
-  );
-
-  return live.map(r => ({
-    ...r,
-    ...resolveSessionFlags(r, racesById),
-    class_session_templates: classSessionTemplates(r, racesById),
-    pays_qual_bonus: !isQualifying(r) && sessionNameOf(r, racesById[r.race_id]) === carrier[r.race_id],
-  }));
+  return results
+    .filter(r => racesById[r.race_id])
+    .map(r => ({
+      ...r,
+      ...resolveSessionFlags(r, racesById),
+      class_session_templates: classSessionTemplates(r, racesById),
+      session_rank: raceSessionRank(racesById[r.race_id], sessionNameOf(r, racesById[r.race_id])),
+    }));
 }
 
 // Mark per-race derived flags (most laps led) before scoring. Events can
@@ -442,7 +501,7 @@ export function decorateRaceBonuses(results) {
 // race result itself. That's the only source of starting-position info now;
 // there is no editable "Start" field on race/heat/consolation/feature rows.
 // Pass it as null on every race of an event except the one that carries the
-// grid bonus (qualBonusSession) — qualifying is run once, so it pays once,
+// grid bonus (qualBonusResults) — qualifying is run once, so it pays once,
 // no matter how many races the event holds.
 // `qualConfig` resolves the qualifying-position points against the Qualifying
 // session's OWN assigned points system (see buildQualTemplateMap) — falling
@@ -630,6 +689,20 @@ export function makeScorer(results, { config, classes = [], entriesById = {}, te
   const baseFor = r => byClass[classOfResult(r, entriesById)] || config;
   const qualPosMap = buildQualPosMap(results, entriesById);
   const qualTemplates = buildQualTemplateMap(results, entriesById);
+  // The one race per event, per driver, per class that the grid bonus is folded
+  // into — qualifying is run once, so it pays once, however many races follow.
+  // Keyed by class as well as driver because one roster entry can race several
+  // classes at the same round, each off its own Qualifying (see buildQualPosMap).
+  //
+  // Marked by resultKey rather than by object identity: several callers score a
+  // COPY of the result they handed in (`{ ...r, points: scorer.points(r) }` and
+  // friends), and a scorer that quietly stopped recognising a result would drop
+  // the award without saying so — which is the failure this whole rule exists to
+  // prevent.
+  const paysQualBonus = new Set(
+    [...qualBonusResults(results, { keyOf: r => `${r.entry_id}|${classOfResult(r, entriesById) || ""}` })]
+      .map(r => resultKey(r, entriesById)),
+  );
 
   // ── Where a session's template sits in the chain ─────────────────────────
   //
@@ -674,11 +747,9 @@ export function makeScorer(results, { config, classes = [], entriesById = {}, te
 
   const configFor = r => configWith(r, r.points_template_id);
   const qualConfigFor = r => configWith(r, qualTemplateFor(qualTemplates, r, entriesById));
-  // The grid bonus is paid on ONE race session per event (decorateSessionFlags
-  // stamps which — see qualBonusSession); every other race of that event scores
-  // its finish alone. Results that were never decorated carry no flag at all and
-  // are paid as before, so a caller working off raw docs is unaffected.
-  const posFor = r => (r.pays_qual_bonus === false ? null : qualPosFor(qualPosMap, r, entriesById));
+  // The grid bonus goes to the driver's first race of the event that can pay it;
+  // every other race they ran there scores its finish alone.
+  const posFor = r => (paysQualBonus.has(resultKey(r, entriesById)) ? qualPosFor(qualPosMap, r, entriesById) : null);
 
   return {
     qualPosMap,
