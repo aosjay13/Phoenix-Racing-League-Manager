@@ -17,6 +17,8 @@ import { finalSessionName } from "@/lib/raceSummaryServer";
 import { isPastRaceDate, raceDateSortKey, toDateOnly, todayDateString } from "@/lib/raceDate";
 import { fetchDriverNames, gameIdForScope } from "@/lib/driverNamesServer";
 import { fetchSeriesByIds } from "@/lib/seriesServer";
+import { applySeasonTeams } from "@/lib/teams";
+import { loadTeamIndex } from "@/lib/teamsServer";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +40,11 @@ export async function GET(request) {
   // separate doc per season, so the name is resolved to each season's own ids.
   const className = searchParams.get("class_name") || "";
 
+  // The team picture for the whole league, read once — every season below asks
+  // it who was driving for whom, so a team's stats are the combined results of
+  // its lineup in each season, and its all-time line is those seasons added up.
+  const teamIndex = await loadTeamIndex({ leagueId: getRequestLeagueId(request) });
+
   let seasonsQuery = db().collection("seasons");
   if (scope === "game") {
     const gameId = searchParams.get("game_id");
@@ -53,7 +60,7 @@ export async function GET(request) {
     const doc = await db().collection("seasons").doc(seasonId).get();
     if (!doc.exists) return NextResponse.json({ error: "Season not found" }, { status: 404 });
     const season = { id: doc.id, ...doc.data() };
-    return NextResponse.json(await buildStats([season], classId, className, season.game_id || null));
+    return NextResponse.json(await buildStats([season], classId, className, season.game_id || null, teamIndex));
   } else if (scope !== "league") {
     return NextResponse.json({ error: "invalid scope" }, { status: 400 });
   }
@@ -72,15 +79,18 @@ export async function GET(request) {
     gameId: searchParams.get("game_id"),
     seriesId: searchParams.get("series_id"),
   });
-  return NextResponse.json(await buildStats(seasons, classId, className, gameId));
+  return NextResponse.json(await buildStats(seasons, classId, className, gameId, teamIndex));
 }
 
-async function buildStats(seasons, classId = "", className = "", gameId = null) {
+async function buildStats(seasons, classId = "", className = "", gameId = null, teamIndex = null) {
   // driverKey -> { name, number, user_id, results[], titles }
   const drivers = {};
-  // teamKey (lowercased name) -> aggregated team bucket. Teams are per-season
-  // docs with no global id, so cross-season identity keys on the team name —
-  // mirroring how drivers fall back to name when they have no driver_id.
+  // teamId -> aggregated team bucket. A team is a persistent document (see
+  // lib/teams.js), so its all-time line is simply every season's contribution
+  // added together under the same id — even as its driver lineup changes
+  // completely from one season to the next. Legacy per-season team docs fold
+  // onto the canonical doc for their name, so an un-migrated league aggregates
+  // exactly as it did before.
   const teams = {};
   // Every race across the scope, used for the dashboard's schedule metrics
   // (total / completed / next upcoming) alongside the per-driver aggregates.
@@ -96,14 +106,20 @@ async function buildStats(seasons, classId = "", className = "", gameId = null) 
 
   for (const season of seasons) {
     const config = resolveSeasonConfig(season, seriesById[season.series_id] || null);
-    const [entriesSnap, resultsSnap, racesSnap, teamsSnap, seasonClasses] = await Promise.all([
+    const [entriesSnap, resultsSnap, racesSnap, seasonClasses] = await Promise.all([
       db().collection("entries").where("season_id", "==", season.id).get(),
       db().collection("results").where("season_id", "==", season.id).get(),
       db().collection("races").where("season_id", "==", season.id).get(),
-      db().collection("teams").where("season_id", "==", season.id).get(),
       fetchSeasonClasses(season.id),
     ]);
-    const allEntries = entriesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Stamp each entry with the team that driver raced for in THIS season, so
+    // a driver who changed teams between seasons contributes their results to
+    // the right team in each of them.
+    const allEntries = applySeasonTeams(
+      entriesSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+      season.id,
+      teamIndex,
+    );
     // Ordered the same way the standings do it, so a result with no class of
     // its own resolves to the same class on both screens.
     const allEntriesById = orderEntryClasses(
@@ -120,7 +136,6 @@ async function buildStats(seasons, classId = "", className = "", gameId = null) 
     if (classFilterOn && !classSel.length) continue;
     const entries = filterEntriesByClass(allEntries, classSel);
     const entriesById = Object.fromEntries(entries.map(e => [e.id, e]));
-    const teamsById = Object.fromEntries(teamsSnap.docs.map(d => [d.id, d.data()]));
     const seasonRaces = racesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
     // Under a class filter, only that class's calendar counts toward the race
     // totals and field size — its own events plus the shared ones. The
@@ -147,10 +162,14 @@ async function buildStats(seasons, classId = "", className = "", gameId = null) 
     const keyFor = entry =>
       entry.driver_id ? `d:${entry.driver_id}` : entry.user_id ? `u:${entry.user_id}` : `n:${String(entry.name || "").trim().toLowerCase()}`;
 
+    // A team's cross-season identity is its document id — that's what makes it
+    // persistent. An entry tagged with a team name but no resolvable doc (old
+    // free-text data) still gets a bucket, keyed by that name.
     const teamKeyFor = entry => {
-      const t = entry.team_id ? teamsById[entry.team_id] : null;
-      const name = (t?.name ?? entry.team ?? "").trim();
-      return name ? `t:${name.toLowerCase()}` : null;
+      const teamId = teamIndex.teamIdForEntry(entry, season.id);
+      if (teamId) return `t:${teamId}`;
+      const name = String(entry.team ?? "").trim();
+      return name ? `n:${name.toLowerCase()}` : null;
     };
 
     for (const r of results) {
@@ -182,13 +201,14 @@ async function buildStats(seasons, classId = "", className = "", gameId = null) 
       // the combined results of every driver who raced for it in scope.
       const tk = teamKeyFor(entry);
       if (tk) {
-        const t = entry.team_id ? teamsById[entry.team_id] : null;
-        const tb = (teams[tk] ??= { team_name: t?.name ?? entry.team, logo_url: t?.logo_url ?? null, color: t?.color ?? null, results: [], driverKeys: new Set(), titles: 0 });
+        const t = teamIndex.teamForEntry(entry, season.id);
+        const tb = (teams[tk] ??= { team_id: t?.id ?? null, team_name: t?.name ?? entry.team, logo_url: t?.logo_url ?? null, color: t?.color ?? null, results: [], driverKeys: new Set(), titles: 0, seasons: new Set() });
         if (t?.name) tb.team_name = t.name;
         if (t?.logo_url) tb.logo_url = t.logo_url;
         if (t?.color) tb.color = t.color;
         tb.results.push(scored);
         tb.driverKeys.add(key);
+        tb.seasons.add(season.id);
       }
     }
 
@@ -239,11 +259,16 @@ async function buildStats(seasons, classId = "", className = "", gameId = null) 
   // TIE_BREAKERS in lib/standings.js), then name for a dead-even pair.
   rows.sort((a, b) => compareStandings(a, b, { pointsKey: "points", nameKey: "driver_name" }));
 
+  // One row per persistent team, its all-time line in this scope: every point,
+  // win, top 5, pole and finish scored by whoever was on its roster in each of
+  // the seasons it fielded a lineup.
   const team_rows = Object.values(teams).map(t => ({
+    team_id: t.team_id,
     team_name: t.team_name,
     logo_url: t.logo_url,
     color: t.color,
     drivers: t.driverKeys.size,
+    seasons_raced: t.seasons.size,
     ...aggregateCareerStats(t.results, t.titles),
   }));
   team_rows.sort((a, b) => compareStandings(a, b, { pointsKey: "points", nameKey: "team_name" }));

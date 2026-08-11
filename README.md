@@ -27,6 +27,9 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
 - 🏆 **Live standings** — driver *and* team championships with a configurable points scale,
   bonus points, drop weeks per season, and a full tie-breaker chain (wins → podiums → top 5s →
   top 10s → average finish → poles → average start → best laps → laps led)
+- 🛡 **Persistent teams** — teams live in a league-wide pool and keep their name, badge and record
+  for good; each season gets its own driver line-up, so a driver can switch teams between seasons
+  and every point stays credited to the team they actually drove for
 - 🎽 **Multi-class championships** — split a season into classes (Pro/Amateur, GT3/LMP2); each
   scores its own isolated championship, with an optional combined overall title across the field,
   optionally its own race calendar, and optionally its own qualifying and race at events every
@@ -100,8 +103,8 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   everywhere, with sortable columns and per-series car numbers
 - 🖼 **Custom branding** — upload game, series, season, team, and track logos
 - 👑 **Admin roles** — set `ADMIN_EMAILS`; admins get results entry from the Schedule, the
-  Roster & Teams and User Accounts tabs on Drivers, League Setup, and (Moderator and above)
-  the Approvals queue
+  Roster & Teams and User Accounts tabs on Drivers, the Team Roster tab on Teams, League Setup,
+  and (Moderator and above) the Approvals queue
 - 💾 **Backup & restore** — the Owner can export the *entire* application to one JSON file and
   import it back after a crash, a corruption or a hack, with every record keeping its original ID
   so all the links survive; plus an automatic backup every Saturday at 3 AM Eastern, filed into the
@@ -273,7 +276,9 @@ The rules are the same everywhere: `season=all` (or `game=all`, `class=all`) is 
 "All …", which is why a link to the all-time table stays on the all-time table. Anything the
 link leaves out falls back to the reader's own saved selection, so an old bare link like
 `/standings` behaves exactly as it always has. Driver, team and track pages
-(`/drivers/<id>`, `/teams/<name>`, `/tracks/<id>`) were already direct links and are unchanged.
+(`/drivers/<id>`, `/teams/<id>`, `/tracks/<id>`) were already direct links and are unchanged — a
+team link shared before teams became league-wide documents carried its *name* instead of an id, and
+still opens the right profile.
 
 ### For league admins
 
@@ -451,7 +456,9 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      when the player next signs in.
    - **Roster & Teams** *(admin)* — select a **Series** in the top dropdowns to manage that
      series' roster:
-     - **Teams** — create teams with logos.
+     - **Teams** — add a team to this season (creating it in the league-wide pool if it's new)
+       and give it a logo. Building its driver line-up happens on **Teams ▸ Team Roster**; the ✕
+       here takes a team *out of this season*, never out of the league.
      - **Roster** — add a driver, assign their team, classes, car number, and (optionally) link
        them to a registered player account so their results count toward that account's profile
        stats.
@@ -482,7 +489,30 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      - With **no series selected**, the Roster shows the combined driver list across every
        series in scope (Number column is hidden, since a single number doesn't apply) —
        useful for seeing the whole league roster at a glance.
-3. **Results entry** — everything about an event is managed from **Schedule**. Each row's
+3. **Teams** — the team-side mirror of Drivers, with two tabs.
+   - **Teams** — the public directory: one row per team in the league-wide pool, with how many
+     seasons and drivers it has fielded. **＋ New Team** adds one to the pool (and, when the
+     dropdowns are on a season, enters it there). Editing a team changes it everywhere; deleting
+     it removes it from every season it raced in — drivers keep their results, they just lose the
+     team tag.
+   - **Team Roster** *(admin)* — who drives for each team **in one season**. Pick the season with
+     the **Game ▸ Series ▸ Season** menus at the top of the page (with a series selected and "All
+     Seasons" showing, it manages that series' newest season, like the Driver Roster does).
+     - **＋ Add Team to Season** — search the team pool and bring a team in, or create a brand-new
+       one inline. A team can be entered in as many seasons as it races.
+     - **＋ Add Driver** — a searchable list of the season's roster first, then the whole global
+       driver pool, so a team's line-up is built from the same driver identities everything else
+       uses. A driver races for one team per season: picking someone already on another team
+       *moves* them. Someone on the team but not on the season's roster is flagged, since they
+       have no results to contribute.
+     - Each team's card shows its **season points, wins and poles** as they stand, so the
+       aggregation is visible the moment a line-up changes.
+     - **Remove From Season** ends the team's entry in *this* season only. Its other seasons, its
+       record and every race result are untouched.
+     A team's points, wins, top 5s, poles, laps led and average finish are the combined totals of
+     whoever was on its line-up that season; those seasons add up to the team's all-time record on
+     its profile, in the Stats page's **Teams** tab, and in every scope in between.
+4. **Results entry** — everything about an event is managed from **Schedule**. Each row's
    **⏱** button opens that event's results grid and **✎** its details; both land on the same
    race edit screen, which carries **Race Info**, **Qualifying** and **Race Results** tabs
    (Heats / Consolation / Feature on a heat-racing event). Fill in the grid (one row per
@@ -521,8 +551,9 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
 ### Typical first-time flow
 
 `Sign in as admin → League Setup: create Game → Series → Season → Races → Drivers ▸ Roster &
-Teams: add Teams and Drivers (link accounts where possible) → Schedule: ⏱ on an event to enter
-results after each race → Standings/Stats update automatically.`
+Teams: add Drivers (link accounts where possible) → Teams ▸ Team Roster: add Teams to the season
+and build their line-ups → Schedule: ⏱ on an event to enter results after each race →
+Standings/Stats update automatically.`
 
 ## Project Layout
 
@@ -530,8 +561,8 @@ results after each race → Standings/Stats update automatically.`
 frontend/
   app/
     api/            ← Next.js API routes (all writes require a Firebase ID token)
-      games/ series/ seasons/ teams/ entries/ races/ results/ standings/
-      stats/ roster/ users/ upload/ car-selection/
+      games/ series/ seasons/ teams/ team-seasons/ entries/ races/ results/
+      standings/ stats/ roster/ users/ upload/ car-selection/
     page.js         ← Dashboard (per selected season)
     standings/      ← Driver + team points tables
     stats/          ← Scoped driver stats (season/series/game/league), sortable
@@ -542,6 +573,8 @@ frontend/
     drivers/        ← Driver directory + public profiles (/drivers/[uid]: career stats,
                       race history, per-track stats), plus the admin Roster & Teams and
                       User Accounts tabs (?tab=roster / ?tab=accounts)
+    teams/          ← Team directory + public profiles (/teams/[team]: career stats, drivers,
+                      season-by-season line-ups), plus the admin Team Roster tab (?tab=roster)
     approvals/      ← League-wide pending sign-up queue (Moderator+), behind the sidebar badge
     races/[id]/     ← Race results view; races/[id]/edit ← admin race info + results editor
     series-info/    ← A player's series: driver linking, series sign-up, and
@@ -626,7 +659,7 @@ them can claim a scope the grid isn't showing.
 
 `leagues (name, owner_id, logo_url, created_at)` is the top-level partition. Every
 hierarchy/pool collection — `games`, `series`, `seasons`, `races`, `entries`, `teams`,
-`results`, `drivers`, `tracks`, `points_templates` — carries a `league_id` and is read/written
+`team_seasons`, `results`, `drivers`, `tracks`, `points_templates` — carries a `league_id` and is read/written
 scoped to the active league (sent as an `X-League-Id` header; see `lib/serverAuth.js`
 `getRequestLeagueId`/`scopeByLeague`). `users` and `claim_requests` are **not** league-scoped —
 accounts and their roles span leagues. That partition map lives once, in `lib/backup.js`
@@ -968,9 +1001,36 @@ be one the bracket has, and no round may hold more drivers than it eliminates.
 
 `games (league_id)` → `series (game_id, isBangerRacing, isBracketRacing)` → `seasons (series_id, game_id, drop_weeks, points_scale,
 combined_championship)` → `races (season_id, sessions[], bracket_size?)`, `classes (season_id, name, sort_order, race_points?, isBracketRacing)`
-and `entries (season_id, team_id, class_id, user_id, number)` / `teams (season_id)` →
+and `entries (season_id, team_id, class_id, user_id, number)` / `teams (name, logo_url, color)` +
+`team_seasons (team_id, season_id, driver_ids[])` →
 `results (race_id, season_id, entry_id, class_id, points_template_id)`. `users` holds player profiles; linking a
 roster entry to a user account is what feeds their public career stats.
+
+**Teams are persistent, line-ups are seasonal.** A `teams` document is the team itself — league-wide,
+with its own name, badge and colour, exactly like a driver in the global pool. Who drives for it is a
+*separate* document, `team_seasons`, holding one `driver_ids[]` per season. That's what lets Ana race
+for Phoenix Motorsports in Season 1 and for Falcon Racing in Season 2 without either team losing a
+point of its history: her Season 1 results stay Phoenix's forever, and her Season 2 results are
+Falcon's. `driver_ids` are **global** driver ids (`drivers/{id}` — what `entries.driver_id` points
+at), so a line-up survives a rename, a new car number, or the driver being entered under a different
+alias in another series.
+
+`entries.team_id` is kept **mirrored** from the line-up, the same way `entries.class_id` mirrors
+`class_ids[0]`: the line-up is the source of truth, and the mirror is what keeps every reader written
+before `team_seasons` existed — a results grid, an event page, an export — showing the right team. The
+sync runs both ways, so setting a driver's team on the roster puts them on that team's line-up, and
+editing the line-up re-tags their entry. A driver belongs to **one team per season**; adding them to a
+second team moves them, which is what makes the aggregation unambiguous.
+
+The rules live once, in `lib/teams.js` (pure, and covered by `lib/__tests__/teams.test.mjs`) with the
+Firestore reads and writes in `lib/teamsServer.js`. Every stats path — standings, the stats tables, a
+team's profile, the event page, the roster — resolves a driver's team through the same index, so the
+three tables can never disagree about who scored what. Teams created before this existed were one doc
+*per season*, matched up by name; that shape still resolves (the canonical doc for a name is the
+oldest, or any global one), and **Teams ▸ Team Roster** offers a one-click upgrade
+(`POST /api/admin/teams/migrate`) that folds each name into a single permanent team and writes its
+season line-ups. The migration is idempotent and re-points every roster entry *before* deleting a
+duplicate, so no driver — and no result — is ever stranded.
 
 **Display names** live on the global driver doc: `drivers.display_name` (the overall override) and
 `drivers.game_names` — `[{ game_id, name }]`, one entry per game the driver is shown differently in.

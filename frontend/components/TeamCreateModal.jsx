@@ -8,13 +8,15 @@ import { useLeague } from "@/components/LeagueProvider";
 
 const blankTeam = { name: "", color: "", logo_url: "" };
 
-// Create a team straight from the Teams directory. Teams are per-season docs,
-// so the new team is added to whichever season is selected in the top-bar
-// dropdowns. With no concrete season chosen, we ask the admin to pick one there
-// first — the same season a team would belong to if made in League Setup.
+// Create a team straight from the Teams directory. Teams are league-wide and
+// permanent, so this needs nothing but a name — no season required. When the
+// top-bar dropdowns are on a concrete season, the new team is ALSO entered in
+// it (with an empty line-up, ready for drivers on the Team Roster tab), because
+// that's almost always why a team is being created.
 export function TeamCreateModal({ onClose, onCreated }) {
   const { seasonId, season, series, game } = useLeague();
   const [form, setForm] = useState({ ...blankTeam });
+  const [addToSeason, setAddToSeason] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
@@ -23,7 +25,8 @@ export function TeamCreateModal({ onClose, onCreated }) {
     setBusy(true);
     setError(null);
     try {
-      const body = { name: form.name.trim(), color: form.color, logo_url: form.logo_url, season_id: seasonId };
+      const body = { name: form.name.trim(), color: form.color, logo_url: form.logo_url };
+      if (seasonId && addToSeason) body.season_id = seasonId;
       const team = await api("/api/teams", { method: "POST", body });
       onCreated(team);
     } catch (err) {
@@ -32,27 +35,11 @@ export function TeamCreateModal({ onClose, onCreated }) {
     }
   }
 
-  if (!seasonId) {
-    return (
-      <Modal title="New Team" onClose={onClose}>
-        <p style={{ margin: "10px 0 0", color: "var(--ink-1)", fontSize: "0.9rem", lineHeight: 1.5 }}>
-          Teams belong to a season. Choose a game, series and season from the dropdowns at the top of the page, then add the team to it.
-        </p>
-        <button className="btn btn-ghost" type="button" style={{ marginTop: 16 }} onClick={onClose}>Close</button>
-      </Modal>
-    );
-  }
-
   const scopeLabel = [game?.name, series?.name, season?.name].filter(Boolean).join(" · ");
 
   return (
     <Modal title="New Team" onClose={busy ? () => {} : onClose}>
       <form onSubmit={handleSubmit}>
-        {scopeLabel && (
-          <p style={{ margin: "0 0 12px", fontSize: "0.8rem", color: "var(--ink-2)" }}>
-            Adding to <strong style={{ color: "var(--ink-1)" }}>{scopeLabel}</strong>
-          </p>
-        )}
         <div className="field">
           <label>Team Name</label>
           <input required autoFocus value={form.name}
@@ -65,6 +52,22 @@ export function TeamCreateModal({ onClose, onCreated }) {
         </div>
         <ImageUpload label="Team Logo" kind="team-logo" value={form.logo_url}
           onUploaded={url => setForm(f => ({ ...f, logo_url: url }))} />
+        {seasonId ? (
+          <label className="check-row">
+            <input type="checkbox" checked={addToSeason} onChange={e => setAddToSeason(e.target.checked)} />
+            <span>
+              Also enter this team in <strong>{scopeLabel || season?.name}</strong>
+              <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.78rem" }}>
+                Add its drivers afterwards on the Team Roster tab.
+              </span>
+            </span>
+          </label>
+        ) : (
+          <p style={{ margin: "10px 0 0", fontSize: "0.8rem", color: "var(--ink-2)" }}>
+            The team joins the league-wide pool. Pick a season in the menus at the top, then use the
+            <strong> Team Roster</strong> tab to enter it in that season and add its drivers.
+          </p>
+        )}
         {error && <p style={{ color: "#e5484d", fontSize: "0.85rem" }}>{error}</p>}
         <button className="btn btn-primary" type="submit" disabled={busy}>{busy ? "Saving…" : "Create Team"}</button>
         <button className="btn btn-ghost" type="button" style={{ marginLeft: 8 }} onClick={onClose} disabled={busy}>Cancel</button>

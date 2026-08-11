@@ -1,32 +1,51 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/firebase";
-import { getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
+import { getRequestLeagueId } from "@/lib/serverAuth";
+import { loadTeamIndex } from "@/lib/teamsServer";
 
 export const dynamic = "force-dynamic";
 
-// Directory of every team across every season. Teams are per-season docs keyed
-// by name (no global id), so collapse them by lowercased name — the same
-// identity model the Teams stats tab and /teams/[name] profile use. Each row
-// carries the newest logo/color seen and how many seasons the name has raced.
-// `ids` lists every backing team doc for the name so the directory can edit
-// (rename/re-logo across all seasons) or delete the whole team at once —
-// including "phantom" teams that have no drivers/results but still have a doc.
+// Directory of every team in the league — the Teams page's public list, and the
+// team-side mirror of the global driver pool at /api/drivers.
+//
+// Teams are persistent documents now (see lib/teams.js), so a row IS one team:
+// its id, its branding, how many seasons it has fielded a lineup in and how
+// many distinct drivers have raced for it. A league that hasn't run the
+// migration still has per-season team documents; those are collapsed onto the
+// canonical doc for the name, so the directory reads the same either way.
+// `ids` lists every backing document for the row, which is what lets the
+// directory delete a team — including a "phantom" that has no drivers and no
+// results — in one action.
 export async function GET(request) {
-  const snap = await scopeByLeague(db().collection("teams"), getRequestLeagueId(request)).get();
+  const index = await loadTeamIndex({ leagueId: getRequestLeagueId(request), withDrivers: false });
 
-  const byName = {};
-  for (const doc of snap.docs) {
-    const t = doc.data();
-    const name = String(t.name || "").trim();
-    if (!name) continue;
-    const key = name.toLowerCase();
-    const row = byName[key] || (byName[key] = { name, seasons: 0, logo_url: null, color: null, ids: [] });
-    row.seasons += 1;
+  const rows = new Map();
+  for (const doc of index.teamsById.values()) {
+    const team = index.teamById(doc.id);
+    if (!team) continue;
+    const row = rows.get(team.id) || {
+      id: team.id,
+      name: team.name,
+      logo_url: team.logo_url ?? null,
+      color: team.color ?? null,
+      created_at: team.created_at ?? null,
+      ids: [],
+      seasons: 0,
+      drivers: 0,
+    };
     row.ids.push(doc.id);
-    if (t.logo_url) row.logo_url = t.logo_url;
-    if (t.color) row.color = t.color;
+    rows.set(team.id, row);
   }
 
-  const teams = Object.values(byName).sort((a, b) => a.name.localeCompare(b.name));
+  for (const row of rows.values()) {
+    const seasonIds = index.seasonsForTeam(row.id);
+    row.seasons = seasonIds.length;
+    const drivers = new Set();
+    for (const seasonId of seasonIds) {
+      for (const driverId of index.driverIdsFor(row.id, seasonId)) drivers.add(driverId);
+    }
+    row.drivers = drivers.size;
+  }
+
+  const teams = [...rows.values()].sort((a, b) => String(a.name ?? "").localeCompare(String(b.name ?? "")));
   return NextResponse.json(teams);
 }

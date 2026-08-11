@@ -351,7 +351,15 @@ export const SPECS = {
                        car_options: {}, ...RETIRED_MANUFACTURER_FIELD, car_selection_note: {},
                        ...SIGNUP_REQUIREMENT_FIELDS,
                        sort_order: { number: true, default: 0 } } },
-  teams:   { collection: "teams", parentField: "season_id", sortField: "name",
+  // Global team pool — teams are persistent entities that exist independently
+  // of any season, exactly like the drivers below. Which drivers race for a
+  // team in a given season lives in `team_seasons` ({ team_id, season_id,
+  // driver_ids[] }), so a driver can move between teams from one season to the
+  // next without either team losing its history. See lib/teams.js for the
+  // identity rules and app/api/teams + app/api/team-seasons for the routes,
+  // which are hand-written rather than generated here: creating a team can also
+  // enter it in a season, and deleting one has to clear up after itself.
+  teams:   { collection: "teams", parentField: null, sortField: "name",
              fields: { name: { required: true }, logo_url: {}, color: {} } },
   // Global driver pool — identities that exist independently of any season,
   // so an admin can create a driver first and pull them into a series/season

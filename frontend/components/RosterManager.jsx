@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useState, useCallback, useMemo } from "react";
+import Link from "next/link";
 import { useLeague } from "@/components/LeagueProvider";
 import { useSortable } from "@/components/useSortable";
 import { ImageUpload } from "@/components/ImageUpload";
@@ -473,10 +474,26 @@ export function RosterManager() {
     } catch (err) { showToast("error", err.message); }
   }
 
-  async function deleteTeam(id) {
-    if (!confirm("Delete this team?")) return;
-    try { await api(`/api/teams/${id}`, { method: "DELETE" }); await load(); }
-    catch (err) { showToast("error", err.message); }
+  // Teams are league-wide and permanent, so the roster's ✕ takes the team OUT
+  // OF THIS SEASON rather than deleting it: its other seasons, its record and
+  // every race result stay exactly as they are. Deleting a team outright is a
+  // deliberate act, and lives on the Teams directory.
+  async function removeTeamFromSeason(team) {
+    if (!editSeasonId) return;
+    if (!confirm(`Remove ${team.name} from this season? The team keeps its other seasons and all of its history.`)) return;
+    try {
+      let mappingId = team.mapping_id;
+      if (!mappingId) {
+        const created = await api("/api/team-seasons", {
+          method: "POST",
+          body: { team_id: team.id, season_id: editSeasonId, driver_ids: team.driver_ids || [] },
+        });
+        mappingId = created.id;
+      }
+      await api(`/api/team-seasons/${mappingId}`, { method: "DELETE" });
+      showToast("success", `${team.name} removed from this season.`);
+      await load();
+    } catch (err) { showToast("error", err.message); }
   }
 
   // Standalone driver creation: adds an identity to the global pool without
@@ -717,6 +734,11 @@ export function RosterManager() {
 
           <div className="form-card">
             <h3>{editTeamId ? "Edit Team" : "Add Team"}</h3>
+            <p style={{ margin: "0 0 10px", fontSize: "0.8rem", color: "var(--ink-2)" }}>
+              Teams are league-wide and permanent; this adds one to <strong>this season</strong> (reusing the
+              team of that name if it already exists). To build a team&rsquo;s driver line-up, use the{" "}
+              <Link href="/teams?tab=roster" style={{ color: "var(--accent-cyan)" }}>Team Roster</Link> tab.
+            </p>
             <form onSubmit={saveTeam}>
               <div className="field">
                 <label>Team Name</label>
@@ -739,7 +761,8 @@ export function RosterManager() {
                     <span style={{ flex: 1 }}>{t.name}</span>
                     <button className="btn btn-ghost" title="Edit" style={{ marginTop: 0, padding: "4px 10px" }}
                       onClick={() => { setEditTeamId(t.id); setTeamForm({ name: t.name, color: t.color || "", logo_url: t.logo_url || "" }); }}>✎</button>
-                    <button className="btn btn-danger" style={{ marginTop: 0, padding: "4px 10px" }} onClick={() => deleteTeam(t.id)}>✕</button>
+                    <button className="btn btn-danger" title="Remove this team from the season" style={{ marginTop: 0, padding: "4px 10px" }}
+                      onClick={() => removeTeamFromSeason(t)}>✕</button>
                   </div>
                 ))}
               </div>

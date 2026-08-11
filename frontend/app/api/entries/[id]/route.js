@@ -3,6 +3,7 @@ import { coerceField, SPECS } from "@/lib/entityApi";
 import { db } from "@/lib/firebase";
 import { withAdmin } from "@/lib/serverAuth";
 import { carNumberTaken, normalizeCarNumber } from "@/lib/carSelection";
+import { syncLineupFromEntry } from "@/lib/teamsServer";
 
 // Edit one roster entry — the admin's side of "change someone's number".
 //
@@ -17,7 +18,7 @@ import { carNumberTaken, normalizeCarNumber } from "@/lib/carSelection";
 //
 // Clearing a number (blank) is always allowed — racing without one is legal, and
 // any number of entries can have none.
-export const PATCH = withAdmin(async (request, { params }) => {
+export const PATCH = withAdmin(async (request, { params }, user) => {
   const body = await request.json().catch(() => ({}));
   const updates = {};
   for (const [name, opts] of Object.entries(SPECS.entries.fields)) {
@@ -53,6 +54,25 @@ export const PATCH = withAdmin(async (request, { params }) => {
   }
 
   await ref.update(updates);
+
+  // Setting a driver's team here is the same statement as putting them on that
+  // team's line-up for the season, so the line-up is updated to match (see
+  // lib/teamsServer.js). Never fail the edit over it — the entry's own team tag
+  // still resolves them either way.
+  if (updates.team_id !== undefined) {
+    const entry = { ...doc.data(), ...updates };
+    try {
+      await syncLineupFromEntry({
+        seasonId: entry.season_id,
+        driverId: entry.driver_id,
+        teamId: updates.team_id,
+        userId: user.uid,
+      });
+    } catch (err) {
+      console.error("Team line-up sync failed", err);
+    }
+  }
+
   return NextResponse.json({ id: params.id, ...doc.data(), ...updates });
 });
 
