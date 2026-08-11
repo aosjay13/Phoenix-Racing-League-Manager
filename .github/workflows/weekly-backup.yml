@@ -67,6 +67,14 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write        # to commit the backup file back into the repo
+    # The Drive secrets are hoisted to job env so the optional upload step can
+    # test whether they're set. `secrets` is NOT one of the contexts available
+    # to a step-level `if:` — referencing it there is not a condition that comes
+    # out false, it's a workflow that fails to compile, which is what silently
+    # stopped this backup from ever running. `env` is available there.
+    env:
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
     steps:
       - uses: actions/checkout@v4
 
@@ -95,10 +103,9 @@ jobs:
       - name: Upload to Google Drive
         # Skipped entirely unless both Drive secrets are configured, so the
         # off-site copy is opt-in and its absence never fails the backup.
-        if: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID != '' && secrets.GOOGLE_SERVICE_ACCOUNT_JSON != '' }}
+        # Reads them from the job env above, not from `secrets` directly.
+        if: ${{ env.GOOGLE_DRIVE_FOLDER_ID != '' && env.GOOGLE_SERVICE_ACCOUNT_JSON != '' }}
         env:
-          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-          GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
           GOOGLE_DRIVE_KEEP: "12"
         run: node scripts/upload-to-drive.mjs "${{ steps.fetch.outputs.path }}"
 
