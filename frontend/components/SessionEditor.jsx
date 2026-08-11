@@ -1094,10 +1094,23 @@ export function SessionEditor({
   // drivers are placed into finishing order from the import; roster drivers the
   // import didn't cover go to the back as empty slots to fill by hand. Nothing
   // is persisted — the admin reviews and hits Save.
+  //
+  // A row the importer ticked "Prov" skips the grid entirely and joins the
+  // Provisional Entries section below it instead: flat points, no finishing
+  // position, no stats. Qualifying has no such section, so the tick is ignored
+  // there.
   function applyImport(imported) {
     const entryById = new Map(entries.map(e => [e.id ?? e.entry_id, e]));
+    const allowProv = sessionType !== "qualifying";
     const byId = new Map();
-    for (const r of imported) if (entryById.has(r.entry_id)) byId.set(r.entry_id, r); // last wins on duplicates
+    const provById = new Map();
+    // Last wins on duplicates — including across the two buckets, so the final
+    // row for a driver decides whether they're in the field or provisional.
+    for (const r of imported) {
+      if (!entryById.has(r.entry_id)) continue;
+      if (allowProv && r.provisional) { provById.set(r.entry_id, r); byId.delete(r.entry_id); }
+      else { byId.set(r.entry_id, r); provById.delete(r.entry_id); }
+    }
     const num = (v, fallback) => (v === "" || v == null ? fallback : String(v));
     const placed = [...byId.values()].map(im => {
       const entry = entryById.get(im.entry_id);
@@ -1152,9 +1165,37 @@ export function SessionEditor({
     // leave the rest free to derive from the imported numbers.
     const { fastest_lap } = detectFlagLocks(next);
     setFlagLocks({ fastest_lap });
+
+    // Provisional entries are added to whatever is already listed rather than
+    // replacing it — an admin who typed a provisional by hand before importing
+    // the file keeps it. Two exceptions keep the sheet consistent with the
+    // import: a driver already listed provisionally isn't added twice, and one
+    // the import just placed in the finishing order drops out of the
+    // provisional list (they can't be in both, and Save would refuse).
+    if (allowProv) {
+      setProvRows(prev => {
+        const kept = prev.filter(r => !(r.entry_id && byId.has(r.entry_id)));
+        const listed = new Set(kept.map(r => r.entry_id).filter(Boolean));
+        const added = [...provById.keys()]
+          .filter(id => !listed.has(id))
+          .map(id => {
+            const e = entryById.get(id);
+            // Points are left on auto, so they fill with the first finishing
+            // position nobody took — same as a hand-added provisional entry.
+            return makeProvRow({
+              entry_id: id,
+              driver_name: e?.name ?? "",
+              driver_number: e?.number ?? null,
+              class_id: pinnedClassId || e?.class_id || "",
+            });
+          });
+        return kept.length === prev.length && !added.length ? prev : [...kept, ...added];
+      });
+    }
+
     setImportOpen(false);
-    const n = byId.size;
-    showToast("success", `Imported ${n} result${n === 1 ? "" : "s"}. Review the grid, then Save.`);
+    const n = byId.size, p = provById.size;
+    showToast("success", `Imported ${n} result${n === 1 ? "" : "s"}${p ? ` + ${p} provisional entr${p === 1 ? "y" : "ies"}` : ""}. Review the grid, then Save.`);
   }
 
   // Drag a row's handle to drop it into a new finishing position — every
