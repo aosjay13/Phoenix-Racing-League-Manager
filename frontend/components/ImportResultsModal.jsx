@@ -33,6 +33,11 @@ const SEGMENT_TYPE_LABEL = {
 // Columns and driver names are detected either way; the admin can remap any
 // column and resolve/skip individual drivers before applying — nothing is saved
 // until they Apply and then Save the grid.
+// Each row also carries a "Prov" tick: a driver who didn't really race but is
+// still owed flat points. Ticking it sends that driver straight to the
+// Provisional Entries section at the bottom of the results screen instead of
+// taking a finishing position in the grid — an outcome neither of the driver
+// dropdown's own options (— skip row —, + Create new driver…) can express.
 // `defaultClassId` is the class the grid this import feeds is being entered for
 // (a per-class session, or a "<class> only" round) — a driver created from the
 // review table joins it, the same as one created on the grid itself.
@@ -41,6 +46,7 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
   const [parsed, setParsed] = useState(null);      // { headers, rows, delimiter }
   const [mapping, setMapping] = useState({});
   const [overrides, setOverrides] = useState({});  // rowIdx -> entry_id | SKIP
+  const [prov, setProv] = useState({});            // rowIdx -> true when ticked "set to provisional"
   const [extraEntries, setExtraEntries] = useState([]); // drivers created from this modal
   const [createFor, setCreateFor] = useState(null);     // { idx, name } while the create form is open
   const [dragActive, setDragActive] = useState(false);
@@ -127,10 +133,11 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
     setParsed(t);
     setMapping(mapHeaders(t.headers, t.rows.slice(0, 8)));
     setOverrides({});
+    setProv({});
   }
 
   function reset() {
-    setText(""); setParsed(null); setMapping({}); setOverrides({});
+    setText(""); setParsed(null); setMapping({}); setOverrides({}); setProv({});
     setIracing(null); setSegmentKey(""); setSource("");
   }
 
@@ -211,10 +218,19 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
     return row.match.entry_id;
   };
 
+  // Provisional entries are a race-results idea — a qualifying sheet has no
+  // section for them, so the column isn't offered there.
+  const allowProvisional = sessionType !== "qualifying";
+  // Ticked AND resolvable: a row whose driver was skipped imports nowhere at
+  // all, so it can't be provisional either.
+  const isProv = (row, idx) => allowProvisional && !!prov[idx] && resolvedEntryId(row, idx) != null;
+
   // Rows that will actually import (a driver resolved and not skipped).
   const applicable = built.rows
-    .map((row, idx) => ({ row, idx, entry_id: resolvedEntryId(row, idx) }))
+    .map((row, idx) => ({ row, idx, entry_id: resolvedEntryId(row, idx), provisional: isProv(row, idx) }))
     .filter(x => x.entry_id);
+
+  const provCount = applicable.filter(x => x.provisional).length;
 
   // Flag the same driver landing on two imported rows.
   const dupIds = useMemo(() => {
@@ -224,8 +240,12 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
   }, [applicable]);
 
   function apply() {
-    const rows = applicable.map(({ row, entry_id }) => ({
+    const rows = applicable.map(({ row, entry_id, provisional }) => ({
       entry_id,
+      // Ticked "Prov": the editor parks this driver in Provisional Entries on
+      // flat points rather than giving them a finishing position, so none of
+      // the stats below are used for them.
+      provisional,
       finish_pos: row.values.finish_pos,
       start_pos: row.values.start_pos,
       laps: row.values.laps,
@@ -375,8 +395,14 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
 
             {/* Preview + driver resolution */}
             <h4 style={{ margin: "16px 0 6px" }}>
-              Preview{s && <span style={{ fontWeight: 400, fontSize: "0.8rem", color: "var(--ink-1)" }}> · {s.matched} matched, {s.suggested} to check, {s.unmatched} unresolved of {s.total}</span>}
+              Preview{s && <span style={{ fontWeight: 400, fontSize: "0.8rem", color: "var(--ink-1)" }}> · {s.matched} matched, {s.suggested} to check, {s.unmatched} unresolved of {s.total}{provCount ? `, ${provCount} provisional` : ""}</span>}
             </h4>
+            {allowProvisional && (
+              <p style={{ margin: "0 0 8px", fontSize: "0.78rem", color: "var(--ink-2)" }}>
+                Tick <strong>Prov</strong> beside a driver who didn&rsquo;t really race but is still owed points — they go to
+                Provisional Entries at the bottom of the results screen on flat points instead of taking a finishing position.
+              </p>
+            )}
             <div style={{ overflowX: "auto" }}>
               <table className="stats-table" style={{ fontSize: "0.8rem" }}>
                 <thead>
@@ -385,6 +411,11 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
                     {sessionType !== "qualifying" && <th>Start</th>}
                     <th style={{ textAlign: "left" }}>Imported name</th>
                     <th style={{ textAlign: "left" }}>Roster driver</th>
+                    {allowProvisional && (
+                      <th title="Set to provisional — the driver is awarded flat points in the Provisional Entries section instead of taking a finishing position">
+                        Prov
+                      </th>
+                    )}
                     {sessionType === "qualifying"
                       ? <th>Qual Time</th>
                       : <><th>Laps</th><th>Led</th><th>Inc</th><th>FL</th><th>Status</th></>}
@@ -395,14 +426,19 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
                     const chip = statusChip[row.match.status];
                     const resolved = resolvedEntryId(row, idx);
                     const dup = resolved && dupIds.has(resolved);
+                    const provRow = isProv(row, idx);
+                    // A provisional driver's finishing stats aren't imported —
+                    // fade them so the row reads as "points only" at a glance.
+                    const statStyle = provRow ? { opacity: 0.4 } : undefined;
                     return (
                       <tr key={idx} style={resolved == null ? { opacity: 0.55 } : dup ? { background: "rgba(248,81,73,0.08)" } : undefined}>
-                        <td>{row.values.finish_pos}</td>
-                        {sessionType !== "qualifying" && <td>{row.values.start_pos ?? "—"}</td>}
+                        <td style={statStyle}>{row.values.finish_pos}</td>
+                        {sessionType !== "qualifying" && <td style={statStyle}>{row.values.start_pos ?? "—"}</td>}
                         <td style={{ textAlign: "left" }}>
                           {row.rawName || <em style={{ color: "var(--ink-2)" }}>(blank)</em>}
                           {row.rawName && <span style={{ marginLeft: 6, padding: "1px 6px", borderRadius: 10, fontSize: "0.68rem", background: chip.bg, color: chip.fg }}>{chip.label}</span>}
                           {dup && <span style={{ marginLeft: 6, fontSize: "0.68rem", color: "#f85149" }}>dup</span>}
+                          {provRow && <span title="Goes to Provisional Entries — flat points, no finishing position" style={{ marginLeft: 6, padding: "1px 6px", borderRadius: 10, fontSize: "0.68rem", background: "rgba(163,113,247,0.18)", color: "#a371f7" }}>provisional</span>}
                         </td>
                         <td style={{ textAlign: "left" }}>
                           <select
@@ -422,18 +458,33 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
                             {seasonId && <option value={CREATE}>+ Create new driver…</option>}
                           </select>
                         </td>
+                        {allowProvisional && (
+                          <td style={{ textAlign: "center" }}>
+                            <input
+                              type="checkbox"
+                              checked={provRow}
+                              disabled={resolved == null}
+                              aria-label={`Set ${row.rawName || "this row"} to provisional`}
+                              title={resolved == null
+                                ? "Pick a roster driver first — a skipped row can't be provisional"
+                                : "Set to provisional — award flat points at the bottom of the results screen instead of a finishing position"}
+                              onChange={e => setProv(p => ({ ...p, [idx]: e.target.checked }))}
+                              style={{ width: 16, height: 16, margin: 0, cursor: resolved == null ? "not-allowed" : "pointer" }}
+                            />
+                          </td>
+                        )}
                         {sessionType === "qualifying" ? (
-                          <td>
+                          <td style={statStyle}>
                             {row.values.qual_time || <em style={{ color: "var(--ink-2)" }}>—</em>}
                             {row.values.fastest_lap && <span title="Fastest lap of qualifying" style={{ marginLeft: 6, padding: "1px 6px", borderRadius: 10, fontSize: "0.68rem", background: "rgba(46,160,67,0.18)", color: "#3fb950" }}>FL</span>}
                           </td>
                         ) : (
                           <>
-                            <td>{row.values.laps}</td>
-                            <td>{row.values.laps_led}</td>
-                            <td>{row.values.incidents}</td>
-                            <td>{row.values.fastest_lap ? "✓" : ""}</td>
-                            <td>{row.values.status}</td>
+                            <td style={statStyle}>{row.values.laps}</td>
+                            <td style={statStyle}>{row.values.laps_led}</td>
+                            <td style={statStyle}>{row.values.incidents}</td>
+                            <td style={statStyle}>{row.values.fastest_lap ? "✓" : ""}</td>
+                            <td style={statStyle}>{row.values.status}</td>
                           </>
                         )}
                       </tr>
@@ -451,7 +502,8 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
 
             <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
               <button type="button" className="btn btn-primary" style={{ marginTop: 0 }} disabled={!applicable.length} onClick={apply}>
-                Apply {applicable.length} result{applicable.length === 1 ? "" : "s"}
+                Apply {applicable.length - provCount} result{applicable.length - provCount === 1 ? "" : "s"}
+                {provCount ? ` + ${provCount} provisional` : ""}
               </button>
               <button type="button" className="btn btn-ghost" style={{ marginTop: 0 }} onClick={onClose}>Cancel</button>
             </div>
