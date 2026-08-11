@@ -1148,7 +1148,16 @@ export function SessionEditor({
     // An import that names its own fastest lap (a column the file carried,
     // rather than one derived from lap times) keeps it; otherwise the grid
     // derives FL/HC/MLL from the imported numbers as usual.
-    setFlagLocks(detectFlagLocks(next));
+    //
+    // Fastest Lap is the ONLY one of these flags an import carries a value for.
+    // Hard Charger, Most Laps Led and Most Lethal are never in the payload, so
+    // every imported row arrives with them false — running the whole-grid lock
+    // detector across that made them "disagree" with what the grid derives and
+    // locked them OFF, which is why importing a CSV with a Led column never
+    // ticked MLL. Lock only the flag the import actually has an opinion on and
+    // leave the rest free to derive from the imported numbers.
+    const { fastest_lap } = detectFlagLocks(next);
+    setFlagLocks({ fastest_lap });
     setImportOpen(false);
     const n = byId.size;
     showToast("success", `Imported ${n} result${n === 1 ? "" : "s"}. Review the grid, then Save.`);
