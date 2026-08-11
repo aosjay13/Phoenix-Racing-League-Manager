@@ -149,10 +149,9 @@ function RaceInfoTab({ race, season, classes = [], onSaved }) {
           </div>
         )}
         {showSplit && (
-          <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
+          <div className="field check-row">
             <input type="checkbox" id="race_per_class_results" checked={!!form.per_class_results}
-              onChange={e => setForm(f => ({ ...f, per_class_results: e.target.checked }))}
-              style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+              onChange={e => setForm(f => ({ ...f, per_class_results: e.target.checked }))} />
             <label htmlFor="race_per_class_results" style={{ margin: 0 }}>
               Separate results by class
               <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
@@ -176,10 +175,9 @@ function RaceInfoTab({ race, season, classes = [], onSaved }) {
           </span>
         </div>
 
-        <div className="field" style={{ display: "flex", alignItems: "center", gap: 8, flexDirection: "row" }}>
+        <div className="field check-row check-row-center">
           <input type="checkbox" id="heat_format" checked={form.heat_format}
-            onChange={e => setForm(f => ({ ...f, heat_format: e.target.checked }))}
-            style={{ width: 18, height: 18, accentColor: "var(--accent-cyan)" }} />
+            onChange={e => setForm(f => ({ ...f, heat_format: e.target.checked }))} />
           <label htmlFor="heat_format" style={{ margin: 0 }}>This event uses heat racing (Heats → Consolation → Feature)</label>
         </div>
 

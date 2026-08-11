@@ -23,6 +23,7 @@ const publicNav = [
   { href: "/records",   label: "Records",   icon: "🏅" },
   { href: "/skill-ratings", label: "Skill Ratings", icon: "📈" },
   { href: "/schedule",  label: "Schedule",  icon: "📅" },
+  { href: "/calendar",  label: "Calendar",  icon: "🗓" },
   { href: "/drivers",   label: "Drivers",   icon: "🏎" },
   { href: "/teams",     label: "Teams",     icon: "🛡" },
   { href: "/tracks",    label: "Tracks",    icon: "🏁" },

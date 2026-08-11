@@ -2061,7 +2061,7 @@ function Check({ value, onChange, title, disabled, gridProps }) {
   return (
     <input type="checkbox" title={title} checked={value} disabled={disabled} onChange={e => onChange(e.target.checked)}
       {...(gridProps || {})}
-      style={{ width: 18, height: 18, accentColor: "var(--accent-cyan)", margin: "auto", opacity: disabled ? 0.35 : 1 }} />
+      style={{ margin: "auto" }} />
   );
 }
 

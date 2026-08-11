@@ -83,14 +83,13 @@ export function TrackMergeModal({ track, tracks = [], onClose, onMerged }) {
                 {tracks.length > 1 ? "No tracks match that search." : "There's only one track in the pool."}
               </p>
             ) : others.map(t => (
-              <label key={t.id} htmlFor={`merge_track_${t.id}`}
+              <label key={t.id} htmlFor={`merge_track_${t.id}`} className="check-row check-row-center"
                 style={{
-                  display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", cursor: "pointer",
+                  gap: 10, padding: "9px 12px", cursor: "pointer",
                   borderTop: "1px solid var(--border)", fontWeight: 400, textTransform: "none", letterSpacing: 0,
                 }}>
                 <input type="checkbox" id={`merge_track_${t.id}`} checked={picked.includes(t.id)}
-                  onChange={() => toggle(t.id)}
-                  style={{ width: 17, height: 17, flex: "none", accentColor: "var(--accent-cyan)" }} />
+                  onChange={() => toggle(t.id)} />
                 <span style={{ minWidth: 0 }}>
                   <span style={{ display: "block", color: "var(--ink-0)", fontSize: "0.9rem" }}>{t.name}</span>
                   <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.76rem" }}>

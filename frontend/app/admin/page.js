@@ -465,11 +465,10 @@ function AdminInner() {
                   // or not the boxes are ticked, so show them as on and say why.
                   const implied = isIracingGame(gameForm.name) && req.field.startsWith("requires_iracing");
                   return (
-                    <div key={req.field} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                    <div key={req.field} className="check-row">
                       <input type="checkbox" id={`game_${req.field}`}
                         checked={implied || !!gameForm[req.field]} disabled={implied}
-                        onChange={e => setGameForm(f => ({ ...f, [req.field]: e.target.checked }))}
-                        style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+                        onChange={e => setGameForm(f => ({ ...f, [req.field]: e.target.checked }))} />
                       <label htmlFor={`game_${req.field}`} style={{ margin: 0 }}>
                         {req.title}
                         <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
@@ -518,11 +517,10 @@ function AdminInner() {
                 it adds the derby stats to this series' results grids, the derby
                 bonuses to its points structures, and their totals to ITS
                 standings and stats — and nowhere else. */}
-            <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
+            <div className="field check-row">
               <input type="checkbox" id="series_banger_racing" disabled={!gameId}
                 checked={!!seriesForm.isBangerRacing}
-                onChange={e => setSeriesForm(f => ({ ...f, isBangerRacing: e.target.checked }))}
-                style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+                onChange={e => setSeriesForm(f => ({ ...f, isBangerRacing: e.target.checked }))} />
               <label htmlFor="series_banger_racing" style={{ margin: 0 }}>
                 Demo Derby / Banger Racing Mode
                 <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
@@ -540,11 +538,10 @@ function AdminInner() {
                 only the SHAPE of a results grid, so the drivers eliminated in
                 the same round share one finishing position. See
                 lib/bracketRacing.js. */}
-            <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
+            <div className="field check-row">
               <input type="checkbox" id="series_bracket_racing" disabled={!gameId}
                 checked={!!seriesForm.isBracketRacing}
-                onChange={e => setSeriesForm(f => ({ ...f, isBracketRacing: e.target.checked }))}
-                style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+                onChange={e => setSeriesForm(f => ({ ...f, isBracketRacing: e.target.checked }))} />
               <label htmlFor="series_bracket_racing" style={{ margin: 0 }}>
                 Bracket Style Racing
                 <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
@@ -755,11 +752,10 @@ function AdminInner() {
                 Hidden when the series or season above already runs derby, since
                 this class does too and the switch would be a no-op. */}
             {!bangerSeason && (
-              <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
+              <div className="field check-row">
                 <input type="checkbox" id="class_banger_racing" disabled={!seasonId}
                   checked={!!classForm.isBangerRacing}
-                  onChange={e => setClassForm(f => ({ ...f, isBangerRacing: e.target.checked }))}
-                  style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+                  onChange={e => setClassForm(f => ({ ...f, isBangerRacing: e.target.checked }))} />
                 <label htmlFor="class_banger_racing" style={{ margin: 0 }}>
                   Demo Derby / Banger Racing Class
                   <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
@@ -778,11 +774,10 @@ function AdminInner() {
                 Hidden when the series above already runs brackets, since this
                 class does too and the switch would be a no-op. */}
             {!bracketSeries && (
-              <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
+              <div className="field check-row">
                 <input type="checkbox" id="class_bracket_racing" disabled={!seasonId}
                   checked={!!classForm.isBracketRacing}
-                  onChange={e => setClassForm(f => ({ ...f, isBracketRacing: e.target.checked }))}
-                  style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+                  onChange={e => setClassForm(f => ({ ...f, isBracketRacing: e.target.checked }))} />
                 <label htmlFor="class_bracket_racing" style={{ margin: 0 }}>
                   Bracket Style Racing Class
                   <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
@@ -803,10 +798,9 @@ function AdminInner() {
             <CarSelectionFields value={classForm} onChange={setClassForm} level="class" disabled={!seasonId}
               inherited={resolveSignupRules({ game, series, season })} />
 
-            <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
+            <div className="field check-row">
               <input type="checkbox" id="class_own_points" disabled={!seasonId} checked={!!classForm.own_points}
-                onChange={e => toggleOwnPoints(e.target.checked)}
-                style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+                onChange={e => toggleOwnPoints(e.target.checked)} />
               <label htmlFor="class_own_points" style={{ margin: 0 }}>
                 This class scores on its own points structure
                 <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
@@ -933,10 +927,9 @@ function AdminInner() {
             <div className="field"><label>Car Type</label>
               <input disabled={!seasonId} value={raceForm.car} placeholder={classes.length ? "Leave blank to use the class's / season's car" : "Leave blank to use the season's car"}
                 onChange={e => setRaceForm(f => ({ ...f, car: e.target.value }))} /></div>
-            <div className="field" style={{ display: "flex", alignItems: "center", gap: 8, flexDirection: "row" }}>
+            <div className="field check-row check-row-center">
               <input type="checkbox" id="race_heat_format" disabled={!seasonId} checked={raceForm.heat_format}
-                onChange={e => setRaceForm(f => ({ ...f, heat_format: e.target.checked }))}
-                style={{ width: 18, height: 18, accentColor: "var(--accent-cyan)" }} />
+                onChange={e => setRaceForm(f => ({ ...f, heat_format: e.target.checked }))} />
               <label htmlFor="race_heat_format" style={{ margin: 0 }}>This event uses heat racing (Heats → Consolation → Feature)</label>
             </div>
             {raceForm.heat_format ? (

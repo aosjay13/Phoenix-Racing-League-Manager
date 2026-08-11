@@ -66,10 +66,9 @@ export function SeasonForm({
 
       <ImageUpload label="Season Logo" kind="season-logo" value={value.logo_url} onUploaded={url => set({ logo_url: url })} />
 
-      <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
+      <div className="field check-row">
         <input type="checkbox" id="season_combined_championship" disabled={disabled}
-          checked={value.combined_championship} onChange={check("combined_championship")}
-          style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+          checked={value.combined_championship} onChange={check("combined_championship")} />
         <label htmlFor="season_combined_championship" style={{ margin: 0 }}>
           Enable Overall Championship
           <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
@@ -82,10 +81,9 @@ export function SeasonForm({
         </label>
       </div>
 
-      <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
+      <div className="field check-row">
         <input type="checkbox" id="season_per_class_schedules" disabled={disabled}
-          checked={value.per_class_schedules} onChange={check("per_class_schedules")}
-          style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+          checked={value.per_class_schedules} onChange={check("per_class_schedules")} />
         <label htmlFor="season_per_class_schedules" style={{ margin: 0 }}>
           Per-Class Schedules
           <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
@@ -98,10 +96,9 @@ export function SeasonForm({
         </label>
       </div>
 
-      <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
+      <div className="field check-row">
         <input type="checkbox" id="season_per_class_results" disabled={disabled}
-          checked={value.per_class_results} onChange={check("per_class_results")}
-          style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+          checked={value.per_class_results} onChange={check("per_class_results")} />
         <label htmlFor="season_per_class_results" style={{ margin: 0 }}>
           Separate Results by Class
           <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>

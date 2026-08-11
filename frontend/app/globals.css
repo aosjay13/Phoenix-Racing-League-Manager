@@ -2228,3 +2228,436 @@ tbody tr:hover {
   background: rgba(244, 162, 40, 0.12);
   border: 1px solid rgba(244, 162, 40, 0.3);
 }
+
+/* ── Checkboxes & radios ───────────────────────────────────────────────────
+   ONE tick box for the whole app. Every checkbox and radio anywhere — League
+   Setup's switches, a results grid's tick cells, the class picker, a modal's
+   options — is drawn here and nowhere else, so they can't drift into different
+   sizes and shapes screen by screen.
+
+   Two things this fixes. First, size: `.field input` above stretches inputs to
+   100% width, which a bare browser checkbox obeyed — hence the hand-rolled
+   `style={{ width: 18, height: 18 }}` that used to be sprinkled around some (but
+   not all) of them. The size lives here now, and `.field`-scoped selectors are
+   included so it wins over that rule wherever a box sits inside a field.
+
+   Second, contrast: the native control on a dark background gave an unchecked
+   box a faint outline and a checked one a small tick, and at a glance the two
+   looked alike. Off is a clearly drawn empty box; ON is a filled cyan box with a
+   white tick (a filled ring with a dot, for a radio) — readable across the room,
+   not just up close. */
+input[type="checkbox"],
+input[type="radio"],
+.field input[type="checkbox"],
+.field input[type="radio"] {
+  appearance: none;
+  -webkit-appearance: none;
+  /* Fixed box: never stretched by a flex/grid parent, never squashed by a long
+     label beside it. */
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  max-width: 18px;
+  flex: 0 0 auto;
+  padding: 0;
+  margin: 0;
+  display: inline-grid;
+  place-content: center;
+  vertical-align: middle;
+  border: 2px solid var(--ink-2);
+  border-radius: 5px;
+  background: var(--bg-0);
+  color: var(--ink-0);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+  box-sizing: border-box;
+}
+
+input[type="radio"],
+.field input[type="radio"] {
+  border-radius: 50%;
+}
+
+/* The mark itself, drawn by the box rather than by a font glyph so it scales
+   with the control and can't be missing on a platform. */
+input[type="checkbox"]::before,
+input[type="radio"]::before {
+  content: "";
+  display: block;
+  transform: scale(0);
+  transition: transform 120ms ease;
+}
+
+input[type="checkbox"]::before {
+  width: 10px;
+  height: 10px;
+  /* A tick, as a clip path — no background-image, so it inherits currentColor
+     and stays crisp at any zoom. */
+  background: currentColor;
+  clip-path: polygon(14% 47%, 0 60%, 40% 100%, 100% 22%, 86% 10%, 38% 71%);
+}
+
+input[type="radio"]::before {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+input[type="checkbox"]:hover:not(:disabled),
+input[type="radio"]:hover:not(:disabled) {
+  border-color: var(--accent-cyan);
+}
+
+/* ON. Filled, not outlined — the whole point is that a glance tells you. */
+input[type="checkbox"]:checked,
+input[type="radio"]:checked,
+.field input[type="checkbox"]:checked,
+.field input[type="radio"]:checked {
+  background: var(--accent-cyan);
+  border-color: var(--accent-cyan);
+  color: #03060a;
+  box-shadow: 0 0 0 1px rgba(0, 180, 216, 0.35), var(--shadow-glow-cyan);
+}
+
+input[type="checkbox"]:checked::before,
+input[type="radio"]:checked::before {
+  transform: scale(1);
+}
+
+/* A part-selected group ("some of these classes"), for anything that sets it. */
+input[type="checkbox"]:indeterminate {
+  background: var(--accent-cyan-dim);
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+}
+
+input[type="checkbox"]:indeterminate::before {
+  transform: scale(1);
+  width: 10px;
+  height: 2px;
+  clip-path: none;
+  border-radius: 1px;
+}
+
+input[type="checkbox"]:focus-visible,
+input[type="radio"]:focus-visible {
+  outline: none;
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 3px rgba(0, 180, 216, 0.25);
+}
+
+input[type="checkbox"]:disabled,
+input[type="radio"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  border-color: var(--ink-2);
+  box-shadow: none;
+}
+
+input[type="checkbox"]:disabled:checked,
+input[type="radio"]:disabled:checked {
+  background: var(--ink-2);
+  border-color: var(--ink-2);
+  color: var(--bg-0);
+}
+
+/* A label sitting next to a box is part of the control: clicking the words
+   toggles it, and the pair lines up on the first line of a wrapped label rather
+   than centring on a three-line block of help text. */
+.check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  flex-direction: row;
+}
+
+.check-row > input[type="checkbox"],
+.check-row > input[type="radio"] {
+  margin-top: 2px;
+}
+
+.check-row label,
+.check-row > span {
+  margin: 0;
+  cursor: pointer;
+}
+
+/* A one-line label has nothing to align to the top OF, so its box sits centred
+   against the text instead. */
+.check-row-center {
+  align-items: center;
+}
+
+.check-row-center > input[type="checkbox"],
+.check-row-center > input[type="radio"] {
+  margin-top: 0;
+}
+
+/* ── Calendar (month grid) ─────────────────────────────────────────────────
+   The league's whole year, a month at a time. Every event is a pill in the
+   square for the day it runs, and every pill is a link to that race. */
+.calendar-filters {
+  margin-top: 16px;
+  align-items: flex-end;
+  gap: 14px;
+}
+
+.calendar-filter-hint {
+  align-self: flex-end;
+  padding-bottom: 6px;
+  font-size: 0.78rem;
+  color: var(--ink-2);
+}
+
+.calendar-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.calendar-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.calendar-month {
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  min-width: 190px;
+  text-align: center;
+}
+
+.calendar-today-btn {
+  margin-top: 0;
+  padding: 6px 12px;
+  font-size: 0.8rem;
+}
+
+.calendar-count {
+  font-size: 0.82rem;
+  color: var(--ink-1);
+}
+
+.calendar-jumper {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.calendar-jumper-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-2);
+  margin-right: 2px;
+}
+
+.calendar-jump-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--ink-1);
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.calendar-jump-chip:hover {
+  background: var(--card-hover);
+  color: var(--ink-0);
+}
+
+.calendar-jump-chip.active {
+  background: var(--accent-cyan-dim);
+  border-color: var(--border-accent);
+  color: var(--accent-cyan);
+}
+
+.calendar-jump-count {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+.calendar-jump-chip.active .calendar-jump-count { color: var(--accent-cyan); }
+
+/* The grid scrolls sideways as a whole on a narrow screen rather than crushing
+   seven columns into a phone's width, which is what makes a day unreadable. */
+.calendar-wrap {
+  margin-top: 14px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(132px, 1fr));
+  min-width: 760px;
+}
+
+.calendar-weekday {
+  padding: 10px 8px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-2);
+  text-align: center;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+}
+
+.calendar-weekday-short { display: none; }
+
+.calendar-cell {
+  min-height: 118px;
+  padding: 6px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* The seven weekday headers are children 1–7, so a cell in the last column
+   is every 7th child from there on. */
+.calendar-cell:nth-child(7n) { border-right: 0; }
+
+.calendar-cell.is-weekend { background: rgba(255, 255, 255, 0.015); }
+
+/* Days spilling in from the neighbouring months: present so every week is
+   whole, dimmed so they can't be mistaken for this month's. */
+.calendar-cell.is-outside {
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.calendar-cell.is-outside .calendar-daynum { color: var(--ink-2); opacity: 0.6; }
+
+.calendar-cell.is-today {
+  box-shadow: inset 0 0 0 2px var(--accent-cyan);
+}
+
+.calendar-cell.is-today .calendar-daynum {
+  background: var(--accent-cyan);
+  color: #03060a;
+  font-weight: 800;
+}
+
+.calendar-daynum {
+  align-self: flex-start;
+  min-width: 22px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--ink-1);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.calendar-events {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* One race. Reads as "series · track", which is what somebody scanning a month
+   is actually looking for. */
+.calendar-event {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--border-accent);
+  background: var(--accent-cyan-dim);
+  color: var(--ink-0);
+  font-size: 0.74rem;
+  line-height: 1.25;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+
+.calendar-event:hover {
+  background: rgba(0, 180, 216, 0.22);
+  border-color: var(--accent-cyan);
+  transform: translateY(-1px);
+}
+
+/* An event that has run: history, so it steps back visually and carries the
+   flag that means "results are in". */
+.calendar-event.is-done {
+  background: var(--card);
+  border-color: var(--border);
+  color: var(--ink-1);
+}
+
+.calendar-event.is-done:hover {
+  background: var(--card-hover);
+  border-color: var(--accent-gold);
+}
+
+.calendar-event-series {
+  flex-shrink: 0;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--accent-cyan);
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.calendar-event.is-done .calendar-event-series { color: var(--accent-gold); }
+
+.calendar-event-track {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.calendar-event-flag { margin-left: auto; font-size: 0.7rem; }
+
+.calendar-undated {
+  margin-top: 20px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--card);
+}
+
+.calendar-undated h3 { margin: 0 0 4px; font-size: 0.95rem; }
+
+.calendar-undated p { margin: 0 0 10px; font-size: 0.8rem; color: var(--ink-2); }
+
+.calendar-undated-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.calendar-undated-list .calendar-event { max-width: 320px; }
+
+@media (max-width: 640px) {
+  .calendar-grid { grid-template-columns: repeat(7, minmax(112px, 1fr)); min-width: 700px; }
+  .calendar-weekday-long { display: none; }
+  .calendar-weekday-short { display: inline; }
+  .calendar-month { min-width: 0; font-size: 1rem; }
+}

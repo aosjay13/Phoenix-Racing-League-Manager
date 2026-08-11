@@ -64,9 +64,9 @@ export function RosterImportModal({ seasonId, seriesId, seasonName, seriesName, 
       </p>
       <form onSubmit={submit}>
         <div className="field">
-          <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontWeight: 400, cursor: "pointer" }}>
+          <label className="check-row" style={{ fontWeight: 400, cursor: "pointer" }}>
             <input type="radio" name="import-source" value="series" checked={source === "series"}
-              onChange={() => setSource("series")} style={{ marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+              onChange={() => setSource("series")} />
             <span>
               <strong>All drivers in {seriesName || "this series"}</strong>
               <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.82rem" }}>
@@ -76,10 +76,9 @@ export function RosterImportModal({ seasonId, seriesId, seasonName, seriesName, 
           </label>
         </div>
         <div className="field">
-          <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontWeight: 400, cursor: noSeasons ? "default" : "pointer" }}>
+          <label className="check-row" style={{ fontWeight: 400, cursor: noSeasons ? "default" : "pointer" }}>
             <input type="radio" name="import-source" value="season" checked={source === "season"}
-              disabled={noSeasons} onChange={() => setSource("season")}
-              style={{ marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+              disabled={noSeasons} onChange={() => setSource("season")} />
             <span>
               <strong>Clone a previous season</strong>
               <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.82rem" }}>

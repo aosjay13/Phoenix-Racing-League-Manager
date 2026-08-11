@@ -27,10 +27,19 @@ function aliasValue(rows, label) {
 const GAME_SCOPED_LABELS = new Set([IRACING_NAME_LABEL.toLowerCase(), IRACING_ID_LABEL.toLowerCase()]);
 
 // The season sign-up form. It renders ITSELF from what the admin asked for:
-// a car number field only if the season requires (or offers) one, a car
-// dropdown only where a car list exists, a manufacturer dropdown only where
-// that's a separate question. Nothing is hard-coded about which fields a league
-// wants — see resolveSignupRules in lib/carSelection.js.
+// a car number field only where a number is REQUIRED, a car dropdown only where
+// a car list exists, a manufacturer dropdown only where that's a separate
+// question. Nothing is hard-coded about which fields a league wants — see
+// resolveSignupRules in lib/carSelection.js.
+//
+// "Only where it's required" is the rule for the number, and it's resolved down
+// the same game → series → season → class chain as everything else: a league
+// that doesn't run car numbers (or a season, or one class of it, that switches
+// them off) shows no number question at all, rather than offering an optional
+// box for something nobody uses. Picking a class re-resolves it, so a class that
+// requires numbers inside a season that doesn't asks for one the moment it's
+// chosen — and a number typed before the question went away is dropped rather
+// than submitted unseen.
 //
 // Whatever is filled in, submitting NEVER puts anyone on the roster: it files a
 // pending request for an admin (POST /api/signup-requests). The form says so
@@ -55,6 +64,10 @@ export function SignupForm({ season, driver, onDone, onCancel }) {
   // A class can ask for more than its season does, so what's rendered changes
   // the moment one is picked.
   const rules = (classId && season.class_rules?.[classId]) || season.rules || {};
+  // The one switch that decides whether this sign-up is asked for a car number
+  // at all. Everything below reads it rather than `rules.require_number`, so the
+  // field, its validation and what gets submitted can't disagree.
+  const asksNumber = !!rules.require_number;
   const carOptions = rules.car_options || [];
   const manufacturerOptions = rules.manufacturer_options || [];
   const gameName = season.game_name || "";
@@ -83,6 +96,14 @@ export function SignupForm({ season, driver, onDone, onCancel }) {
     if (manufacturer && !manufacturerOptions.includes(manufacturer)) setManufacturer("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [classId]);
+
+  // A number typed while the question was on screen must not survive the
+  // question disappearing: it would be submitted invisibly, and a clash with
+  // somebody else's number would disable Submit with nothing on screen to
+  // explain why.
+  useEffect(() => {
+    if (!asksNumber && number) setNumber("");
+  }, [asksNumber, number]);
 
   // Any alias the game insists on gets a row up front rather than hiding behind
   // "＋ Add platform".
@@ -127,7 +148,9 @@ export function SignupForm({ season, driver, onDone, onCancel }) {
   const pendingJoins = useMemo(
     () => (season.pending || []).filter(p => !isNumberChange(p)),
     [season.pending]);
-  const numberTaken = numberClaimed(season.roster || [], season.pending || [], number);
+  const numbersTaken = useMemo(
+    () => roster.filter(r => String(r.number ?? "").trim()).length, [roster]);
+  const numberTaken = asksNumber && numberClaimed(season.roster || [], season.pending || [], number);
   const takenCars = useMemo(() => {
     const counts = {};
     for (const r of roster) if (r.car) counts[r.car] = (counts[r.car] || 0) + 1;
@@ -151,7 +174,13 @@ export function SignupForm({ season, driver, onDone, onCancel }) {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const info = cleanSignupDriverInfo({ name, aliases, number, class_ids: classId ? [classId] : [] });
+    // Belt and braces on the hidden number: the state is cleared the moment the
+    // question goes away, and it's dropped again here, so nothing that was never
+    // asked for can ride along on the request.
+    const info = cleanSignupDriverInfo({
+      name, aliases, number: asksNumber ? number : "",
+      class_ids: classId ? [classId] : [],
+    });
     try {
       await api("/api/signup-requests", {
         method: "POST",
@@ -208,18 +237,20 @@ export function SignupForm({ season, driver, onDone, onCancel }) {
         </div>
       )}
 
-      {/* Car number — always offered, marked required only where the admin
-          said so. */}
-      <div className="field">
-        <label htmlFor="signup_number">
-          Car Number {rules.require_number ? <span className="field-req">required</span> : "(optional)"}
-        </label>
-        <input id="signup_number" type="text" inputMode="numeric" maxLength={3}
-          className={numberTaken ? "is-invalid" : undefined}
-          aria-invalid={numberTaken || undefined}
-          value={number} onChange={e => setNumber(e.target.value)} placeholder="e.g. 07" />
-        {numberTaken && <p className="field-error">{NUMBER_TAKEN_MESSAGE}</p>}
-      </div>
+      {/* Car number — asked for only where the admin requires one. A league,
+          season or class that doesn't run numbers shows nothing here at all. */}
+      {asksNumber && (
+        <div className="field">
+          <label htmlFor="signup_number">
+            Car Number <span className="field-req">required</span>
+          </label>
+          <input id="signup_number" type="text" inputMode="numeric" maxLength={3}
+            className={numberTaken ? "is-invalid" : undefined}
+            aria-invalid={numberTaken || undefined}
+            value={number} onChange={e => setNumber(e.target.value)} placeholder="e.g. 07" />
+          {numberTaken && <p className="field-error">{NUMBER_TAKEN_MESSAGE}</p>}
+        </div>
+      )}
 
       {/* Car — only when the admin published a list to choose from. */}
       {carOptions.length > 0 && (
@@ -254,17 +285,30 @@ export function SignupForm({ season, driver, onDone, onCancel }) {
           picks a number or a car that's spoken for. */}
       <details className="roster-peek" open={roster.length > 0 && roster.length <= 8}>
         <summary>
-          Series roster — {roster.filter(r => String(r.number ?? "").trim()).length} number
-          {roster.filter(r => String(r.number ?? "").trim()).length === 1 ? "" : "s"} spoken for
+          {/* Numbers are the headline where a number is what's being chosen;
+              where the series doesn't run them, the roster is simply who's in. */}
+          {asksNumber
+            ? <>Series roster — {numbersTaken} number{numbersTaken === 1 ? "" : "s"} spoken for</>
+            : <>Series roster — {roster.length} driver{roster.length === 1 ? "" : "s"}</>}
           {pendingJoins.length ? ` · ${pendingJoins.length} awaiting approval` : ""}
         </summary>
         {roster.length === 0 ? (
-          <p className="roster-peek-empty">Nobody has signed up yet — every number is free.</p>
+          <p className="roster-peek-empty">
+            {asksNumber
+              ? "Nobody has signed up yet — every number is free."
+              : "Nobody has signed up yet — you'd be the first."}
+          </p>
         ) : (
           <ul className="roster-peek-list">
             {roster.map((r, i) => (
               <li key={`${r.number ?? ""}-${r.name}-${i}`}>
-                <span className="badge">{String(r.number ?? "").trim() || "—"}</span>
+                {/* The number badge earns its place where numbers are part of
+                    the sign-up, or where this driver happens to carry one; a
+                    series that doesn't run them gets a column of em-dashes
+                    otherwise. */}
+                {(asksNumber || String(r.number ?? "").trim()) && (
+                  <span className="badge">{String(r.number ?? "").trim() || "—"}</span>
+                )}
                 <span className="roster-peek-name">
                   {r.name}
                   {r.pending && <span className="roster-peek-pending">pending</span>}

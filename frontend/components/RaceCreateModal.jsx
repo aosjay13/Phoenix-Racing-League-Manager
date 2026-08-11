@@ -121,10 +121,9 @@ export function RaceCreateModal({ seasonId, defaultRound, classes = [], perClass
             </span></div>
         )}
         {showSplit && (
-          <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
+          <div className="field check-row">
             <input type="checkbox" id="new_race_per_class_results" checked={!!form.per_class_results}
-              onChange={e => setForm(f => ({ ...f, per_class_results: e.target.checked }))}
-              style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+              onChange={e => setForm(f => ({ ...f, per_class_results: e.target.checked }))} />
             <label htmlFor="new_race_per_class_results" style={{ margin: 0 }}>
               Separate results by class
               <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
@@ -141,10 +140,9 @@ export function RaceCreateModal({ seasonId, defaultRound, classes = [], perClass
         <div className="field"><label>Car Type</label>
           <input value={form.car} placeholder={classes.length ? "Leave blank to use the class's / season's car" : "Leave blank to use the season's car"}
             onChange={e => setForm(f => ({ ...f, car: e.target.value }))} /></div>
-        <div className="field" style={{ display: "flex", alignItems: "center", gap: 8, flexDirection: "row" }}>
+        <div className="field check-row check-row-center">
           <input type="checkbox" id="heat_format" checked={form.heat_format}
-            onChange={e => setForm(f => ({ ...f, heat_format: e.target.checked }))}
-            style={{ width: 18, height: 18, accentColor: "var(--accent-cyan)" }} />
+            onChange={e => setForm(f => ({ ...f, heat_format: e.target.checked }))} />
           <label htmlFor="heat_format" style={{ margin: 0 }}>This event uses heat racing (Heats → Consolation → Feature)</label>
         </div>
 

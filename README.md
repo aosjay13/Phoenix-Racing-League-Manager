@@ -90,6 +90,12 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   is the sum of the Points column on every session they ran, Qualifying included, so the standings
   can be checked by adding up what's on screen; re-submitting a race overwrites cleanly for
   corrections
+- 🗓 **Global race calendar** — a month-by-month grid of **every** event in the league, past and
+  future, on the day it runs. Each race is a pill carrying its series' abbreviation and the track,
+  and clicking one opens that event's page (its results, once it has run). The same **Game ▸
+  Series** menus as everywhere else narrow it to one series, or leave them on *All* for the master
+  view across every game the league runs. It opens on the month that actually has racing in it,
+  and a **Jump to** row skips straight to any other month that does
 - 📊 **Stats & Roster filtering** — Game/Series/Season dropdowns filter Stats and Roster
   everywhere, with sortable columns and per-series car numbers
 - 🖼 **Custom branding** — upload game, series, season, team, and track logos
@@ -154,12 +160,17 @@ The app runs at `http://localhost:3000`.
 
      **The form renders itself from what that league asked for.** A car number box, a car
      dropdown, a manufacturer / model dropdown — each appears only if the series, season or class
-     you're joining wants it, marked *required* where it's mandatory, and **Submit Sign Up** stays
-     disabled until every required choice is made. Alongside them: the name you race under, your
-     class, and a **Contact & Platform Details** panel — the accounts this league needs to reach
-     you and to find you in-game. Under those, collapsed, sits the full **Aliases / Connected
-     Accounts** list — every platform username (Discord, PSN, Xbox, Steam, iRacing…) the Smart
-     Importer matches results against, so a result posted under any of them lands on your profile.
+     you're joining wants it, and **Submit Sign Up** stays disabled until every required choice is
+     made. The **car number** question is asked *only where a number is required*: a league that
+     doesn't run car numbers — or a season, or a single class of it, that switches them off — shows
+     no number box at all, rather than an optional field for something nobody uses. Pick a class
+     that does require one and the question appears there and then.
+
+     Alongside them: the name you race under, your class, and a **Contact & Platform Details**
+     panel — the accounts this league needs to reach you and to find you in-game. Under those,
+     collapsed, sits the full **Aliases / Connected Accounts** list — every platform username
+     (Discord, PSN, Xbox, Steam, iRacing…) the Smart Importer matches results against, so a result
+     posted under any of them lands on your profile.
 
      **Your Discord name is required for every sign-up**, in every game, series, season and class:
      it's how the league reaches you. On top of that, each game asks for whatever identifies you
@@ -214,18 +225,25 @@ The app runs at `http://localhost:3000`.
    League Setup does and dropping you onto the new season's empty calendar. **🖼 Share Graphic**
    exports the calendar as an image — the whole season's rounds, or (on the cross-season feed)
    Upcoming and Recent Results as separate posts.
-6. **Standings** — driver and team championship tables for the selected season, with
+6. **Calendar** — every race in the league on a month-by-month grid, past and future, on the day
+   it runs. Each event is a pill showing its series (abbreviated) and the track; click one to open
+   that race's page. The **Game** and **Series** menus at the top narrow it to a single series —
+   leave them on *All* and you get the master view across every game the league runs. It opens on
+   the month with racing in it rather than on today's empty one, and the **Jump to** row hops
+   straight to any other month that has events. Where the Schedule answers *what's next and what
+   just happened*, the Calendar answers *what does June look like*.
+7. **Standings** — driver and team championship tables for the selected season, with
    points, gaps to the leader, and per-category stats. Click any column header to sort. Level
    on points? The tie-breaker chain below decides, and every step of it is a column in the
    table so you can see why.
-7. **Stats** — use the Game/Series/Season/Class menus to scope driver stats to a class, a
+8. **Stats** — use the Game/Series/Season/Class menus to scope driver stats to a class, a
    season, a whole series, a whole game, or the entire league. Pick "All" at any level to
    widen the scope.
-8. **Tracks** — open a venue for its own page: every race held there, a leaderboard of who has
+9. **Tracks** — open a venue for its own page: every race held there, a leaderboard of who has
    gone best, and its lap records. The **Class** menu scopes it too — the leaderboard, winners
    and headline record become that class's — while the per-game and per-class record breakdowns
    always stay side by side, since that's the comparison they exist to show.
-9. **Records** — the record holder in each category for the current scope, plus **Avg Drivers
+10. **Records** — the record holder in each category for the current scope, plus **Avg Drivers
    per Race**: the average field size across every completed race in scope. Empty and upcoming
    events are ignored, and a heat weekend counts its Feature field once rather than each heat.
    **🖼 Share Graphic** posts the record book as one image — a row per category that has a holder
@@ -511,6 +529,8 @@ frontend/
     standings/      ← Driver + team points tables
     stats/          ← Scoped driver stats (season/series/game/league), sortable
     schedule/       ← Season calendar (admin: ⏱ enter results, ✎ edit event, 🗑 delete)
+    calendar/       ← Global month-by-month calendar of every event in the league,
+                      filtered by Game ▸ Series (lib/calendar.js holds its arithmetic)
     admin/          ← Admin: League Setup — build games/series/seasons/races, upload logos
     drivers/        ← Driver directory + public profiles (/drivers/[uid]: career stats,
                       race history, per-track stats), plus the admin Roster & Teams and
@@ -539,6 +559,47 @@ caller supplies only what it alone knows — the parent id, whether this is a cr
 the submit button — so a quick-create dialog can never quietly offer fewer options, or write a
 different document, than the full setup screen. Add a field once, in the shared form, and every
 entry point gets it. Follow the same split when adding a second way to create something.
+
+### One tick box for the whole app
+
+Every checkbox and radio in the app — League Setup's switches, a results grid's tick cells, the
+class picker, a modal's options — is drawn by **one block in `app/globals.css`**, keyed off
+`input[type="checkbox"]` and `input[type="radio"]`. There are no per-screen sizes, and no
+`style={{ width: 18, height: 18, accentColor: … }}` on individual inputs; that is what let them
+drift into different shapes and sizes screen by screen in the first place.
+
+Two things the shared rule fixes:
+
+- **Size.** `.field input` stretches inputs to 100% width, which a bare browser checkbox obeyed —
+  hence the hand-rolled sizes on *some* of them and not others. The size now lives in one place,
+  with `.field`-scoped selectors included so it wins wherever a box sits inside a field.
+- **Contrast.** The native control on this dark theme drew a faint outline when off and a small
+  tick when on, and at a glance the two looked alike. **Off** is a clearly drawn empty box; **on**
+  is a filled cyan box with a tick (a filled ring with a dot, for a radio), with matching
+  focus, hover, indeterminate and disabled states.
+
+Two helper classes go with it, for the row a box sits in: `check-row` (box beside a label, aligned
+to the label's first line — the shape used by every "switch + explanation" row) and
+`check-row-center`, for a one-line label that has nothing to align to the top of. Use those rather
+than re-inlining flex on the wrapper.
+
+### The global calendar
+
+`/calendar` reads the **same** endpoint the Schedule's cross-season feed does — `GET /api/schedule`
+with no `season_id`, optionally narrowed by `game_id` / `series_id` — so an event appears on the
+calendar the moment it's created, with the same series/season/game context and the same
+"has results yet?" answer. There is deliberately no second query for "all races": one feed, two
+presentations.
+
+The month arithmetic lives in `lib/calendar.js`, apart from the page that draws it and covered by
+`lib/__tests__/calendar.test.mjs`. Its load-bearing rule is the one from `lib/raceDate.js`: a race
+date is a bare `YYYY-MM-DD`, never an instant. `buildMonthGrid()` builds each cell from **local**
+date fields and hands it its own date string, so plotting an event is a map lookup rather than a
+date comparison — which is what stops a race sliding into the previous day west of Greenwich.
+Days from the neighbouring months pad every week whole (dimmed, so they can't be mistaken for this
+month's), undated events are listed under the grid instead of being dropped, and the page opens on
+`initialMonth()` — the month being lived through if it has racing in it, else the next that does,
+else the last that did.
 
 ## Data model (Firestore collections)
 
@@ -735,6 +796,16 @@ as strings (`entries.number`, max 3 chars): a league that runs both a **1** and 
 different numbers, and neither blocks the other. Ordering is by value though — `compareCarNumbers`
 in `lib/carSelection.js` puts 2 before 10 rather than after it, keeps `01` beside `1`, and drops
 drivers with no number to the end. Every roster a player reads is sorted through it.
+
+**The question is only asked where a number is required.** `resolveSignupRules()` answers
+`require_number` down the usual game → series → season → class chain, and `<SignupForm>` renders the
+number field only when it comes back true — a league that doesn't run numbers sees nothing, not an
+optional box. Because a class can require what its season doesn't, picking one re-resolves the rule
+mid-form: the field appears (or disappears) as the class changes. Everything about the number reads
+that same answer, so the three can't disagree — the field, the as-you-type "that number is taken"
+check, and what's submitted. A number typed before the question went away is cleared from the form
+state *and* dropped again at submit, which is what stops a value nobody was asked for riding along
+on the request — or, worse, a stale clash disabling **Submit** with nothing on screen to explain it.
 
 ### Where points are configured
 
