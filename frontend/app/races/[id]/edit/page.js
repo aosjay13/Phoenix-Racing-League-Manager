@@ -11,6 +11,7 @@ import { RaceLengthField } from "@/components/RaceLengthField";
 import { LENGTH_LAPS, raceLengthBody, raceLengthForm } from "@/lib/raceLength";
 import { normalizedBuiltinTemplates } from "@/lib/pointsTemplates";
 import { carForRace, racePerClassResults, sessionClassScopes } from "@/lib/classFilter";
+import { gameNameFor } from "@/lib/driverNames";
 import { isBangerEvent, isBangerScope, derbyPointsTarget } from "@/lib/bangerRacing";
 import { isBracketEvent, isBracketScope } from "@/lib/bracketRacing";
 import { api } from "@/lib/api";
@@ -223,6 +224,12 @@ function UnifiedEditInner() {
   // which decides whether the grids below carry the banger stat columns.
   const [series, setSeries] = useState(null);
   const [entries, setEntries] = useState([]);
+  // The global driver pool, for per-game display names. Only the OVERALL name is
+  // denormalized onto a roster entry (entries.name); the name a driver races
+  // under in one game lives on their driver doc (game_names, or a game-mapped
+  // alias) and is applied at read time — see lib/driverNames.js. This screen is
+  // scoped to one game, so it needs the pool to do that.
+  const [drivers, setDrivers] = useState([]);
   // This screen is reached by race id, so its season can differ from whatever
   // the top-bar dropdowns have selected — read the classes off THIS race's
   // season rather than the league context.
@@ -242,11 +249,12 @@ function UnifiedEditInner() {
         setRace({ id: ev.event.id, ...ev.event });
         setSeason(ev.season || null);
         setSeasonId(ev.event.season_id);
-        const [e, c] = await Promise.all([
+        const [e, c, pool] = await Promise.all([
           api(`/api/entries?season_id=${ev.event.season_id}`),
           api(`/api/classes?season_id=${ev.event.season_id}`).catch(() => []),
+          api("/api/drivers").catch(() => []),
         ]);
-        if (!cancelled) { setEntries(e); setClasses(c); }
+        if (!cancelled) { setEntries(e); setClasses(c); setDrivers(pool); }
         const saved = await api("/api/points-templates");
         if (!cancelled) setTemplates([...normalizedBuiltinTemplates(), ...saved]);
         if (ev.season?.game_id && ev.season?.series_id) {
@@ -260,6 +268,27 @@ function UnifiedEditInner() {
     })();
     return () => { cancelled = true; };
   }, [id]);
+
+  // The roster as THIS GAME names it — what every grid below (Qualifying, Heats,
+  // Consolations, Feature, Race) shows in its driver dropdowns and its filled
+  // Driver cells.
+  //
+  // A season belongs to exactly one game, so a driver entered here should appear
+  // under the name they race under in that game: "Chucky Walden III" on an
+  // iRacing sheet, not the "lilmaytag" their profile is filed under league-wide.
+  // That name is set per driver on the Drivers screen (game_names, or an alias
+  // mapped to the game) and is applied at READ time — entries.name keeps the
+  // overall name it was cascaded with, and nothing here writes a resolved name
+  // back. A driver with no name set for this game keeps the entry's own name.
+  const gameEntries = useMemo(() => {
+    const gameId = season?.game_id || null;
+    if (!gameId || !drivers.length) return entries;
+    const byId = new Map(drivers.map(d => [d.id, d]));
+    return entries.map(e => {
+      const name = e.driver_id ? gameNameFor(byId.get(e.driver_id), gameId) : null;
+      return name && name !== e.name ? { ...e, name } : e;
+    });
+  }, [entries, drivers, season?.game_id]);
 
   // On a split event every session belongs to exactly one class, so the editor
   // needs a class chosen before it can show a grid. The scopes are the season's
@@ -381,7 +410,14 @@ function UnifiedEditInner() {
   // after a driver is added inline from within a results/qualifying editor.
   const reloadEntries = useCallback(async () => {
     if (!seasonId) return;
-    setEntries(await api(`/api/entries?season_id=${seasonId}`));
+    const [e, pool] = await Promise.all([
+      api(`/api/entries?season_id=${seasonId}`),
+      api("/api/drivers").catch(() => null),
+    ]);
+    setEntries(e);
+    // A driver created inline is new to the pool too, so refresh both — without
+    // it their entry would render off a stale pool until the page reloaded.
+    if (pool) setDrivers(pool);
   }, [seasonId]);
 
   // Refreshes the template list after one is created/edited from the inline
@@ -541,7 +577,7 @@ function UnifiedEditInner() {
       {tab === "qualifying" && (
         <div className="form-card" style={{ maxWidth: "100%" }}>
           <SessionEditor
-            race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName} {...classProps}
+            race={race} seasonId={seasonId} entries={gameEntries} onEntriesChanged={reloadEntries} seriesName={seriesName} {...classProps}
             sessionType="qualifying" sessionNames={["Qualifying"]}
             season={season} templates={templates} sessionPoints={sessionPoints} sessionPointsByClass={sessionPointsByClass} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
             sessionStats={sessionStats} onSessionStatsChange={saveSessionStats}
@@ -553,7 +589,7 @@ function UnifiedEditInner() {
       {tab === "results" && (
         <div className="form-card" style={{ maxWidth: "100%" }}>
           <SessionEditor
-            race={race} seasonId={seasonId} entries={entries} initialSession={initialSession} onEntriesChanged={reloadEntries} seriesName={seriesName} {...classProps}
+            race={race} seasonId={seasonId} entries={gameEntries} initialSession={initialSession} onEntriesChanged={reloadEntries} seriesName={seriesName} {...classProps}
             sessionType="race" sessionNames={standardSessions}
             season={season} templates={templates} sessionPoints={sessionPoints} sessionPointsByClass={sessionPointsByClass} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
             sessionStats={sessionStats} onSessionStatsChange={saveSessionStats}
@@ -567,7 +603,7 @@ function UnifiedEditInner() {
       {tab === "heats" && (
         <div className="form-card" style={{ maxWidth: "100%" }}>
           <SessionEditor
-            race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName} {...classProps}
+            race={race} seasonId={seasonId} entries={gameEntries} onEntriesChanged={reloadEntries} seriesName={seriesName} {...classProps}
             sessionType="heat" sessionNames={heats}
             season={season} templates={templates} sessionPoints={sessionPoints} sessionPointsByClass={sessionPointsByClass} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
             sessionStats={sessionStats} onSessionStatsChange={saveSessionStats}
@@ -582,7 +618,7 @@ function UnifiedEditInner() {
         <div className="form-card" style={{ maxWidth: "100%" }}>
           {consolations.length ? (
             <SessionEditor
-              race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName} {...classProps}
+              race={race} seasonId={seasonId} entries={gameEntries} onEntriesChanged={reloadEntries} seriesName={seriesName} {...classProps}
               sessionType="consolation" sessionNames={consolations}
               season={season} templates={templates} sessionPoints={sessionPoints} sessionPointsByClass={sessionPointsByClass} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
               sessionStats={sessionStats} onSessionStatsChange={saveSessionStats}
@@ -604,7 +640,7 @@ function UnifiedEditInner() {
       {tab === "feature" && (
         <div className="form-card" style={{ maxWidth: "100%" }}>
           <SessionEditor
-            race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName} {...classProps}
+            race={race} seasonId={seasonId} entries={gameEntries} onEntriesChanged={reloadEntries} seriesName={seriesName} {...classProps}
             sessionType="feature" sessionNames={[featureName]}
             season={season} templates={templates} sessionPoints={sessionPoints} sessionPointsByClass={sessionPointsByClass} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
             sessionStats={sessionStats} onSessionStatsChange={saveSessionStats}
