@@ -1132,8 +1132,6 @@ export function SessionEditor({
       };
     });
     const sorted = sortByFinish(placed);
-    const covered = new Set(placed.map(r => r.entry_id));
-    const uncovered = entries.filter(e => !covered.has(e.id ?? e.entry_id)).length;
     const next = [...sorted];
     if (bracketLayout) {
       // A bracket is a fixed size, so an import fills the ladder rather than
@@ -1141,8 +1139,14 @@ export function SessionEditor({
       // position its index holds.
       for (let i = next.length; i < bracketLayout.length; i++) next.push(makeRow(bracketLayout[i]));
     } else {
+      // The import IS the field: a file listing 20 finishers means 20 rows, not
+      // 20 plus one blank for every other driver on the season roster — that
+      // padding turned a 76-driver season into 76 rows and put Save back below
+      // a long scroll. Pad only up to the same DEFAULT_ROW_COUNT floor a fresh
+      // sheet opens on, so a short import still has room to type into, and
+      // "+ Add finishing position" covers anyone the file missed.
       let pos = sorted.reduce((m, r) => Math.max(m, Number(r.finish_pos) || 0), 0);
-      for (let i = 0; i < uncovered; i++) { pos += 1; next.push(makeRow(pos)); }
+      while (next.length < DEFAULT_ROW_COUNT) { pos += 1; next.push(makeRow(pos)); }
     }
     setRows(next);
     // An import that names its own fastest lap (a column the file carried,
