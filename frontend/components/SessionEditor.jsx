@@ -82,6 +82,13 @@ function emptySlots(n, positions = null) {
   return Array.from({ length: Math.max(0, n) }, (_, i) => makeRow(i + 1));
 }
 
+// How many empty finishing-position rows a fresh sheet opens with. Padding to
+// the whole roster's size used to leave a season of 100 signed-up drivers with
+// 100 empty rows before anyone typed a thing; this keeps the initial sheet
+// short, and "+ Add finishing position" / row removal (addSlot / removeSlot)
+// still scale it to whatever field size the session actually needs.
+const DEFAULT_ROW_COUNT = 10;
+
 // A provisional entry: a driver awarded a flat, custom points value without
 // having raced (so they never take a finishing position or count toward stats).
 //
@@ -126,9 +133,11 @@ function assignEntry(row, entry, totalLaps, pinnedClassId = "") {
 }
 
 // Builds the editable grid from any saved results, then pads it with empty,
-// numbered finishing slots — one for each roster driver still to be placed —
-// so manual entry starts as a clean slate the admin fills from a searchable
-// dropdown, rather than the whole roster being dumped in and reordered.
+// numbered finishing slots — up to DEFAULT_ROW_COUNT, or further if the saved
+// results already run past it — so manual entry starts as a clean slate the
+// admin fills from a searchable dropdown, rather than the whole roster being
+// dumped in and reordered. "+ Add finishing position" grows the grid further
+// when the field is bigger than that.
 //
 // Qualifying only feeds the **Start** column of race-type sessions (via
 // qualPos), never the Finish order. A saved result's own start_pos wins over
@@ -191,7 +200,7 @@ function buildRows(entries, existing, totalLaps, qualPos = {}, sessionType = "ra
     return rows;
   }
   let pos = sorted.reduce((m, r) => Math.max(m, Number(r.finish_pos) || 0), 0);
-  const target = Math.max(entries.length, sorted.length);
+  const target = Math.max(DEFAULT_ROW_COUNT, sorted.length);
   while (rows.length < target) { pos += 1; rows.push(makeRow(pos)); }
   return rows;
 }
@@ -495,7 +504,7 @@ export function SessionEditor({
   const [session, setSession] = useState(
     initialSession && names.includes(initialSession) ? initialSession : names[0]
   );
-  const [rows, setRows] = useState(() => emptySlots(entries.length, bracketLayout));
+  const [rows, setRows] = useState(() => emptySlots(DEFAULT_ROW_COUNT, bracketLayout));
   // Which of the auto-derived bonus flags (Fastest Lap / Hard Charger / Most
   // Laps Led) the admin has taken over by hand for this session — see
   // lib/autoFlags.js. A locked flag stops following the grid's data.
@@ -563,7 +572,7 @@ export function SessionEditor({
       }));
     } catch {
       setQualPos({});
-      setRows(emptySlots(entries.length, bracketLayout));
+      setRows(emptySlots(DEFAULT_ROW_COUNT, bracketLayout));
       setFlagLocks({});
       setProvRows([]);
     } finally {
@@ -2015,7 +2024,7 @@ export function SessionEditor({
       {!!entries.length && (
         <button className="btn btn-ghost" style={{ marginLeft: 8 }}
           title="Clear every slot back to an empty finishing grid"
-          onClick={() => { setRows(emptySlots(entries.length, bracketLayout)); setFlagLocks({}); }}>
+          onClick={() => { setRows(emptySlots(DEFAULT_ROW_COUNT, bracketLayout)); setFlagLocks({}); }}>
           Reset Grid
         </button>
       )}
