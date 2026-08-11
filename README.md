@@ -51,8 +51,8 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   Nothing reaches the official roster on its own — every sign-up lands in a **Pending Sign-ups**
   queue on the admin's roster screen, where **Approve** adds them with the number and car they asked
   for (creating their driver profile too, if they're new to the league) and **Deny** leaves them off.
-  Admins choose per **series, season or class** what a sign-up must carry: a **car number**, a **car**,
-  a **manufacturer / model**, or nothing at all
+  Admins choose per **series, season or class** what a sign-up must carry: a **car number**, a **car**
+  from the league's own **Car Selection** list, or nothing at all
 - 🎮 **Account requirements per game** — every sign-up in every game needs the player's **Discord
   name**, and each **Game** carries its own switches for the platform identity it actually needs:
   **Steam**, **PSN**, **Xbox Gamertag**, **iRacing Name** and **iRacing Customer ID**. The sign-up
@@ -158,10 +158,12 @@ The app runs at `http://localhost:3000`.
      yet — pick one and its form appears underneath. Seasons marked complete never appear, and
      can't be joined.
 
-     **The form renders itself from what that league asked for.** A car number box, a car
-     dropdown, a manufacturer / model dropdown — each appears only if the series, season or class
-     you're joining wants it, and **Submit Sign Up** stays disabled until every required choice is
-     made. The **car number** question is asked *only where a number is required*: a league that
+     **The form renders itself from what that league asked for.** A car number box and a
+     **Car Selection** question — each appears only if the series, season or class you're joining
+     wants it, and **Submit Sign Up** stays disabled until every required choice is made. There is
+     one car question, not two: whatever the admin typed into **Car Selection** becomes one radio
+     button each, drawn by the app's shared tick-box rule, and whichever one is picked is what
+     shows against that driver on the roster once an admin approves them. The **car number** question is asked *only where a number is required*: a league that
      doesn't run car numbers — or a season, or a single class of it, that switches them off — shows
      no number box at all, rather than an optional field for something nobody uses. Pick a class
      that does require one and the question appears there and then.
@@ -339,13 +341,17 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      car for the upcoming season") shows above their dropdown. **Lock the selections** freezes
      every pick when the entry list is final — set it back to reopen.
 
-     Two more switches sit beside it, each independent: **Require Car Number Selection** (no
-     sign-up without a number) and **Require Car Manufacturer / Model Selection** (pick a make
-     from the **Available Manufacturers / Models** list, or from the car list when you leave that
-     blank — which is what you want when the car and the make are one choice). A league can demand
-     numbers without caring what anyone drives, or run a spec car where only the make varies.
+     One more switch sits beside it, independent of it: **Require Car Number Selection** (no
+     sign-up without a number) — a league can demand numbers without caring what anyone drives.
      Whatever you switch on is what the player's sign-up form renders and refuses to submit
      without.
+
+     There is **one** car list. A separate *Require Car Manufacturer / Model Selection* switch with
+     a second list used to sit here, and on the sign-up form it read as the same prompt asked
+     twice; a spec series that only cares which make somebody runs types *Chevrolet / Ford /
+     Toyota* into **Car Selection** instead. A league that had filled in only the old manufacturer
+     box keeps its options: that field is read as the car list when no car list of its own was set,
+     and saving the level moves the options across for good.
 
      **The inheritance rule, in one line: the most specific level with an opinion wins.**
 
@@ -407,7 +413,7 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      queue above: players who submitted a sign-up from their Dashboard waiting to be let in, plus
      anyone already on the roster asking for a different car number. Nothing they sent is live.
 
-     A **sign-up** row shows the number, car and manufacturer they asked for and the platform
+     A **sign-up** row shows the number and car they asked for and the platform
      usernames they gave; **Approve** puts them on the roster with exactly those choices — creating
      their driver profile too when they're new to the league. A **number change** row is marked as
      one and reads `Car number #7 → #24`, with whatever reason they gave; **Approve** moves the
@@ -718,10 +724,10 @@ click; deleting eight races of history is never one.
 
 `POST /api/signup-requests` only ever writes a `pending` row — there is no path from the Dashboard
 to the `entries` collection — and `PATCH /api/admin/signup-requests/[id]`, admin-gated, is what
-creates the roster entry. The car
-and manufacturer chosen at sign-up are written onto that entry in the same fields the lock-in
-screen uses (`selected_car`, `selected_manufacturer`), so an approved sign-up needs no second trip
-to choose what was already chosen.
+creates the roster entry. The car chosen at
+sign-up is written onto that entry in the same field the lock-in screen uses (`selected_car`), so
+an approved sign-up needs no second trip to choose what was already chosen — and the season's
+screen shows that pick on the roster grid even where no standing lock-in question is asked.
 
 Pending rows count as **spoken for** when a later player picks a number: `numberClaimed` in
 `lib/signupQueue.js` reads the roster and the queue together, so two people can't both be waiting
@@ -753,7 +759,7 @@ them the whole approval.
 
 ### The sign-up requirement chain
 
-Everything a sign-up can be made to carry — a car lock-in, a car number, a manufacturer, and the
+Everything a sign-up can be made to carry — a car lock-in, a car number, and the
 lock itself — is set on any of **four** levels and resolved in `lib/carSelection.js` by one rule:
 
     game  →  series  →  season  →  class        the most specific level with an OPINION wins
@@ -770,7 +776,7 @@ requiring them under seasons that store a bare `false`, while an admin now has a
 one season off.
 
 `resolveSignupRules({ game, series, season, cls })` returns the resolved answers plus
-`require_number_from` / `require_car_from` / `require_manufacturer_from`, naming the level that
+`require_number_from` / `require_car_from`, naming the level that
 decided — which is what lets League Setup label a switch *"Inherit — required by the series"*
 instead of leaving an admin to guess. `seasonContext` loads the game alongside the series, so no
 caller can accidentally resolve a season without the top of its chain.

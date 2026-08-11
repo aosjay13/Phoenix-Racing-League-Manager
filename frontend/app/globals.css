@@ -596,12 +596,36 @@ tbody tr:hover {
   margin-top: 16px;
 }
 
-.field label {
+.field label,
+.field .field-label {
   font-size: 0.75rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--ink-1);
+}
+
+/* A group of radio (or tick box) choices inside a .field — the sign-up form's
+   Car Selection question, one row per car the admin listed. The controls
+   themselves are the app's shared ones from the checkboxes & radios block
+   below; nothing here redraws them.
+
+   The one thing this does undo is `.field label` above: a field's label names
+   the question and is small, bold and uppercase, but these labels are the
+   ANSWERS — car names, which have to read exactly as the admin typed them. */
+.option-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.field .option-rows label {
+  font-size: 0.92rem;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--ink-0);
+  cursor: pointer;
 }
 
 .field input,

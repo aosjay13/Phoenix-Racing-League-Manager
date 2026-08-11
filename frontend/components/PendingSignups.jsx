@@ -10,7 +10,7 @@ import { signupsChanged } from "@/lib/pendingSignupAlerts";
 // Dashboard and are waiting to be let onto a roster.
 //
 // Nothing they submitted is live yet. Approving is what creates the roster
-// entry — with the number, car and manufacturer they asked for — and, for a
+// entry — with the number and car they asked for — and, for a
 // player the league has never seen, their driver profile as well. Denying
 // leaves them off and records why.
 //

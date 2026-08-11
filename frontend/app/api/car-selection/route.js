@@ -45,6 +45,12 @@ export async function GET(request) {
   const classNameById = Object.fromEntries(classes.map(c => [c.id, c.name]));
   const rows = entries.map(entry => {
     const mySlots = slotsForEntry(slots, entry.class_ids);
+    // A car chosen at SIGN-UP is on the entry whether or not the season also
+    // runs a lock-in slot — an admin can publish a car list without making the
+    // pick a standing question. Read it directly when there's no slot to hang
+    // it on, so what somebody picked is never invisible on the screen that
+    // exists to show who's driving what.
+    const signupCar = mySlots.length ? "" : selectedCarFor(entry);
     return {
       entry_id: entry.id,
       driver_id: entry.driver_id ?? null,
@@ -59,11 +65,13 @@ export async function GET(request) {
       class_names: entry.class_ids.map(id => classNameById[id]).filter(Boolean),
       // One reading per slot this driver answers, so the grid can show a column
       // per class when the classes run their own car lists.
-      cars: mySlots.map(slot => ({
-        class_id: slot.class_id,
-        class_name: slot.class_name,
-        car: selectedCarFor(entry, slot.class_id),
-      })),
+      cars: mySlots.length
+        ? mySlots.map(slot => ({
+          class_id: slot.class_id,
+          class_name: slot.class_name,
+          car: selectedCarFor(entry, slot.class_id),
+        }))
+        : signupCar ? [{ class_id: "", class_name: "", car: signupCar }] : [],
       mine: !!driver && entry.driver_id === driver.id,
     };
   });
@@ -93,18 +101,14 @@ export async function GET(request) {
       const r = resolveSignupRules({ game, series, season });
       return {
         require_car: r.require_car, require_number: r.require_number,
-        require_manufacturer: r.require_manufacturer,
-        car_options: r.car_options, manufacturer_options: r.manufacturer_options,
-        note: r.note,
+        car_options: r.car_options, note: r.note,
       };
     })(),
     class_rules: Object.fromEntries(classes.map(c => {
       const r = resolveSignupRules({ game, series, season, cls: c });
       return [c.id, {
         require_car: r.require_car, require_number: r.require_number,
-        require_manufacturer: r.require_manufacturer,
-        car_options: r.car_options, manufacturer_options: r.manufacturer_options,
-        note: r.note,
+        car_options: r.car_options, note: r.note,
       }];
     })),
     // Sign-ups waiting on an admin — shown beside the roster so a number
@@ -112,7 +116,7 @@ export async function GET(request) {
     pending: pending.map(p => ({
       kind: p.kind, entry_id: p.entry_id,
       name: p.name, number: p.number, car: p.car,
-      manufacturer: p.manufacturer, class_names: p.class_names,
+      class_names: p.class_names,
     })),
     my_pending: !!(driver && pending.some(p => p.driver_id === driver.id))
       || !!(user && pending.some(p => p.uid === user.uid)),
@@ -139,6 +143,10 @@ export async function GET(request) {
           return r ? { id: r.id, number: r.number ?? "", reason: r.reason || "" } : null;
         })(),
         class_ids: myEntry?.class_ids ?? [],
+        // The car on their entry, whatever put it there — the lock-in screen,
+        // or the sign-up they were approved from. Read by the screen to show
+        // their pick back to them even where no slot asks them for one.
+        selected_car: myEntry ? selectedCarFor(myEntry) : "",
         slots: myEntry ? slotsForEntry(slots, myEntry.class_ids) : [],
         picks: myEntry
           ? slotsForEntry(slots, myEntry.class_ids).map(slot => ({

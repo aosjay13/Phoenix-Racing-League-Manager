@@ -38,7 +38,7 @@ import { DISCORD_LABEL, GAME_PLATFORM_REQUIREMENTS, isIracingGame } from "@/lib/
 //   • the PLATFORM identities its sign-ups must carry (Discord/Steam/PSN/Xbox/
 //     iRacing) — these are the game's alone and apply to everything under it,
 //     however many series, seasons and classes are made. Nothing overrides them.
-//   • the sign-up REQUIREMENTS (car / number / manufacturer / lock) — the top of
+//   • the sign-up REQUIREMENTS (car / number / lock) — the top of
 //     the game → series → season → class chain, which any level below may
 //     override.
 //

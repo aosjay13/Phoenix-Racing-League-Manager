@@ -39,7 +39,6 @@ export async function GET(request) {
       name: r.name || r.driver_name || "Driver",
       number: r.number ?? null,
       car: r.car || "",
-      manufacturer: r.manufacturer || "",
       class_names: r.class_names || [],
       // Only ever true for the caller's own row, so someone can see their own
       // request in the list without anyone else's account being exposed.
@@ -150,9 +149,9 @@ async function numberChangeRequest({ request, user, driver, season, series, game
 // already knows them — an existing driver's request is still a request.
 //
 // What's required of the submission is whatever the series, season and class
-// ask for between them (see resolveSignupRules): a car number, a car, a
-// manufacturer, and any alias the game insists on — an iRacing customer ID, so
-// the organiser can send a league invite.
+// ask for between them (see resolveSignupRules): a car number, a car from the
+// season's one car list, and any alias the game insists on — an iRacing
+// customer ID, so the organiser can send a league invite.
 export const POST = withUser(async (request, ctx, user) => {
   const body = await request.json().catch(() => ({}));
   const seasonId = String(body.season_id ?? "").trim();
@@ -203,7 +202,6 @@ export const POST = withUser(async (request, ctx, user) => {
 
   const number = String(body.number ?? "").trim().slice(0, 3);
   const rawCar = String(body.car ?? "").trim();
-  const rawManufacturer = String(body.manufacturer ?? "").trim();
 
   // Anything picked must be from the admin's own list, matched case-insensitively
   // and stored under the list's spelling.
@@ -214,15 +212,8 @@ export const POST = withUser(async (request, ctx, user) => {
       return NextResponse.json({ error: `“${rawCar}” isn't one of the cars offered for this season.` }, { status: 400 });
     }
   }
-  let manufacturer = "";
-  if (rawManufacturer) {
-    manufacturer = matchCarOption(rules.manufacturer_options, rawManufacturer) ?? "";
-    if (!manufacturer) {
-      return NextResponse.json({ error: `“${rawManufacturer}” isn't one of the manufacturers offered for this season.` }, { status: 400 });
-    }
-  }
 
-  const missing = missingSignupFields(rules, { number, car, manufacturer });
+  const missing = missingSignupFields(rules, { number, car });
   if (missing.length) {
     return NextResponse.json({ error: missingSignupMessage(missing), code: "missing-fields" }, { status: 400 });
   }
@@ -290,7 +281,6 @@ export const POST = withUser(async (request, ctx, user) => {
     name: (String(body.name ?? "").trim() || driver?.name || newDriverName).slice(0, 60),
     number,
     car,
-    manufacturer,
     class_ids: classIds,
     class_names: classIds.map(id => validClasses.get(id)?.name).filter(Boolean),
     aliases,

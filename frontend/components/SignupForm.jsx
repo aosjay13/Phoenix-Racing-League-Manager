@@ -27,10 +27,17 @@ function aliasValue(rows, label) {
 const GAME_SCOPED_LABELS = new Set([IRACING_NAME_LABEL.toLowerCase(), IRACING_ID_LABEL.toLowerCase()]);
 
 // The season sign-up form. It renders ITSELF from what the admin asked for:
-// a car number field only where a number is REQUIRED, a car dropdown only where
-// a car list exists, a manufacturer dropdown only where that's a separate
-// question. Nothing is hard-coded about which fields a league wants — see
-// resolveSignupRules in lib/carSelection.js.
+// a car number field only where a number is REQUIRED, and the car question only
+// where a car list exists. Nothing is hard-coded about which fields a league
+// wants — see resolveSignupRules in lib/carSelection.js.
+//
+// There is ONE car question. The admin types their list into Car Selection in
+// League Setup and every entry on it becomes a radio button here — plain
+// `input[type="radio"]`, so it's the same control as every other tick box and
+// radio in the app (one block in globals.css draws them all). Whichever one a
+// driver picks is what shows against their name on the roster once an admin
+// approves them, on the season's car-selection screen and in the admin queue
+// alike.
 //
 // "Only where it's required" is the rule for the number, and it's resolved down
 // the same game → series → season → class chain as everything else: a league
@@ -53,7 +60,6 @@ export function SignupForm({ season, driver, onDone, onCancel }) {
   const [classId, setClassId] = useState("");
   const [number, setNumber] = useState("");
   const [car, setCar] = useState("");
-  const [manufacturer, setManufacturer] = useState("");
   const [aliases, setAliases] = useState(() => withDefaults(driver?.aliases));
   const [games, setGames] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -69,7 +75,6 @@ export function SignupForm({ season, driver, onDone, onCancel }) {
   // field, its validation and what gets submitted can't disagree.
   const asksNumber = !!rules.require_number;
   const carOptions = rules.car_options || [];
-  const manufacturerOptions = rules.manufacturer_options || [];
   const gameName = season.game_name || "";
   // What this sign-up must carry: the Discord name (every game, no exceptions)
   // plus whichever platform identities the parent GAME was configured to
@@ -93,7 +98,6 @@ export function SignupForm({ season, driver, onDone, onCancel }) {
   // A car that isn't on the newly-picked class's list can't stay selected.
   useEffect(() => {
     if (car && !carOptions.includes(car)) setCar("");
-    if (manufacturer && !manufacturerOptions.includes(manufacturer)) setManufacturer("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [classId]);
 
@@ -159,9 +163,8 @@ export function SignupForm({ season, driver, onDone, onCancel }) {
 
   const missing = missingSignupFields(
     { require_number: rules.require_number, require_car: rules.require_car,
-      car_options: carOptions, require_manufacturer: rules.require_manufacturer,
-      manufacturer_options: manufacturerOptions },
-    { number, car, manufacturer });
+      car_options: carOptions },
+    { number, car });
   const missingAliases = missingRequiredAliases(aliases, game);
   const problem = !name.trim()
     ? "Enter the name you race under."
@@ -189,7 +192,6 @@ export function SignupForm({ season, driver, onDone, onCancel }) {
           name: info.name,
           number: info.number,
           car,
-          manufacturer,
           class_ids: info.class_ids,
           aliases: info.aliases,
           ...(isNewDriver ? { new_driver: { name: info.name, aliases: info.aliases } } : {}),
@@ -252,32 +254,40 @@ export function SignupForm({ season, driver, onDone, onCancel }) {
         </div>
       )}
 
-      {/* Car — only when the admin published a list to choose from. */}
+      {/* Car Selection — the ONE car question, and only when the admin
+          published a list to choose from. One radio per entry on that list,
+          drawn by the app's shared checkbox/radio rule in globals.css rather
+          than anything of this form's own. Choosing is never a trap: an
+          optional list keeps a "No car selected" option, and a required one
+          drops it, because the point of requiring it is that one is chosen. */}
       {carOptions.length > 0 && (
         <div className="field">
-          <label htmlFor="signup_car">
-            Car {rules.require_car ? <span className="field-req">required</span> : "(optional)"}
-          </label>
-          <select id="signup_car" value={car} onChange={e => setCar(e.target.value)}>
-            <option value="">— No car selected —</option>
+          <span className="field-label" id="signup_car_label">
+            Car Selection {rules.require_car ? <span className="field-req">required</span> : "(optional)"}
+          </span>
+          <div className="option-rows" role="radiogroup" aria-labelledby="signup_car_label">
             {carOptions.map(c => (
-              <option key={c} value={c}>{c}{takenCars[c] ? ` (${takenCars[c]} already)` : ""}</option>
+              <label className="check-row check-row-center" key={c}>
+                <input type="radio" name="signup_car" value={c}
+                  checked={car === c} onChange={() => setCar(c)} />
+                <span>
+                  {c}
+                  {takenCars[c] ? (
+                    <span style={{ color: "var(--ink-2)", fontSize: "0.78rem" }}>
+                      {" "}· {takenCars[c]} already
+                    </span>
+                  ) : null}
+                </span>
+              </label>
             ))}
-          </select>
-        </div>
-      )}
-
-      {/* Manufacturer / model — a separate question where the league asks it. */}
-      {rules.require_manufacturer && manufacturerOptions.length > 0 && (
-        <div className="field">
-          <label htmlFor="signup_manufacturer">
-            Manufacturer / Model <span className="field-req">required</span>
-          </label>
-          <select id="signup_manufacturer" value={manufacturer}
-            onChange={e => setManufacturer(e.target.value)}>
-            <option value="">— Not selected —</option>
-            {manufacturerOptions.map(m => <option key={m} value={m}>{m}</option>)}
-          </select>
+            {!rules.require_car && (
+              <label className="check-row check-row-center">
+                <input type="radio" name="signup_car" value=""
+                  checked={!car} onChange={() => setCar("")} />
+                <span style={{ color: "var(--ink-2)" }}>No car selected</span>
+              </label>
+            )}
+          </div>
         </div>
       )}
 
@@ -313,9 +323,7 @@ export function SignupForm({ season, driver, onDone, onCancel }) {
                   {r.name}
                   {r.pending && <span className="roster-peek-pending">pending</span>}
                 </span>
-                {(r.car || r.manufacturer) && (
-                  <span className="roster-peek-class">{[r.car, r.manufacturer !== r.car ? r.manufacturer : null].filter(Boolean).join(" · ")}</span>
-                )}
+                {r.car && <span className="roster-peek-class">{r.car}</span>}
                 {r.class_names?.length > 0 && (
                   <span className="roster-peek-class">{r.class_names.join(" · ")}</span>
                 )}

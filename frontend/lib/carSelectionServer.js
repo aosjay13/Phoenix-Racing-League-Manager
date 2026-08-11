@@ -130,7 +130,6 @@ export async function pendingForSeasons(seasonIds = []) {
         current_number: r.current_number ?? null,
         reason: r.reason || "",
         car: r.car || "",
-        manufacturer: r.manufacturer || "",
         class_names: r.class_names || [],
       };
     }),

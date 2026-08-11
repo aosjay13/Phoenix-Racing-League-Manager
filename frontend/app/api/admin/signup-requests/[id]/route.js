@@ -8,8 +8,8 @@ import { mergeAliases, normalizeAliases } from "@/lib/aliases";
 
 // Admin-only: let a pending sign-up onto the roster, or turn it down.
 //
-//   body.action = "approve" → creates the roster entry with the number, car and
-//                             manufacturer the player asked for. When the
+//   body.action = "approve" → creates the roster entry with the number and car
+//                             the player asked for. When the
 //                             request came from someone with no driver profile,
 //                             the profile is created here too — this route and
 //                             the claim queue are the ONLY places a
@@ -187,7 +187,6 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
     // same fields the lock-in screen writes — so an approved sign-up needs no
     // second trip to choose what they already chose.
     ...(req.car ? { selected_car: req.car, selected_car_at: new Date().toISOString() } : {}),
-    ...(req.manufacturer ? { selected_manufacturer: req.manufacturer } : {}),
     created_at: new Date().toISOString(),
     created_by: admin.uid,
     self_signup: true,

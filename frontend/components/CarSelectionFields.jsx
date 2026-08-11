@@ -62,7 +62,6 @@ function inheritedState(inherited) {
   return {
     car: { on: !!inherited?.require_car, from: inherited?.require_car_from },
     number: { on: !!inherited?.require_number, from: inherited?.require_number_from },
-    manufacturer: { on: !!inherited?.require_manufacturer, from: inherited?.require_manufacturer_from },
     locked: { on: !!inherited?.locked, from: inherited?.car?.locked_from },
     options: inherited?.car_options ?? [],
     options_from: inherited?.car?.options_from,
@@ -73,7 +72,6 @@ export function CarSelectionFields({ value, onChange, level = "season", disabled
   const set = patch => onChange(f => ({ ...f, ...patch }));
   const id = suffix => `${level}_car_${suffix}`;
   const parsed = parseCarOptions(value.car_options);
-  const parsedManufacturers = parseCarOptions(value.manufacturer_options);
   const from = inheritedState(inherited);
   const inheritedOptions = from.options;
   const covers = COVERS[level];
@@ -101,13 +99,15 @@ export function CarSelectionFields({ value, onChange, level = "season", disabled
       />
 
       <div className="field">
-        <label htmlFor={id("options")}>Available Cars — one per line</label>
+        <label htmlFor={id("options")}>Car Selection — one per line</label>
         <textarea id={id("options")} rows={5} disabled={disabled} value={value.car_options}
           onChange={e => set({ car_options: e.target.value })}
           placeholder={"Porsche 911 GT3 R\nFerrari 296 GT3\nBMW M4 GT3"} />
         <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
-          The cars a driver may choose from. One per line (a single comma-separated line works
-          too). {parsed.length > 0
+          The cars a driver may choose from — whatever you type here becomes one radio button each
+          on the sign-up form, and whichever they pick is shown on the roster. One per line (a
+          single comma-separated line works too), so a name with spaces in it stays one
+          car. {parsed.length > 0
             ? <>{parsed.length} car{parsed.length === 1 ? "" : "s"} offered: {parsed.join(" · ")}.</>
             : <>Leave blank to use{" "}
                 {inheritedOptions.length
@@ -116,12 +116,14 @@ export function CarSelectionFields({ value, onChange, level = "season", disabled
               </>}
           {" "}The most specific list wins, so a class can run its own machinery while the rest of
           the season picks from the series&rsquo; list.
+          {" "}This is the only car list there is: a spec series that only asks which make somebody
+          runs types <em>Chevrolet / Ford / Toyota</em> in here.
         </span>
       </div>
 
-      {/* The other two things a sign-up can be made to carry. Independent of
-          the lock-in above: a league can demand numbers without caring what
-          anyone drives, or run a spec car where only the make varies. */}
+      {/* The other thing a sign-up can be made to carry. Independent of the
+          lock-in above: a league can demand numbers without caring what anyone
+          drives. */}
       <RequirementSelect
         id={id("require_number")} label="Require Car Number Selection"
         value={value.require_car_number_mode} disabled={disabled}
@@ -132,31 +134,6 @@ export function CarSelectionFields({ value, onChange, level = "season", disabled
           unique per season either way — a driver can&rsquo;t take one somebody already has.
         </>}
       />
-
-      <RequirementSelect
-        id={id("require_manufacturer")} label="Require Car Manufacturer / Model Selection"
-        value={value.require_car_manufacturer_mode} disabled={disabled}
-        onChange={v => set({ require_car_manufacturer_mode: v })}
-        inheritedOn={from.manufacturer.on} inheritedFrom={from.manufacturer.from}
-        help={<>
-          Required: a sign-up must pick a manufacturer or model from the list below — the
-          Chevrolet / Ford / Toyota question a spec series asks even though everyone races the
-          same car.
-        </>}
-      />
-
-      <div className="field">
-        <label htmlFor={id("manufacturers")}>Available Manufacturers / Models — one per line</label>
-        <textarea id={id("manufacturers")} rows={4} disabled={disabled} value={value.manufacturer_options}
-          onChange={e => set({ manufacturer_options: e.target.value })}
-          placeholder={"Chevrolet\nFord\nToyota"} />
-        <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
-          {parsedManufacturers.length > 0
-            ? <>{parsedManufacturers.length} offered: {parsedManufacturers.join(" · ")}.</>
-            : <>Leave blank and the <strong>Available Cars</strong> list above is used instead — which is
-                what you want when the car and the make are the same choice.</>}
-        </span>
-      </div>
 
       <div className="field">
         <label htmlFor={id("note")}>Instructions for Drivers</label>

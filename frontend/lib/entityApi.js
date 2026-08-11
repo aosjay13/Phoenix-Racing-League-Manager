@@ -168,12 +168,18 @@ export function makeDocRoutes({ collection, fields, normalize = null }) {
 const SIGNUP_REQUIREMENT_FIELDS = Object.fromEntries([
   "require_car_selection",
   "require_car_number",
-  "require_car_manufacturer",
   "car_selection_locked",
 ].flatMap(field => [
   [field, { bool: true, default: false }],
   [`${field}_mode`, { default: "" }],
 ]));
+
+// The old second car list. There is one car question now, not a car one and a
+// manufacturer one asked side by side, so nothing writes an option into this
+// field any more — it stays writable only so saving a level can EMPTY it, which
+// is how the options move into `car_options` for good (see
+// carSelectionFormToBody and carOptionList in lib/carSelection.js).
+const RETIRED_MANUFACTURER_FIELD = { manufacturer_options: {} };
 
 // Field specs shared between the list POST and doc PATCH routes.
 export const SPECS = {
@@ -240,7 +246,7 @@ export const SPECS = {
                        race_points: {}, qual_points: {}, bonus_points: {},
                        isBangerRacing: { bool: true, default: false },
                        isBracketRacing: { bool: true, default: false },
-                       car_options: {}, manufacturer_options: {}, car_selection_note: {},
+                       car_options: {}, ...RETIRED_MANUFACTURER_FIELD, car_selection_note: {},
                        ...SIGNUP_REQUIREMENT_FIELDS } },
   // Seasons come back NEWEST FIRST, ordered by the race dates on their
   // schedules rather than by when the admin happened to type them in — so a
@@ -299,7 +305,7 @@ export const SPECS = {
                        combined_championship: { bool: true, default: true },
                        per_class_schedules: { bool: true, default: false },
                        per_class_results: { bool: true, default: false },
-                       car_options: {}, manufacturer_options: {}, car_selection_note: {},
+                       car_options: {}, ...RETIRED_MANUFACTURER_FIELD, car_selection_note: {},
                        ...SIGNUP_REQUIREMENT_FIELDS } },
   // Classes divide a season's field into separately-scored groups ("Pro" /
   // "Amateur", "GT3" / "LMP2"). A class belongs to exactly one season; a roster
@@ -342,7 +348,7 @@ export const SPECS = {
                        isBangerRacing: { bool: true, default: false },
                        isBracketRacing: { bool: true, default: false },
                        race_points: {}, qual_points: {}, bonus_points: {},
-                       car_options: {}, manufacturer_options: {}, car_selection_note: {},
+                       car_options: {}, ...RETIRED_MANUFACTURER_FIELD, car_selection_note: {},
                        ...SIGNUP_REQUIREMENT_FIELDS,
                        sort_order: { number: true, default: 0 } } },
   teams:   { collection: "teams", parentField: "season_id", sortField: "name",
@@ -390,7 +396,6 @@ export const SPECS = {
              fields: { name: { required: true }, number: { maxLen: 3 }, team_id: {}, user_id: {},
                        driver_id: {}, class_id: {}, class_ids: {},
                        selected_car: {}, selected_cars: {}, selected_car_at: {},
-                       selected_manufacturer: {},
                        points_adjustment: { number: true }, adjustment_note: {} } },
   pointsTemplates: { collection: "points_templates", parentField: null, sortField: "name",
              fields: { name: { required: true }, race_points: {}, qual_points: {}, bonus_points: {} } },

@@ -11,9 +11,9 @@
 //   THE MOST SPECIFIC LEVEL WITH AN OPINION WINS.
 //
 // A class overrides its season, a season overrides its series, a series
-// overrides its game. That holds for the switches (require a car / a number / a
-// manufacturer, and the lock) exactly as it already held for the car list and
-// the instructions note: class, else season, else series, else game.
+// overrides its game. That holds for the switches (require a car / a number,
+// and the lock) exactly as it already held for the car list and the
+// instructions note: class, else season, else series, else game.
 //
 // "An opinion" is the important half, because a level that was never configured
 // must not silently override the level above it. Each switch is therefore a
@@ -115,19 +115,19 @@ function dedupe(list) {
 }
 
 // A saved doc's car list, whichever shape it was written in.
+//
+// `manufacturer_options` is the old second list. There used to be TWO questions
+// here — "pick your car" and "pick your manufacturer / model" — asked side by
+// side on the same sign-up form, which is one question too many for what is in
+// practice the same choice. There is now one list and one question, so a league
+// that had only ever filled in the manufacturer box keeps its options: the old
+// field is read as the car list when no car list of its own was set.
 export function carOptionList(doc) {
   const raw = doc?.car_options;
-  if (Array.isArray(raw) || typeof raw === "string") return parseCarOptions(raw);
-  return [];
-}
-
-// The manufacturer / model list. A league that runs one make per driver
-// (Chevrolet / Ford / Toyota) sets this; leaving it blank falls back to the car
-// list, so an admin who thinks of the two as one thing only fills in one field.
-export function manufacturerOptionList(doc) {
-  const raw = doc?.manufacturer_options;
   const own = Array.isArray(raw) || typeof raw === "string" ? parseCarOptions(raw) : [];
-  return own.length ? own : carOptionList(doc);
+  if (own.length) return own;
+  const legacy = doc?.manufacturer_options;
+  return Array.isArray(legacy) || typeof legacy === "string" ? parseCarOptions(legacy) : [];
 }
 
 // Is `car` one of the offered cars? Compared case-insensitively so a pick made
@@ -149,7 +149,6 @@ const LEVELS = ["class", "season", "series", "game"];
 export const REQUIREMENT_FIELDS = [
   "require_car_selection",
   "require_car_number",
-  "require_car_manufacturer",
   "car_selection_locked",
 ];
 
@@ -219,7 +218,7 @@ export function resolveCarSelection({ game = null, series = null, season = null,
 
 // ── What a sign-up must carry ──────────────────────────────────────────────
 //
-// Three separate things an admin can insist on, each resolved down the same
+// TWO separate things an admin can insist on, each resolved down the same
 // game → series → season → class chain as the car lock-in above (most specific
 // opinion wins; most specific list wins):
 //
@@ -227,23 +226,24 @@ export function resolveCarSelection({ game = null, series = null, season = null,
 //                              Answered on the season's own screen, and also
 //                              asked up front on the sign-up form.
 //   require_car_number       — a sign-up must name a car number.
-//   require_car_manufacturer — a sign-up must pick a manufacturer / model,
-//                              from `manufacturer_options` (or the car list).
 //
-// They're independent on purpose: a league can demand numbers without caring
-// what anyone drives, or run a spec series where the car is fixed but the
-// manufacturer isn't.
+// There is ONE car question, not two. A "manufacturer / model" requirement used
+// to sit beside the car one with its own list, and the two read as the same
+// prompt asked twice on the same form — a league running Chevrolet / Ford /
+// Toyota simply types those into the car list. See carOptionList for how a
+// league that filled in the old box keeps its options.
+//
+// The two that remain are independent on purpose: a league can demand numbers
+// without caring what anyone drives, or publish a car list without demanding a
+// number.
 //
 // Not here: the platform identities (Discord/Steam/PSN/Xbox/iRacing). Those are
 // the GAME's and are never overridden by anything under it — see
 // lib/signupRequest.js.
 export function resolveSignupRules({ game = null, series = null, season = null, cls = null } = {}) {
   const docs = { class: cls, season, series, game };
-  const present = LEVELS.filter(level => docs[level]);
   const car = resolveCarSelection({ game, series, season, cls });
   const number = resolveRequirement(docs, "require_car_number");
-  const manufacturer = resolveRequirement(docs, "require_car_manufacturer");
-  const manufacturerLevel = present.find(level => manufacturerOptionList(docs[level]).length) ?? null;
   return {
     // The car lock-in, unchanged — kept whole so callers can pass it straight
     // to the lock-in screen.
@@ -251,18 +251,15 @@ export function resolveSignupRules({ game = null, series = null, season = null, 
     require_car: car.required,
     car_options: car.options,
     require_number: number.on,
-    require_manufacturer: manufacturer.on,
-    manufacturer_options: manufacturerLevel ? manufacturerOptionList(docs[manufacturerLevel]) : [],
     note: car.note,
     locked: car.locked,
     // Which level decided each one, so a screen can say "required by the
     // season" rather than leaving an admin to guess where it came from.
     require_car_from: car.required_from,
     require_number_from: number.on ? number.from : null,
-    require_manufacturer_from: manufacturer.on ? manufacturer.from : null,
     // Does this scope ask a player for ANYTHING beyond their name at sign-up?
     get asksAnything() {
-      return car.required || number.on || manufacturer.on;
+      return car.required || number.on;
     },
   };
 }
@@ -270,7 +267,7 @@ export function resolveSignupRules({ game = null, series = null, season = null, 
 // Which of a season's requirements a submission hasn't met, as
 // [{ field, label }] — the list the form disables its submit button on and the
 // API refuses the request with.
-export function missingSignupFields(rules, { number = "", car = "", manufacturer = "" } = {}) {
+export function missingSignupFields(rules, { number = "", car = "" } = {}) {
   const missing = [];
   if (rules.require_number && !String(number).trim()) {
     missing.push({ field: "number", label: "a car number" });
@@ -278,13 +275,10 @@ export function missingSignupFields(rules, { number = "", car = "", manufacturer
   if (rules.require_car && rules.car_options.length && !String(car).trim()) {
     missing.push({ field: "car", label: "a car" });
   }
-  if (rules.require_manufacturer && rules.manufacturer_options.length && !String(manufacturer).trim()) {
-    missing.push({ field: "manufacturer", label: "a manufacturer / model" });
-  }
   return missing;
 }
 
-// "This series needs a car number and a manufacturer / model." — one sentence
+// "This series needs a car number and a car." — one sentence
 // for the form and for the API's refusal, worded the same either way.
 export function missingSignupMessage(missing = []) {
   if (!missing.length) return "";
@@ -309,9 +303,7 @@ export function classDefinesCarSelection(cls) {
 // decide whether picking a class on the form changes what's being asked for.
 export function classDefinesSignupRules(cls) {
   return classDefinesCarSelection(cls)
-    || levelOpinion(cls, "require_car_number") !== null
-    || levelOpinion(cls, "require_car_manufacturer") !== null
-    || manufacturerOptionList(cls).length > 0;
+    || levelOpinion(cls, "require_car_number") !== null;
 }
 
 // ── Slots ──────────────────────────────────────────────────────────────────
@@ -441,10 +433,8 @@ export function rowInScope(row, { gameId = "", seriesId = "" } = {}) {
 export const BLANK_CAR_SELECTION_FORM = {
   require_car_selection_mode: INHERIT,
   require_car_number_mode: INHERIT,
-  require_car_manufacturer_mode: INHERIT,
   car_selection_locked_mode: INHERIT,
   car_options: "",
-  manufacturer_options: "",
   car_selection_note: "",
 };
 
@@ -452,12 +442,6 @@ export const BLANK_CAR_SELECTION_FORM = {
 // "on" where its boolean was true and as "inherit" where it was false, which is
 // exactly what those documents have always meant.
 export function carSelectionToForm(doc = {}) {
-  // The manufacturer box shows only what this level SET, not what it inherits
-  // from the car list — otherwise saving would copy the fallback into it and
-  // the two could never diverge again.
-  const ownManufacturers = Array.isArray(doc.manufacturer_options) || typeof doc.manufacturer_options === "string"
-    ? parseCarOptions(doc.manufacturer_options)
-    : [];
   const mode = field => {
     const opinion = levelOpinion(doc, field);
     return opinion === null ? INHERIT : (opinion ? ON : OFF);
@@ -465,10 +449,11 @@ export function carSelectionToForm(doc = {}) {
   return {
     require_car_selection_mode: mode("require_car_selection"),
     require_car_number_mode: mode("require_car_number"),
-    require_car_manufacturer_mode: mode("require_car_manufacturer"),
     car_selection_locked_mode: mode("car_selection_locked"),
+    // carOptionList falls back to the retired manufacturer list, so the one box
+    // opens showing whichever of the two an admin had filled in — and saving
+    // writes it back as the car list, which is where it belongs now.
     car_options: carOptionList(doc).join("\n"),
-    manufacturer_options: ownManufacturers.join("\n"),
     car_selection_note: doc.car_selection_note || "",
   };
 }
@@ -479,7 +464,11 @@ export function carSelectionToForm(doc = {}) {
 export function carSelectionFormToBody(form = {}) {
   const body = {
     car_options: parseCarOptions(form.car_options),
-    manufacturer_options: parseCarOptions(form.manufacturer_options),
+    // The retired second list is emptied as the level is saved. The form loaded
+    // it into `car_options` when that was the only list this level had (see
+    // carSelectionToForm), so this moves the options rather than dropping them —
+    // and leaves nothing behind for the fallback in carOptionList to prefer.
+    manufacturer_options: [],
     car_selection_note: String(form.car_selection_note || "").trim(),
   };
   for (const field of REQUIREMENT_FIELDS) {

@@ -132,9 +132,9 @@ export const GET = withUser(async (request, ctx, user) => {
       const roster = rosters[season.id] || [];
       const pending = pendings[season.id] || [];
       const classNameById = Object.fromEntries(classes.map(c => [c.id, c.name]));
-      // What this season asks of a sign-up — a number, a car, a manufacturer —
-      // resolved down the series → season chain. A class that asks for more is
-      // resolved on the form once one is picked.
+      // What this season asks of a sign-up — a number and a car — resolved down
+      // the series → season chain. A class that asks for more is resolved on
+      // the form once one is picked.
       const rules = resolveSignupRules({ game, series, season });
       return {
         season_id: season.id,
@@ -156,9 +156,7 @@ export const GET = withUser(async (request, ctx, user) => {
         rules: {
           require_car: rules.require_car,
           require_number: rules.require_number,
-          require_manufacturer: rules.require_manufacturer,
           car_options: rules.car_options,
-          manufacturer_options: rules.manufacturer_options,
           note: rules.note,
         },
         // Per class, so picking one on the form can tighten what's asked for.
@@ -166,9 +164,7 @@ export const GET = withUser(async (request, ctx, user) => {
           const r = resolveSignupRules({ game, series, season, cls: c });
           return [c.id, {
             require_car: r.require_car, require_number: r.require_number,
-            require_manufacturer: r.require_manufacturer,
-            car_options: r.car_options, manufacturer_options: r.manufacturer_options,
-            note: r.note,
+            car_options: r.car_options, note: r.note,
           }];
         })),
         // Both kinds: a sign-up is another person waiting for a place, a
@@ -178,7 +174,7 @@ export const GET = withUser(async (request, ctx, user) => {
         pending: pending.map(p => ({
           kind: p.kind, entry_id: p.entry_id,
           name: p.name, number: p.number, car: p.car,
-          manufacturer: p.manufacturer, class_names: p.class_names,
+          class_names: p.class_names,
         })),
         // This account's own sign-up already waiting on an admin, if any.
         my_pending: pendingForSeason(pending, { uid: user.uid, driverId: driver?.id })
