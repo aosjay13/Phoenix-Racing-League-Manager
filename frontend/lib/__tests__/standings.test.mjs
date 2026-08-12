@@ -194,4 +194,59 @@ check("qualifying adjustment", pointsFor({ ...q("e1", 1), points_adjustment: -4,
   check("drop weeks: total", row.adjusted_points, 110);
 }
 
+// ── 18. The event's DEFAULT points template for heats / consolations ──────
+// Set on the Race Info form ("every heat scores on this") so a weekend of eight
+// heats and two B-Mains needs one pick, not ten. Naming one also makes that
+// session type score, which is off by default for preliminary sessions.
+{
+  const templatesById = {
+    "t-heat": { id: "t-heat", name: "Heat scale", race_points: { 1: 20, 2: 15 }, qual_points: { 1: 2 }, bonus_points: {} },
+    "t-bmain": { id: "t-bmain", name: "B-Main scale", race_points: { 1: 50, 2: 40 }, qual_points: { 1: 5 }, bonus_points: {} },
+    "t-other": { id: "t-other", name: "One-off", race_points: { 1: 7, 2: 6 }, qual_points: { 1: 1 }, bonus_points: {} },
+  };
+  const heatEvent = extra => ({
+    r1: {
+      heat_format: true, heats: ["Heat 1", "Heat 2"], consolations: ["B-Main"], feature_name: "A-Main Feature",
+      heat_points_template_id: "t-heat", consolation_points_template_id: "t-bmain", ...extra,
+    },
+  });
+  const sess = (session, session_type, pos) => ({ race_id: "r1", entry_id: "e1", session, session_type, finish_pos: pos });
+  const weekend = [
+    q("e1", 1),
+    sess("Heat 1", "heat", 1),
+    sess("Heat 2", "heat", 2),
+    sess("B-Main", "consolation", 1),
+    sess("A-Main Feature", "feature", 1),
+  ];
+
+  // Pole 10 + Heat 1 20 + Heat 2 15 + B-Main 50 + Feature 100.
+  check("type default scores every heat and consolation",
+    score(weekend, heatEvent(), { templatesById }), { e1: 195 });
+
+  // One session re-pointed from its own tab still wins over its type's default.
+  // That assignment is stamped on the session's own results (the session-points
+  // route cascades it), so Heat 2 drops from 15 to 6 and Heat 1 keeps the default.
+  const repointed = weekend.map(r => (r.session === "Heat 2" ? { ...r, points_template_id: "t-other" } : r));
+  check("a session's own assignment overrides the type default",
+    score(repointed, heatEvent({ session_points: { "Heat 2": "t-other" } }), { templatesById }), { e1: 186 });
+
+  // The per-session points switch still excludes a session outright: Heat 1's 20 goes.
+  check("a session's points switch still wins",
+    score(weekend, heatEvent({ session_points_enabled: { "Heat 1": false } }), { templatesById }), { e1: 175 });
+
+  // No default named = exactly the old behaviour: heats and consolations pay nothing.
+  check("no default named leaves heats scoreless",
+    score(weekend, { r1: { heat_format: true, heats: ["Heat 1", "Heat 2"], consolations: ["B-Main"], feature_name: "A-Main Feature" } },
+      { templatesById }), { e1: 110 });
+
+  // The default is resolved at scoring time, never stamped on the result — which
+  // is what lets one edit of the event re-score every heat it runs.
+  const decorated = decorateSessionFlags([sess("Heat 1", "heat", 1)], heatEvent());
+  check("default resolved onto the result at scoring time", decorated[0].points_template_id, "t-heat");
+  check("naming a default turns heat points on", decorated[0].counts_points, true);
+  // …but stats stay off: a heat is still a preliminary for Wins / Average Finish.
+  check("naming a default leaves heat stats off", decorated[0].counts_stats, false);
+}
+
+
 console.log(`all ${n} checks passed — totals equal the sum of every grid's Points column`);

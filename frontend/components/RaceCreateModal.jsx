@@ -6,6 +6,8 @@ import { Modal } from "@/components/Modal";
 import { ImageUpload } from "@/components/ImageUpload";
 import { TrackSelect } from "@/components/TrackSelect";
 import { RaceLengthField } from "@/components/RaceLengthField";
+import { HeatPointsDefaultFields } from "@/components/HeatPointsDefaultFields";
+import { normalizedBuiltinTemplates } from "@/lib/pointsTemplates";
 import { LENGTH_LAPS, raceLengthBody } from "@/lib/raceLength";
 
 const blankRace = {
@@ -13,6 +15,10 @@ const blankRace = {
   // Distance: a lap count, or a duration for a race run to the clock.
   length_type: LENGTH_LAPS, total_laps: "", race_minutes: "", total_rounds: "",
   heat_format: false, heats: "", consolations: "", feature_name: "A-Main Feature",
+  // Default points template for every heat / every consolation of this event —
+  // picked once here instead of once per session. Blank = the season's (or
+  // class's) points structure, as before.
+  heat_points_template_id: "", consolation_points_template_id: "",
   // Blank = shared by every class; only settable for a season running per-class
   // schedules.
   class_id: "",
@@ -43,10 +49,19 @@ export function RaceCreateModal({ seasonId, defaultRound, classes = [], perClass
     per_class_results: perClassResults,
   });
   const [tracks, setTracks] = useState([]);
+  // Pickable points systems for the heat/consolation defaults below: the
+  // built-in presets plus the league's saved templates, exactly what the
+  // per-session dropdown offers.
+  const [templates, setTemplates] = useState(normalizedBuiltinTemplates());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => { api("/api/tracks").then(setTracks).catch(() => setTracks([])); }, []);
+  useEffect(() => {
+    api("/api/points-templates")
+      .then(saved => setTemplates([...normalizedBuiltinTemplates(), ...saved]))
+      .catch(() => setTemplates(normalizedBuiltinTemplates()));
+  }, []);
 
   const showClass = perClassSchedules && classes.length > 0;
   // Only a shared event has classes to split apart; a round pinned to one class
@@ -81,6 +96,10 @@ export function RaceCreateModal({ seasonId, defaultRound, classes = [], perClass
         heats: form.heat_format ? (heats.length ? heats : ["Heat 1"]) : [],
         consolations: form.heat_format ? toArray(form.consolations) : [],
         feature_name: form.feature_name.trim() || "A-Main Feature",
+        // Only a heat event runs heats/consolations, so the defaults are dropped
+        // when the format is off rather than saved against sessions that don't exist.
+        heat_points_template_id: form.heat_format ? form.heat_points_template_id : "",
+        consolation_points_template_id: form.heat_format ? form.consolation_points_template_id : "",
         // Never pin a race to a class unless the season actually runs per-class
         // schedules, so the field can't be set from stale state.
         class_id: showClass ? form.class_id : "",
@@ -154,6 +173,8 @@ export function RaceCreateModal({ seasonId, defaultRound, classes = [], perClass
               <input value={form.consolations} placeholder="B-Main" onChange={e => setForm(f => ({ ...f, consolations: e.target.value }))} /></div>
             <div className="field"><label>Feature name</label>
               <input value={form.feature_name} placeholder="A-Main Feature" onChange={e => setForm(f => ({ ...f, feature_name: e.target.value }))} /></div>
+            <HeatPointsDefaultFields idPrefix="new_race" value={form} templates={templates}
+              onPatch={patch => setForm(f => ({ ...f, ...patch }))} />
           </>
         ) : (
           <div className="field"><label>Races in this event — comma-separated (e.g. Race 1, Race 2, Sprint)</label>

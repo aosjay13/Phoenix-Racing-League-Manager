@@ -98,6 +98,7 @@ const race = {
   car: "Next Gen", sessions: ["Race"], length_type: "laps", total_laps: 100,
   heat_format: true, heats: ["Heat 1", "Heat 2"], consolations: ["B-Main"], feature_name: "A-Main Feature",
   session_points: { Race: "tpl-race" },
+  heat_points_template_id: "tpl-heat", consolation_points_template_id: "tpl-bmain",
   session_points_by_class: { "s-pro": { Race: "tpl-pro" }, "s-truck": { Race: "tpl-truck" }, [UNCLASSIFIED]: { Race: "tpl-none" } },
   session_stats: { "Heat 1": false },
   class_id: "s-pro",
@@ -114,6 +115,8 @@ check("the event itself carries over", [copied.name, copied.track, copied.total_
 check("heat-racing structure carries over",
   [copied.heat_format, copied.heats, copied.consolations], [true, ["Heat 1", "Heat 2"], ["B-Main"]]);
 check("per-session points systems carry over (templates are global)", copied.session_points, { Race: "tpl-race" });
+check("the event's heat / consolation default templates carry over",
+  [copied.heat_points_template_id, copied.consolation_points_template_id], ["tpl-heat", "tpl-bmain"]);
 check("a class-pinned round follows its class by name", copied.class_id, "t-pro");
 check("per-class points systems are re-keyed to the target's class ids",
   copied.session_points_by_class, { "t-pro": { Race: "tpl-pro" }, [UNCLASSIFIED]: { Race: "tpl-none" } });

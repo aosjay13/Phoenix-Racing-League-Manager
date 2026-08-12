@@ -472,6 +472,15 @@ export const SPECS = {
                        // points (see resolveSessionFlags in lib/standings.js for the defaults).
                        heat_format: {}, heats: {}, consolations: {}, feature_name: { default: "A-Main Feature" },
                        session_points: {}, session_points_by_class: {}, session_stats: {}, session_points_enabled: {},
+                       // The event's DEFAULT points template for its heats and for its
+                       // consolations (B-/C-Mains) — points_templates ids, set once on the
+                       // Race Info form instead of once per session, which is the whole
+                       // point of them on a weekend running eight heats. A session with its
+                       // own `session_points` entry still overrides its type's default, and
+                       // naming a default also turns championship points ON for that type by
+                       // default (see defaultSessionFlags in lib/standings.js). Blank on
+                       // every event that sets none, which scores exactly as before.
+                       heat_points_template_id: {}, consolation_points_template_id: {},
                        // `strength_of_field` records the average Skill Rating of the field that
                        // started this event's main race (Race, or the Feature for heat weekends).
                        // Written by the stats engine on save; null when SR wasn't exchanged.

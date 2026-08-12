@@ -256,6 +256,38 @@ export function classConfigs(baseConfig, classes = []) {
   return Object.fromEntries(classes.map(c => [c.id, configForClass(baseConfig, c)]));
 }
 
+// A heat-format event's DEFAULT points template per session type — the field on
+// the race doc each one is stored in. Set from the event's Race Info form ("every
+// heat scores on this template"), so an admin running eight heats and two B-Mains
+// picks a template once for the event instead of once per session.
+//
+// Only the preliminary types have one: heats and consolations are the sessions
+// that repeat within an event. Qualifying, standard races and the Feature are
+// single sessions already, and score on the season/class structure as before.
+export const SESSION_TYPE_DEFAULT_FIELDS = {
+  heat: "heat_points_template_id",
+  consolation: "consolation_points_template_id",
+};
+
+// The event's default points template id for one session type, or null when it
+// sets none (every event that predates this, and every non-heat event).
+export function defaultTemplateIdFor(race = {}, sessionType = "race") {
+  const field = SESSION_TYPE_DEFAULT_FIELDS[sessionType];
+  return (field && race[field]) || null;
+}
+
+// The points template a result actually scores under: the one stamped on the
+// result (its session's own assignment, event-wide or per class) if it has one,
+// else the event's default for that session TYPE.
+//
+// Resolving the default here rather than stamping it onto results at save time
+// is what makes it a default: change the event's heat template and every heat
+// result re-scores at once, exactly as changing a season's points structure
+// does — no re-save, no cascade over saved results.
+export function resolveTemplateId(result, race = {}) {
+  return result.points_template_id || defaultTemplateIdFor(race, result.session_type || "race");
+}
+
 // Whether a session counts toward stats/points by default, before any admin
 // override. Preliminary sessions (heats, consolations/B- & C-Mains) are off by
 // default so they don't skew a driver's global Win/Top-5/Average-Finish metrics
@@ -263,9 +295,17 @@ export function classConfigs(baseConfig, classes = []) {
 // on — including Qualifying, which feeds Poles/Average Start unless an admin
 // turns its stats toggle off. Admin toggles (race.session_stats /
 // session_points_enabled, keyed by session name) override these per session.
-export function defaultSessionFlags(sessionType) {
+//
+// `race` is the event the session belongs to, and matters for one thing: an
+// event that names a default points template for heats (or consolations) has
+// said those sessions score, so championship points default ON for that type
+// instead of off. Stats stay off by default either way — a heat is still a
+// preliminary as far as Wins / Average Finish are concerned — and an explicit
+// per-session toggle still wins over both.
+export function defaultSessionFlags(sessionType, race = null) {
   const preliminary = sessionType === "heat" || sessionType === "consolation";
-  return { counts_stats: !preliminary, counts_points: !preliminary };
+  const scoresByDefault = !!defaultTemplateIdFor(race || {}, sessionType);
+  return { counts_stats: !preliminary, counts_points: !preliminary || scoresByDefault };
 }
 
 // The event's first standard race session — the name a result saved before the
@@ -288,7 +328,7 @@ export function resolveSessionFlags(result, racesById = {}) {
   const race = racesById[result.race_id] || {};
   const type = result.session_type || "race";
   const name = sessionNameOf(result, race);
-  const def = defaultSessionFlags(type);
+  const def = defaultSessionFlags(type, race);
   const statsMap = race.session_stats || {};
   const pointsMap = race.session_points_enabled || {};
   return {
@@ -327,12 +367,18 @@ export function classSessionTemplates(result, racesById = {}) {
 //
 // The class-scoped template assignments ride along for the same reason — one
 // pass over the race docs, and every scorer downstream gets both.
+//
+// So does the event's default points template for the session's TYPE (see
+// resolveTemplateId): a heat result with no template of its own picks up the
+// event's heat default here, which is why setting that default re-scores every
+// heat of the event immediately, on every screen.
 export function decorateSessionFlags(results, racesById = {}) {
   return results
     .filter(r => racesById[r.race_id])
     .map(r => ({
       ...r,
       ...resolveSessionFlags(r, racesById),
+      points_template_id: resolveTemplateId(r, racesById[r.race_id]),
       class_session_templates: classSessionTemplates(r, racesById),
     }));
 }
