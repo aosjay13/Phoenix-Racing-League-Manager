@@ -9,7 +9,7 @@ import { PointsEditorModal } from "@/components/PointsEditorModal";
 import { ImportResultsModal } from "@/components/ImportResultsModal";
 import { NONE_TEMPLATE, isNoPointsTemplate } from "@/lib/pointsTemplates";
 import { classIdForScope, classOfResult, entriesEligibleForRace, entriesInSessionClass, isClassScoped, resultInSessionClass } from "@/lib/classFilter";
-import { pointsFor, pointsBreakdown, classConfigs, classScoresOwnPoints, configForClass, configForTemplate, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
+import { pointsFor, pointsBreakdown, classConfigs, classScoresOwnPoints, configForClass, configForTemplate, defaultTemplateIdFor, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
 import { AUTO_FLAG_FIELDS, applyAutoFlags, detectFlagLocks, autoMostLapsLedSlot } from "@/lib/autoFlags";
 import { BANGER_BOOL_FIELDS, BANGER_RESULT_FIELDS, BANGER_STATS, bangerRates, blankBangerRow, hasBangerBonuses } from "@/lib/bangerRacing";
 import { BRACKET_SIZES, bracketGridError, bracketPositionAt, bracketPositions, bracketRoundFor, bracketRounds, bracketSizeForField, bracketSizeLabel, normalizeBracketSize, ordinal } from "@/lib/bracketRacing";
@@ -1279,7 +1279,15 @@ export function SessionEditor({
     ? (classSessionPoints[session] || "")
     : (sessionPoints[session] || "");
   const templateFor = id => (id === NONE_TEMPLATE.id ? NONE_TEMPLATE : templates.find(t => t.id === id));
-  const template = useMemo(() => templateFor(templateId), [templates, templateId]);
+  // The event's default template for this session TYPE — "every heat scores on
+  // this", set on the Race Info form so a weekend of heats doesn't need a
+  // template picked session by session (see lib/standings.js). A session with an
+  // assignment of its own still overrides it; without one, this is what the
+  // Points column below scores on, which is what the standings score on too.
+  const typeDefaultId = defaultTemplateIdFor(race || {}, sessionType) || "";
+  const typeDefault = useMemo(() => templateFor(typeDefaultId), [templates, typeDefaultId]);
+  const effectiveTemplateId = templateId || typeDefaultId;
+  const template = useMemo(() => templateFor(effectiveTemplateId), [templates, effectiveTemplateId]);
   // Was this session's template picked for THIS class, or for the event as a
   // whole? Only a class's own assignment lives in session_points_by_class.
   const templateIsForClass = scoped && !!classSessionPoints[session];
@@ -1304,6 +1312,19 @@ export function SessionEditor({
     () => layered(pointsClassId || "", template, templateIsForClass),
     [baseConfig, template, templateIsForClass, pointsClassId, classes, seasonConfig],
   );
+
+  // What this session scores on with NO assignment of its own — the event's
+  // default for its type when it names one, else the plain class/season
+  // structure. It's what the dropdown's first option means and what the points
+  // editor shows behind it, so "use the default" always displays the numbers
+  // that default actually pays.
+  const defaultConfig = useMemo(
+    () => (typeDefault ? layered(pointsClassId || "", typeDefault, false) : baseConfig),
+    [baseConfig, typeDefault, pointsClassId, classes, seasonConfig],
+  );
+  const defaultLabel = typeDefault
+    ? `${LABELS[sessionType] || "Session"} default — ${typeDefault.name}`
+    : baseLabel;
 
   // What this session pays for each derby stat, resolved through the same
   // season → class → session-template chain the Points column scores on.
@@ -1340,7 +1361,10 @@ export function SessionEditor({
   // anyone's record. The championship-points toggle stays race-only, since
   // qualifying never awards championship points on its own.
   const isQual = sessionType === "qualifying";
-  const flagDefaults = defaultSessionFlags(sessionType);
+  // The event's heat/consolation points default also flips championship points
+  // on for that type by default — naming a template for every heat says heats
+  // score — so this grid's switch shows the same state the standings use.
+  const flagDefaults = defaultSessionFlags(sessionType, race);
   const statsOn = session in sessionStats ? !!sessionStats[session] : flagDefaults.counts_stats;
   const pointsOn = session in sessionPointsEnabled ? !!sessionPointsEnabled[session] : flagDefaults.counts_points;
   const showStatsToggle = !!onSessionStatsChange;
@@ -1467,6 +1491,10 @@ export function SessionEditor({
           // Replaces only this class's slice of the session, leaving the other
           // classes that raced the same round untouched.
           ...(scoped ? { session_class: sessionClass } : {}),
+          // Only an assignment made FOR THIS SESSION is stamped on the results. A
+          // type default is deliberately left off, so it stays a default: change
+          // the event's heat template and every heat re-scores at once (see
+          // resolveTemplateId in lib/standings.js).
           points_template_id: templateId || null, rows: [...filled, ...provPayload],
         },
       });
@@ -1653,7 +1681,7 @@ export function SessionEditor({
               <label>Points system · {scopeClass ? `${pointsClassName} · ` : ""}{session}</label>
               <select value={templateId}
                 onChange={e => Promise.resolve(assignSessionPoints(session, e.target.value, sessionType)).catch(err => showToast("error", err.message))}>
-                <option value="">{baseLabel}</option>
+                <option value="">{defaultLabel}</option>
                 <option value={NONE_TEMPLATE.id}>{NONE_TEMPLATE.name}</option>
                 {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
@@ -2034,7 +2062,7 @@ export function SessionEditor({
       {pointsModal && (
         <PointsEditorModal
           session={session} sessionType={sessionType} value={templateId}
-          templates={templates} baseConfig={baseConfig} baseLabel={baseLabel}
+          templates={templates} baseConfig={defaultConfig} baseLabel={defaultLabel}
           classLabel={scopeClass ? pointsClassName : ""} banger={isBangerRacing}
           onAssign={assignSessionPoints} onTemplatesChanged={onTemplatesChanged}
           onClose={() => setPointsModal(false)}

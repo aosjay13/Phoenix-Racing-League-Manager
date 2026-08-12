@@ -9,12 +9,13 @@ import { useAuth } from "@/components/AuthProvider";
 import { ImageUpload } from "@/components/ImageUpload";
 import { TrackSelect } from "@/components/TrackSelect";
 import { RaceLengthField } from "@/components/RaceLengthField";
+import { HeatPointsDefaultFields } from "@/components/HeatPointsDefaultFields";
 import { TrackMergeModal } from "@/components/TrackMergeModal";
 import { LENGTH_LAPS, raceLengthBody, raceLengthForm } from "@/lib/raceLength";
 import { api } from "@/lib/api";
 import { ALL_BONUS_TYPES, BONUS_TYPES } from "@/lib/standings";
 import { TRACK_TYPES } from "@/lib/trackTypes";
-import { listToTableOrZero, tableToList } from "@/lib/pointsTemplates";
+import { listToTableOrZero, normalizedBuiltinTemplates, tableToList } from "@/lib/pointsTemplates";
 import { carForClass } from "@/lib/classFilter";
 import { SeasonForm } from "@/components/SeasonForm";
 import { BangerBonusFields, PointsFields } from "@/components/PointsFields";
@@ -240,6 +241,10 @@ function AdminInner() {
     // Distance: a lap count, or a duration for a race run to the clock.
     length_type: LENGTH_LAPS, total_laps: "", race_minutes: "", total_rounds: "",
     heat_format: false, heats: "", consolations: "", feature_name: "A-Main Feature",
+    // The event's default points template for every heat / every consolation, so
+    // a weekend of heats needs one pick instead of one per session. Blank = those
+    // sessions score on the season's (or class's) points structure, as before.
+    heat_points_template_id: "", consolation_points_template_id: "",
     // Blank = shared by every class. Only settable while the season has
     // per-class schedules turned on.
     class_id: "",
@@ -891,6 +896,11 @@ function AdminInner() {
               heats: raceForm.heat_format ? (heats.length ? heats : ["Heat 1"]) : [],
               consolations: raceForm.heat_format ? toArray(raceForm.consolations) : [],
               feature_name: raceForm.feature_name.trim() || "A-Main Feature",
+              // Only a heat event has heats/consolations to default, so switching
+              // the format off clears them rather than leaving a template pointed
+              // at sessions the event no longer runs.
+              heat_points_template_id: raceForm.heat_format ? raceForm.heat_points_template_id : "",
+              consolation_points_template_id: raceForm.heat_format ? raceForm.consolation_points_template_id : "",
             };
             if (!editIds.race) body.season_id = seasonId;
             save("/api/races", body, editIds.race,
@@ -943,6 +953,9 @@ function AdminInner() {
                 <div className="field"><label>Feature name</label>
                   <input disabled={!seasonId} value={raceForm.feature_name} placeholder="A-Main Feature"
                     onChange={e => setRaceForm(f => ({ ...f, feature_name: e.target.value }))} /></div>
+                <HeatPointsDefaultFields idPrefix="admin_race" disabled={!seasonId} value={raceForm}
+                  templates={[...normalizedBuiltinTemplates(), ...templates]}
+                  onPatch={patch => setRaceForm(f => ({ ...f, ...patch }))} />
               </>
             ) : (
               <div className="field"><label>Races in this event — comma-separated (e.g. Race 1, Race 2, Sprint)</label>
@@ -981,6 +994,8 @@ function AdminInner() {
                   heats: Array.isArray(r.heats) ? r.heats.join(", ") : "",
                   consolations: Array.isArray(r.consolations) ? r.consolations.join(", ") : "",
                   feature_name: r.feature_name || "A-Main Feature",
+                  heat_points_template_id: r.heat_points_template_id || "",
+                  consolation_points_template_id: r.consolation_points_template_id || "",
                   class_id: r.class_id || "",
                 });
               }}
