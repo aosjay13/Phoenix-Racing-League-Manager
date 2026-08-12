@@ -33,6 +33,13 @@ export const BLANK_SEASON_FORM = {
   // directly. See lib/bangerRacing.js.
   isBangerRacing: false,
   banger_mode: "",
+  // Heat racing for the whole season, and the points templates its heats and
+  // consolations score on by default — picked once here instead of once per
+  // event. Blank = nothing changes; see lib/standings.js for the chain an event
+  // and a class override it through.
+  heat_format: false,
+  heat_points_template_id: "",
+  consolation_points_template_id: "",
   // Car selection / lock-in for this season and its classes — see
   // lib/carSelection.js.
   ...BLANK_CAR_SELECTION_FORM,
@@ -56,6 +63,9 @@ export function seasonToForm(season = {}) {
     per_class_schedules: !!season.per_class_schedules,
     per_class_results: !!season.per_class_results,
     isBangerRacing: !!season.isBangerRacing,
+    heat_format: !!season.heat_format,
+    heat_points_template_id: season.heat_points_template_id || "",
+    consolation_points_template_id: season.consolation_points_template_id || "",
     // "off" predates the strict visibility rule and reads the same as the
     // default now — an ordinary racing season.
     banger_mode: season.isBangerRacing ? "on" : (season.banger_mode === "on" ? "on" : ""),
@@ -76,6 +86,12 @@ export function seasonFormToBody(form) {
     // anything reading either gets the same answer.
     banger_mode: form.banger_mode || "",
     isBangerRacing: form.banger_mode === "on",
+    // Only a heat-racing season has heats and consolations to default, so the two
+    // templates are cleared with the tick rather than left pointing at sessions
+    // the season doesn't run.
+    heat_format: !!form.heat_format,
+    heat_points_template_id: form.heat_format ? form.heat_points_template_id : "",
+    consolation_points_template_id: form.heat_format ? form.consolation_points_template_id : "",
     // The car list is stored as an array of names, not the textarea's raw text.
     ...carSelectionFormToBody(form),
     race_points: listToTableOrZero(form.race_points),

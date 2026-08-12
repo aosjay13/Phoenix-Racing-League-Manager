@@ -797,6 +797,33 @@ function AdminInner() {
               </div>
             )}
 
+            {/* Heat racing for this class alone, and the points defaults it
+                unlocks: a season that runs heats for one class (or runs them
+                differently per class) sets that class's heat and consolation
+                scoring here. A class's default outranks the season's, and sits
+                on top of the class's own points structure — see
+                inheritedSessionTemplate in lib/standings.js. */}
+            <div className="field check-row">
+              <input type="checkbox" id="class_heat_format" disabled={!seasonId}
+                checked={!!classForm.heat_format}
+                onChange={e => setClassForm(f => ({ ...f, heat_format: e.target.checked }))} />
+              <label htmlFor="class_heat_format" style={{ margin: 0 }}>
+                Heat Races and Consolation Races
+                <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
+                  On: <strong>this class</strong> runs heat racing, and you can name the points template
+                  every heat and every consolation it runs scores on — set once here instead of once per
+                  race entry. It overrides {season?.name ?? "the season"}&rsquo;s own heat defaults for this
+                  class; a single event can still override it on its Race Info tab.
+                </span>
+              </label>
+            </div>
+
+            {classForm.heat_format && (
+              <HeatPointsDefaultFields idPrefix="class" value={classForm} onPatch={patchClassForm}
+                disabled={!seasonId} scopeLabel="class"
+                templates={[...normalizedBuiltinTemplates(), ...templates]} />
+            )}
+
             {/* Car selection / lock-in for this class alone — a class that
                 sets its own list asks ITS drivers for their own pick, while
                 the rest of the season keeps picking from the season's. */}

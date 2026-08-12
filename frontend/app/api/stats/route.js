@@ -6,6 +6,7 @@ import {
   compareStandings,
   decorateRaceBonuses,
   decorateSessionFlags,
+  sessionScopeContext,
   isQualifying,
   makeScorer,
   resolveSeasonConfig,
@@ -143,7 +144,8 @@ async function buildStats(seasons, classId = "", className = "", gameId = null, 
     const races = filterRacesByClass(seasonRaces, classSel);
     const racesById = Object.fromEntries(seasonRaces.map(r => [r.id, r]));
     for (const r of races) allRaces.push(r);
-    const decorated = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById));
+    const decorated = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById,
+      sessionScopeContext({ seasons: [season], classes: seasonClasses, entriesById: allEntriesById })));
     const results = filterResultsByClass(decorated, classSel, allEntriesById);
     // Scores every result under the class its driver raced in, so a class with
     // its own points structure totals under that structure here too.

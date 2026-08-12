@@ -1123,7 +1123,7 @@ outright order, an overall championship across classes just adds their points to
 **Which class pays what.** Points resolve through the same shape of fallback the car does, most
 specific last:
 
-    series default → season → the event's heat/consolation default or event-wide session template → the class's own structure → that class's own session template
+    series default → season → the season's or event's heat/consolation default, or an event-wide session template → the class's own structure → the class's own heat/consolation default → that class's own session template
 
 The **class's own structure** (`classes.race_points` / `qual_points` / `bonus_points`, all unset by
 default = inherit) therefore **overrides the season and the event's default points template alike**.
@@ -1150,25 +1150,43 @@ re-scoring Pro's Feature leaves Amateur's alone, and clearing it hands that clas
 event-wide assignment rather than to nothing. A class's Qualifying is resolved the same way, so its
 qualifying points are scored under *that class's* Qualifying structure.
 
-**Heats and consolations score on a default set once per event.** A heat weekend is the one shape
-where the per-session dropdown becomes a chore: eight heats and two B-Mains means ten trips through
-it, every round of the season. So the event's **Race Info** form — in League Setup's Races panel, the
-New Race dialog and the race edit screen alike — carries two extra pickers as soon as heat racing is
-ticked: a default points template **for every Heat** (`races.heat_points_template_id`) and one **for
-every Consolation** (`races.consolation_points_template_id`). Pick a template there and every heat
-(or every consolation) of that event scores on it, including sessions added later — nothing is copied
-onto the sessions themselves.
+**Heats and consolations score on a default, set once — per season, per class or per event.** A heat
+weekend is the one shape where the per-session dropdown becomes a chore: eight heats and two B-Mains
+means ten trips through it, every round of the season. So three levels carry a **Heat Races and
+Consolation Races** tick, and each one that's ticked offers the same two pickers — a default points
+template **for every Heat** (`heat_points_template_id`) and one **for every Consolation**
+(`consolation_points_template_id`):
 
-The default is resolved at scoring time (`resolveTemplateId`, stamped on each result by
-`decorateSessionFlags`) rather than written onto saved results, which is what makes it a default:
-change the event's heat template and every heat re-scores at once, on every screen, with no re-save.
-It sits at the same level as an event-wide session assignment, so a class scoring on its own
-structure still outranks it, and a template assigned to ONE session from that session's own tab
-overrides it for that session alone. Naming a default also flips **championship points on** for that
-session type, which is off by default for preliminary sessions — the point of picking a heat scale is
-that the heats pay it. Each session keeps its own points switch, so one heat can still be excluded.
-Leave both pickers on *No default* and heats and consolations behave exactly as they always have.
-A copied race carries both defaults over with the rest of its scoring setup.
+| Where | Ticked on | Covers |
+| --- | --- | --- |
+| **Season** (League Setup → Seasons, and the Schedule's *New Season* dialog) | `seasons.heat_format` | every heat/consolation of every event in the season |
+| **Class** (League Setup → Classes) | `classes.heat_format` | every heat/consolation **that class** runs |
+| **Event** (Race Info — League Setup's Races panel, the New Race dialog, the race edit screen) | `races.heat_format` | every heat/consolation of that one event |
+
+Pick a template at whichever level is true for your league and every heat (or every consolation) in
+scope scores on it, including sessions added later — nothing is copied onto the sessions themselves.
+**Most specific wins:** the event's default beats the class's, which beats the season's, and a
+template assigned to ONE session from its own results tab beats all three. `inheritedSessionTemplate`
+in `lib/standings.js` holds that order.
+
+Where a default sits in the class chain depends on who named it, for the same reason a session
+assignment does. The **season's** and the **event's** are statements about the whole field, so they
+sit *under* the class layer — a class scoring on its own points structure outranks them. A **class's**
+own default sits *on top* of that class's structure, since it is a statement about that class:
+otherwise a class with its own points would ignore the very heat template it was given.
+
+The default is resolved at scoring time (`resolveTemplateId`, stamped onto each result by
+`decorateSessionFlags`, which reads the season/class docs through `sessionScopeContext`) rather than
+written onto saved results — which is what makes it a default: change the season's heat template and
+every heat under it re-scores at once, on every screen, with no re-save. Naming a default also flips
+**championship points on** for that session type, which is off by default for preliminary sessions —
+the point of picking a heat scale is that the heats pay it. Stats stay off (a heat is still a
+preliminary for Wins and Average Finish), and each session keeps its own points switch, so one heat
+can still be excluded. The results screen's points dropdown names the default and the level it came
+from ("Heat default · season — PRA Heats"), so it is always visible which of the three is scoring.
+Leave the pickers on *No default* — or leave the ticks off — and heats and consolations behave exactly
+as they always have. A copied race carries its own two defaults over with the rest of its scoring
+setup.
 
 **Qualifying scores itself.** Every session scores itself, off its own structure, at the position the
 driver took in it: Qualifying pays the qualifying scale for the grid slot won (pole being position 1

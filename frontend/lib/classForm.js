@@ -28,6 +28,13 @@ export const BLANK_CLASS_FORM = {
   // class next to ordinary racing ones. A flagged series already covers every
   // class in it; see lib/bracketRacing.js.
   isBracketRacing: false,
+  // Heat racing for this class alone, plus the points templates its heats and
+  // consolations score on by default. Unlike the season's and the event's, a
+  // class's default sits ON TOP of the class's own points structure — see
+  // inheritedSessionTemplate in lib/standings.js.
+  heat_format: false,
+  heat_points_template_id: "",
+  consolation_points_template_id: "",
   // Car selection / lock-in for this class alone — how one class runs its own
   // car list while the rest of the season picks from the season's. See
   // lib/carSelection.js.
@@ -69,6 +76,9 @@ export function classToForm(cls = {}) {
     sort_order: cls.sort_order != null ? String(cls.sort_order) : "",
     isBangerRacing: !!cls.isBangerRacing,
     isBracketRacing: !!cls.isBracketRacing,
+    heat_format: !!cls.heat_format,
+    heat_points_template_id: cls.heat_points_template_id || "",
+    consolation_points_template_id: cls.consolation_points_template_id || "",
     ...carSelectionToForm(cls),
     own_points: classScoresOwnPoints(cls) && (hasOwnScale(cls) || hasTraditionalBonus(cls)),
     race_points: tableToList(cls.race_points),
@@ -97,6 +107,12 @@ export function classFormToBody(form, fallbackSortOrder = 0, { banger = false } 
     sort_order: form.sort_order === "" ? fallbackSortOrder : Number(form.sort_order),
     isBangerRacing: !!form.isBangerRacing,
     isBracketRacing: !!form.isBracketRacing,
+    // Only a heat-racing class has heats and consolations to default, so the two
+    // templates are cleared with the tick rather than left pointing at sessions
+    // the class doesn't run.
+    heat_format: !!form.heat_format,
+    heat_points_template_id: form.heat_format ? form.heat_points_template_id : "",
+    consolation_points_template_id: form.heat_format ? form.consolation_points_template_id : "",
     // The car list is stored as an array of names, not the textarea's raw text.
     ...carSelectionFormToBody(form),
     // Nulls (not omissions) so turning the override back off actually clears a

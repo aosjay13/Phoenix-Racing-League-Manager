@@ -4,6 +4,7 @@ import {
   aggregateCareerStats,
   decorateRaceBonuses,
   decorateSessionFlags,
+  sessionScopeContext,
   isQualifying,
   makeScorer,
   resolveSeasonConfig,
@@ -69,13 +70,14 @@ export async function buildCareerProfile({ driverId = null, userId = null }) {
       fetchSeasonClasses(seasonId),
     ]);
     const racesById = Object.fromEntries(racesSnap.docs.map(d => [d.id, d.data()]));
-    const seasonResults = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById));
     const seasonEntries = entriesSnap2.docs.map(d => ({ id: d.id, ...d.data() }));
+    const seasonEntriesById = Object.fromEntries(seasonEntries.map(e => [e.id, e]));
+    const seasonResults = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById,
+      sessionScopeContext({ seasons: [season], classes: seasonClasses, entriesById: seasonEntriesById })));
     // Scored under the class each result was run in, so a class with its own
     // points structure reaches the career totals as well as the standings.
     const scorer = makeScorer(seasonResults, {
-      config, classes: seasonClasses, templatesById,
-      entriesById: Object.fromEntries(seasonEntries.map(e => [e.id, e])),
+      config, classes: seasonClasses, templatesById, entriesById: seasonEntriesById,
     });
 
     const mine = seasonResults

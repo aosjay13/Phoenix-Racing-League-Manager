@@ -4,6 +4,8 @@ import { useState } from "react";
 import { ImageUpload } from "@/components/ImageUpload";
 import { PointsFields } from "@/components/PointsFields";
 import { CarSelectionFields } from "@/components/CarSelectionFields";
+import { HeatPointsDefaultFields } from "@/components/HeatPointsDefaultFields";
+import { normalizedBuiltinTemplates } from "@/lib/pointsTemplates";
 import { scoresNoPoints } from "@/lib/seasonForm";
 import { BANGER_MODES, bangerEntryScope } from "@/lib/bangerRacing";
 import { resolveSignupRules } from "@/lib/carSelection";
@@ -136,6 +138,31 @@ export function SeasonForm({
           )}
         </span>
       </div>
+
+      {/* Heat racing for the whole season. Ticking it doesn't change how an event
+          is built — each race still declares its own heats on its Race Info tab —
+          it says this season RUNS heats, and unlocks the two points defaults
+          below so a league running heats all year sets its scoring once here
+          instead of once per event. An event's own defaults, and a class's,
+          override these; see lib/standings.js. */}
+      <div className="field check-row">
+        <input type="checkbox" id="season_heat_format" disabled={disabled}
+          checked={!!value.heat_format} onChange={check("heat_format")} />
+        <label htmlFor="season_heat_format" style={{ margin: 0 }}>
+          Heat Races and Consolation Races
+          <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
+            On: this season runs heat racing (Heats → Consolation → Feature), and you can name the
+            points template every heat and every consolation scores on — once, here, instead of once
+            per race entry. Each event still lists its own heats and B-Mains on its Race Info tab, and
+            can override either default there.
+          </span>
+        </label>
+      </div>
+
+      {value.heat_format && (
+        <HeatPointsDefaultFields idPrefix="season" value={value} onPatch={set} disabled={disabled}
+          templates={[...normalizedBuiltinTemplates(), ...templates]} scopeLabel="season" />
+      )}
 
       {/* Car selection / lock-in for this season — the same block the Series
           and Classes panels render, so all three levels offer one setting. */}

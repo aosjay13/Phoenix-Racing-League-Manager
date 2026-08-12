@@ -5,6 +5,7 @@ import {
   calculateTeamStandings,
   decorateRaceBonuses,
   decorateSessionFlags,
+  sessionScopeContext,
   isQualifying,
   makeScorer,
   parseMaybeJson,
@@ -66,7 +67,10 @@ export async function GET(request) {
   );
   const teams = teamsForEntries(allEntries, seasonId, teamIndex);
   const racesById = Object.fromEntries(racesSnap.docs.map(d => [d.id, d.data()]));
-  const allResults = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById));
+  const allResults = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById,
+    // The season and its classes can name heat/consolation points defaults of
+    // their own; they resolve per result, under its own class.
+    sessionScopeContext({ seasons: [{ id: seasonId, ...season }], classes, entriesById })));
 
   // Resolve the selection against THIS season's class docs, so a class picked
   // at series level still narrows the season it drills into.
