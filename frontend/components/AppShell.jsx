@@ -25,7 +25,12 @@ const publicNav = [
   // Hot-lapping, time attack and division placements. It sits with the racing
   // pages rather than under Admin because the sheets themselves are public —
   // only creating and entering one is an admin job. See app/time-trials.
-  { href: "/time-trials", label: "Time Trials & Placements", icon: "⏱" },
+  //
+  // Shortened here on purpose: the sidebar is a narrow column of one-word
+  // labels, and "Time Trials & Placements" was long enough to wrap and unsettle
+  // the column. The screen it opens still carries the full name, and `title`
+  // keeps it a hover away from the link itself.
+  { href: "/time-trials", label: "Time Trials", title: "Time Trials & Placements", icon: "⏱" },
   { href: "/schedule",  label: "Schedule",  icon: "📅" },
   { href: "/calendar",  label: "Calendar",  icon: "🗓️" },
   { href: "/history",   label: "History",   icon: "📜" },
@@ -59,7 +64,8 @@ function NavLinks({ items, pathname, badges }) {
       ? `${badge} item${badge === 1 ? "" : "s"} need${badge === 1 ? "s" : ""} your attention`
       : entry?.title;
     return (
-      <Link className={`nav-link${isActive ? " active" : ""}`} key={item.href} href={item.href}>
+      <Link className={`nav-link${isActive ? " active" : ""}`} key={item.href} href={item.href}
+        title={item.title}>
         <span className="nav-icon">{item.icon}</span>
         {item.label}
         {badge > 0 && (
