@@ -2659,6 +2659,84 @@ input[type="radio"]:disabled:checked {
 
 .calendar-event-flag { margin-left: auto; font-size: 0.7rem; }
 
+/* An event showing session times becomes two stacked rows: the race line it
+   always was, then the P/Q/R times under it. Without times the pill is exactly
+   the single flex row above. */
+.calendar-event.has-times {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+}
+
+/* The race line itself, whether or not times sit under it — it fills the pill
+   so the track name still ellipsises and the flag still sits hard right. */
+.calendar-event-main {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+}
+
+.calendar-event-times {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  font-size: 0.66rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-1);
+}
+
+.calendar-event.is-done .calendar-event-times { color: var(--ink-2); }
+
+.calendar-event-time {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.calendar-event-time-key {
+  font-weight: 800;
+  font-size: 0.6rem;
+  letter-spacing: 0.04em;
+  color: var(--accent-cyan);
+}
+
+.calendar-event.is-done .calendar-event-time-key { color: var(--accent-gold); }
+
+/* The date a session lands on for THIS reader, shown only when it isn't the
+   race's own date — a US evening race is the next morning in Europe. */
+.calendar-event-time-day { font-style: normal; opacity: 0.75; }
+
+/* Whose clock the times above are quoting. */
+.calendar-tz-note {
+  margin: 10px 0 0;
+  font-size: 0.78rem;
+  color: var(--ink-2);
+}
+
+.calendar-tz-note strong { color: var(--ink-1); }
+
+.calendar-tz-key {
+  font-weight: 800;
+  color: var(--accent-cyan);
+}
+
+/* Each time carries its session's full name for a screen reader, since "Q" on
+   its own reads as a letter. */
+.calendar-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .calendar-undated {
   margin-top: 20px;
   padding: 14px 16px;

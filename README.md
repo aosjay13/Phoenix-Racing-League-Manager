@@ -238,6 +238,19 @@ The app runs at `http://localhost:3000`.
    one, and the **Jump to** row hops straight to any other month that has events. Where the
    Schedule answers *what's next and what just happened*, the Calendar answers *what does June
    look like*.
+
+   **Session times, in every reader's own timezone.** An admin can opt any event into showing when
+   it actually runs: on that race's **Race Info** tab, tick **Show session times on the Calendar**,
+   pick the timezone the league's times are quoted in, and enter **Practice**, **Qualifying** and
+   **Race** start times (leave any of them blank to leave it off). The event's pill then carries a
+   **P · Q · R** line, and every reader sees those times converted to *their own* clock
+   automatically — 7:00 PM in New York reads as midnight to somebody in London, with the date shown
+   beside it when their clock puts the session on a different day. Daylight saving is handled per
+   event, from the race's own date, so a March round and an August round both come out right.
+
+   This is a **calendar-only** display: the race's date is still the plain calendar date it always
+   was, and the Schedule, the results screens and the standings are untouched by it. An event with
+   the toggle off looks exactly as it did before.
 7. **Standings** — driver and team championship tables for the selected season, with
    points, gaps to the leader, and per-category stats. Click any column header to sort. Level
    on points? The tie-breaker chain below decides, and every step of it is a column in the

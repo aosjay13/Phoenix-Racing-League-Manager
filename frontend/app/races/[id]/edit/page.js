@@ -14,6 +14,10 @@ import { carForRace, racePerClassResults, sessionClassScopes } from "@/lib/class
 import { gameNameFor } from "@/lib/driverNames";
 import { isBangerEvent, isBangerScope, derbyPointsTarget } from "@/lib/bangerRacing";
 import { isBracketEvent, isBracketScope } from "@/lib/bracketRacing";
+import {
+  SESSION_TIME_KEYS, SESSION_TIME_LABELS, browserTimeZone, raceSessionTimes,
+  sessionTimeLine, sessionTimesBody, sessionTimesForm, timeZoneOptions,
+} from "@/lib/raceTimes";
 import { api } from "@/lib/api";
 
 const BLANK_INFO = {
@@ -23,7 +27,97 @@ const BLANK_INFO = {
   length_type: LENGTH_LAPS, total_laps: "", race_minutes: "", total_rounds: "",
   car: "", heat_format: false, heats: "", consolations: "", feature_name: "A-Main Feature",
   class_id: "", per_class_results: false,
+  // Calendar session times — off until an admin opts this event in. See
+  // lib/raceTimes.js, and CalendarTimesField below for what they do and don't
+  // affect.
+  show_session_times: false, session_timezone: "", practice_time: "", qualifying_time: "", race_time: "",
 };
+
+// Session start times for the CALENDAR — the whole of what this block does.
+//
+// An admin types the times once, in their league's own timezone, and every
+// reader sees them converted to their own clock on the Calendar. Nothing else
+// reads them: the race's Date above stays the bare calendar date it has always
+// been (lib/raceDate.js), the Schedule, the results screens and the standings
+// are untouched, and an event with the toggle off renders exactly as it did
+// before this existed.
+//
+// The zone is not optional decoration — a wall-clock time with no zone attached
+// can't be converted for anybody, which is why it defaults to the admin's own
+// browser zone rather than to blank.
+function CalendarTimesField({ form, setForm }) {
+  const on = !!form.show_session_times;
+  const zones = useMemo(() => timeZoneOptions(form.session_timezone || browserTimeZone()), [form.session_timezone]);
+  // What a reader in the SELECTED zone would see, built from the same function
+  // the calendar itself calls — so the preview can't drift from the real thing,
+  // and a time that failed to parse (or a zone that didn't take) shows up here
+  // rather than on the public calendar.
+  const preview = useMemo(() => raceSessionTimes({
+    show_session_times: true, date: form.date,
+    session_timezone: form.session_timezone,
+    session_times: Object.fromEntries(SESSION_TIME_KEYS.map(k => [k, form[`${k}_time`]])),
+  }, { timeZone: form.session_timezone || undefined }), [form]);
+
+  return (
+    <div className="field" style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+      <div className="check-row">
+        <input type="checkbox" id="show_session_times" checked={on}
+          onChange={e => setForm(f => ({ ...f, show_session_times: e.target.checked }))} />
+        <label htmlFor="show_session_times" style={{ margin: 0 }}>
+          Show session times on the Calendar
+          <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
+            Put the Practice, Qualifying and Race start times on this event&rsquo;s calendar entry.
+            Everyone sees them in <strong>their own timezone</strong>, worked out automatically. This
+            affects the <strong>Calendar only</strong> — the date above, the schedule, the results
+            screens and the standings are all unchanged.
+          </span>
+        </label>
+      </div>
+
+      {on && (
+        <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
+          <div className="field" style={{ margin: 0 }}>
+            <label htmlFor="session_timezone">Times are in this timezone</label>
+            <select id="session_timezone" value={form.session_timezone || ""}
+              onChange={e => setForm(f => ({ ...f, session_timezone: e.target.value }))}>
+              {zones.map(z => <option key={z} value={z}>{z}</option>)}
+            </select>
+            <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
+              Your league&rsquo;s own clock — the zone you are typing the times below in. Everything
+              else is converted from it.
+            </span>
+          </div>
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            {SESSION_TIME_KEYS.map(key => (
+              <div className="field" key={key} style={{ margin: 0, minWidth: 130 }}>
+                <label htmlFor={`session_time_${key}`}>{SESSION_TIME_LABELS[key]}</label>
+                <input id={`session_time_${key}`} type="time" value={form[`${key}_time`] || ""}
+                  onChange={e => setForm(f => ({ ...f, [`${key}_time`]: e.target.value }))} />
+              </div>
+            ))}
+          </div>
+          <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
+            Leave a session blank to leave it off the calendar — a weekend with no practice just
+            shows Qualifying and the Race.
+          </span>
+
+          {!form.date ? (
+            <span style={{ fontSize: "0.78rem", color: "var(--accent-gold)" }}>
+              Set a <strong>Date</strong> above — times need a day to hang off before the calendar
+              can show them.
+            </span>
+          ) : preview.length > 0 && (
+            <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
+              On the calendar, someone in {form.session_timezone} sees:{" "}
+              <strong>{preview.map(sessionTimeLine).join(" · ")}</strong>
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function RaceInfoTab({ race, season, classes = [], onSaved }) {
   const router = useRouter();
@@ -53,6 +147,11 @@ function RaceInfoTab({ race, season, classes = [], onSaved }) {
       class_id: race.class_id || "",
       // Unset on the race = inherit the season default.
       per_class_results: racePerClassResults(race, season),
+      show_session_times: !!race.show_session_times,
+      // An event with no zone of its own defaults to the admin's browser zone —
+      // an admin types their league's times in their own clock.
+      session_timezone: race.session_timezone || browserTimeZone(),
+      ...sessionTimesForm(race),
     });
   }, [race, season]);
 
@@ -101,6 +200,9 @@ function RaceInfoTab({ race, season, classes = [], onSaved }) {
         // been saved from this form, so changing the season default later never
         // silently re-splits or re-merges an event whose results already exist.
         per_class_results: showSplit ? !!form.per_class_results : false,
+        // Calendar session times. These are read by the Calendar and nowhere
+        // else — the race's `date` above is untouched by them.
+        ...sessionTimesBody(form),
       };
       const updated = await api(`/api/races/${race.id}`, { method: "PATCH", body });
       onSaved?.(updated);
@@ -164,6 +266,8 @@ function RaceInfoTab({ race, season, classes = [], onSaved }) {
             </label>
           </div>
         )}
+        <CalendarTimesField form={form} setForm={setForm} />
+
         <RaceLengthField idPrefix="edit_race_length"
           lengthType={form.length_type} totalLaps={form.total_laps} raceMinutes={form.race_minutes}
           totalRounds={form.total_rounds}

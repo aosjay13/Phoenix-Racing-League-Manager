@@ -10,6 +10,7 @@ import {
   groupRacesByDate, initialMonth, monthLabel, monthsWithRaces, seriesAbbrev,
   shiftMonth,
 } from "@/lib/calendar";
+import { hasSessionTimes, localZoneLabel, raceSessionTimes, sessionTimeLine } from "@/lib/raceTimes";
 
 // The league's whole year on one screen: every event in the league, past and
 // future, plotted on the day it runs. The Schedule answers "what's next and what
@@ -20,6 +21,11 @@ import {
 // created and carries the same series/season context — no second source of
 // truth for what's on the calendar. Clicking any event goes to that race's own
 // page, which is the results screen once it has run.
+//
+// This is also the ONLY screen that reads a race's session times. An admin can
+// opt an event into showing when Practice, Qualifying and the Race start (Race
+// Info → Calendar Session Times); every reader sees those times converted into
+// their own timezone, here and nowhere else. See lib/raceTimes.js.
 
 export default function CalendarPage() {
   const { gameId, seriesId, game, series } = useLeague();
@@ -56,6 +62,10 @@ export default function CalendarPage() {
   }, [rows, today]);
 
   const { byDate, undated } = useMemo(() => groupRacesByDate(rows || []), [rows]);
+  // Whether anything on screen quotes a clock at all — the note below the
+  // toolbar only earns its line when some event actually carries times.
+  const anyTimes = useMemo(() => (rows || []).some(hasSessionTimes), [rows]);
+  const zoneLabel = useMemo(() => (anyTimes ? localZoneLabel() : ""), [anyTimes]);
   const months = useMemo(() => monthsWithRaces(rows || []), [rows]);
   const cells = useMemo(() => buildMonthGrid(view.year, view.month, today), [view, today]);
   const monthCount = cells.reduce(
@@ -106,6 +116,20 @@ export default function CalendarPage() {
       </div>
 
       {months.length > 0 && <MonthJumper months={months} view={view} onPick={jump} />}
+
+      {/* Session times are converted in the reader's browser, from the reader's
+          own clock — so say whose clock it is rather than leaving them to guess
+          whether "7:00 PM" is theirs or the league's. */}
+      {anyTimes && (
+        <p className="calendar-tz-note">
+          <span aria-hidden="true">🕒</span> Session times are shown in{" "}
+          <strong>your local time{zoneLabel ? ` (${zoneLabel})` : ""}</strong> —{" "}
+          <span className="calendar-tz-key">P</span> Practice ·{" "}
+          <span className="calendar-tz-key">Q</span> Qualifying ·{" "}
+          <span className="calendar-tz-key">R</span> Race. A date beside a time means
+          it falls on that day where you are.
+        </p>
+      )}
 
       {rows == null ? (
         <div className="skeleton" style={{ height: 460, marginTop: 16 }} />
@@ -210,19 +234,55 @@ function MonthGrid({ cells, byDate }) {
 // One race on the grid: the series it belongs to, abbreviated so it fits, and
 // the track it's run at. A finished event carries the chequered flag and reads
 // as history; one still to come reads as live.
+//
+// An event the admin has given session times to grows a second line — P / Q / R
+// with each start in the READER's timezone. The times are rendered on the pill
+// rather than only in its tooltip because a tooltip doesn't exist on a phone,
+// which is where most people check what time they're racing.
+//
+// The pill never leaves the square for the race's own date. A US evening race
+// is tomorrow morning in Europe, and moving it would put an event on a day the
+// league never scheduled (and break the one invariant the calendar is tested
+// on) — so the shifted day is shown next to the time instead.
 function EventPill({ race }) {
   const done = !!race.summary?.has_results;
   const abbrev = seriesAbbrev(race.series_name);
+  const times = raceSessionTimes(race);
+  const title = [
+    `${eventTitle(race)}${done ? " — results available" : ""}`,
+    ...times.map(sessionTimeLine),
+  ].join("\n");
   return (
     <Link href={`/races/${race.id}`}
-      className={`calendar-event${done ? " is-done" : ""}`}
-      title={`${eventTitle(race)}${done ? " — results available" : ""}`}>
-      {abbrev && (
-        <span className="calendar-event-series" title={race.series_name || ""}>{abbrev}</span>
-      )}
-      <span className="calendar-event-track">{eventPillLabel(race)}</span>
-      {done && <span className="calendar-event-flag" aria-hidden="true">🏁</span>}
+      className={`calendar-event${done ? " is-done" : ""}${times.length ? " has-times" : ""}`}
+      title={title}>
+      <span className="calendar-event-main">
+        {abbrev && (
+          <span className="calendar-event-series" title={race.series_name || ""}>{abbrev}</span>
+        )}
+        <span className="calendar-event-track">{eventPillLabel(race)}</span>
+        {done && <span className="calendar-event-flag" aria-hidden="true">🏁</span>}
+      </span>
+      {times.length > 0 && <SessionTimes times={times} />}
     </Link>
+  );
+}
+
+// The P / Q / R line under a pill. The one-letter tag is what makes three
+// sessions fit in a calendar square; the full session name rides along on each
+// one for anyone reading with a screen reader or hovering it.
+function SessionTimes({ times }) {
+  return (
+    <span className="calendar-event-times">
+      {times.map(s => (
+        <span key={s.key} className="calendar-event-time" title={sessionTimeLine(s)}>
+          <span className="calendar-event-time-key" aria-hidden="true">{s.short}</span>
+          <span className="calendar-sr-only">{s.label}</span>
+          {s.time}
+          {s.dayOffset !== 0 && <em className="calendar-event-time-day"> {s.dateLabel}</em>}
+        </span>
+      ))}
+    </span>
   );
 }
 

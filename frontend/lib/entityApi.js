@@ -3,6 +3,7 @@ import { db } from "@/lib/firebase";
 import { withAdmin, getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
 import { toDateOnly } from "@/lib/raceDate";
 import { normalizeClassIds } from "@/lib/classFilter";
+import { normalizeRaceSessionTimes } from "@/lib/raceTimes";
 import { orderSeasons } from "@/lib/seasonOrderServer";
 
 // A roster entry's classes are stored twice on purpose: `class_ids` is the real
@@ -474,5 +475,16 @@ export const SPECS = {
                        // `strength_of_field` records the average Skill Rating of the field that
                        // started this event's main race (Race, or the Feature for heat weekends).
                        // Written by the stats engine on save; null when SR wasn't exchanged.
-                       strength_of_field: { number: true } } },
+                       strength_of_field: { number: true },
+                       // CALENDAR ONLY: the session start times an admin can opt
+                       // this event into showing. `show_session_times` is the
+                       // opt-in (off = every screen renders exactly as before),
+                       // `session_timezone` the IANA zone the times were typed
+                       // in, and `session_times` the { practice, qualifying,
+                       // race } wall-clock map in that zone. The race's `date`
+                       // is untouched by all three — it stays a bare calendar
+                       // date, and no other screen reads these. See
+                       // lib/raceTimes.js.
+                       show_session_times: { bool: true }, session_timezone: {}, session_times: {} },
+             normalize: normalizeRaceSessionTimes },
 };

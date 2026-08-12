@@ -38,6 +38,11 @@ export const COPIED_RACE_FIELDS = [
   "length_type", "total_laps", "race_minutes", "total_rounds", "bracket_size",
   "heat_format", "heats", "consolations", "feature_name",
   "session_points", "session_stats", "session_points_enabled",
+  // The calendar's session times travel with the event for the same reason its
+  // date does — they describe when this round runs. They are read by the
+  // Calendar and nowhere else (see lib/raceTimes.js), so a copy that dropped
+  // them would just be a copy an admin has to re-type.
+  "show_session_times", "session_timezone", "session_times",
 ];
 
 const lower = v => String(v ?? "").trim().toLowerCase();
