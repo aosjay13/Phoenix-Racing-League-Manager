@@ -529,6 +529,8 @@ function SeasonSchedule() {
           perClassSchedules={perClassSchedules}
           defaultClassId={classId}
           perClassResults={!!season?.per_class_results}
+          // A heat-racing season starts each new round in heat format.
+          heatFormat={!!season?.heat_format}
           onClose={() => setShowCreate(false)}
           onCreated={() => { setShowCreate(false); loadRaces(); }}
         />
