@@ -8,6 +8,7 @@ import { ImageUpload } from "@/components/ImageUpload";
 import { SessionEditor } from "@/components/SessionEditor";
 import { TrackSelect } from "@/components/TrackSelect";
 import { RaceLengthField } from "@/components/RaceLengthField";
+import { RaceNav } from "@/components/RaceNav";
 import { HeatPointsDefaultFields } from "@/components/HeatPointsDefaultFields";
 import { LENGTH_LAPS, raceLengthBody, raceLengthForm } from "@/lib/raceLength";
 import { normalizedBuiltinTemplates } from "@/lib/pointsTemplates";
@@ -647,7 +648,11 @@ function UnifiedEditInner() {
             {race.track ? `${race.track} · ` : ""}{season?.name ?? ""}
           </p>
         </div>
-        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+          {/* Previous / next round, staying in the editor and on the tab being
+              worked in — entering a season's results shouldn't mean a trip
+              through the Schedule between every round. */}
+          <RaceNav race={race} mode="edit" tab={tab} />
           <Link href={`/races/${race.id}`} style={{ color: "var(--accent-cyan)", fontSize: "0.85rem" }}>View results →</Link>
           <Link href="/schedule" style={{ color: "var(--ink-1)", fontSize: "0.85rem" }}>Schedule</Link>
         </div>

@@ -546,6 +546,13 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
    driver: finishing position, laps led, incidents, DNF/DNS status) and save — standings,
    stats, and every linked player's profile update immediately. Re-open and re-save a race
    any time to correct results; it overwrites cleanly.
+   **Previous / next round** buttons sit at the top of both the results editor and the public
+   results page, so a season can be worked (or read) straight through without going back to the
+   Schedule between rounds. They keep you where you are — the editor stays the editor, the viewer
+   stays the viewer — and the editor also keeps the tab you're on, so entering ten Features in a row
+   never touches Race Info. They follow the Schedule's own order (round number), and on a season
+   running per-class calendars a class-pinned round steps through that class's calendar, skipping
+   rounds it doesn't run. See `lib/raceNav.js` and `components/RaceNav.jsx`.
    The **Status** column decides how a row is counted. **DNS** ("did not start") is not
    scored at all — no position points, no qualifying points, no bonuses — and counts toward
    no stat: not a start, not a finish to average, not a pole or grid slot, not a DNF. The
