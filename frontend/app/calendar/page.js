@@ -277,7 +277,7 @@ function SessionTimes({ times }) {
       {times.map(s => (
         <span key={s.key} className="calendar-event-time" title={sessionTimeLine(s)}>
           <span className="calendar-event-time-key" aria-hidden="true">{s.short}</span>
-          <span className="calendar-sr-only">{s.label}</span>
+          <span className="sr-only">{s.label}</span>
           {s.time}
           {s.dayOffset !== 0 && <em className="calendar-event-time-day"> {s.dateLabel}</em>}
         </span>

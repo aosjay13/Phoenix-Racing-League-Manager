@@ -229,7 +229,9 @@ The app runs at `http://localhost:3000`.
    Seasons" with a series picked) there's a **+ New Season** button too, offering every option
    League Setup does and dropping you onto the new season's empty calendar. **🖼 Share Graphic**
    exports the calendar as an image — the whole season's rounds, or (on the cross-season feed)
-   Upcoming and Recent Results as separate posts.
+   Upcoming and Recent Results as separate posts. Events that have session times set (see the
+   Calendar below) show a **Session Times** column right of the race date, in the reader's own
+   timezone.
 6. **Calendar** — every race in the league on a month-by-month grid, past and future, on the day
    it runs. Each event is a pill showing its series (abbreviated) and the track; click one to open
    that race's page. The **Game** and **Series** menus at the top narrow it to a single series —
@@ -248,9 +250,16 @@ The app runs at `http://localhost:3000`.
    beside it when their clock puts the session on a different day. Daylight saving is handled per
    event, from the race's own date, so a March round and an August round both come out right.
 
-   This is a **calendar-only** display: the race's date is still the plain calendar date it always
-   was, and the Schedule, the results screens and the standings are untouched by it. An event with
-   the toggle off looks exactly as it did before.
+   The same times appear on the **Schedule**, in a **Session Times** column immediately right of
+   the race date — on a season's own table and on the cross-season Upcoming / Recent Results feed
+   alike. The column only appears when something in the table actually has times set, so a league
+   that hasn't used the toggle sees the schedule exactly as before. It stays out of the **🖼 Share
+   Graphic** export on purpose: the times are converted to whoever is *reading* them, so baking one
+   person's clock into an image everybody else looks at would be wrong.
+
+   Underneath, this is a display of the race's date, not a change to it: the date is still the plain
+   calendar date it always was, and the results screens, the standings and every other reader are
+   untouched. An event with the toggle off looks exactly as it did before.
 7. **Standings** — driver and team championship tables for the selected season, with
    points, gaps to the leader, and per-category stats. Click any column header to sort. Level
    on points? The tie-breaker chain below decides, and every step of it is a column in the
