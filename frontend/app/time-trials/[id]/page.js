@@ -11,7 +11,10 @@ import { CompleteTimeTrialModal } from "@/components/CompleteTimeTrialModal";
 import { ExportQualifyingModal } from "@/components/ExportQualifyingModal";
 import { TimeTrialSettingsModal } from "@/components/TimeTrialSettingsModal";
 import { formatRaceDate } from "@/lib/raceDate";
-import { autoAssignClasses, averageLabel, normalizeLaps, rankEntries, summarizeEntries } from "@/lib/timeTrials";
+import {
+  autoAssignClasses, autoAssignClassesWithinSeries, autoAssignSeries, averageLabel,
+  normalizeLaps, rankEntries, summarizeEntries,
+} from "@/lib/timeTrials";
 
 // One Time Trial session — the sheet.
 //
@@ -38,7 +41,7 @@ function blankRow(seed = {}) {
     id: `new-${++tempSeq}`,
     stored: false,
     name: "", number: "", driver_id: "", user_id: "", entry_id: "",
-    laps: [], assigned_class_id: "", notes: "",
+    laps: [], assigned_class_id: "", assigned_series_id: "", notes: "",
     ...seed,
   };
 }
@@ -121,10 +124,13 @@ export default function TimeTrialPage() {
   const { id } = useParams();
   const router = useRouter();
   const { isAdmin } = useAuth();
-  const { seasons } = useLeague();
+  const { seasons, seriesList } = useLeague();
 
   const [trial, setTrial] = useState(null);
   const [classes, setClasses] = useState([]);
+  // The series this night places into, each resolved to the season whose roster
+  // it builds and that season's own classes — see the placement block below.
+  const [trialSeries, setTrialSeries] = useState([]);
   const [rows, setRows] = useState([]);
   const [pool, setPool] = useState([]);
   const [error, setError] = useState(null);
@@ -147,6 +153,7 @@ export default function TimeTrialPage() {
       const data = await api(`/api/time-trials/${id}`);
       setTrial(data.trial);
       setClasses(data.classes || []);
+      setTrialSeries(data.placement_series || []);
       setRows((data.entries || []).map(e => ({ ...blankRow(), ...e, stored: true })));
       setSort(s => ({ ...s, key: data.trial.sort_key === "average" ? "average" : s.key }));
       setDirty(false);
@@ -221,14 +228,63 @@ export default function TimeTrialPage() {
   }, [summarized, order]);
 
   const lapCols = lapColumnCount(rows, trial?.max_laps);
-  const classById = useMemo(() => Object.fromEntries(classes.map(c => [c.id, c])), [classes]);
-  // The divisions this session places into: the ones picked when it was created,
-  // falling back to every class the season runs.
+
+  // ── Where this night places drivers ───────────────────────────────────────
+  //
+  // Two independent targets, and they compose. `placementSeries` is the list of
+  // SERIES it sorts into — for the leagues whose divisions are series rather
+  // than classes — each carrying the season whose roster it builds and THAT
+  // season's classes. `placementClasses` is the classes of the trial's own
+  // season, for everyone not placed into a series.
+  const placementSeries = trialSeries;
+  const seriesById = useMemo(
+    () => Object.fromEntries(placementSeries.map(s => [s.series_id, s])),
+    [placementSeries]
+  );
+  const classById = useMemo(
+    () => Object.fromEntries([
+      ...classes,
+      ...placementSeries.flatMap(s => s.classes || []),
+    ].map(c => [c.id, c])),
+    [classes, placementSeries]
+  );
+  // The divisions this session places into, inside its OWN season: the ones
+  // picked when it was created, falling back to every class the season runs.
   const placementClasses = useMemo(() => {
-    const picked = (trial?.class_ids || []).map(cid => classById[cid]).filter(Boolean);
+    const picked = (trial?.class_ids || []).map(cid => classes.find(c => c.id === cid)).filter(Boolean);
     return picked.length ? picked : classes;
-  }, [trial?.class_ids, classById, classes]);
-  const showPlacement = !!trial && (trial.is_placement || placementClasses.length > 0);
+  }, [trial?.class_ids, classes]);
+
+  // The classes a given row may be placed into — those of the season its roster
+  // entry will actually be written to. A driver sorted into the Pro Series is
+  // classified in the Pro Series' season, so offering the trial's own classes
+  // would stamp them with a class id that season doesn't have.
+  const classesForRow = useCallback(row => {
+    const series = row.assigned_series_id ? seriesById[row.assigned_series_id] : null;
+    return series ? (series.classes || []) : placementClasses;
+  }, [seriesById, placementClasses]);
+
+  const showSeriesPlacement = placementSeries.length > 0;
+  // The division chips above the sheet, with a head count each. On a night that
+  // also places into series these are every division across every series it
+  // places into, since a driver's divisions come from their own series.
+  const divisionChips = useMemo(() => {
+    const pool = showSeriesPlacement
+      ? [...placementSeries.flatMap(s => (s.classes || []).map(c => ({ ...c, series: s.series_name }))),
+        ...placementClasses]
+      : placementClasses;
+    const seen = new Map();
+    for (const c of pool) {
+      if (seen.has(c.id)) continue;
+      seen.set(c.id, {
+        id: c.id,
+        name: c.series ? `${c.series} · ${c.name}` : c.name,
+        count: summarized.filter(r => r.assigned_class_id === c.id).length,
+      });
+    }
+    return [...seen.values()];
+  }, [showSeriesPlacement, placementSeries, placementClasses, summarized]);
+  const showPlacement = !!trial && (trial.is_placement || placementClasses.length > 0 || showSeriesPlacement);
   const completed = trial?.status === "completed";
   const canEdit = isAdmin && !completed;
 
@@ -266,19 +322,75 @@ export default function TimeTrialPage() {
     setDirty(true);
   }
 
-  // Fill the division column from the times: the field is ranked by whichever
-  // column the sheet is sorted on and split evenly across the chosen divisions,
+  // Moving a driver to another series moves which season's roster they'll join,
+  // and a class belongs to a season — so a division that doesn't exist in the
+  // new series is cleared rather than left as an id that roster can't resolve.
+  function assignSeries(rowId, seriesId) {
+    const allowed = (seriesById[seriesId]?.classes || []).map(c => c.id);
+    setRows(prev => prev.map(r => (r.id === rowId
+      ? {
+        ...r,
+        assigned_series_id: seriesId,
+        assigned_class_id: (seriesId ? allowed : placementClasses.map(c => c.id)).includes(r.assigned_class_id)
+          ? r.assigned_class_id
+          : "",
+      }
+      : r)));
+    setDirty(true);
+  }
+
+  // Fill a placement column from the times: the field is ranked by whichever
+  // column the sheet is sorted on and split evenly across the chosen targets,
   // fastest first. It's a starting point, not a verdict — every cell stays
   // editable, and nothing is written until Save.
-  function autoAssign() {
-    const assignment = autoAssignClasses(summarized, placementClasses.map(c => c.id), { key: sort.key });
+  const byTime = () => (sort.key === "average" ? "average" : "best");
+
+  // Sort the whole field into the SERIES this night places into. Because a
+  // series decides which season's classes a driver may take, any division that
+  // no longer belongs to their new series is cleared rather than left pointing
+  // at another season's class.
+  function autoAssignToSeries() {
+    const assignment = autoAssignSeries(summarized, placementSeries.map(s => s.series_id), { key: sort.key });
     if (!Object.keys(assignment).length) {
       return showToast("error", "Nobody has set a time yet, so there's nothing to sort.");
+    }
+    setRows(prev => prev.map(r => {
+      const seriesId = assignment[r.id];
+      if (!seriesId) return r;
+      const allowed = (seriesById[seriesId]?.classes || []).map(c => c.id);
+      return {
+        ...r,
+        assigned_series_id: seriesId,
+        assigned_class_id: allowed.includes(r.assigned_class_id) ? r.assigned_class_id : "",
+      };
+    }));
+    setDirty(true);
+    reRank();
+    showToast("success", `Sorted ${Object.keys(assignment).length} drivers into ${placementSeries.length} series by ${byTime()} time. Review, then Save.`);
+  }
+
+  // Sort into divisions. On a night that also places into series the split runs
+  // once per series over that series' own drivers — so the top of the Pro
+  // Series fills Pro's first division, rather than the whole field's fastest
+  // drivers taking every quick division across every series.
+  function autoAssignToClasses() {
+    const assignment = showSeriesPlacement
+      ? autoAssignClassesWithinSeries(
+        summarized,
+        seriesId => (seriesId
+          ? (seriesById[seriesId]?.classes || []).map(c => c.id)
+          : placementClasses.map(c => c.id)),
+        { key: sort.key })
+      : autoAssignClasses(summarized, placementClasses.map(c => c.id), { key: sort.key });
+    if (!Object.keys(assignment).length) {
+      return showToast("error", showSeriesPlacement
+        ? "Nothing to sort — the series these drivers are in have no divisions, or nobody has set a time."
+        : "Nobody has set a time yet, so there's nothing to sort.");
     }
     setRows(prev => prev.map(r => (assignment[r.id] ? { ...r, assigned_class_id: assignment[r.id] } : r)));
     setDirty(true);
     reRank();
-    showToast("success", `Sorted ${Object.keys(assignment).length} drivers into ${placementClasses.length} division${placementClasses.length === 1 ? "" : "s"} by ${sort.key === "average" ? "average" : "best"} time. Review, then Save.`);
+    showToast("success", `Sorted ${Object.keys(assignment).length} drivers into divisions by ${byTime()} time. Review, then Save.`);
   }
 
   async function save() {
@@ -288,7 +400,8 @@ export default function TimeTrialPage() {
         // A row that has never been stored sends no id, so the server mints one.
         ...(r.stored ? { id: r.id } : {}),
         name: r.name, number: r.number, driver_id: r.driver_id, user_id: r.user_id, entry_id: r.entry_id,
-        laps: r.laps, assigned_class_id: r.assigned_class_id, notes: r.notes,
+        laps: r.laps, notes: r.notes,
+        assigned_class_id: r.assigned_class_id, assigned_series_id: r.assigned_series_id,
       }));
       const saved = await api(`/api/time-trials/${id}/entries`, { method: "POST", body: { rows: payload } });
       setRows(saved.map(e => ({ ...blankRow(), ...e, stored: true })));
@@ -393,29 +506,67 @@ export default function TimeTrialPage() {
 
       {showPlacement && (
         <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap", marginTop: 14 }}>
+          {/* Series placement — for the leagues whose divisions ARE series.
+              Each chip names the season whose roster it builds, because that
+              is where these drivers actually end up. */}
+          {showSeriesPlacement && (
+            <div className="field" style={{ margin: 0, maxWidth: 460 }}>
+              <span className="field-label">Series</span>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {placementSeries.map(s => {
+                  const n = summarized.filter(r => r.assigned_series_id === s.series_id).length;
+                  return (
+                    <span key={s.series_id} className="class-scope-chip"
+                      title={s.season_name
+                        ? `Builds the roster of ${s.season_name}`
+                        : "No season picked yet — set one in Settings, or nobody placed here can be added to a roster"}>
+                      {s.series_name} · {n}
+                      {s.season_id
+                        ? <span style={{ opacity: 0.7 }}> → {s.season_name}</span>
+                        : <span style={{ color: "var(--accent-gold)" }}> → no season</span>}
+                    </span>
+                  );
+                })}
+                {summarized.some(r => !r.assigned_series_id) && (
+                  <span className="page-badge is-muted">
+                    {summarized.filter(r => !r.assigned_series_id).length} in no series
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
           <div className="field" style={{ margin: 0, maxWidth: 420 }}>
             <span className="field-label">Divisions</span>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {placementClasses.length
-                ? placementClasses.map(c => {
-                  const n = summarized.filter(r => r.assigned_class_id === c.id).length;
-                  return <span key={c.id} className="class-scope-chip">{c.name} · {n}</span>;
-                })
+              {divisionChips.length
+                ? divisionChips.map(c => (
+                  <span key={c.id} className="class-scope-chip">{c.name} · {c.count}</span>
+                ))
                 : <span style={{ fontSize: "0.82rem", color: "var(--ink-2)" }}>
-                  This session isn&rsquo;t attached to a season with classes yet — pick the season when you
-                  complete it.
+                  {showSeriesPlacement
+                    ? "The series above are the divisions here — no classes inside them to sort into."
+                    : "This session isn't attached to a season with classes yet — pick the season when you complete it."}
                 </span>}
-              {summarized.some(r => !r.assigned_class_id) && (
+              {divisionChips.length > 0 && summarized.some(r => !r.assigned_class_id) && (
                 <span className="page-badge is-muted">
                   {summarized.filter(r => !r.assigned_class_id).length} unassigned
                 </span>
               )}
             </div>
           </div>
-          {canEdit && placementClasses.length > 0 && (
+          {canEdit && showSeriesPlacement && (
             <button className="btn btn-ghost" type="button" style={{ marginTop: 0 }}
-              title="Split the ranked field evenly across the divisions, fastest first. You can still change any row."
-              onClick={autoAssign}>
+              title="Split the ranked field evenly across the series, fastest first. You can still change any row."
+              onClick={autoAssignToSeries}>
+              ⇅ Sort into series by time
+            </button>
+          )}
+          {canEdit && divisionChips.length > 0 && (
+            <button className="btn btn-ghost" type="button" style={{ marginTop: 0 }}
+              title={showSeriesPlacement
+                ? "Split each series' own drivers across that series' divisions, fastest first."
+                : "Split the ranked field evenly across the divisions, fastest first. You can still change any row."}
+              onClick={autoAssignToClasses}>
               ⇅ Sort into divisions by time
             </button>
           )}
@@ -429,6 +580,7 @@ export default function TimeTrialPage() {
           <thead>
             <tr>
               <th className="sticky-col">Driver</th>
+              {showSeriesPlacement && <th style={{ textAlign: "left" }}>Series</th>}
               {showPlacement && <th style={{ textAlign: "left" }}>Division</th>}
               <th className="sortable" onClick={() => clickSort("best")}
                 title="The driver's single fastest lap. Click to sort.">Best Time{arrow("best")}</th>
@@ -444,7 +596,7 @@ export default function TimeTrialPage() {
           <tbody>
             {sorted.length === 0 && (
               <tr>
-                <td colSpan={5 + lapCols + (showPlacement ? 1 : 0)} style={{ color: "var(--ink-2)" }}>
+                <td colSpan={5 + lapCols + (showPlacement ? 1 : 0) + (showSeriesPlacement ? 1 : 0)} style={{ color: "var(--ink-2)" }}>
                   No drivers on this sheet yet.{canEdit ? " Add one below." : ""}
                 </td>
               </tr>
@@ -469,18 +621,40 @@ export default function TimeTrialPage() {
                     </button>
                   </div>
                 </td>
+                {showSeriesPlacement && (
+                  <td style={{ textAlign: "left" }}>
+                    {canEdit ? (
+                      <select value={row.assigned_series_id || ""} style={{ minWidth: 140 }}
+                        onChange={e => assignSeries(row.id, e.target.value)}>
+                        <option value="">Unassigned</option>
+                        {placementSeries.map(s => (
+                          <option key={s.series_id} value={s.series_id}>{s.series_name}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      row.assigned_series_id
+                        ? <span className="class-scope-chip">{seriesById[row.assigned_series_id]?.series_name || "Series"}</span>
+                        : <span style={{ color: "var(--ink-2)" }}>—</span>
+                    )}
+                  </td>
+                )}
                 {showPlacement && (
                   <td style={{ textAlign: "left" }}>
-                    {canEdit && placementClasses.length > 0 ? (
+                    {/* The divisions on offer are the ones belonging to the
+                        season this row's roster entry will be written to — the
+                        series' season when they've been placed into one, else
+                        this session's own. A class from another season would be
+                        an id that roster doesn't have. */}
+                    {canEdit && classesForRow(row).length > 0 ? (
                       <select value={row.assigned_class_id || ""} style={{ minWidth: 130 }}
                         onChange={e => patchRow(row.id, { assigned_class_id: e.target.value })}>
                         <option value="">Unassigned</option>
-                        {placementClasses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        {classesForRow(row).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                       </select>
+                    ) : row.assigned_class_id ? (
+                      <span className="class-scope-chip">{classById[row.assigned_class_id]?.name || "Class"}</span>
                     ) : (
-                      row.assigned_class_id
-                        ? <span className="class-scope-chip">{classById[row.assigned_class_id]?.name || "Class"}</span>
-                        : <span style={{ color: "var(--ink-2)" }}>—</span>
+                      <span style={{ color: "var(--ink-2)" }}>—</span>
                     )}
                   </td>
                 )}
@@ -565,6 +739,7 @@ export default function TimeTrialPage() {
         <CompleteTimeTrialModal
           trial={trial}
           seasons={seasons}
+          placementSeries={placementSeries}
           onClose={() => setCompleting(false)}
           onCompleted={(updated, res) => {
             setTrial(t => ({ ...t, ...updated }));
@@ -572,7 +747,7 @@ export default function TimeTrialPage() {
             // wrote — the admin closes it when they've read it. "Complete only"
             // has nothing to report and closes itself.
             showToast("success", res
-              ? `Roster updated — ${res.created} added, ${res.updated} re-classed.`
+              ? `Roster${res.seasons?.length > 1 ? "s" : ""} updated — ${res.created} added, ${res.updated} re-classed.`
               : "Session completed.");
           }}
         />
@@ -582,6 +757,7 @@ export default function TimeTrialPage() {
         <TimeTrialSettingsModal
           trial={trial}
           seasons={seasons}
+          seriesList={seriesList}
           onClose={() => setSettingsOpen(false)}
           onSaved={updated => {
             setSettingsOpen(false);

@@ -10,13 +10,19 @@
 //   5. building a roster from a placement UPDATES a driver already on it rather
 //      than duplicating them, so the button is safe to press twice;
 //   6. an export to qualifying puts pole on the fastest lap and leaves out
-//      anyone the target roster doesn't have, loudly.
+//      anyone the target roster doesn't have, loudly;
+//   7. a league whose divisions are SERIES can place into them instead: the
+//      series a driver is sorted into decides which season's roster they join,
+//      one run builds every one of those rosters, and being placed into a
+//      series is a placement in itself — no class required.
 import assert from "node:assert";
 import {
   AVERAGE_ALL_LAPS, LAPS_UNLIMITED, MAX_LAPS_CAP,
-  autoAssignClasses, averageLabel, bestAverage, bestLap, entryIndex, groupByAssignedClass,
+  autoAssignClasses, autoAssignClassesWithinSeries, autoAssignSeries, averageLabel,
+  bestAverage, bestLap, entryIndex, groupByAssignedClass, groupByTargetSeason,
   matchEntry, normalizeAverageLaps, normalizeLaps, normalizeMaxLaps, placedOrder,
-  planQualifyingExport, planRosterBuild, rankEntries, summarizeEntries, summarizeEntry,
+  planQualifyingExport, planRosterBuild, rankEntries, splitEvenly, summarizeEntries,
+  summarizeEntry, targetSeasonFor,
 } from "../timeTrials.js";
 
 let n = 0;
@@ -216,9 +222,86 @@ check("…but the lap filed is still the driver's fastest of the session",
 check("nobody has run, so there is no grid",
   planQualifyingExport(summarizeEntries([{ id: "a", name: "Ana", laps: [] }]), () => "e1").grid, []);
 
+// ── 7. Series placement ───────────────────────────────────────────────────
+//
+// Plenty of leagues run their divisions as separate SERIES rather than as
+// classes inside one season. The split itself is the same even split; what
+// changes is where the roster lands, because a roster belongs to a season.
+const seriesSheet = summarizeEntries([
+  { id: "a", name: "Ana", driver_id: "drv-ana", laps: ["10.000"] },
+  { id: "b", name: "Ben", driver_id: "drv-ben", laps: ["11.000"] },
+  { id: "c", name: "Cal", driver_id: "drv-cal", laps: ["12.000"] },
+  { id: "d", name: "Dee", driver_id: "drv-dee", laps: ["13.000"] },
+]);
+
+check("the field splits into series exactly as it splits into classes",
+  autoAssignSeries(seriesSheet, ["pro-series", "am-series"]),
+  { a: "pro-series", b: "pro-series", c: "am-series", d: "am-series" });
+check("classes and series share one split", splitEvenly(seriesSheet, ["x", "y"]),
+  autoAssignSeries(seriesSheet, ["x", "y"]));
+
+// A series decides which season's roster a driver joins, so it decides which
+// classes they may be given: divisions split WITHIN each series, over that
+// series' own drivers and its own season's classes.
+const placedIntoSeries = seriesSheet.map(r => ({
+  ...r, assigned_series_id: ["a", "b"].includes(r.id) ? "pro-series" : "am-series",
+}));
+check("divisions split inside each series, not across the whole field",
+  autoAssignClassesWithinSeries(placedIntoSeries, sid => ({
+    "pro-series": ["pro-1", "pro-2"],
+    "am-series": ["am-1", "am-2"],
+  }[sid] || [])),
+  { a: "pro-1", b: "pro-2", c: "am-1", d: "am-2" });
+check("a series with no divisions of its own simply places nobody",
+  autoAssignClassesWithinSeries(placedIntoSeries, sid => (sid === "pro-series" ? ["pro-1"] : [])),
+  { a: "pro-1", b: "pro-1" });
+
+// Where each row's roster entry is written.
+const routing = { trialSeasonId: "s-open", seasonBySeries: { "pro-series": "s-pro", "am-series": "s-am" } };
+check("a driver placed into a series joins that series' season",
+  targetSeasonFor({ assigned_series_id: "pro-series" }, routing), "s-pro");
+check("everyone else joins the trial's own season",
+  targetSeasonFor({}, routing), "s-open");
+check("a series naming no season leaves the driver nowhere",
+  targetSeasonFor({ assigned_series_id: "ghost" }, { seasonBySeries: {} }), "");
+check("one run builds one roster per target season",
+  [...groupByTargetSeason(placedIntoSeries, routing).entries()]
+    .map(([seasonId, group]) => [seasonId, group.map(r => r.name)]),
+  [["s-pro", ["Ana", "Ben"]], ["s-am", ["Cal", "Dee"]]]);
+
+// Being placed into a series IS a placement — the series is the division — so
+// such a driver joins its roster whether or not they also drew a class inside
+// it. On a class-only night an unplaced driver is still left alone.
+const requireClass = row => !row.assigned_series_id;
+check("a series placement with no class still builds a roster spot",
+  planRosterBuild(
+    [{ id: "1", name: "Ana", driver_id: "drv-ana", assigned_series_id: "pro-series" }],
+    [], { requireClass },
+  ).create.map(c => [c.name, c.class_id]),
+  [["Ana", ""]]);
+check("…while a driver placed into nothing at all is still left alone",
+  planRosterBuild([{ id: "2", name: "Ben", driver_id: "drv-ben" }], [], { requireClass }).skipped,
+  [{ name: "Ben", reason: "no class assigned" }]);
+check("a boolean rule still works for every row, as before",
+  planRosterBuild([{ id: "2", name: "Ben" }], [], { requireClass: true }).skipped,
+  [{ name: "Ben", reason: "no class assigned" }]);
+
+// A driver already on the series' roster is moved into their new division
+// there, matched against THAT season's entries rather than another season's.
+check("the plan is made against the roster the driver is actually joining",
+  planRosterBuild(
+    [{ id: "1", name: "Ana", driver_id: "drv-ana", assigned_series_id: "pro-series", assigned_class_id: "pro-1" }],
+    [{ id: "e-pro", name: "Ana", driver_id: "drv-ana", class_id: "pro-2" }],
+    { requireClass },
+  ).update,
+  [{ id: "e-pro", name: "Ana", class_id: "pro-1", class_ids: ["pro-1"] }]);
+
 // summarizeEntry leaves the row it was given intact apart from its own columns,
 // so the sheet can carry whatever else it needs (division, notes, ids).
 check("the summary decorates rather than replaces",
   summarizeEntry({ id: "a", name: "Ana", assigned_class_id: "pro", laps: ["10.000"] }).assigned_class_id, "pro");
+check("…including the series a driver was placed into",
+  summarizeEntry({ id: "a", name: "Ana", assigned_series_id: "pro-series", laps: ["10.000"] }).assigned_series_id,
+  "pro-series");
 
 console.log(`timeTrials: ${n} checks passed`);

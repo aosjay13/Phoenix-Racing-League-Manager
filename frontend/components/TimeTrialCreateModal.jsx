@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { Modal } from "@/components/Modal";
 import { TrackSelect } from "@/components/TrackSelect";
+import { PlacementTargetFields } from "@/components/PlacementTargetFields";
 import { LAPS_UNLIMITED, MAX_LAPS_CAP } from "@/lib/timeTrials";
 
 const blank = {
@@ -13,7 +14,11 @@ const blank = {
   // 0 = average every lap submitted; N = the best N-consecutive-lap average.
   average_laps: "",
   is_placement: false,
+  // What a placement night sorts into: classes of this session's own season,
+  // and/or separate series (each naming the season whose roster it builds).
   class_ids: [],
+  series_ids: [],
+  series_seasons: {},
   sort_key: "best",
 };
 
@@ -24,7 +29,7 @@ const blank = {
 // created with nothing but a name and a track and attached to a season later —
 // which is the point at which it can build that season's roster.
 export function TimeTrialCreateModal({
-  gameId = "", seriesId = "", seasonId = "", classes = [], onClose, onCreated,
+  gameId = "", seriesId = "", seasonId = "", classes = [], seriesList = [], onClose, onCreated,
 }) {
   const [form, setForm] = useState({ ...blank, class_ids: classes.map(c => c.id) });
   const [tracks, setTracks] = useState([]);
@@ -34,13 +39,6 @@ export function TimeTrialCreateModal({
   useEffect(() => { api("/api/tracks").then(setTracks).catch(() => setTracks([])); }, []);
 
   const set = field => e => setForm(f => ({ ...f, [field]: e.target.value }));
-
-  function toggleClass(id) {
-    setForm(f => ({
-      ...f,
-      class_ids: f.class_ids.includes(id) ? f.class_ids.filter(c => c !== id) : [...f.class_ids, id],
-    }));
-  }
 
   async function submit(e) {
     e.preventDefault();
@@ -56,8 +54,9 @@ export function TimeTrialCreateModal({
           game_id: gameId,
           series_id: seriesId,
           season_id: seasonId,
-          // Divisions only mean something against a season's classes; a trial
-          // floating free of one carries none until it's attached.
+          // Classes only mean something against a season; a trial floating free
+          // of one carries none until it's attached. Series placement needs no
+          // season of its own — each series names the one it builds.
           class_ids: seasonId ? form.class_ids : [],
         },
       });
@@ -124,37 +123,26 @@ export function TimeTrialCreateModal({
           <label htmlFor="tt_is_placement" style={{ margin: 0 }}>
             Placement Session
             <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
-              This session sorts drivers into Classes / Divisions. The sheet grows a division
-              column you can assign by hand or fill from the times, and{" "}
-              <strong>Complete Session</strong> can then push the whole field onto the official
-              season roster in their assigned divisions.
+              This session sorts drivers into divisions — <strong>classes</strong> inside one season,
+              or <strong>separate series</strong>, whichever your league runs. The sheet grows a
+              column for each kind you pick, fillable by hand or straight from the times, and{" "}
+              <strong>Complete Session</strong> then pushes the field onto the official roster of
+              every season it places into.
             </span>
           </label>
         </div>
 
         {form.is_placement && (
-          seasonId && classes.length > 0 ? (
-            <div className="field">
-              <span className="field-label">Divisions to place into</span>
-              <div className="option-rows">
-                {classes.map(c => (
-                  <label key={c.id} className="check-row" style={{ margin: 0 }}>
-                    <input type="checkbox" checked={form.class_ids.includes(c.id)} onChange={() => toggleClass(c.id)} />
-                    <span>{c.car ? `${c.name} · ${c.car}` : c.name}</span>
-                  </label>
-                ))}
-              </div>
-              <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
-                Fastest drivers fill the first division listed here when you auto-assign from the times.
-              </span>
-            </div>
-          ) : (
-            <p style={{ fontSize: "0.8rem", color: "var(--accent-gold)" }}>
-              {seasonId
-                ? "This season has no classes yet — add them in League Setup and they'll appear on the sheet."
-                : "No season selected, so there are no divisions to place into yet. Run the session anyway: pick the season when you complete it and the roster will be built then."}
-            </p>
-          )
+          <PlacementTargetFields
+            idPrefix="tt_new"
+            seriesList={seriesList}
+            classes={classes}
+            seasonId={seasonId}
+            seriesIds={form.series_ids}
+            seriesSeasons={form.series_seasons}
+            classIds={form.class_ids}
+            onChange={patch => setForm(f => ({ ...f, ...patch }))}
+          />
         )}
 
         <div className="field"><label>Notes</label>

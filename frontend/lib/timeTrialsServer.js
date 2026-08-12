@@ -22,6 +22,19 @@ export const TRIAL_STATUS_COMPLETED = "completed";
 // than looking like it came out of a race.
 export const TRIAL_SESSION_LABEL = "Time Trial";
 
+// The series → season map, kept to the series actually being placed into. A
+// leftover entry for a series that was later unticked would otherwise keep
+// routing rosters somewhere the sheet no longer offers.
+function cleanSeriesSeasons(value, seriesIds = []) {
+  if (!value || typeof value !== "object") return {};
+  const wanted = new Set(seriesIds);
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([seriesId, seasonId]) => wanted.has(seriesId) && seasonId)
+      .map(([seriesId, seasonId]) => [seriesId, String(seasonId)])
+  );
+}
+
 // The session settings, coerced. Everything here is optional except the name:
 // a trial can float free of any season (a pre-season shootout for a season that
 // doesn't exist yet is the normal case for a placement night), in which case it
@@ -46,6 +59,12 @@ export function trialFields(body = {}) {
   set("max_laps", normalizeMaxLaps(body.max_laps));
   set("is_placement", !!body.is_placement);
   set("class_ids", Array.isArray(body.class_ids) ? body.class_ids.filter(Boolean).map(String) : []);
+  // Series placement: the series this night sorts drivers into, for the leagues
+  // whose divisions ARE series rather than classes. `series_seasons` names, per
+  // series, the season whose roster the placement builds — a roster belongs to
+  // a season, so a series alone isn't a destination.
+  set("series_ids", Array.isArray(body.series_ids) ? body.series_ids.filter(Boolean).map(String) : []);
+  set("series_seasons", cleanSeriesSeasons(body.series_seasons, out.series_ids));
   // Which column the sheet is ordered and placed by — the outright best lap, or
   // the average. Stored so re-opening a trial reads the way it was left.
   set("sort_key", body.sort_key === "average" ? "average" : "best");
@@ -83,6 +102,30 @@ export async function fetchClassNames(seasonId) {
   if (!seasonId) return {};
   const snap = await db().collection("classes").where("season_id", "==", seasonId).get();
   return Object.fromEntries(snap.docs.map(d => [d.id, d.data().name || ""]));
+}
+
+// The same, across every season a trial can place into — its own, plus the
+// season behind each series it sorts drivers into. One flat id → name map: a
+// class doc belongs to exactly one season, so the ids can't collide.
+export async function fetchClassNamesForSeasons(seasonIds = []) {
+  const ids = [...new Set(seasonIds.filter(Boolean))];
+  if (!ids.length) return {};
+  const maps = await Promise.all(ids.map(fetchClassNames));
+  return Object.assign({}, ...maps);
+}
+
+// Series id → name, for the label a series placement denormalizes onto a row.
+export async function fetchSeriesNames(seriesIds = []) {
+  const ids = [...new Set(seriesIds.filter(Boolean))];
+  if (!ids.length) return {};
+  const docs = await Promise.all(ids.map(id => db().collection("series").doc(id).get()));
+  return Object.fromEntries(docs.filter(d => d.exists).map(d => [d.id, d.data().name || ""]));
+}
+
+// Every season a trial's placements can write a roster into: its own, plus the
+// one behind each series it places into.
+export function targetSeasonIds(trial = {}) {
+  return [...new Set([trial.season_id, ...Object.values(trial.series_seasons || {})].filter(Boolean))];
 }
 
 // ── Track Records ───────────────────────────────────────────────────────────
@@ -133,8 +176,14 @@ export async function fetchTrackRecordLaps({ trackId, trackName, leagueId = "" }
         driver_id: entry.driver_id || null,
         user_id: entry.user_id || null,
         game_id: trial.game_id || null,
-        series_id: trial.series_id || null,
-        season_id: trial.season_id || null,
+        // A driver placed into a series belongs to THAT series for the purpose
+        // of scoping this lap — a Pro Series placement lap is a Pro Series lap,
+        // and the venue's records narrow by the same Series/Season dropdowns
+        // every other record does. Falls back to the trial's own scope for an
+        // ordinary (class-placement or plain hot-lap) session.
+        series_id: entry.assigned_series_id || trial.series_id || null,
+        season_id: (entry.assigned_series_id && trial.series_seasons?.[entry.assigned_series_id])
+          || trial.season_id || null,
         // A trial's class is the one the driver was PLACED in (a placement
         // night) or entered under. Blank leaves the lap out of the per-class
         // breakdown, exactly as an unclassified race lap is.
@@ -157,8 +206,11 @@ export async function fetchTrackRecordLaps({ trackId, trackName, leagueId = "" }
 // Entry payload as it is stored. Laps are capped by the session's own limit, so
 // a sheet can't carry more laps than the session allows even if the request
 // says otherwise.
-export function trialEntryDoc(row, { trialId, maxLaps, classNames = {}, leagueId = "", position = 0 }) {
+export function trialEntryDoc(row, {
+  trialId, maxLaps, classNames = {}, seriesNames = {}, leagueId = "", position = 0,
+}) {
   const assignedClassId = String(row.assigned_class_id ?? "").trim();
+  const assignedSeriesId = String(row.assigned_series_id ?? "").trim();
   return {
     time_trial_id: trialId,
     ...(leagueId ? { league_id: leagueId } : {}),
@@ -179,6 +231,11 @@ export function trialEntryDoc(row, { trialId, maxLaps, classNames = {}, leagueId
     // without re-reading the season's classes (and so a record survives the
     // class doc being deleted later).
     assigned_class_name: assignedClassId ? (classNames[assignedClassId] || "") : "",
+    // The series this driver was placed into, when the night sorts into series
+    // rather than (or as well as) classes. It decides which season's roster
+    // their entry is written to — see targetSeasonFor in lib/timeTrials.js.
+    assigned_series_id: assignedSeriesId,
+    assigned_series_name: assignedSeriesId ? (seriesNames[assignedSeriesId] || "") : "",
     notes: String(row.notes ?? "").trim(),
   };
 }

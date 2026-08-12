@@ -187,32 +187,107 @@ export function placedOrder(rows = [], { key = "best" } = {}) {
 }
 
 // ── Placements ──────────────────────────────────────────────────────────────
+//
+// A division is not always a class. Plenty of leagues run their divisions as
+// separate SERIES — a Pro Series and an Amateur Series, each with its own
+// seasons, schedule and championship — rather than as classes inside one
+// season. A placement night has to be able to sort a field into either, so a
+// trial carries two independent placement targets:
+//
+//   • `series_ids`  — the series to place into. Each names the season whose
+//                     roster it builds (`series_seasons`), because a roster
+//                     belongs to a season, not to a series.
+//   • `class_ids`   — the classes to place into, inside whichever season a
+//                     driver's row ends up targeting.
+//
+// They compose rather than compete: a driver placed into the Pro Series can
+// still be placed into GT3 *within it*, and a league that runs classes alone
+// simply never picks a series (which is exactly what every trial did before
+// series placement existed).
 
-// Split the ranked field evenly across the chosen classes, fastest first: with
-// 11 drivers and 3 divisions the top 4 go to the first, then 4, then 3 — the
-// remainder always lands on the quicker divisions, which is how a placement
-// night is actually run (nobody wants the slow division to be the big one).
+// Split the ranked field evenly across N buckets, fastest first: with 11
+// drivers and 3 buckets the top 4 go to the first, then 4, then 3 — the
+// remainder always lands on the quicker end, which is how a placement night is
+// actually run (nobody wants the slow division to be the big one).
 //
 // Only drivers with a time are placed. Somebody who never set a lap keeps
-// whatever class they already had — a blank sheet is not evidence of pace, and
-// the admin can assign them by hand.
-export function autoAssignClasses(rows = [], classIds = [], { key = "best", keyOf = row => row.id } = {}) {
-  const ids = classIds.filter(Boolean);
+// whatever they already had — a blank sheet is not evidence of pace, and the
+// admin can assign them by hand.
+export function splitEvenly(rows = [], ids = [], { key = "best", keyOf = row => row.id } = {}) {
+  const buckets = ids.filter(Boolean);
   const assignment = {};
-  if (!ids.length) return assignment;
+  if (!buckets.length) return assignment;
   const ranked = placedOrder(rows, { key });
   if (!ranked.length) return assignment;
 
-  const per = Math.floor(ranked.length / ids.length);
-  const extra = ranked.length % ids.length;
+  const per = Math.floor(ranked.length / buckets.length);
+  const extra = ranked.length % buckets.length;
   let i = 0;
-  ids.forEach((classId, group) => {
+  buckets.forEach((id, group) => {
     const size = per + (group < extra ? 1 : 0);
     for (let n = 0; n < size && i < ranked.length; n++, i++) {
-      assignment[keyOf(ranked[i])] = classId;
+      assignment[keyOf(ranked[i])] = id;
     }
   });
   return assignment;
+}
+
+// Sort the field into classes / divisions.
+export function autoAssignClasses(rows = [], classIds = [], opts = {}) {
+  return splitEvenly(rows, classIds, opts);
+}
+
+// Sort the field into separate SERIES — the same even split, for the leagues
+// whose divisions are series rather than classes.
+export function autoAssignSeries(rows = [], seriesIds = [], opts = {}) {
+  return splitEvenly(rows, seriesIds, opts);
+}
+
+// Sort into classes *within* each series, for a trial doing both at once.
+// The split runs once per series over only that series' drivers, so the top of
+// the Pro Series fills Pro Series' first division rather than the whole field's
+// fastest drivers taking every quick division across every series.
+//
+// `classIdsFor(seriesId)` supplies the classes available in the season that
+// series is placing into — they belong to that season, so they differ per
+// series and can't be one shared list.
+export function autoAssignClassesWithinSeries(rows = [], classIdsFor, { key = "best", keyOf = row => row.id } = {}) {
+  const bySeries = new Map();
+  for (const row of rows) {
+    const seriesId = row.assigned_series_id || "";
+    if (!bySeries.has(seriesId)) bySeries.set(seriesId, []);
+    bySeries.get(seriesId).push(row);
+  }
+  const assignment = {};
+  for (const [seriesId, group] of bySeries) {
+    Object.assign(assignment, splitEvenly(group, classIdsFor(seriesId) || [], { key, keyOf }));
+  }
+  return assignment;
+}
+
+// The season whose roster a row's placement builds: the season behind the
+// series they were placed into, else the trial's own season. This is the one
+// rule that decides where a driver's roster entry is written, and the same one
+// decides which season's classes their Division cell may offer — so the class
+// stamped on an entry always exists in the season that entry lives in.
+export function targetSeasonFor(row = {}, { trialSeasonId = "", seasonBySeries = {} } = {}) {
+  const seriesId = row.assigned_series_id || "";
+  return (seriesId && seasonBySeries[seriesId]) || trialSeasonId || "";
+}
+
+// The sheet grouped by the season each row's roster entry belongs to. A trial
+// placing into three series builds three rosters, so the roster run works one
+// season at a time. Rows with no resolvable season (a series with no season
+// picked, on a trial not attached to one) collect under "" and are reported
+// rather than written anywhere.
+export function groupByTargetSeason(rows = [], opts = {}) {
+  const groups = new Map();
+  for (const row of rows) {
+    const seasonId = targetSeasonFor(row, opts);
+    if (!groups.has(seasonId)) groups.set(seasonId, []);
+    groups.get(seasonId).push(row);
+  }
+  return groups;
 }
 
 // How the placement result reads back: class id -> the drivers assigned to it,
@@ -243,8 +318,11 @@ export function groupByAssignedClass(rows = [], { key = "best" } = {}) {
 // the season's current entries. `requireClass` is the placement rule: on a
 // placement session a driver with no division assigned is left alone entirely
 // (there is nothing to place them into yet), while an ordinary trial can still
-// push its field onto the roster unclassified. Returns { create, update,
-// skipped }:
+// push its field onto the roster unclassified. It may be a function of the row
+// rather than one answer for the sheet, which is what a night placing into
+// SERIES needs: a driver sorted into the Pro Series has been placed — the
+// series is their division — whether or not they also drew a class inside it.
+// Returns { create, update, skipped }:
 //   create  — payload fields for a new roster entry
 //   update  — { id, class_id, class_ids } patches for entries already there
 //   skipped — everyone the run deliberately leaves untouched, and why
@@ -281,6 +359,7 @@ export function matchEntry(row, index) {
 }
 
 export function planRosterBuild(rows = [], existing = [], { requireClass = false } = {}) {
+  const needsClass = typeof requireClass === "function" ? requireClass : () => !!requireClass;
   // Every existing entry, reachable by any of its identity keys.
   const byKey = new Map();
   for (const entry of existing) {
@@ -299,7 +378,7 @@ export function planRosterBuild(rows = [], existing = [], { requireClass = false
     // one roster change, not two.
     if (keys.some(k => claimed.has(k))) { skipped.push({ name: row.name || "", reason: "duplicate" }); continue; }
     const classId = row.assigned_class_id || "";
-    if (!classId && requireClass) { skipped.push({ name: row.name || "", reason: "no class assigned" }); continue; }
+    if (!classId && needsClass(row)) { skipped.push({ name: row.name || "", reason: "no class assigned" }); continue; }
     for (const k of keys) claimed.add(k);
 
     const found = keys.map(k => byKey.get(k)).find(Boolean);

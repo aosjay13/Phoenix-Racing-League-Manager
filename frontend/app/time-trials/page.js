@@ -78,7 +78,7 @@ function TrialRow({ trial, onDelete, isAdmin }) {
 
 export default function TimeTrialsHubPage() {
   const { isAdmin } = useAuth();
-  const { gameId, seriesId, seasonId, classes, game, series, season } = useLeague();
+  const { gameId, seriesId, seasonId, classes, seriesList, game, series, season } = useLeague();
   const [trials, setTrials] = useState(null);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState(null);
@@ -175,7 +175,7 @@ export default function TimeTrialsHubPage() {
 
       {creating && (
         <TimeTrialCreateModal
-          gameId={gameId} seriesId={seriesId} seasonId={seasonId} classes={classes}
+          gameId={gameId} seriesId={seriesId} seasonId={seasonId} classes={classes} seriesList={seriesList}
           onClose={() => setCreating(false)}
           onCreated={trial => { setCreating(false); setTrials(prev => [trial, ...(prev || [])]); }}
         />
