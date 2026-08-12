@@ -41,12 +41,17 @@ function sessionsToArray(str) {
 // on, the dialog offers a Class field so the round can be put on one class's
 // calendar instead of everyone's. `defaultClassId` pre-selects the class the
 // admin is currently viewing.
-export function RaceCreateModal({ seasonId, defaultRound, classes = [], perClassSchedules = false, defaultClassId = "", perClassResults = false, onClose, onCreated }) {
+// `heatFormat` is the season's own Heat Races and Consolation Races tick: a
+// season that runs heats gets the box pre-ticked here, since every round of it
+// is a heat weekend. It's only the starting state — untick it for the one
+// standard-format round in a heat season.
+export function RaceCreateModal({ seasonId, defaultRound, classes = [], perClassSchedules = false, defaultClassId = "", perClassResults = false, heatFormat = false, onClose, onCreated }) {
   const [form, setForm] = useState({
     ...blankRace,
     round_number: defaultRound ? String(defaultRound) : "",
     class_id: perClassSchedules ? defaultClassId : "",
     per_class_results: perClassResults,
+    heat_format: !!heatFormat,
   });
   const [tracks, setTracks] = useState([]);
   // Pickable points systems for the heat/consolation defaults below: the

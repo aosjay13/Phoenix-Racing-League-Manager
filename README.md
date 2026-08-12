@@ -1165,6 +1165,9 @@ template **for every Heat** (`heat_points_template_id`) and one **for every Cons
 
 Pick a template at whichever level is true for your league and every heat (or every consolation) in
 scope scores on it, including sessions added later — nothing is copied onto the sessions themselves.
+A season with the tick on also **pre-ticks heat racing on every new race** — in League Setup's Races
+panel and the *New Race* dialog alike — since every round of a heat season is a heat weekend; untick
+it on the odd standard-format round.
 **Most specific wins:** the event's default beats the class's, which beats the season's, and a
 template assigned to ONE session from its own results tab beats all three. `inheritedSessionTemplate`
 in `lib/standings.js` holds that order.

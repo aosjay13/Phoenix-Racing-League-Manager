@@ -240,7 +240,10 @@ function AdminInner() {
     name: "", track: "", track_id: "", date: "", round_number: "", track_logo_url: "", sessions: "Race", car: "",
     // Distance: a lap count, or a duration for a race run to the clock.
     length_type: LENGTH_LAPS, total_laps: "", race_minutes: "", total_rounds: "",
-    heat_format: false, heats: "", consolations: "", feature_name: "A-Main Feature",
+    // Pre-ticked for a season that runs heat racing — every round of it is a heat
+    // weekend, so the box starts where the season says it should. Untick it for
+    // the odd standard-format round.
+    heat_format: !!season?.heat_format, heats: "", consolations: "", feature_name: "A-Main Feature",
     // The event's default points template for every heat / every consolation, so
     // a weekend of heats needs one pick instead of one per session. Blank = those
     // sessions score on the season's (or class's) points structure, as before.
@@ -250,6 +253,15 @@ function AdminInner() {
     class_id: "",
   };
   const [raceForm, setRaceForm] = useState(blankRace);
+  // The season loads after the first render, so the heat tick above has to be
+  // applied once it arrives — but only to a blank form nobody has started
+  // filling in, and never while an existing race is being edited.
+  useEffect(() => {
+    if (editIds.race) return;
+    setRaceForm(f => (f.name || f.track || f.round_number || f.heats || f.consolations
+      ? f
+      : { ...f, heat_format: !!season?.heat_format }));
+  }, [season?.id, season?.heat_format, editIds.race]);
 
   // Classes divide the selected season's field into separately-scored groups
   // ("Pro"/"Amateur", GT3/LMP2). Empty list = a single-class season, which is
