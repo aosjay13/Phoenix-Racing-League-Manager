@@ -1166,7 +1166,7 @@ template **for every Heat** (`heat_points_template_id`) and one **for every Cons
 
 | Where | Ticked on | Covers |
 | --- | --- | --- |
-| **Season** (League Setup → Seasons, and the Schedule's *New Season* dialog) | `seasons.heat_format` | every heat/consolation of every event in the season |
+| **Season** (League Setup → Seasons, and the Schedule's *New Season* dialog — the tick sits with the other season switches, its two pickers inside **Points & Bonuses**, under Race Points and Qualifying Points) | `seasons.heat_format` | every heat/consolation of every event in the season |
 | **Class** (League Setup → Classes) | `classes.heat_format` | every heat/consolation **that class** runs |
 | **Event** (Race Info — League Setup's Races panel, the New Race dialog, the race edit screen) | `races.heat_format` | every heat/consolation of that one event |
 

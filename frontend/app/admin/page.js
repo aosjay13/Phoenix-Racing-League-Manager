@@ -820,7 +820,7 @@ function AdminInner() {
                 checked={!!classForm.heat_format}
                 onChange={e => setClassForm(f => ({ ...f, heat_format: e.target.checked }))} />
               <label htmlFor="class_heat_format" style={{ margin: 0 }}>
-                Heat Races and Consolation Races
+                Heats and Consolation Races
                 <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
                   On: <strong>this class</strong> runs heat racing, and you can name the points template
                   every heat and every consolation it runs scores on — set once here instead of once per
