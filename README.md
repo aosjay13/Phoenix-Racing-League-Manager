@@ -1431,3 +1431,9 @@ npm run backup
 It refuses to write a file that doesn't parse as one of our backups, or that comes back with zero
 records — a backup folder full of plausible-looking garbage is worse than one that's visibly
 missing a week.
+
+## License
+
+Released under the MIT License — see [LICENSE.txt](LICENSE.txt). The software is provided
+"as is", without warranty of any kind, and the authors are not liable for any claim or damages
+arising from its use.
