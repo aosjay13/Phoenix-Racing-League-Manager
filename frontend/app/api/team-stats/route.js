@@ -7,6 +7,7 @@ import {
   compareStandings,
   decorateRaceBonuses,
   decorateSessionFlags,
+  sessionScopeContext,
   makeScorer,
   resolveSeasonConfig,
 } from "@/lib/standings";
@@ -88,7 +89,8 @@ export async function GET(request) {
 
     const config = resolveSeasonConfig(season, seriesById[season.series_id] || null);
     const racesById = Object.fromEntries(racesSnap.docs.map(d => [d.id, d.data()]));
-    const results = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById));
+    const results = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById,
+      sessionScopeContext({ seasons: [season], classes: seasonClasses, entriesById })));
     // Each result scores under its driver's class, so a class with its own
     // points structure carries that structure into the team totals.
     const scorer = makeScorer(results, { config, classes: seasonClasses, entriesById, templatesById });

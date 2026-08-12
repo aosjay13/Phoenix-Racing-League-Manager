@@ -9,7 +9,7 @@ import { PointsEditorModal } from "@/components/PointsEditorModal";
 import { ImportResultsModal } from "@/components/ImportResultsModal";
 import { NONE_TEMPLATE, isNoPointsTemplate } from "@/lib/pointsTemplates";
 import { classIdForScope, classOfResult, entriesEligibleForRace, entriesInSessionClass, isClassScoped, resultInSessionClass } from "@/lib/classFilter";
-import { pointsFor, pointsBreakdown, classConfigs, classScoresOwnPoints, configForClass, configForTemplate, defaultTemplateIdFor, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
+import { pointsFor, pointsBreakdown, classConfigs, classScoresOwnPoints, configForClass, configForTemplate, inheritedSessionTemplate, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
 import { AUTO_FLAG_FIELDS, applyAutoFlags, detectFlagLocks, autoMostLapsLedSlot } from "@/lib/autoFlags";
 import { BANGER_BOOL_FIELDS, BANGER_RESULT_FIELDS, BANGER_STATS, bangerRates, blankBangerRow, hasBangerBonuses } from "@/lib/bangerRacing";
 import { BRACKET_SIZES, bracketGridError, bracketPositionAt, bracketPositions, bracketRoundFor, bracketRounds, bracketSizeForField, bracketSizeLabel, normalizeBracketSize, ordinal } from "@/lib/bracketRacing";
@@ -1279,18 +1279,29 @@ export function SessionEditor({
     ? (classSessionPoints[session] || "")
     : (sessionPoints[session] || "");
   const templateFor = id => (id === NONE_TEMPLATE.id ? NONE_TEMPLATE : templates.find(t => t.id === id));
-  // The event's default template for this session TYPE — "every heat scores on
-  // this", set on the Race Info form so a weekend of heats doesn't need a
-  // template picked session by session (see lib/standings.js). A session with an
-  // assignment of its own still overrides it; without one, this is what the
-  // Points column below scores on, which is what the standings score on too.
-  const typeDefaultId = defaultTemplateIdFor(race || {}, sessionType) || "";
+  // The DEFAULT template for this session TYPE — "every heat scores on this",
+  // named by the event (Race Info), by one class, or by the season, most
+  // specific first. A session with an assignment of its own still overrides it;
+  // without one, this is what the Points column below scores on, which is what
+  // the standings score on too. `forClass` says the default came from a class,
+  // which is what puts it on top of that class's structure rather than under it
+  // (see inheritedSessionTemplate in lib/standings.js).
+  const inheritedFor = classId => inheritedSessionTemplate({ session_type: sessionType }, {
+    race,
+    cls: classId ? classes.find(c => c.id === classId) || null : null,
+    season,
+  });
+  const inherited = inheritedFor(pointsClassId || "");
+  const typeDefaultId = inherited?.id || "";
   const typeDefault = useMemo(() => templateFor(typeDefaultId), [templates, typeDefaultId]);
   const effectiveTemplateId = templateId || typeDefaultId;
   const template = useMemo(() => templateFor(effectiveTemplateId), [templates, effectiveTemplateId]);
-  // Was this session's template picked for THIS class, or for the event as a
-  // whole? Only a class's own assignment lives in session_points_by_class.
-  const templateIsForClass = scoped && !!classSessionPoints[session];
+  // Was the template in force picked for THIS class, or for the event/season as a
+  // whole? Only a class's own assignment lives in session_points_by_class — and
+  // an inherited default answers for itself.
+  const templateIsForClass = templateId
+    ? (scoped && !!classSessionPoints[session])
+    : !!inherited?.forClass;
 
   // Lay one class's chain up, putting the template at the level it was actually
   // assigned at — the same rule makeScorer scores on:
@@ -1313,17 +1324,20 @@ export function SessionEditor({
     [baseConfig, template, templateIsForClass, pointsClassId, classes, seasonConfig],
   );
 
-  // What this session scores on with NO assignment of its own — the event's
-  // default for its type when it names one, else the plain class/season
-  // structure. It's what the dropdown's first option means and what the points
-  // editor shows behind it, so "use the default" always displays the numbers
-  // that default actually pays.
+  // What this session scores on with NO assignment of its own — the default for
+  // its type when the event, the class or the season names one, else the plain
+  // class/season structure. It's what the dropdown's first option means and what
+  // the points editor shows behind it, so "use the default" always displays the
+  // numbers that default actually pays.
   const defaultConfig = useMemo(
-    () => (typeDefault ? layered(pointsClassId || "", typeDefault, false) : baseConfig),
-    [baseConfig, typeDefault, pointsClassId, classes, seasonConfig],
+    () => (typeDefault ? layered(pointsClassId || "", typeDefault, !!inherited?.forClass) : baseConfig),
+    [baseConfig, typeDefault, inherited?.forClass, pointsClassId, classes, seasonConfig],
   );
+  // Names the default AND where it was set, so an admin looking at a heat that
+  // scores 20 a win can see whether that came from this event, this class or the
+  // season — the three places one can be named.
   const defaultLabel = typeDefault
-    ? `${LABELS[sessionType] || "Session"} default — ${typeDefault.name}`
+    ? `${LABELS[sessionType] || "Session"} default · ${inherited.level} — ${typeDefault.name}`
     : baseLabel;
 
   // What this session pays for each derby stat, resolved through the same
@@ -1344,8 +1358,15 @@ export function SessionEditor({
   const derbyVaries = new Set(payingConfigs.map(c => JSON.stringify(bangerRates(c.bonuses)))).size > 1;
 
   // A row's own configs. Scoped grids are all one class; a combined grid scores
-  // each row under the class on that row.
-  const configForRow = row => (scoped ? config : layered(row.class_id || "", template, false));
+  // each row under the class on that row — including that class's own heat /
+  // consolation default, which another class on the same grid may not share.
+  const configForRow = row => {
+    if (scoped) return config;
+    const rowClassId = row.class_id || "";
+    if (templateId) return layered(rowClassId, template, false);
+    const rowInherited = inheritedFor(rowClassId);
+    return layered(rowClassId, templateFor(rowInherited?.id), !!rowInherited?.forClass);
+  };
 
   // Assign a points system to this session — for THIS class when the event runs
   // its classes separately, so switching class and picking a template doesn't
@@ -1361,10 +1382,11 @@ export function SessionEditor({
   // anyone's record. The championship-points toggle stays race-only, since
   // qualifying never awards championship points on its own.
   const isQual = sessionType === "qualifying";
-  // The event's heat/consolation points default also flips championship points
-  // on for that type by default — naming a template for every heat says heats
-  // score — so this grid's switch shows the same state the standings use.
-  const flagDefaults = defaultSessionFlags(sessionType, race);
+  // A heat/consolation points default — the event's, the class's or the
+  // season's — also flips championship points on for that type by default:
+  // naming a template for every heat says heats score. This grid's switch
+  // therefore shows the same state the standings use.
+  const flagDefaults = defaultSessionFlags(sessionType, { race, cls: scopeClass, season });
   const statsOn = session in sessionStats ? !!sessionStats[session] : flagDefaults.counts_stats;
   const pointsOn = session in sessionPointsEnabled ? !!sessionPointsEnabled[session] : flagDefaults.counts_points;
   const showStatsToggle = !!onSessionStatsChange;

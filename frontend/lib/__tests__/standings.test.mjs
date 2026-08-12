@@ -8,7 +8,7 @@
 import assert from "node:assert";
 import {
   calculateStandings, decorateRaceBonuses, decorateSessionFlags,
-  resolveSeasonConfig, makeScorer, pointsFor, explainPoints,
+  resolveSeasonConfig, makeScorer, pointsFor, explainPoints, sessionScopeContext,
 } from "../standings.js";
 
 // race P1 100 / P2 90 / P3 80 · qualifying P1 10 / P2 5
@@ -24,8 +24,12 @@ let n = 0;
 const check = (label, got, want) => { n++; assert.deepStrictEqual(got, want, `${label}: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`); };
 
 // Score a season, and prove the total is the sum of what each grid displays.
-function score(results, racesById, { templatesById = {}, classes = [], cfg = config } = {}) {
-  const decorated = decorateRaceBonuses(decorateSessionFlags(results, racesById));
+// `seasonDoc` is only needed by the tests that put a heat/consolation points
+// default on the season itself — decoration resolves those against it.
+function score(results, racesById, { templatesById = {}, classes = [], cfg = config, seasonDoc = null } = {}) {
+  const entriesById = Object.fromEntries(entries.map(e => [e.id, e]));
+  const decorated = decorateRaceBonuses(decorateSessionFlags(results, racesById,
+    sessionScopeContext({ seasons: [seasonDoc], classes, entriesById })));
   const out = calculateStandings(decorated, entries, [], cfg, templatesById, classes);
   const totals = Object.fromEntries(out.rows.map(r => [r.entry_id, r.adjusted_points]));
 
@@ -246,6 +250,79 @@ check("qualifying adjustment", pointsFor({ ...q("e1", 1), points_adjustment: -4,
   check("naming a default turns heat points on", decorated[0].counts_points, true);
   // …but stats stay off: a heat is still a preliminary for Wins / Average Finish.
   check("naming a default leaves heat stats off", decorated[0].counts_stats, false);
+}
+
+
+// ── 19. The same defaults, named on the SEASON and on a CLASS ─────────────
+// A league that runs heats all year sets its heat scoring once on the season;
+// a season whose classes run different heat scales sets it per class. Most
+// specific wins — event, then class, then season — and a CLASS's default sits on
+// top of that class's own points structure, unlike the season's and the event's.
+{
+  const templatesById = {
+    "t-heat": { id: "t-heat", name: "Heat scale", race_points: { 1: 20, 2: 15 }, qual_points: { 1: 2 }, bonus_points: {} },
+    "t-bmain": { id: "t-bmain", name: "B-Main scale", race_points: { 1: 50, 2: 40 }, qual_points: { 1: 5 }, bonus_points: {} },
+    "t-class": { id: "t-class", name: "Pro heat scale", race_points: { 1: 30, 2: 25 }, qual_points: { 1: 3 }, bonus_points: {} },
+    "t-event": { id: "t-event", name: "This event's heats", race_points: { 1: 8, 2: 6 }, qual_points: { 1: 1 }, bonus_points: {} },
+  };
+  const heatSeason = {
+    id: "s1", heat_format: true,
+    heat_points_template_id: "t-heat", consolation_points_template_id: "t-bmain",
+  };
+  const raceDoc = extra => ({
+    r1: {
+      season_id: "s1", heat_format: true, heats: ["Heat 1"], consolations: ["B-Main"],
+      feature_name: "A-Main Feature", ...extra,
+    },
+  });
+  const sess = (session, session_type, pos, extra = {}) =>
+    ({ race_id: "r1", entry_id: "e1", session, session_type, finish_pos: pos, ...extra });
+  const weekend = [
+    q("e1", 1),
+    sess("Heat 1", "heat", 1),
+    sess("B-Main", "consolation", 1),
+    sess("A-Main Feature", "feature", 1),
+  ];
+
+  // Season default only: pole 10 + heat 20 + B-Main 50 + feature 100.
+  check("a season's heat / consolation defaults score every event under it",
+    score(weekend, raceDoc(), { templatesById, seasonDoc: heatSeason }), { e1: 180 });
+
+  // The event's own default wins over the season's: the heat pays 8, not 20.
+  check("an event's default overrides the season's",
+    score(weekend, raceDoc({ heat_points_template_id: "t-event" }), { templatesById, seasonDoc: heatSeason }),
+    { e1: 168 });
+
+  // A class's default outranks the season's for that class's results, and — the
+  // point of the class level — it applies ON TOP of the class's own points
+  // structure, so a class scoring its own scale still pays its heat template.
+  // Pro scores 200 a win of its own; its heat pays t-class (30), its B-Main falls
+  // through to the season's B-Main scale (50) laid under Pro's structure, so the
+  // B-Main win pays Pro's 200.
+  const pro = {
+    id: "c-pro", name: "Pro", heat_format: true, heat_points_template_id: "t-class",
+    race_points: { 1: 200, 2: 180 }, qual_points: { 1: 20 },
+  };
+  const proWeekend = weekend.map(r => ({ ...r, class_id: "c-pro" }));
+  check("a class's own heat default sits on top of its own points structure",
+    score(proWeekend, raceDoc(), { templatesById, classes: [pro], seasonDoc: heatSeason }),
+    { e1: 20 + 30 + 200 + 200 });
+
+  // And the event still wins over the class.
+  check("an event's default overrides a class's",
+    score(proWeekend, raceDoc({ heat_points_template_id: "t-event" }),
+      { templatesById, classes: [pro], seasonDoc: heatSeason }),
+    { e1: 20 + 200 + 200 + 200 });
+
+  // Nothing named anywhere = the old behaviour, heats and consolations scoreless.
+  check("no default at any level leaves heats scoreless",
+    score(weekend, raceDoc(), { templatesById, seasonDoc: { id: "s1" } }), { e1: 110 });
+
+  // The decorated result records where its default came from.
+  const decorated = decorateSessionFlags([sess("Heat 1", "heat", 1)], raceDoc(),
+    sessionScopeContext({ seasons: [heatSeason], classes: [], entriesById: { e1: {} } }));
+  check("a season default reaches the result", decorated[0].points_template_id, "t-heat");
+  check("a season default turns heat points on", decorated[0].counts_points, true);
 }
 
 

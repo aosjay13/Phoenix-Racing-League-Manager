@@ -306,6 +306,20 @@ export const SPECS = {
                        combined_championship: { bool: true, default: true },
                        per_class_schedules: { bool: true, default: false },
                        per_class_results: { bool: true, default: false },
+                       // `heat_format` says THIS SEASON runs heat racing (Heats →
+                       // Consolation → Feature). It's what unlocks the two defaults
+                       // beside it: `heat_points_template_id` and
+                       // `consolation_points_template_id` are points_templates ids
+                       // every heat / every consolation of the season scores on, so a
+                       // league running heats all year picks a template once for the
+                       // season instead of once per event or once per session. An
+                       // event's own default (SPECS.races) and a class's (SPECS.classes)
+                       // both override it, and naming one turns championship points on
+                       // for that session type by default — see defaultSessionFlags and
+                       // inheritedSessionTemplate in lib/standings.js. Unset on every
+                       // season that names none, which scores exactly as before.
+                       heat_format: { bool: true, default: false },
+                       heat_points_template_id: {}, consolation_points_template_id: {},
                        car_options: {}, ...RETIRED_MANUFACTURER_FIELD, car_selection_note: {},
                        ...SIGNUP_REQUIREMENT_FIELDS } },
   // Classes divide a season's field into separately-scored groups ("Pro" /
@@ -349,6 +363,15 @@ export const SPECS = {
                        isBangerRacing: { bool: true, default: false },
                        isBracketRacing: { bool: true, default: false },
                        race_points: {}, qual_points: {}, bonus_points: {},
+                       // `heat_format` says THIS CLASS runs heat racing, and unlocks the
+                       // same two defaults a season and a race carry: every heat / every
+                       // consolation THIS class runs scores on the named template. Unlike
+                       // the season's and the event's, a class's default sits ON TOP of the
+                       // class's own points structure — it is a statement about the class,
+                       // so a class scoring its own points still pays its heat template
+                       // (see inheritedSessionTemplate in lib/standings.js).
+                       heat_format: { bool: true, default: false },
+                       heat_points_template_id: {}, consolation_points_template_id: {},
                        car_options: {}, ...RETIRED_MANUFACTURER_FIELD, car_selection_note: {},
                        ...SIGNUP_REQUIREMENT_FIELDS,
                        sort_order: { number: true, default: 0 } } },

@@ -4,6 +4,7 @@ import {
   aggregateCareerStats,
   decorateRaceBonuses,
   decorateSessionFlags,
+  sessionScopeContext,
   isQualifying,
   makeScorer,
   resolveSeasonConfig,
@@ -157,7 +158,8 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
     ]);
     const entriesById = Object.fromEntries(entriesSnap.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
     const racesById = Object.fromEntries(racesSnap.docs.map(d => [d.id, d.data()]));
-    const allResults = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById));
+    const allResults = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById,
+      sessionScopeContext({ seasons: [season], classes: seasonClasses, entriesById })));
     // Scored under the class each result was run in, so a class with its own
     // points structure carries it into the venue leaderboard too.
     const scorer = makeScorer(allResults, { config, classes: seasonClasses, entriesById, templatesById });
