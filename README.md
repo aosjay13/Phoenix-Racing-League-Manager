@@ -55,8 +55,11 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   one-click sortable; every driver's fastest lap is found from the laps themselves and shown in
   bold, and clicking a name opens the full lap list. Tick **Placement Session** and the sheet grows
   a division column you assign by hand or fill from the times, and **Complete Session** pushes the
-  whole field onto the official season roster in those divisions — the manual entry a placement
-  night otherwise creates. **Export to Qualifying** copies the best laps onto a scheduled race as
+  whole field onto the official roster in those divisions — the manual entry a placement night
+  otherwise creates. **A division doesn't have to be a class**: leagues whose divisions are
+  *separate series* place drivers into **series** instead, each building the roster of the season
+  behind it, so one night can build several rosters at once — and you can use both together, sorting
+  a driver into a series *and* into a class within it. **Export to Qualifying** copies the best laps onto a scheduled race as
   its official qualifying grid, and the race's Qualifying tab has an **Import from Time Trial**
   button for the same trip the other way. A time trial counts toward **no** racing statistic — no
   Wins, Top 5s, Average Finish or Championships — but its laps *are* eligible for the Global /
@@ -613,13 +616,34 @@ hot-lapping, time attack, and the placement night that sorts a new field into di
    The sheet holds its order while you're typing — a lap that improves someone's best time would
    otherwise fling their row up the table mid-entry — and re-ranks when you sort, hit **Re-sort now**,
    or save.
-4. **Place them.** On a **Placement Session** each row carries a division dropdown, and
-   **⇅ Sort into divisions by time** splits the ranked field evenly across them, fastest first (the
-   remainder lands on the quicker divisions). It's a starting point: every row stays editable.
+4. **Place them.** On a **Placement Session** each row carries a dropdown for each kind of division
+   you picked, and **⇅ Sort into … by time** splits the ranked field evenly across them, fastest
+   first (the remainder lands on the quicker divisions). It's a starting point: every row stays
+   editable.
 5. **Complete Session** (top right) closes the sheet and offers to **build the roster** — every
-   driver on it joins the season's roster in the division they were placed in. It shows exactly what
-   it will do before writing, and a driver already on the roster is *moved* into their new division
-   rather than duplicated, so re-sorting the field and pressing it again corrects rather than doubles.
+   driver on it joins a roster in the division they were placed in. It shows exactly what it will do
+   before writing, and a driver already on a roster is *moved* into their new division rather than
+   duplicated, so re-sorting the field and pressing it again corrects rather than doubles.
+
+**Classes or series — whichever your league calls a division.** Some leagues split a season into
+classes; others run each division as its own **series**, with its own seasons, schedule and
+championship. A placement night can sort into either, and the two compose:
+
+- Tick the **series** to place into, and give each one the **season** whose roster it builds — a
+  roster belongs to a season, not to a series, so each series names one (defaulting to its newest,
+  the one being raced). Completing the session then builds *every* one of those rosters in a single
+  run, and the summary reports each separately.
+- Tick the **classes** to place into for divisions inside a season, exactly as before.
+- Use **both** and a driver is sorted into a series *and* into a class within it. The divisions a
+  row can be given then come from **that driver's own series' season** — never another season's
+  classes, which would stamp a roster entry with an id it can't resolve. Sorting into divisions
+  splits inside each series too, so the top of the Pro Series fills Pro's first division rather than
+  the whole field's fastest drivers taking every quick division everywhere.
+
+A driver sorted into a series has been placed whether or not they also drew a class — the series is
+their division. On a class-only night, a driver with no division is still left alone rather than
+guessed at. And a session that places into series needs no season of its own at all: the series
+carry their own destinations.
 
 **Getting the times onto a race weekend** works from either end. **Export to Qualifying** on the
 session screen picks a scheduled event and copies the best laps over as its official qualifying
@@ -1097,9 +1121,10 @@ and `entries (season_id, team_id, class_id, user_id, number)` / `teams (name, lo
 roster entry to a user account is what feeds their public career stats.
 
 `time_trials (league_id, name, game_id?, series_id?, season_id?, track_id, track, date, max_laps,
-average_laps, is_placement, class_ids[], sort_key, status)` and
+average_laps, is_placement, class_ids[], series_ids[], series_seasons{}, sort_key, status)` and
 `time_trial_entries (time_trial_id, league_id, name, driver_id?, user_id?, entry_id?, laps[],
-assigned_class_id, assigned_class_name, position)` hold the Time Trials & Placements sessions.
+assigned_class_id, assigned_class_name, assigned_series_id, assigned_series_name, position)` hold
+the Time Trials & Placements sessions.
 
 **They are deliberately not `results`, and that is the whole design.** The stats engine reads
 `results`; a trial's laps are never written there, so a time trial counts toward **no** standard
@@ -1133,10 +1158,24 @@ the past-winners list. The other bridge is **admin-driven and named**: `POST
 Qualifying, and from that moment they are ordinary qualifying results that score qualifying points
 and set poles like any other. Nothing crosses over without an admin asking for it, on a named event.
 
-**Building a roster from a placement is idempotent.** `planRosterBuild` matches drivers to the
+**A division is not always a class.** Some leagues run each division as its own **series**, so a
+placement night can sort into `series_ids` as well as (or instead of) `class_ids`. A roster belongs
+to a *season*, not to a series, so `series_seasons` maps each series to the season whose roster it
+builds — `targetSeasonFor()` is the single rule that decides where a row's entry is written (its
+series' season, else the trial's own), and the same rule decides which season's classes that row's
+Division cell may offer, so a class stamped on an entry always exists in the season that entry lives
+in. `groupByTargetSeason()` then splits the sheet per season and the roster run builds each one,
+which is how a single night produces several rosters. Sorting into divisions on such a night splits
+*within* each series (`autoAssignClassesWithinSeries`), so each series' own field fills its own
+divisions. A trial placing only into series needs no `season_id` at all.
+
+**Building a roster from a placement is idempotent.** `planRosterBuild` matches drivers to that
 season's roster the way the rest of the app matches them — global `driver_id`, then linked account,
 then lowercased name — and a driver already there is **updated** into their new division rather than
 duplicated. Re-sort the field and press **Complete Session** again; it corrects, it doesn't double.
+Its `requireClass` rule may be a function of the row, which is what lets a series placement stand on
+its own: being sorted into the Pro Series *is* a placement, class or no class, while on a class-only
+night an unplaced driver is still left alone.
 
 **Teams are persistent, line-ups are seasonal.** A `teams` document is the team itself — league-wide,
 with its own name, badge and colour, exactly like a driver in the global pool. Who drives for it is a

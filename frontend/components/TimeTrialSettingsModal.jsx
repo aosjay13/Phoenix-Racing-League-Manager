@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { Modal } from "@/components/Modal";
 import { TrackSelect } from "@/components/TrackSelect";
+import { PlacementTargetFields } from "@/components/PlacementTargetFields";
 import { LAPS_UNLIMITED, MAX_LAPS_CAP } from "@/lib/timeTrials";
 
 // Editing a session after it was created — the other half of "create, view and
@@ -13,7 +14,7 @@ import { LAPS_UNLIMITED, MAX_LAPS_CAP } from "@/lib/timeTrials";
 // run before the season it feeds exists, so attaching it afterwards is the
 // normal path, not an edge case: it is what gives the sheet its divisions to
 // place into and its roster to build.
-export function TimeTrialSettingsModal({ trial, seasons = [], onClose, onSaved }) {
+export function TimeTrialSettingsModal({ trial, seasons = [], seriesList = [], onClose, onSaved }) {
   const [form, setForm] = useState({
     name: trial.name || "",
     date: trial.date || "",
@@ -27,6 +28,8 @@ export function TimeTrialSettingsModal({ trial, seasons = [], onClose, onSaved }
     sort_key: trial.sort_key === "average" ? "average" : "best",
     season_id: trial.season_id || "",
     class_ids: trial.class_ids || [],
+    series_ids: trial.series_ids || [],
+    series_seasons: trial.series_seasons || {},
   });
   const [tracks, setTracks] = useState([]);
   const [classes, setClasses] = useState([]);
@@ -49,13 +52,6 @@ export function TimeTrialSettingsModal({ trial, seasons = [], onClose, onSaved }
 
   const set = field => e => setForm(f => ({ ...f, [field]: e.target.value }));
 
-  function toggleClass(id) {
-    setForm(f => ({
-      ...f,
-      class_ids: f.class_ids.includes(id) ? f.class_ids.filter(c => c !== id) : [...f.class_ids, id],
-    }));
-  }
-
   async function submit(e) {
     e.preventDefault();
     setBusy(true);
@@ -71,7 +67,8 @@ export function TimeTrialSettingsModal({ trial, seasons = [], onClose, onSaved }
           // A season pins the game and series the trial belongs to, which is
           // what scopes its laps in the record books.
           ...(season ? { game_id: season.game_id || "", series_id: season.series_id || "" } : {}),
-          // Divisions only exist against a season; detaching one drops them.
+          // Classes only exist against a season; detaching one drops them.
+          // Series placement carries its own seasons and survives either way.
           class_ids: form.season_id ? form.class_ids.filter(id => classes.some(c => c.id === id)) : [],
         },
       });
@@ -134,24 +131,17 @@ export function TimeTrialSettingsModal({ trial, seasons = [], onClose, onSaved }
           <label htmlFor="tt_settings_placement" style={{ margin: 0 }}>Placement Session</label>
         </div>
 
-        {form.is_placement && form.season_id && (
-          classes.length > 0 ? (
-            <div className="field">
-              <span className="field-label">Divisions to place into</span>
-              <div className="option-rows">
-                {classes.map(c => (
-                  <label key={c.id} className="check-row" style={{ margin: 0 }}>
-                    <input type="checkbox" checked={form.class_ids.includes(c.id)} onChange={() => toggleClass(c.id)} />
-                    <span>{c.car ? `${c.name} · ${c.car}` : c.name}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <p style={{ fontSize: "0.8rem", color: "var(--accent-gold)" }}>
-              That season has no classes yet — add them in League Setup and they&rsquo;ll appear here.
-            </p>
-          )
+        {form.is_placement && (
+          <PlacementTargetFields
+            idPrefix="tt_settings"
+            seriesList={seriesList}
+            classes={classes}
+            seasonId={form.season_id}
+            seriesIds={form.series_ids}
+            seriesSeasons={form.series_seasons}
+            classIds={form.class_ids}
+            onChange={patch => setForm(f => ({ ...f, ...patch }))}
+          />
         )}
 
         <div className="field"><label>Notes</label>

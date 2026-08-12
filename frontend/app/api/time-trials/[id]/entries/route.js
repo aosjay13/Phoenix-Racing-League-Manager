@@ -3,7 +3,8 @@ import { db } from "@/lib/firebase";
 import { getRequestLeagueId, withAdmin } from "@/lib/serverAuth";
 import { summarizeEntries } from "@/lib/timeTrials";
 import {
-  TRIAL_ENTRY_COLLECTION, fetchClassNames, fetchTrial, fetchTrialEntries, trialEntryDoc,
+  TRIAL_ENTRY_COLLECTION, fetchClassNamesForSeasons, fetchSeriesNames, fetchTrial,
+  fetchTrialEntries, targetSeasonIds, trialEntryDoc,
 } from "@/lib/timeTrialsServer";
 
 export const dynamic = "force-dynamic";
@@ -28,7 +29,14 @@ export const POST = withAdmin(async (request, { params }) => {
   // driver, so it never reaches the database — that's the empty slot at the
   // bottom of the grid, not a submission.
   const named = rows.filter(r => String(r?.name ?? "").trim() || r?.driver_id);
-  const classNames = await fetchClassNames(trial.season_id);
+  // Names for the two placement labels a row can carry. Classes are read across
+  // EVERY season this trial can place into — its own and the one behind each
+  // series — since a driver placed into the Pro Series is classified in that
+  // series' season, not in the trial's.
+  const [classNames, seriesNames] = await Promise.all([
+    fetchClassNamesForSeasons(targetSeasonIds(trial)),
+    fetchSeriesNames(trial.series_ids || []),
+  ]);
   const leagueId = getRequestLeagueId(request);
   const existing = await fetchTrialEntries(params.id);
   const existingById = new Map(existing.map(e => [e.id, e]));
@@ -40,7 +48,9 @@ export const POST = withAdmin(async (request, { params }) => {
   const keptIds = new Set();
 
   named.forEach((row, position) => {
-    const doc = trialEntryDoc(row, { trialId: params.id, maxLaps: trial.max_laps, classNames, leagueId, position });
+    const doc = trialEntryDoc(row, {
+      trialId: params.id, maxLaps: trial.max_laps, classNames, seriesNames, leagueId, position,
+    });
     const prior = row.id ? existingById.get(row.id) : null;
     const ref = prior ? col.doc(prior.id) : col.doc();
     const stamped = { ...doc, created_at: prior?.created_at || now, updated_at: now };
