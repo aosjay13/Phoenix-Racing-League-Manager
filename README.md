@@ -225,7 +225,12 @@ The app runs at `http://localhost:3000`.
      the full roster shows exactly which car everyone else has taken, with a tally of how
      popular each one is.
 5. **Schedule** — the season's race calendar. Completed races are clickable and show full
-   results. Admins get **+ New Race** here; on the cross-season feed (Season set to "All
+   results. With **no single season selected** ("All Games" / "All Series") it becomes a feed of
+   the league's racing in two halves, split on the calendar: **Upcoming** is everything whose day
+   hasn't come yet, soonest first, and **Archive · Recent Results** is everything whose day has
+   been and gone, most recent first. A round that ran but never had its results entered belongs to
+   the archive — it shows there as **TBD** rather than sitting in Upcoming forever. Admins get
+   **+ New Race** here; on the cross-season feed (Season set to "All
    Seasons" with a series picked) there's a **+ New Season** button too, offering every option
    League Setup does and dropping you onto the new season's empty calendar. **🖼 Share Graphic**
    exports the calendar as an image — the whole season's rounds, or (on the cross-season feed)

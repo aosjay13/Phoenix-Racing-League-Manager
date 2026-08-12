@@ -12,7 +12,8 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ShareGraphicButton, ShareGraphicModal } from "@/components/ShareGraphicModal";
 import { leagueLogos, specToGraphicTable } from "@/lib/shareGraphic";
 import { api } from "@/lib/api";
-import { formatRaceDate, isPastRaceDate, raceDateSortKey } from "@/lib/raceDate";
+import { formatRaceDate, isPastRaceDate, todayDateString } from "@/lib/raceDate";
+import { splitScheduleFeed } from "@/lib/scheduleFeed";
 import { racePerClassResults } from "@/lib/classFilter";
 import { lapsAreSecondary } from "@/lib/raceLength";
 import { hasSessionTimes, localZoneLabel, raceSessionTimes, sessionTimeLine } from "@/lib/raceTimes";
@@ -168,20 +169,13 @@ function GlobalSchedule() {
     api(`/api/schedule${qs ? `?${qs}` : ""}`).then(setRows).catch(() => setRows([]));
   }, [gameId, seriesId]);
 
-  const { upcoming, archive } = useMemo(() => {
-    const all = rows || [];
-    // Upcoming: events without saved results yet, soonest first (undated last).
-    const upcoming = all
-      .filter(r => !r.summary?.has_results)
-      .sort((a, b) => raceDateSortKey(a.date, Infinity) - raceDateSortKey(b.date, Infinity))
-      .slice(0, 40);
-    // Archive: events with results, most recently run first (undated last).
-    const archive = all
-      .filter(r => r.summary?.has_results)
-      .sort((a, b) => raceDateSortKey(b.date, -Infinity) - raceDateSortKey(a.date, -Infinity))
-      .slice(0, 40);
-    return { upcoming, archive };
-  }, [rows]);
+  // Upcoming (soonest first) and Archive (most recent first), split on the
+  // CALENDAR rather than on whether anybody entered results — see
+  // lib/scheduleFeed.js. A race whose day has passed is history even if its
+  // results sheet was never filled in; leaving it in Upcoming is what used to
+  // put a two-year-old round at the top of the table.
+  const today = useMemo(() => todayDateString(), []);
+  const { upcoming, archive } = useMemo(() => splitScheduleFeed(rows || [], today), [rows, today]);
 
   const scopeLabel = series?.name || game?.name || "All Games";
   // Available at every scope, including "All Games": whatever the scope leaves
@@ -331,10 +325,19 @@ function FeedSection({ title, icon, rows, kind }) {
                       ? <PersonCell summary={s} classSummaries={r.class_summaries} field="winner" />
                       : <CarCell summary={s} classCars={r.class_cars} />}
                   </td>
+                  {/* The archive is "days that have been", so it also holds
+                      rounds that ran without anybody entering a sheet — those
+                      say TBD rather than offering a results link to nothing,
+                      exactly as a season's own table does. An event still to
+                      come but with no date yet reads TBA. */}
                   <td>
                     {archive
-                      ? <Link href={`/races/${r.id}`} title="View race results" style={{ fontSize: "1.1rem" }}>🏁</Link>
-                      : <span className="race-status status-upcoming" style={{ fontSize: "0.7rem" }}>UPCOMING</span>}
+                      ? (s.has_results
+                        ? <Link href={`/races/${r.id}`} title="View race results" style={{ fontSize: "1.1rem" }}>🏁</Link>
+                        : <span className="race-status status-completed" style={{ fontSize: "0.7rem" }}
+                          title="This event's date has passed — no results entered yet">TBD</span>)
+                      : <span className="race-status status-upcoming" style={{ fontSize: "0.7rem" }}
+                        title={r.date ? "" : "No date set for this event yet"}>{r.date ? "UPCOMING" : "TBA"}</span>}
                   </td>
                 </tr>
               );
