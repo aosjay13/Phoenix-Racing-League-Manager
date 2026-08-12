@@ -24,6 +24,7 @@ const publicNav = [
   { href: "/skill-ratings", label: "Skill Ratings", icon: "📈" },
   { href: "/schedule",  label: "Schedule",  icon: "📅" },
   { href: "/calendar",  label: "Calendar",  icon: "🗓" },
+  { href: "/history",   label: "History",   icon: "📜" },
   { href: "/drivers",   label: "Drivers",   icon: "🏎" },
   { href: "/teams",     label: "Teams",     icon: "🛡" },
   { href: "/tracks",    label: "Tracks",    icon: "🏁" },
