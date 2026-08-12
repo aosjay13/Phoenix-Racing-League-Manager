@@ -49,6 +49,18 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   on. Unlike Demo Derby these are ordinary racing finishes — a bracket 3rd is a straight **3** in
   Average Finish, both 3rd-place drivers are paid identical points, and it all cascades into Wins,
   Podiums, Top 5s and the Overall and per-Game stats like any other result
+- ⏱ **Time Trials & Placements** — a hub of its own for hot-lapping, time attack and division
+  placement nights. Each session takes **as many laps per driver as you allow** (a Maximum Laps
+  limit, or unlimited) and works out **Best Time** and **Best Average Time** from them, both
+  one-click sortable; every driver's fastest lap is found from the laps themselves and shown in
+  bold, and clicking a name opens the full lap list. Tick **Placement Session** and the sheet grows
+  a division column you assign by hand or fill from the times, and **Complete Session** pushes the
+  whole field onto the official season roster in those divisions — the manual entry a placement
+  night otherwise creates. **Export to Qualifying** copies the best laps onto a scheduled race as
+  its official qualifying grid, and the race's Qualifying tab has an **Import from Time Trial**
+  button for the same trip the other way. A time trial counts toward **no** racing statistic — no
+  Wins, Top 5s, Average Finish or Championships — but its laps *are* eligible for the Global /
+  Series / Class **Track Records**
 - 📝 **Player sign-ups with admin approval** — players join a series from their Dashboard: pick the
   season from a selector listing only what's open, fill in a form the league configured, and submit.
   Nothing reaches the official roster on its own — every sign-up lands in a **Pending Sign-ups**
@@ -582,6 +594,47 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
    time plus its stored interval; a lapped car or a DNF has no comparable time and reads as a dash.
    All of these columns are offered in the Share Graphic exporter too.
 
+### Running a Time Trial or a placement night
+
+**Time Trials & Placements** in the sidebar is a hub of its own, for the sessions that aren't races:
+hot-lapping, time attack, and the placement night that sorts a new field into divisions.
+
+1. **Create the session.** Name it, pick the **track** (pick it from the Tracks database rather than
+   typing it, so the laps set here are eligible for that venue's track records), and choose how many
+   laps a driver may submit — **Maximum Laps**, or leave it blank for an unlimited hot-lapping
+   window. **Best Average Time counts…** decides what that column means: blank averages *every* lap
+   a driver submits, while a number gives the classic best N-consecutive-lap average.
+2. **Add drivers and type their laps.** The picker offers the season's roster and the global driver
+   pool, and a name that matches nobody is still perfectly valid — a placement night is run *for*
+   drivers who aren't on a roster yet. Lap times take any clock format (`1:23.456`, `83.456`,
+   `1:02:03.004`). Each driver's fastest lap is found from the laps themselves and shown in **bold**;
+   click their name for the full list.
+3. **Sort the sheet.** **Best Time** and **Best Average Time** are one-click sortable column headers.
+   The sheet holds its order while you're typing — a lap that improves someone's best time would
+   otherwise fling their row up the table mid-entry — and re-ranks when you sort, hit **Re-sort now**,
+   or save.
+4. **Place them.** On a **Placement Session** each row carries a division dropdown, and
+   **⇅ Sort into divisions by time** splits the ranked field evenly across them, fastest first (the
+   remainder lands on the quicker divisions). It's a starting point: every row stays editable.
+5. **Complete Session** (top right) closes the sheet and offers to **build the roster** — every
+   driver on it joins the season's roster in the division they were placed in. It shows exactly what
+   it will do before writing, and a driver already on the roster is *moved* into their new division
+   rather than duplicated, so re-sorting the field and pressing it again corrects rather than doubles.
+
+**Getting the times onto a race weekend** works from either end. **Export to Qualifying** on the
+session screen picks a scheduled event and copies the best laps over as its official qualifying
+results — fastest lap on pole — replacing whatever qualifying that event had. Or, from the event's
+**Qualifying** tab, **⏱ Import from Time Trial** fills the grid for you to review and save, exactly
+like the CSV import beside it. Either way, anyone who isn't on that season's roster is named rather
+than silently dropped: a result can only be filed against a roster entry.
+
+**What a time trial does and doesn't count for.** It counts toward **no** racing statistic — not
+Wins, Top 5s, Average Finish, Poles, or Championships — because it isn't a race and its laps are
+never written as results. Its laps **are** eligible for the Global / Series / Class **Track
+Records**, competing with race and qualifying laps on equal terms: the venue's record card names the
+session and links back to the sheet. The one route into the official statistics is the export above,
+which an admin performs deliberately, on an event they name.
+
 ### Typical first-time flow
 
 `Sign in as admin → League Setup: create Game → Series → Season → Races → Drivers ▸ Roster &
@@ -611,6 +664,9 @@ frontend/
                       season-by-season line-ups), plus the admin Team Roster tab (?tab=roster)
     approvals/      ← League-wide pending sign-up queue (Moderator+), behind the sidebar badge
     races/[id]/     ← Race results view; races/[id]/edit ← admin race info + results editor
+    time-trials/    ← Time Trials & Placements hub; time-trials/[id] ← one session's sheet
+                      (laps, Best Time / Best Average, division placement, Complete Session,
+                      Export to Qualifying)
     series-info/    ← A player's series: driver linking, series sign-up, and
                       series-info/[seasonId] ← that season's car lock-in + who's racing what
     profile/        ← Edit your own profile
@@ -1039,6 +1095,48 @@ and `entries (season_id, team_id, class_id, user_id, number)` / `teams (name, lo
 `team_seasons (team_id, season_id, driver_ids[])` →
 `results (race_id, season_id, entry_id, class_id, points_template_id)`. `users` holds player profiles; linking a
 roster entry to a user account is what feeds their public career stats.
+
+`time_trials (league_id, name, game_id?, series_id?, season_id?, track_id, track, date, max_laps,
+average_laps, is_placement, class_ids[], sort_key, status)` and
+`time_trial_entries (time_trial_id, league_id, name, driver_id?, user_id?, entry_id?, laps[],
+assigned_class_id, assigned_class_name, position)` hold the Time Trials & Placements sessions.
+
+**They are deliberately not `results`, and that is the whole design.** The stats engine reads
+`results`; a trial's laps are never written there, so a time trial counts toward **no** standard
+racing statistic — no Wins, Top 5s, Average Finish, Poles or Championships — and there is nothing to
+exclude and nothing that can leak in by accident as new stats are added. Every trial is optional at
+every level of the hierarchy (a placement night usually happens *before* the season it feeds exists),
+which is another thing a `results` document could never be: a result belongs to a race, and a race
+belongs to a season.
+
+Laps ride on the entry as an **array of clock strings**, exactly as they were typed — one driver
+submits many laps and how many is not known in advance, so they are the row rather than a row each.
+Everything derived from them (each driver's fastest lap, Best Time, Best Average Time, the ranked
+order, the placement split, the qualifying grid an export produces) is computed by one dependency-free
+module, `lib/timeTrials.js`, covered by `lib/__tests__/timeTrials.test.mjs`; `lib/timeTrialsServer.js`
+supplies the Firestore reads around it. That is why the bolded fastest lap in the grid, the Best Time
+column beside it, the expanded lap list and the exported qualifying time can never disagree — they
+are the same function.
+
+**Best Average Time says which laps it averages.** `average_laps` of 0 (the default) averages *every*
+lap a driver submitted — the consistency measure a placement night wants, where one scruffy lap
+counts. Set it to N and the column becomes the classic best **N-consecutive-lap** average, and a run
+may not jump a lap that wasn't completed. `max_laps` of 0 is an unlimited hot-lapping window.
+
+**Two deliberate bridges out.** Time trial laps *are* eligible for the Global / Series / Class
+**Track Records** — a lap is a lap, whatever session turned it — so `fetchTrackRecordLaps` hands each
+driver's fastest lap to `lib/trackStatsServer.js`, which folds them through the same `keepFastest`
+rules the race laps go through; a trial lap holds a venue record only by being quicker than every
+race lap, and vice versa. They reach the records and nothing else: never the venue leaderboard, never
+the past-winners list. The other bridge is **admin-driven and named**: `POST
+/api/time-trials/{id}/export-qualifying` copies the best laps onto one scheduled race as its
+Qualifying, and from that moment they are ordinary qualifying results that score qualifying points
+and set poles like any other. Nothing crosses over without an admin asking for it, on a named event.
+
+**Building a roster from a placement is idempotent.** `planRosterBuild` matches drivers to the
+season's roster the way the rest of the app matches them — global `driver_id`, then linked account,
+then lowercased name — and a driver already there is **updated** into their new division rather than
+duplicated. Re-sort the field and press **Complete Session** again; it corrects, it doesn't double.
 
 **Teams are persistent, line-ups are seasonal.** A `teams` document is the team itself — league-wide,
 with its own name, badge and colour, exactly like a driver in the global pool. Who drives for it is a

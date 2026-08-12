@@ -16,6 +16,7 @@ import { finalSessionName, summarizeRace } from "@/lib/raceSummaryServer";
 import { carForClass, classIdSet, classIdsInSeason, classOfResult, fetchSeasonClasses } from "@/lib/classServer";
 import { classRecordKey, gameRecordKey, keepFastest } from "@/lib/trackRecords";
 import { fetchNameResolver } from "@/lib/driverNamesServer";
+import { fetchTrackRecordLaps } from "@/lib/timeTrialsServer";
 
 // Aggregates a venue's history from every race held there. Races are linked by
 // `track_id`; legacy races that only stored the track NAME (before track_id
@@ -46,7 +47,15 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
   const wantedName = String(trackName || "").trim();
   const queries = [db().collection("races").where("track_id", "==", trackId).get()];
   if (wantedName) queries.push(db().collection("races").where("track", "==", wantedName).get());
-  const snaps = await Promise.all(queries);
+  // Hot laps set in a Time Trial at this venue. They belong in the record books
+  // — a lap is a lap — even though a trial counts toward no racing statistic,
+  // so they're read alongside the races and folded into the records below (and
+  // ONLY into the records: they never reach the leaderboard or the winners
+  // list, which are races). See lib/timeTrials.js for why they live apart.
+  const [snaps, trialLaps] = await Promise.all([
+    Promise.all(queries),
+    fetchTrackRecordLaps({ trackId, trackName: wantedName }).catch(() => []),
+  ]);
 
   const raceMap = new Map();
   for (const d of snaps[0].docs) raceMap.set(d.id, { id: d.id, ...d.data() });
@@ -59,7 +68,9 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
     }
   }
   const allRaces = [...raceMap.values()];
-  if (!allRaces.length) return empty;
+  // A venue that has only ever hosted time trials still has records to show, so
+  // this bails out only when there is nothing of either kind.
+  if (!allRaces.length && !trialLaps.length) return empty;
 
   // Load the season docs for every matched race, then keep only the races whose
   // season falls inside the selected Game/Series/Season context.
@@ -89,13 +100,15 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
 
   const races = allRaces.filter(r => inScope(seasonsById[r.season_id]));       // full scope
   const gameRaces = allRaces.filter(r => inScopeAllGames(seasonsById[r.season_id])); // per-game breakdown
-  if (!gameRaces.length) return empty;
 
   const raceIds = new Set(races.map(r => r.id));                 // full-scope venue races
   const venueRaceIds = new Set(gameRaces.map(r => r.id));        // all-games venue races
   const seasonIds = [...new Set(races.map(r => r.season_id).filter(Boolean))];
   const loopSeasonIds = [...new Set(gameRaces.map(r => r.season_id).filter(Boolean))];
-  const templatesById = await fetchTemplatesById();
+  // Nothing to score when no race here is in scope — the trial laps below still
+  // are, so the walk simply has no seasons to make and the records stand on
+  // them alone.
+  const templatesById = gameRaces.length ? await fetchTemplatesById() : {};
 
   const keyFor = e =>
     e.driver_id ? `d:${e.driver_id}` : e.user_id ? `u:${e.user_id}` : `n:${String(e.name || "").trim().toLowerCase()}`;
@@ -250,6 +263,46 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
         pole: summary.pole,
       });
     }
+  }
+
+  // ── Time Trial hot laps ───────────────────────────────────────────────────
+  //
+  // Folded in AFTER the races, through the same keepFastest rules, so a trial
+  // lap holds a record only by being quicker than every race lap — and a race
+  // lap holds it only by being quicker than every trial lap. They compete on
+  // equal terms, which is the whole point of a hot-lap session.
+  //
+  // A trial names its own game/series/season, so it is scoped exactly like a
+  // race is: the headline record follows the full Game/Series/Season selection,
+  // the per-game breakdown ignores only the Game dropdown, and neither touches
+  // the leaderboard or the winners list — nothing here is a race result.
+  const trialInScope = lap => {
+    if (scope.seasonId) return lap.season_id === scope.seasonId;
+    if (scope.seriesId) return lap.series_id === scope.seriesId;
+    if (scope.gameId) return lap.game_id === scope.gameId;
+    return true;
+  };
+  const trialInScopeAllGames = lap => {
+    if (scope.seasonId) return lap.season_id === scope.seasonId;
+    if (scope.seriesId) return lap.series_id === scope.seriesId;
+    return true;
+  };
+  // A class selection narrows the headline record. A trial lap knows the class
+  // its driver was placed in by NAME (the identity a cross-season record keys
+  // on), so a selection made by id alone can't be answered for it and the lap
+  // stays out of that narrowed view rather than being credited to a class it
+  // might not be in. The per-game / per-class breakdowns are unaffected — they
+  // exist to show every category side by side.
+  const trialInSelectedClass = lap =>
+    !classFilterOn || (!!className && lap.class_name === className);
+
+  for (const lap of trialLaps) {
+    if (trialInScope(lap) && trialInSelectedClass(lap) && (record == null || lap.seconds < record.seconds)) {
+      record = { ...lap };
+    }
+    if (!trialInScopeAllGames(lap)) continue;
+    keepFastest(recordByGame, gameRecordKey({ gameId: lap.game_id }), { ...lap });
+    keepFastest(recordByClass, classRecordKey({ gameId: lap.game_id, className: lap.class_name }), { ...lap });
   }
 
   // Names come from each driver's profile everywhere a driver is shown — the

@@ -37,6 +37,11 @@ export const SCOPED_COLLECTIONS = [
   // anything else: a restore that dropped the queue would silently lose
   // everyone who had signed up but not yet been approved.
   "signup_requests",
+  // Time Trial sessions and the laps submitted in them (see lib/timeTrials.js).
+  // They score no championship points, but they hold track records and they are
+  // what a season's placements were decided on — losing them would lose the
+  // evidence behind every division a driver was put in.
+  "time_trials", "time_trial_entries",
 ];
 
 // Collections that belong to the app as a whole rather than to one league.

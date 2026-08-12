@@ -7,6 +7,7 @@ import { AddDriverToRace } from "@/components/AddDriverToRace";
 import { DriverCreateModal } from "@/components/DriverCreateModal";
 import { PointsEditorModal } from "@/components/PointsEditorModal";
 import { ImportResultsModal } from "@/components/ImportResultsModal";
+import { ImportTimeTrialModal } from "@/components/ImportTimeTrialModal";
 import { NONE_TEMPLATE, isNoPointsTemplate } from "@/lib/pointsTemplates";
 import { classIdForScope, classOfResult, entriesEligibleForRace, entriesInSessionClass, isClassScoped, resultInSessionClass } from "@/lib/classFilter";
 import { pointsFor, pointsBreakdown, classConfigs, classScoresOwnPoints, configForClass, configForTemplate, inheritedSessionTemplate, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
@@ -523,6 +524,10 @@ export function SessionEditor({
   const [overIndex, setOverIndex] = useState(null);
   const [pointsModal, setPointsModal] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  // "Import from Time Trial" — the qualifying tab's other way in (see
+  // ImportTimeTrialModal). Qualifying only: a time trial produces a hot lap and
+  // an order, which is a qualifying sheet and nothing else.
+  const [trialImportOpen, setTrialImportOpen] = useState(false);
   const [createFor, setCreateFor] = useState(null); // { slotId, name } while the inline-create modal is open
   // Demo Derby rates being edited from the bar above the grid, keyed by bonus
   // (e.g. { takedown: "2" }). Null while nothing is being edited.
@@ -1676,6 +1681,17 @@ export function SessionEditor({
           style={{ marginTop: 0, whiteSpace: "nowrap" }} onClick={() => setImportOpen(true)} disabled={!entries.length && !seasonId}>
           ⬆ Import Results
         </button>
+        {/* The other end of the Time Trials bridge. A trial's best laps ARE a
+            qualifying sheet — a hot lap and an order — so this sits on the
+            Qualifying tab alone, and fills the grid for review rather than
+            writing results behind the admin's back. */}
+        {sessionType === "qualifying" && (
+          <button className="btn btn-ghost" type="button"
+            title="Pull a completed Time Trial's best laps into this qualifying grid"
+            style={{ marginTop: 0, whiteSpace: "nowrap" }} onClick={() => setTrialImportOpen(true)}>
+            ⏱ Import from Time Trial
+          </button>
+        )}
         {/* Bracket Style Racing: this scope is flagged, so the race IS a
             bracket — the only choice here is the ladder size. Saved on the
             RACE, because a league can run an 8-car bracket one week and a 16
@@ -2097,6 +2113,15 @@ export function SessionEditor({
           seasonId={seasonId} seriesName={seriesName} defaultClassId={pinnedClassId}
           onDriverCreated={handleDriverAdded}
           onApply={applyImport} onClose={() => setImportOpen(false)}
+        />
+      )}
+
+      {trialImportOpen && (
+        <ImportTimeTrialModal
+          entries={entries}
+          gameId={season?.game_id || ""}
+          onApply={rows => { applyImport(rows); setTrialImportOpen(false); }}
+          onClose={() => setTrialImportOpen(false)}
         />
       )}
 
