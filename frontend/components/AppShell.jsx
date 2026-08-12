@@ -22,6 +22,10 @@ const publicNav = [
   { href: "/stats",     label: "Stats",     icon: "📊" },
   { href: "/records",   label: "Records",   icon: "🏅" },
   { href: "/skill-ratings", label: "Skill Ratings", icon: "📈" },
+  // Hot-lapping, time attack and division placements. It sits with the racing
+  // pages rather than under Admin because the sheets themselves are public —
+  // only creating and entering one is an admin job. See app/time-trials.
+  { href: "/time-trials", label: "Time Trials & Placements", icon: "⏱" },
   { href: "/schedule",  label: "Schedule",  icon: "📅" },
   { href: "/calendar",  label: "Calendar",  icon: "🗓️" },
   { href: "/history",   label: "History",   icon: "📜" },
