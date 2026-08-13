@@ -319,13 +319,33 @@ export function SignupForm({ season, driver, knownAliases, knownName, onDone, on
       {/* Transparency: who's on the roster and who's already asked, so nobody
           picks a number or a car that's spoken for. */}
       <details className="roster-peek" open={roster.length > 0 && roster.length <= 8}>
+        {/* Written as an instruction, not a label. This is the answer to
+            "which numbers can I have?" and it was being missed completely: a
+            dim grey line the same size as the body text, marked only by a
+            small ▸, reads as a caption rather than something to press. It
+            leads with the ACTION now, and says which way pressing it goes. */}
         <summary>
-          {/* Numbers are the headline where a number is what's being chosen;
-              where the series doesn't run them, the roster is simply who's in. */}
-          {asksNumber
-            ? <>Series roster — {numbersTaken} number{numbersTaken === 1 ? "" : "s"} spoken for</>
-            : <>Series roster — {roster.length} driver{roster.length === 1 ? "" : "s"}</>}
-          {pendingJoins.length ? ` · ${pendingJoins.length} awaiting approval` : ""}
+          <span className="roster-peek-icon" aria-hidden="true">{asksNumber ? "#" : "☰"}</span>
+          <span className="roster-peek-summary">
+            <strong>
+              {/* Numbers are the headline where a number is what's being
+                  chosen; where the series doesn't run them, the roster is
+                  simply who's in. */}
+              <span className="roster-peek-when-shut">
+                {asksNumber ? "See which numbers are taken" : "See who's on the roster"}
+              </span>
+              <span className="roster-peek-when-open">
+                {asksNumber ? "Numbers already taken" : "On the roster"}
+              </span>
+            </strong>
+            <span className="roster-peek-sub">
+              {asksNumber
+                ? <>{numbersTaken} number{numbersTaken === 1 ? "" : "s"} spoken for</>
+                : <>{roster.length} driver{roster.length === 1 ? "" : "s"}</>}
+              {pendingJoins.length ? ` · ${pendingJoins.length} awaiting approval` : ""}
+            </span>
+          </span>
+          <span className="roster-peek-chevron" aria-hidden="true">▾</span>
         </summary>
         {roster.length === 0 ? (
           <p className="roster-peek-empty">

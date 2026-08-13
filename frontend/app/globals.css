@@ -2035,33 +2035,91 @@ tbody tr:hover {
 /* The public series roster folded into a sign-up card: who's racing under which
    number, in car-number order, so a driver can pick a free one without leaving
    the form. */
+/* This is the answer to "which numbers can I have?", and as a dim grey line in
+   body-text size marked with a small ▸ it was being missed outright — read as a
+   caption rather than as something to press. It's drawn as a control now: an
+   accented panel the width of the form, a badge on the left, an instruction in
+   full-size type telling you what pressing it does, and a chevron in a ring on
+   the right that turns as it opens. */
 .roster-peek {
-  margin: 0 0 14px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--bg-elevated);
+  /* Room above it: flush against the last car radio it read as part of that
+     question rather than as its own thing to press. */
+  margin: 18px 0 14px;
+  border: 1px solid var(--border-accent);
+  border-radius: 12px;
+  background: linear-gradient(120deg, var(--accent-cyan-dim), var(--bg-elevated));
+  overflow: hidden;
 }
 
 .roster-peek > summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   cursor: pointer;
-  padding: 8px 12px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--ink-1);
+  padding: 12px 14px;
   list-style: none;
+  transition: background 140ms ease;
 }
 
 .roster-peek > summary::-webkit-details-marker { display: none; }
-.roster-peek > summary::before { content: "▸ "; color: var(--ink-2); }
-.roster-peek[open] > summary::before { content: "▾ "; }
-.roster-peek > summary:hover { color: var(--ink-0); }
+.roster-peek > summary:hover { background: var(--card-hover); }
+/* Keyboard users get the same ring the rest of the app's controls have — a
+   <summary> is focusable, and this is now the shape of a button. */
+.roster-peek > summary:focus-visible {
+  outline: 2px solid var(--accent-cyan);
+  outline-offset: -2px;
+}
+
+.roster-peek-icon {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--accent-cyan);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-accent);
+}
+
+.roster-peek-summary { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
+.roster-peek-summary strong { font-size: 0.92rem; color: var(--ink-0); }
+.roster-peek-sub { font-size: 0.78rem; color: var(--ink-1); }
+
+/* Which of the two headings shows depends on the <details> being open, so the
+   control says what pressing it does rather than what it is. */
+.roster-peek-when-open { display: none; }
+.roster-peek[open] .roster-peek-when-open { display: inline; }
+.roster-peek[open] .roster-peek-when-shut { display: none; }
+
+.roster-peek-chevron {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  color: var(--accent-cyan);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-accent);
+  transition: transform 180ms ease;
+}
+
+.roster-peek[open] .roster-peek-chevron { transform: rotate(180deg); }
 
 .roster-peek-list {
   margin: 0;
-  padding: 0 12px 10px;
+  padding: 4px 14px 12px;
   list-style: none;
   max-height: 190px;
   overflow-y: auto;
+  border-top: 1px solid var(--border);
+  background: var(--bg-surface);
 }
 
 .roster-peek-list li {
@@ -2075,7 +2133,14 @@ tbody tr:hover {
 
 .roster-peek-name { color: var(--ink-0); flex: 1; min-width: 0; }
 .roster-peek-class { color: var(--ink-2); font-size: 0.74rem; white-space: nowrap; }
-.roster-peek-empty { margin: 0; padding: 0 12px 10px; font-size: 0.8rem; color: var(--ink-2); }
+.roster-peek-empty {
+  margin: 0;
+  padding: 10px 14px 12px;
+  font-size: 0.8rem;
+  color: var(--ink-2);
+  border-top: 1px solid var(--border);
+  background: var(--bg-surface);
+}
 
 /* The series sign-up dialog: what a player fills in before they're on a roster
    (components/SeriesSignupModal.jsx). */

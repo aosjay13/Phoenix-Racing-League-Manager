@@ -266,7 +266,11 @@ throwaway key (`openssl genrsa`) — the emulator never checks it.
 
      The season's **roster** sits in the form, in car-number order, showing who's racing under
      which number *and* who has already asked for one (marked **pending**) — so you can see what's
-     spoken for before you choose. Type a number somebody has, or has requested, and it's rejected
+     spoken for before you choose. It's collapsed on a big roster, behind a strip that leads with
+     the instruction (**See which numbers are taken**, with the count under it, a **#** badge and a
+     chevron that turns as it opens) rather than a caption. That matters: as a dim grey line the
+     size of body text it was being missed outright, and a driver who can't find it picks a number
+     blind. Type a number somebody has, or has requested, and it's rejected
      as you type with *"That number is already taken, please choose another number."*
 
      **Submitting doesn't put you on the roster.** It goes to the league's admins as a pending
