@@ -20,9 +20,9 @@ import {
   AVERAGE_ALL_LAPS, LAPS_UNLIMITED, MAX_LAPS_CAP,
   autoAssignClasses, autoAssignClassesWithinSeries, autoAssignSeries, averageLabel,
   bestAverage, bestLap, entryIndex, groupByAssignedClass, groupByTargetSeason,
-  matchEntry, normalizeAverageLaps, normalizeLaps, normalizeMaxLaps, placedOrder,
+  lapSeconds, matchEntry, normalizeAverageLaps, normalizeLaps, normalizeMaxLaps, placedOrder,
   planQualifyingExport, planRosterBuild, rankEntries, splitEvenly, summarizeEntries,
-  summarizeEntry, targetSeasonFor,
+  summarizeEntry, targetSeasonFor, trialMatchesScope,
 } from "../timeTrials.js";
 
 let n = 0;
@@ -60,6 +60,34 @@ check("a missing lap in the middle keeps the numbering",
 check("laps are trimmed", normalizeLaps([" 1:23.456 "]), ["1:23.456"]);
 check("a cap truncates the sheet", normalizeLaps(["1", "2", "3", "4"], 2), ["1", "2"]);
 check("nothing at all is no laps", normalizeLaps(undefined), []);
+
+// A lap is a time somebody actually turned. The clock parser has to be
+// permissive enough for any timing screen, so this is where the line is drawn —
+// and both of these look like data rather than like errors, which is what makes
+// them worth catching.
+check("zero is not a lap", lapSeconds("00:00.000"), null);
+check("…nor is a bare zero", lapSeconds("0"), null);
+check("…nor 0:00", lapSeconds("0:00"), null);
+check("Infinity is not a lap", lapSeconds("Infinity"), null);
+check("…nor an overflowing exponent", lapSeconds("1e400"), null);
+check("a real lap is a real lap", lapSeconds("1:23.456"), 83.456);
+check("gibberish is not a lap", lapSeconds("abc"), null);
+check("blank is not a lap", lapSeconds(""), null);
+
+// The zero case is the dangerous one: it would win Best Time outright and stand
+// as the venue's track record, unbeatable, from one slip of the keyboard.
+check("a mistyped zero can't take Best Time",
+  bestLap(["00:00.000", "1:21.900"]), { lap: 2, seconds: 81.9, time: "1:21.900" });
+check("…and a sheet of nothing but zeros has no best lap at all",
+  bestLap(["0", "00:00.000"]), null);
+check("a zero doesn't drag the average down either",
+  bestAverage(["00:00.000", "10.000", "14.000"]).count, 2);
+check("an Infinity lap never reaches the Best Time column",
+  bestLap(["Infinity", "1:21.900"]).time, "1:21.900");
+check("a rejected lap keeps its text so it can be seen and corrected",
+  summarizeEntry({ laps: ["00:00.000", "1:21.900"] }).laps, ["00:00.000", "1:21.900"]);
+check("…and is not counted as a timed lap",
+  summarizeEntry({ laps: ["00:00.000", "1:21.900"] }).laps_timed, 1);
 
 check("the fastest lap is found, not marked",
   bestLap(["1:23.456", "1:21.900", "1:22.500"]),
@@ -295,6 +323,43 @@ check("the plan is made against the roster the driver is actually joining",
     { requireClass },
   ).update,
   [{ id: "e-pro", name: "Ana", class_id: "pro-1", class_ids: ["pro-1"] }]);
+
+// ── 8. Which sessions the hub shows ───────────────────────────────────────
+//
+// A trial is not a race. A placement night routinely predates the season it
+// feeds, and a night sorting into several series belongs to all of them — so
+// "names nothing at this level" has to read as in-scope, or the hub hides the
+// very sessions the feature exists for.
+const attached = { game_id: "g1", series_id: "s1", season_id: "sn1" };
+const floating = { name: "Placement Night" };
+
+check("an attached trial shows in its own scope",
+  trialMatchesScope(attached, { gameId: "g1", seriesId: "s1", seasonId: "sn1" }), true);
+check("…and not in another series'",
+  trialMatchesScope(attached, { gameId: "g1", seriesId: "s2" }), false);
+check("…and not in another season's",
+  trialMatchesScope(attached, { seasonId: "sn2" }), false);
+check("a free-floating placement night is never hidden by a scope",
+  trialMatchesScope(floating, { gameId: "g1", seriesId: "s1", seasonId: "sn1" }), true);
+check("a trial with no season still shows inside a season",
+  trialMatchesScope({ game_id: "g1", series_id: "s1" }, { gameId: "g1", seasonId: "sn9" }), true);
+check("no scope at all shows everything", trialMatchesScope(attached, {}), true);
+
+// A night placing into several series belongs to each of them, and to each
+// season those build rosters in — not only to the one it was created under.
+const multi = {
+  game_id: "g1", series_id: "s1", season_id: "sn1",
+  series_ids: ["pro", "am"],
+  series_seasons: { pro: "sn-pro", am: "sn-am" },
+};
+check("a placement night shows under a series it places into",
+  trialMatchesScope(multi, { seriesId: "pro" }), true);
+check("…and under the season that series builds",
+  trialMatchesScope(multi, { seasonId: "sn-am" }), true);
+check("…and still under the series it was created in",
+  trialMatchesScope(multi, { seriesId: "s1" }), true);
+check("…but not under a series it has nothing to do with",
+  trialMatchesScope(multi, { seriesId: "gt" }), false);
 
 // summarizeEntry leaves the row it was given intact apart from its own columns,
 // so the sheet can carry whatever else it needs (division, notes, ids).

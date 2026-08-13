@@ -82,10 +82,31 @@ export function normalizeLaps(value, maxLaps = LAPS_UNLIMITED) {
   return cap ? cleaned.slice(0, cap) : cleaned;
 }
 
+// What a typed lap is worth in seconds, or null when it is not a lap at all.
+//
+// The clock parser is deliberately permissive — it has to accept "1:23.456",
+// "83.456" and "1:02:03.004" from whatever a timing screen prints — so this is
+// where a time trial draws the line, and it draws it at "a lap somebody
+// actually turned":
+//
+//   • 0 is not a lap. "0", "00:00.000" and "0:00" all parse to a legitimate
+//     zero, and a zero would win Best Time outright AND stand as the venue's
+//     track record, unbeatable, from one slip of the keyboard.
+//   • Infinity is not a lap. "Infinity" and "1e400" both survive Number(), and
+//     rendered straight back out they read "Infinity:NaN:NaN.NaN".
+//
+// Neither is a crash, which is exactly what makes them worth catching here:
+// they look like data. A rejected lap keeps its text on the sheet and is shown
+// as unreadable, so it can be corrected rather than silently disappearing.
+export function lapSeconds(text) {
+  const seconds = parseTime(text);
+  return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+}
+
 // Every lap as { lap, text, seconds } — `lap` is the 1-based number shown on
-// the sheet, `seconds` null for a blank or unparseable entry.
+// the sheet, `seconds` null for a blank or unusable entry.
 export function lapRows(laps) {
-  return normalizeLaps(laps).map((text, i) => ({ lap: i + 1, text, seconds: parseTime(text) }));
+  return normalizeLaps(laps).map((text, i) => ({ lap: i + 1, text, seconds: lapSeconds(text) }));
 }
 
 // The driver's single quickest lap. Ties keep the EARLIER lap — the first time
@@ -184,6 +205,32 @@ export function placedOrder(rows = [], { key = "best" } = {}) {
   return rankEntries(rows, { key, asc: true })
     .filter(r => r[field] != null)
     .map((r, i) => ({ ...r, position: i + 1 }));
+}
+
+// ── Which sessions belong to the scope being viewed ─────────────────────────
+//
+// The hub narrows to the Game / Series / Season the top bar is on. A trial is
+// not a race, though, and the difference matters here: a placement night is
+// routinely run BEFORE the season it feeds exists, so it names no season — and
+// a night that sorts drivers into several series belongs to all of them, not to
+// the one it happens to have been created under.
+//
+// So a trial is in scope when it either names that level and matches, or names
+// nothing at that level at all. Dropping the unattached ones would hide exactly
+// the sessions this feature exists for, which is precisely what happened.
+export function trialMatchesScope(trial = {}, { gameId = "", seriesId = "", seasonId = "" } = {}) {
+  // Every series/season this night touches, not just the one it was created
+  // under: the series it places into, and the seasons those build rosters in.
+  const seriesSeasons = trial.series_seasons || {};
+  const seriesIds = [trial.series_id, ...(trial.series_ids || [])].filter(Boolean);
+  const seasonIds = [trial.season_id, ...Object.values(seriesSeasons)].filter(Boolean);
+
+  // "Names nothing here" is in scope; "names something else" is not.
+  const matches = (wanted, held) => !wanted || !held.length || held.includes(wanted);
+
+  return matches(gameId, [trial.game_id].filter(Boolean))
+    && matches(seriesId, seriesIds)
+    && matches(seasonId, seasonIds);
 }
 
 // ── Placements ──────────────────────────────────────────────────────────────

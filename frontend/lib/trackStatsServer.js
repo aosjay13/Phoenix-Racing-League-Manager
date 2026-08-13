@@ -296,7 +296,12 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
   const trialInSelectedClass = lap =>
     !classFilterOn || (!!className && lap.class_name === className);
 
-  for (const lap of trialLaps) {
+  for (const raw of trialLaps) {
+    // Record cards name the season a lap was set in. A trial knows its season's
+    // id; the name is already loaded here when a race has been held at this
+    // venue in that season, so use it and leave it off otherwise rather than
+    // spending a read on decoration.
+    const lap = { ...raw, season_name: seasonsById[raw.season_id]?.name ?? null };
     if (trialInScope(lap) && trialInSelectedClass(lap) && (record == null || lap.seconds < record.seconds)) {
       record = { ...lap };
     }
