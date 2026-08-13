@@ -117,8 +117,16 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   multi-select of *every* stat column the screen offers (with Select all / Clear / Reset), and full
   event metadata on results exports, so the downloaded PNG/JPG stands alone as a broadcast-style
   graphic
-- ⬆ **Bulk roster import** — roll a whole roster into a new season in one click, from the series
-  or a cloned past season, with duplicates skipped automatically
+- ⬆ **Bulk roster import** — roll a whole roster into a new season in one click, from the series,
+  a cloned past season, or any season of another series in the game (so a brand-new series starts
+  with the drivers you already have). Every name is matched against the drivers already in the app
+  first — you review who lines up with whom, settle anything doubtful, and only genuinely new
+  people get a new profile
+- 🙅 **No accidental duplicate drivers** — one racer answers to a pile of names (their profile
+  name, their name in each game, Discord / PSN / Xbox / Steam / iRacing usernames, anything a
+  merge folded in), and *every* one of them is recognised wherever a driver can be added. A name
+  that belongs to somebody you already have is linked to them and says so; a name that merely
+  resembles one asks before creating a second profile
 - ⏱ **Fast race entry** — one grid per race, pre-filled with the roster; supports multiple
   sessions per race (e.g. Qualifying + Race), each scoring itself — a driver's championship total
   is the sum of the Points column on every session they ran, Qualifying included, so the standings
@@ -573,6 +581,11 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
        names back to one profile. An alias mapped to a game still acts as that game's display
        name when no per-game Display Name is set, so nothing set up before this existed
        changes.
+
+       These are worth filling in for a second reason: **every name on this page is a name the
+       app recognises as this driver.** Adding "Ryanbirdman" to a roster, or typing a PSN
+       username into a race grid, finds the driver those names belong to instead of creating a
+       second profile for them — see *One driver, however many names* below.
    - **Approvals** *(`/approvals`, Moderator and above)* — the same queue as below, but for the
      **whole league** in one list, and the place the sidebar's red badge points at. Each row names
      the series and season being asked for, so nothing sits unnoticed just because no admin
@@ -603,11 +616,22 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      nothing, and neither is what the driver asked for.
    - **⬆ Bulk Import Drivers** *(admin, on Driver Roster)* — the season-rollover shortcut, for
      everyone who never goes near the Sign-ups menu. Pick a source — **every driver in this
-     series** (across all its seasons) or **clone one past season's roster** — and they're added in
-     one shot, carrying their name, car number, driver profile and linked account. Anyone already
-     on the target roster is **skipped, never duplicated and never an error**, so it's safe to press
-     twice or to top up a half-built roster. Team and class don't carry over: those are per-season
-     records whose ids mean nothing in the new season.
+     series** (across all its seasons), or **copy one season's roster**, which can be a past season
+     of this series *or any season of another series in the game*, so a brand-new series starts
+     with the drivers the league already has. They're added carrying their name, car number,
+     driver profile and linked account. Anyone already on the target roster is **skipped, never
+     duplicated and never an error**, so it's safe to press twice or to top up a half-built roster.
+     Team and class don't carry over: those are per-season records whose ids mean nothing in the
+     new season.
+
+     **You review before anything is written.** Every driver being imported is matched against the
+     drivers already in the app — through every name they answer to, not just the one on the entry
+     being copied — and the review table marks each one *already in the app*, *new to the league*,
+     or *needs checking*. Nothing imports until every "needs checking" row has been answered
+     (there's a **They're all new drivers** button when they genuinely are), and everyone who
+     really is new gets a driver profile created as part of the import — so an imported roster is
+     never full of entries attached to nobody. The result says how it split: how many landed on
+     drivers you already had, and how many profiles were made.
    - **User Accounts** *(admin)* — every account that has signed up: set its **role**, link it to
      the driver profile it races as, rename it, delete it, and approve or deny **pending driver
      requests**. The red badge on the Drivers nav item counts new signups + pending requests.
@@ -683,14 +707,26 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
        If you already worked around this by adding a driver once per class, the roster shows a
        **Combine** button on that row: it folds those entries into one multi-class entry and
        moves every saved result across, each keeping the class it was scored in.
+     - **Nobody is added twice, and you're told when somebody matches.** Whatever you type into
+       **Add Driver** is checked against every driver in the app — and against every name each of
+       them answers to: their profile name, the name they use in each game, their Discord / PSN /
+       Xbox / Steam / iRacing usernames, and any name a merge folded into them. A name that
+       clearly belongs to an existing driver is added *under that driver*, and the toast says so
+       ("Added to Ryan Maynard's profile — they were already in the app"). A name that merely
+       resembles one stops and asks, listing who it might be and why each came up, with **Use
+       &lt;driver&gt;** or **No — create a new driver**. The same question guards the **Driver
+       Pool** form below, and a live note under the name field says who it recognises as you type.
+       See *One driver, however many names* under the data model for the full rules.
      - **Driver Pool** — create driver identities without assigning them to a season or series
        yet, ready to pull into any series (or into a race, mid-entry) later.
      - **Import Roster** — the season-rollover shortcut. Bulk-add every driver in the series, or
-       clone a specific past season's roster, in one write. Drivers already on the season's
-       roster are skipped rather than duplicated (matched by global driver id, then linked
-       account, then name), so it's safe to run twice or to top up a half-built roster. Team and
-       class don't carry over — both are per-season records — so imported drivers land
-       unassigned.
+       copy a specific season's roster (this series' or another series' in the game), in one
+       write. Drivers already on the season's roster are skipped rather than duplicated (matched
+       by global driver id, then linked account, then name), and everyone else is resolved against
+       the global driver pool in a review step you settle before anything is written — so imported
+       drivers always come out attached to the right driver profile, with new ones created for the
+       people who genuinely are new. Team and class don't carry over — both are per-season records
+       — so imported drivers land unassigned.
      - **Car numbers by series** — a driver can run a different number in each series they're
        part of; when editing a driver, set/update their number per series in one place.
      - With **no series selected**, the Roster shows the combined driver list across every
@@ -726,6 +762,19 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
    driver: finishing position, laps led, incidents, DNF/DNS status) and save — standings,
    stats, and every linked player's profile update immediately. Re-open and re-save a race
    any time to correct results; it overwrites cleanly.
+
+   **Adding a driver mid-entry picks from the drivers you already have.** The
+   **＋ Add a driver to this race…** box at the bottom of the grid searches **every name a driver
+   answers to** — their profile name, the name they use in *this* game, their Discord / PSN /
+   Xbox / Steam / iRacing usernames, and any name a merge folded into them — so a name copied off
+   a game's own results sheet finds the right person. Rows found through something other than
+   their profile name say which name matched underneath ("PSN Username: Ryan_Bird_77"), so an
+   unfamiliar-looking match can be placed at a glance. Type, press Enter, next name. **＋ Create
+   new driver** is still there for someone genuinely new — but if the name resembles a driver
+   already in the app it asks first, offering them, rather than quietly making a second profile
+   that splits one person's history in two. The Smart Importer's per-row **＋ Create new
+   driver…** goes through the same question.
+
    **Previous / next round** buttons sit at the top of both the results editor and the public
    results page, so a season can be worked (or read) straight through without going back to the
    Schedule between rounds. They keep you where you are — the editor stays the editor, the viewer
@@ -1116,6 +1165,53 @@ profile *and* the roster entry together. Those two steps are independent on purp
 has been marked complete, or their car number was taken while the request sat in the queue, the
 profile is still created and the admin is told what didn't carry over — a stale detail never costs
 them the whole approval.
+
+### One driver, however many names
+
+The same human racer answers to a pile of different names: the one on their profile, an overall
+display name, a different name in every game they race, a Discord handle, a PSN username, an Xbox
+gamertag, an iRacing name and customer id, and whatever they were called before a merge tidied
+them up. Which of those you happen to type must never decide whether they get a second profile.
+
+`lib/driverMatch.js` holds that rule, once, for every screen and route that can create a driver. It
+gathers every name a driver answers to — `name`, `display_name`, each `game_names[]`, each
+`aliases[].value`, each `merged_names[]` — normalizes away case, spacing, punctuation and accents
+(so `Ryan_Birdman`, `ryan birdman` and `RyanBirdman` are one name), and returns a verdict:
+
+| Verdict | What it means | What happens |
+|---|---|---|
+| `none` | nobody in the pool is close | the driver is created, silently and correctly |
+| `linked` | exactly one driver demonstrably answers to this name — or owns this player account | they're **used**, and the screen says which name gave them away |
+| `ambiguous` | several drivers answer to it | you pick; the app never guesses |
+| `possible` | close but not a match ("Jon" / "John") | you're asked, with the candidates and their reasons |
+
+Two things follow from that, and they're the point of the whole thing:
+
+- **A name from another game finds the right driver.** Typing `Ryanbirdman` off a BeamNG sheet,
+  or a PSN username off a GT7 export, resolves to the driver those names are already on file for
+  rather than making a second one.
+- **Nothing is created behind your back.** Every path that can add a driver — the Driver Roster's
+  **Add Driver** card, the **Driver Pool** form, the race-entry **＋ Add a driver to this race**
+  box, the Smart Importer's **＋ Create new driver…**, and the bulk **Import Roster** — asks first
+  when the name resembles somebody already in the league, and offers to use them instead. The
+  driver-name fields also carry a live note as you type, so you can see the match coming before
+  you press anything.
+
+The thresholds err towards *asking*: a prompt you dismiss costs a click, while a duplicate that
+slips through splits one driver's history across two profiles and needs a merge to undo. Neither
+threshold ever blocks anything — two people with similar names is an ordinary thing in a league,
+and **No — create a new driver** is always right there.
+
+`POST /api/drivers` runs the same check server-side and answers **409** with `code:
+"possible-duplicate"` and the candidates unless the body carries `confirm_duplicate: true`. That's
+the backstop: a screen that forgot to ask, a stale browser tab, or anything posting straight at
+the API still can't create a silent duplicate — and because the API reads the pool as it stands
+rather than a copy a page loaded ten minutes ago, it also catches the driver another admin added
+in the meantime. `POST /api/claim-requests` uses the same rules to tell a player asking for a new
+profile that the league already has them, so they claim it instead of splitting their own history.
+
+The matcher is pure and covered by `lib/__tests__/driverMatch.test.mjs`; the screens that raise the
+prompt are render-tested in `lib/__tests__/driverDedupeFlow.test.jsx`.
 
 ### The sign-up requirement chain
 

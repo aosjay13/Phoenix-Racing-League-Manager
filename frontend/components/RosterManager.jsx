@@ -11,7 +11,9 @@ import { Modal } from "@/components/Modal";
 import { RosterImportModal } from "@/components/RosterImportModal";
 import { PendingSignups } from "@/components/PendingSignups";
 import { RosterAdditions, RosterPendingElsewhere } from "@/components/RosterAdditions";
-import { ensureDriverId } from "@/lib/driverPool";
+import { DriverMatchNote, DuplicateDriverPrompt } from "@/components/DuplicateDriverPrompt";
+import { createDriverProfile, duplicateReportFromError, ensureDriverId, isDuplicateDriverError } from "@/lib/driverPool";
+import { duplicateReport } from "@/lib/driverMatch";
 import { rosterAdditionsChanged, useRosterAdditions } from "@/lib/rosterAlerts";
 import { entryClassIds } from "@/lib/classFilter";
 import { api } from "@/lib/api";
@@ -120,6 +122,11 @@ export function RosterManager() {
 
   const [addForm, setAddForm] = useState({ name: "", number: "", team_id: "", user_id: "", class_ids: [] });
   const [pullKey, setPullKey] = useState("");        // "row:<key>" / "pool:<id>" chosen via "Link To Existing Driver"
+  const [games, setGames] = useState({});            // game_id -> name, to explain an in-game name match
+  // The "is this someone you already have?" question, while it's being asked.
+  // { name, report, onUse, onCreate } — the two callbacks are what the answer
+  // does, so one dialog serves both the Add Driver form and the driver pool.
+  const [dupe, setDupe] = useState(null);
 
   const [teamForm, setTeamForm] = useState({ name: "", color: "", logo_url: "" });
   const [editTeamId, setEditTeamId] = useState(null);
@@ -137,6 +144,10 @@ export function RosterManager() {
     setUsers(u);
     const pool = await api("/api/drivers");
     setDriverPool(pool);
+    // Only so a duplicate found through a per-game name can be explained as
+    // "their BeamNG name" rather than the vaguer "in-game name".
+    const gameList = await api("/api/games").catch(() => []);
+    setGames(Object.fromEntries((gameList || []).map(g => [g.id, g.name])));
     if (gameId) {
       const g = await api(`/api/roster?scope=game&game_id=${gameId}`);
       setGameRoster(g.rows);
@@ -198,8 +209,18 @@ export function RosterManager() {
       // series/season (see lib/driverSync), so Standings, race results, the
       // results editor and Stats all show the current name — no more divergence
       // after a rename.
+      //
+      // Resolving the identity of a row that is ALREADY on this roster never
+      // stops to ask: the person exists either way, and the only question is
+      // which profile carries them. It now reaches every name a driver answers
+      // to, so a legacy row named after somebody's PSN username attaches to
+      // that driver instead of minting a second one; a name nobody answers to
+      // still gets a profile of its own, exactly as before. Genuine mix-ups are
+      // what this screen's Link and Merge buttons are for.
       const driverId = row.driver_id
-        || (await ensureDriverId({ name: rowForm.name, user_id: rowForm.user_id }));
+        || (await ensureDriverId({
+          name: rowForm.name, user_id: rowForm.user_id, pool: driverPool, games, confirmDuplicate: true,
+        }));
       if (driverId && rowForm.name?.trim()) {
         await api(`/api/drivers/${driverId}`, { method: "PATCH", body: { name: rowForm.name.trim() } });
         // Backfill the link on entries that predate driver_id, so the entry
@@ -227,11 +248,14 @@ export function RosterManager() {
     if (!target) return;
     setMergeBusy(true);
     try {
+      // Both sides are drivers the admin has already picked out by hand, and
+      // this is the tool for FIXING duplicates — so it never stops to ask
+      // about one.
       const [fromId, intoId] = await Promise.all([
-        ensureDriverId({ driverId: mergeFrom.driver_id, name: mergeFrom.name, user_id: mergeFrom.user_id }),
+        ensureDriverId({ driverId: mergeFrom.driver_id, name: mergeFrom.name, user_id: mergeFrom.user_id, pool: driverPool, games, confirmDuplicate: true }),
         target.driver_id
           ? Promise.resolve(target.driver_id)
-          : ensureDriverId({ name: target.name, user_id: target.user_id }),
+          : ensureDriverId({ name: target.name, user_id: target.user_id, pool: driverPool, games, confirmDuplicate: true }),
       ]);
       if (fromId === intoId) throw new Error("Those two are already the same driver.");
       const res = await api("/api/admin/drivers/merge", { method: "POST", body: { from_id: fromId, into_id: intoId } });
@@ -370,7 +394,11 @@ export function RosterManager() {
     try {
       const targetSeasonId = await latestSeasonIdFor(sid);
       if (!targetSeasonId) { showToast("error", "That series has no season to add drivers to yet."); return; }
-      const driverId = await ensureDriverId({ driverId: row.driver_id, name: row.name, user_id: row.user_id });
+      // Same person, another series — the row already exists, so this resolves
+      // their identity rather than deciding whether they're new.
+      const driverId = await ensureDriverId({
+        driverId: row.driver_id, name: row.name, user_id: row.user_id, pool: driverPool, games, confirmDuplicate: true,
+      });
       await api("/api/entries", {
         method: "POST",
         body: { name, user_id: row.user_id ?? "", team_id: "", number, season_id: targetSeasonId, driver_id: driverId },
@@ -429,12 +457,27 @@ export function RosterManager() {
     setAddForm({ name: "", number: "", team_id: "", user_id: "", class_ids: [] });
   }
 
-  async function addDriver(e) {
-    e.preventDefault();
+  // Add someone to this season's roster.
+  //
+  // Every name typed here is checked against the whole driver pool first — and
+  // against every name each driver answers to, not just the one on their
+  // profile, so "Ryanbirdman" off a BeamNG sheet finds Ryan Maynard. A name
+  // that clearly belongs to an existing driver is simply used (that's a link,
+  // not a duplicate); a name that merely resembles one stops and asks. Only a
+  // name nobody in the league answers to creates a new driver, which is the
+  // rule this screen was missing.
+  //
+  // `driverId` is passed on the second trip through, once the admin has picked
+  // which existing driver they meant.
+  async function addDriver(e, { driverId: chosenId = null, confirmDuplicate = false } = {}) {
+    e?.preventDefault?.();
     if (!editSeasonId) return;
     try {
       const pulled = pullKey ? resolvePullCandidate(pullKey) : null;
-      const driverId = await ensureDriverId({ driverId: pulled?.driver_id, name: addForm.name, user_id: addForm.user_id });
+      const driverId = await ensureDriverId({
+        driverId: chosenId || pulled?.driver_id, name: addForm.name, user_id: addForm.user_id,
+        pool: driverPool, games, confirmDuplicate,
+      });
       const classIds = addForm.class_ids || [];
       const body = { name: addForm.name, team_id: addForm.team_id, user_id: addForm.user_id, driver_id: driverId, class_ids: classIds };
       if (addForm.number !== "") body.number = addForm.number;
@@ -462,11 +505,51 @@ export function RosterManager() {
           : `${existing.name} is already on this roster; their entry was updated.`);
       } else {
         await api("/api/entries", { method: "POST", body: { ...body, season_id: editSeasonId } });
-        showToast("success", "Driver added to roster.");
+        // When the name resolved to somebody the app already had, say so. A
+        // silent link is as unexplained as a silent duplicate, and this is the
+        // moment to mention that "Ryanbirdman" landed on Ryan Maynard.
+        const landedOn = !chosenId && !pulled ? driverPool.find(d => d.id === driverId) : null;
+        showToast("success", landedOn
+          ? `Added to ${landedOn.name}’s profile — they were already in the app.`
+          : "Driver added to roster.");
       }
       resetAddForm();
+      setDupe(null);
       await load();
-    } catch (err) { showToast("error", err.message); }
+    } catch (err) {
+      // A name that merely resembles an existing driver: ask which, rather
+      // than creating a second profile behind the admin's back.
+      if (isDuplicateDriverError(err)) {
+        setDupe({
+          name: addForm.name,
+          report: duplicateReportFromError(err),
+          onUse: m => addDriver(null, { driverId: m.driver_id, confirmDuplicate: true }),
+          onCreate: () => addDriver(null, { confirmDuplicate: true }),
+        });
+      } else showToast("error", err.message);
+    }
+  }
+
+  // The Add Driver form's submit: put the question up BEFORE anything is
+  // written, so the dialog can name the driver instead of arriving halfway
+  // through a create. Picking someone from "Link To Existing Driver" has
+  // already answered it.
+  function submitAddDriver(e) {
+    e.preventDefault();
+    const name = String(addForm.name ?? "").trim();
+    if (!pullKey && name) {
+      const report = duplicateReport(driverPool, { name, user_id: addForm.user_id }, { games });
+      if (report.status !== "none" && report.status !== "linked") {
+        setDupe({
+          name,
+          report,
+          onUse: m => addDriver(null, { driverId: m.driver_id, confirmDuplicate: true }),
+          onCreate: () => addDriver(null, { confirmDuplicate: true }),
+        });
+        return;
+      }
+    }
+    addDriver(e, { confirmDuplicate: true });
   }
 
   async function saveTeam(e) {
@@ -507,14 +590,48 @@ export function RosterManager() {
   // Standalone driver creation: adds an identity to the global pool without
   // touching any season/series — it's just sitting there ready to be pulled
   // into an event later (here, or from the race-entry autocomplete).
-  async function createPoolDriver(e) {
-    e.preventDefault();
+  //
+  // This is the one form in the app whose entire job is making a NEW driver, so
+  // it's also the one where a duplicate is easiest to make: nothing about it
+  // has any idea whether the league already has this person. It asks first now,
+  // and the API refuses a create that hasn't (see app/api/drivers).
+  async function createPoolDriver(e, { confirmDuplicate = false } = {}) {
+    e?.preventDefault?.();
+    const name = String(poolForm.name ?? "").trim();
+    if (!confirmDuplicate && name) {
+      const report = duplicateReport(driverPool, { name, user_id: poolForm.user_id }, { games });
+      if (report.status !== "none") {
+        setDupe({
+          name,
+          report,
+          // "Use this driver" here means "you already have them" — there's
+          // nothing to create, so it just says so and clears the form.
+          onUse: m => {
+            setDupe(null);
+            setPoolForm({ name: "", user_id: "" });
+            showToast("success", `${m.name} is already in the driver pool — nothing to add.`);
+          },
+          onCreate: () => createPoolDriver(null, { confirmDuplicate: true }),
+        });
+        return;
+      }
+    }
     try {
-      await api("/api/drivers", { method: "POST", body: poolForm });
+      await createDriverProfile({ name: poolForm.name, user_id: poolForm.user_id });
       showToast("success", "Driver added to the global pool.");
       setPoolForm({ name: "", user_id: "" });
+      setDupe(null);
       await load();
-    } catch (err) { showToast("error", err.message); }
+    } catch (err) {
+      if (isDuplicateDriverError(err)) {
+        setDupe({
+          name,
+          report: duplicateReportFromError(err),
+          onUse: m => { setDupe(null); setPoolForm({ name: "", user_id: "" }); showToast("success", `${m.name} is already in the driver pool — nothing to add.`); },
+          onCreate: () => createPoolDriver(null, { confirmDuplicate: true }),
+        });
+      } else showToast("error", err.message);
+    }
   }
 
   async function deletePoolDriver(id, name) {
@@ -563,12 +680,20 @@ export function RosterManager() {
   const showClass = classes.length > 0;
   const colSpan = (showNumber ? 1 : 0) + (showClass ? 1 : 0) + 3 + (showActions ? 1 : 0);
 
-  // Result of the most recent bulk import — feeds the success toast.
+  // Result of the most recent bulk import — feeds the success toast. It says
+  // how many landed on drivers the app already had and how many needed a
+  // profile of their own, because that split is the whole question a roster
+  // import used to answer silently and wrongly.
   function handleImported(res) {
     setImporting(false);
     const skipped = res.skipped ? ` ${res.skipped} already on the roster ${res.skipped === 1 ? "was" : "were"} skipped.` : "";
-    if (res.imported === 0) showToast("success", `No new drivers to import.${skipped}`);
-    else showToast("success", `Successfully imported ${res.imported} driver${res.imported === 1 ? "" : "s"}.${skipped}`);
+    if (res.imported === 0) { showToast("success", `No new drivers to import.${skipped}`); }
+    else {
+      const made = res.created_drivers
+        ? ` ${res.created_drivers} new driver profile${res.created_drivers === 1 ? "" : "s"} created; ${res.linked} matched to drivers you already had.`
+        : "";
+      showToast("success", `Successfully imported ${res.imported} driver${res.imported === 1 ? "" : "s"}.${made}${skipped}`);
+    }
     load().catch(err => showToast("error", err.message));
   }
 
@@ -699,7 +824,7 @@ export function RosterManager() {
                 </p>
               </div>
             )}
-            <form onSubmit={addDriver}>
+            <form onSubmit={submitAddDriver}>
               <DriverForm
                 value={addForm}
                 onChange={setAddForm}
@@ -708,6 +833,12 @@ export function RosterManager() {
                 classes={classes}
                 numberLabel={`Car Number · ${series?.name ?? "this series"}`}
               />
+              {/* Says who this name already belongs to, as it's typed — every
+                  name they answer to counts, so a driver's in-game or platform
+                  name is recognised before the button is pressed. */}
+              {!pullKey && (
+                <DriverMatchNote pool={driverPool} games={games} name={addForm.name} user_id={addForm.user_id} />
+              )}
               <button className="btn btn-primary" type="submit">Add Driver</button>
               {(pullKey || addForm.name) && (
                 <button className="btn btn-ghost" type="button" style={{ marginLeft: 8 }} onClick={resetAddForm}>Clear</button>
@@ -961,6 +1092,9 @@ export function RosterManager() {
               </div>
               <button className="btn btn-primary" type="submit" style={{ marginTop: 0 }}>+ Create Driver</button>
             </form>
+            <div style={{ marginTop: 8 }}>
+              <DriverMatchNote pool={driverPool} games={games} name={poolForm.name} user_id={poolForm.user_id} />
+            </div>
 
             {driverPool.length > 0 && (
               <div style={{ marginTop: 16 }}>
@@ -999,10 +1133,25 @@ export function RosterManager() {
         <RosterImportModal
           seasonId={editSeasonId}
           seriesId={seriesId}
+          seriesList={seriesList}
           seasonName={league.seasons.find(s => s.id === editSeasonId)?.name ?? "this season"}
           seriesName={series?.name}
           onClose={() => setImporting(false)}
           onImported={handleImported}
+        />
+      )}
+
+      {/* "Is this someone you already have?" — raised by the Add Driver form
+          and by the Driver Pool's create form, before either writes anything.
+          The two answers it can take are supplied by whichever asked. */}
+      {dupe && (
+        <DuplicateDriverPrompt
+          typedName={dupe.name}
+          status={dupe.report.status}
+          matches={dupe.report.matches}
+          onUse={dupe.onUse}
+          onCreateAnyway={dupe.onCreate}
+          onCancel={() => setDupe(null)}
         />
       )}
 

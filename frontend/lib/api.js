@@ -19,9 +19,18 @@ export async function api(path, { method = "GET", body } = {}) {
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
-    let msg = `Request failed (${res.status})`;
-    try { msg = (await res.json()).error || msg; } catch {}
-    throw new Error(msg);
+    // The whole error body travels with the Error, not just its message: a
+    // refusal can be something the caller has to ACT on rather than merely
+    // print. A 409 from POST /api/drivers, for instance, carries the drivers
+    // the new one looked like, and the screen turns them into a "did you mean
+    // one of these?" prompt (see lib/driverPool.js). `err.message` is unchanged
+    // for every caller that only ever showed the text.
+    let payload = null;
+    try { payload = await res.json(); } catch {}
+    const err = new Error(payload?.error || `Request failed (${res.status})`);
+    err.status = res.status;
+    err.data = payload || {};
+    throw err;
   }
   return res.json();
 }
