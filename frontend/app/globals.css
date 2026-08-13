@@ -2709,6 +2709,55 @@ input[type="radio"]:disabled:checked {
    race's own date — a US evening race is the next morning in Europe. */
 .calendar-event-time-day { font-style: normal; opacity: 0.75; }
 
+/* Subscribing the calendar into Google / Apple / Outlook. */
+.calendar-subscribe { margin-top: 10px; }
+
+.calendar-subscribe-btn { margin-top: 0; font-size: 0.82rem; }
+
+.calendar-subscribe-panel {
+  margin-top: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--card);
+  max-width: 640px;
+}
+
+.calendar-subscribe-panel p {
+  margin: 0 0 10px;
+  font-size: 0.82rem;
+  color: var(--ink-1);
+}
+
+.calendar-subscribe-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.calendar-subscribe-row input {
+  flex: 1;
+  min-width: 0;
+  font-family: monospace;
+  font-size: 0.76rem;
+}
+
+.calendar-subscribe-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 10px;
+  font-size: 0.82rem;
+}
+
+.calendar-subscribe-links a { color: var(--accent-cyan); }
+
+.calendar-subscribe-help {
+  margin: 10px 0 0 !important;
+  font-size: 0.76rem !important;
+  color: var(--ink-2) !important;
+}
+
 /* Whose clock the times above are quoting. */
 .calendar-tz-note {
   margin: 10px 0 0;

@@ -280,6 +280,13 @@ The app runs at `http://localhost:3000`.
    Underneath, this is a display of the race's date, not a change to it: the date is still the plain
    calendar date it always was, and the results screens, the standings and every other reader are
    untouched. An event with the toggle off looks exactly as it did before.
+
+   **Subscribe it into your own calendar.** The **📆 Subscribe** button hands over a feed URL for
+   whatever scope is on screen, with one-click links for Google Calendar and for Apple Calendar /
+   Outlook. Subscribe once and it keeps itself in sync — new rounds, moved dates and session times
+   all follow, with each session arriving as its own appointment at the right time for wherever the
+   subscriber is. Races without published times arrive as all-day entries. See the `.ics` feed
+   under Project Layout for the details.
 7. **Standings** — driver and team championship tables for the selected season, with
    points, gaps to the leader, and per-category stats. Click any column header to sort. Level
    on points? The tie-breaker chain below decides, and every step of it is a column in the
@@ -768,6 +775,48 @@ honest across it: the query rule above ignores the stale series, and the fetch c
 guard**, so an earlier narrow response that lands late can't overwrite the wide one. The page
 heading, the filter hint and the empty state all derive from the same `gameId` check, so none of
 them can claim a scope the grid isn't showing.
+
+### Subscribing the calendar (the .ics feed)
+
+`GET /api/calendar.ics` serves the league's racing as an iCalendar feed — the **📆 Subscribe**
+button on the Calendar page hands over the URL, with one-click links for Google Calendar and for
+Apple Calendar / Outlook (`webcal:`). It is a *subscription*, not an export: new rounds, moved
+dates and newly published session times all reach every subscriber on their client's next refresh,
+with nothing to re-download.
+
+```
+/api/calendar.ics                     every game in the league
+/api/calendar.ics?game_id=…           one game
+/api/calendar.ics?series_id=…         one series
+/api/calendar.ics?season_id=…         one season
+…&league_id=…                         which league
+```
+
+The scope comes from `calendarFeedPath()` in `lib/calendar.js`, which is built on
+`calendarScopeQuery()` — so the feed you copy is exactly the calendar you were looking at. The
+league rides in the URL rather than the usual `X-League-Id` header for the reason the route is
+public in the first place: **a calendar client can't send headers or sign in**, so a feed that
+required either could not be subscribed to at all. It exposes only what the public Calendar and
+Schedule pages already show any visitor — event names, tracks, dates, and the session times an
+admin chose to publish. No results, no drivers, no accounts, no write path.
+
+How a race becomes calendar entries (`lib/icsFeed.js`, covered by `lib/__tests__/icsFeed.test.mjs`):
+
+- **Session times published** → one timed entry *per session*: Practice, Qualifying and Race each
+  arrive as their own appointment, so a driver can set a reminder on qualifying alone. Each is
+  written as a **UTC instant** computed from the race's own zone and its own date, which is what
+  lets every subscriber's client render it in their own timezone with no `VTIMEZONE` block to keep
+  in step with the world's tzdata. Practice and qualifying block out 30 minutes, a race an hour —
+  or its real length when the event runs to the clock.
+- **No published times** → one **all-day** entry on the date the admin picked, which is exactly
+  what a bare `YYYY-MM-DD` race date means. A race whose timezone was never saved falls back to
+  this rather than publishing a start that might be hours out.
+- **No date at all** → nothing. There is no day to put it on; it stays on the Calendar page under
+  "Date to be announced".
+
+Every entry carries a **stable UID** (`<session>-<race id>@phoenix-racing-league-manager`). That is
+the whole difference between a subscription that updates a moved race in place and one that leaves
+last week's copy behind next to it.
 
 ## Data model (Firestore collections)
 

@@ -37,6 +37,21 @@ export function calendarScopeQuery({ gameId = "", seriesId = "" } = {}) {
   return series ? `series_id=${encodeURIComponent(series)}` : `game_id=${encodeURIComponent(game)}`;
 }
 
+// The subscribable feed (/api/calendar.ics) for what's currently on screen.
+//
+// Built from calendarScopeQuery so the feed and the grid can never disagree:
+// subscribe while looking at one series and you get that series, subscribe at
+// "All Games" and you get the league. The league travels as `league_id` because
+// a calendar client can't send the X-League-Id header the app's own fetches use
+// — a URL is the only thing a subscriber can hand to Google Calendar.
+export function calendarFeedPath({ gameId = "", seriesId = "", leagueId = "" } = {}) {
+  const parts = [
+    calendarScopeQuery({ gameId, seriesId }),
+    leagueId ? `league_id=${encodeURIComponent(leagueId)}` : "",
+  ].filter(Boolean);
+  return `/api/calendar.ics${parts.length ? `?${parts.join("&")}` : ""}`;
+}
+
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",

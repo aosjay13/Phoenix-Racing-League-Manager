@@ -6,10 +6,11 @@ import { useLeague } from "@/components/LeagueProvider";
 import { api } from "@/lib/api";
 import { todayDateString } from "@/lib/raceDate";
 import {
-  WEEKDAYS, buildMonthGrid, calendarScopeQuery, eventPillLabel, eventTitle,
-  groupRacesByDate, initialMonth, monthLabel, monthsWithRaces, seriesAbbrev,
-  shiftMonth,
+  WEEKDAYS, buildMonthGrid, calendarFeedPath, calendarScopeQuery, eventPillLabel,
+  eventTitle, groupRacesByDate, initialMonth, monthLabel, monthsWithRaces,
+  seriesAbbrev, shiftMonth,
 } from "@/lib/calendar";
+import { getActiveLeagueId } from "@/lib/leagueClient";
 import { hasSessionTimes, localZoneLabel, raceSessionTimes, sessionTimeLine } from "@/lib/raceTimes";
 
 // The league's whole year on one screen: every event in the league, past and
@@ -98,6 +99,8 @@ export default function CalendarPage() {
 
       <CalendarFilters />
 
+      <SubscribeFeed gameId={gameId} seriesId={seriesId} scopeLabel={scopeLabel} />
+
       <div className="calendar-toolbar">
         <div className="calendar-nav">
           <button className="icon-btn" title="Previous month" aria-label="Previous month"
@@ -181,6 +184,82 @@ function CalendarFilters() {
           ? "Set Game back to “All Games” for every game in the league."
           : "Showing every game in the league. Pick a game to narrow it."}
       </span>
+    </div>
+  );
+}
+
+// Subscribing this calendar into a real one — Google, Apple, Outlook.
+//
+// The feed (/api/calendar.ics) is a live URL, not a download: whoever subscribes
+// keeps getting new rounds, moved dates and published session times without ever
+// coming back here. It covers whatever scope is on screen, because the URL is
+// built from the same rule the grid's fetch is (see calendarFeedPath).
+//
+// The address is only knowable in the browser — it depends on where this
+// deployment is served from and on which league is active — so it's assembled
+// after mount rather than rendered on the server.
+function SubscribeFeed({ gameId, seriesId, scopeLabel }) {
+  const [open, setOpen] = useState(false);
+  const [url, setUrl] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    const path = calendarFeedPath({ gameId, seriesId, leagueId: getActiveLeagueId() });
+    setUrl(`${window.location.origin}${path}`);
+    setCopied(false);
+  }, [gameId, seriesId]);
+
+  // webcal:// is the same URL under the scheme calendar apps register for, so
+  // one click hands it to the desktop client instead of showing a wall of text
+  // in a browser tab. Google's "add by URL" screen takes it as a parameter.
+  const webcal = url.replace(/^https?:/, "webcal:");
+  const googleUrl = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcal)}`;
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch {
+      // Clipboard blocked (insecure context, or the browser said no) — the
+      // field is selectable, which is the fallback that always works.
+      document.getElementById("calendar_feed_url")?.select();
+    }
+  }
+
+  return (
+    <div className="calendar-subscribe">
+      <button type="button" className="btn btn-ghost calendar-subscribe-btn"
+        aria-expanded={open}
+        title="Subscribe to this calendar in Google Calendar, Apple Calendar or Outlook"
+        onClick={() => setOpen(o => !o)}>
+        📆 Subscribe{open ? " ▾" : " ▸"}
+      </button>
+      {open && (
+        <div className="calendar-subscribe-panel">
+          <p>
+            Add <strong>{scopeLabel}</strong> to your own calendar. It stays in sync on its own —
+            new rounds, changed dates and session times all follow, and every session lands at the
+            right time for wherever you are.
+          </p>
+          <div className="calendar-subscribe-row">
+            <input id="calendar_feed_url" readOnly value={url}
+              onFocus={e => e.target.select()} aria-label="Calendar feed address" />
+            <button type="button" className="btn btn-primary" style={{ marginTop: 0 }} onClick={copy}>
+              {copied ? "Copied ✓" : "Copy"}
+            </button>
+          </div>
+          <div className="calendar-subscribe-links">
+            <a href={googleUrl} target="_blank" rel="noopener noreferrer">Add to Google Calendar →</a>
+            <a href={webcal}>Open in Apple Calendar / Outlook →</a>
+          </div>
+          <p className="calendar-subscribe-help">
+            In Google Calendar you can also paste the address by hand:{" "}
+            <strong>Other calendars ＋ → From URL</strong>. Google refreshes subscribed calendars on
+            its own schedule, so a brand-new race can take a few hours to appear there.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

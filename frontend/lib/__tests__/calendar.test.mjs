@@ -9,9 +9,9 @@
 // from local date fields and every cell carries its own date string.
 import assert from "node:assert";
 import {
-  buildMonthGrid, calendarScopeQuery, eventPillLabel, eventTitle,
-  groupRacesByDate, initialMonth, isoOf, monthLabel, monthOf, monthsWithRaces,
-  seriesAbbrev, shiftMonth,
+  buildMonthGrid, calendarFeedPath, calendarScopeQuery, eventPillLabel,
+  eventTitle, groupRacesByDate, initialMonth, isoOf, monthLabel, monthOf,
+  monthsWithRaces, seriesAbbrev, shiftMonth,
 } from "../calendar.js";
 
 let n = 0;
@@ -131,5 +131,23 @@ check("no game, series not cleared yet", calendarScopeQuery({ gameId: "", series
 check("a game narrows to that game", calendarScopeQuery({ gameId: "g1", seriesId: "" }), "game_id=g1");
 check("a game + series narrows to the series", calendarScopeQuery({ gameId: "g1", seriesId: "s1" }), "series_id=s1");
 check("ids are encoded", calendarScopeQuery({ gameId: "g 1&x" }), "game_id=g%201%26x");
+
+// ── 9. The subscribable feed covers exactly what the grid shows ─────────
+// Same rule, same narrowing — a feed that disagreed with the screen it was
+// copied from would quietly hand somebody a different league's calendar.
+check("the whole league", calendarFeedPath({}), "/api/calendar.ics");
+check("a game", calendarFeedPath({ gameId: "g1" }), "/api/calendar.ics?game_id=g1");
+check("a series", calendarFeedPath({ gameId: "g1", seriesId: "s1" }), "/api/calendar.ics?series_id=s1");
+check("no game means no narrowing here either",
+  calendarFeedPath({ gameId: "", seriesId: "s1" }), "/api/calendar.ics");
+// A calendar client can't send the X-League-Id header, so the league has to
+// ride in the URL or the feed resolves against the wrong league's data.
+check("the league travels in the URL",
+  calendarFeedPath({ leagueId: "l1" }), "/api/calendar.ics?league_id=l1");
+check("scope and league together",
+  calendarFeedPath({ gameId: "g1", seriesId: "s1", leagueId: "l1" }),
+  "/api/calendar.ics?series_id=s1&league_id=l1");
+check("ids are encoded here too",
+  calendarFeedPath({ leagueId: "l 1&x" }), "/api/calendar.ics?league_id=l%201%26x");
 
 console.log(`all ${n} checks passed — every event lands on the day it was scheduled for`);
