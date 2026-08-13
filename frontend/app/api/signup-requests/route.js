@@ -11,7 +11,9 @@ import {
   pendingForSeason, requestKind,
 } from "@/lib/signupQueue";
 import { linkedDriver, seasonContext, seasonEntries } from "@/lib/carSelectionServer";
-import { missingAliasMessage, missingRequiredAliases } from "@/lib/signupRequest";
+import {
+  missingAliasMessage, missingRequiredAliases, userAccountUpdatesFromSignup,
+} from "@/lib/signupRequest";
 import { mergeAliases, normalizeAliases } from "@/lib/aliases";
 
 export const dynamic = "force-dynamic";
@@ -312,5 +314,27 @@ export const POST = withUser(async (request, ctx, user) => {
     }
   }
 
-  return NextResponse.json({ id: ref.id, ...doc }, { status: 201 });
+  // And onto their own ACCOUNT, for the two fields it owns that a sign-up
+  // answers: the display name and the car number. Only ever fills in what the
+  // account hasn't got — a name or number the player set on their Profile is
+  // never overwritten (see userAccountUpdatesFromSignup). This runs for a
+  // brand-new player too, who has an account from the moment they signed in
+  // even though their driver profile is still waiting on an admin, so their
+  // Profile stops saying "jane.doe" the moment they tell us their racing name.
+  //
+  // Never fail a sign-up over it: the request is filed either way.
+  const accountUpdates = userAccountUpdatesFromSignup({
+    profile: { ...u, email: u.email || user.email },
+    name: doc.name,
+    number,
+  });
+  if (Object.keys(accountUpdates).length) {
+    try {
+      await db().collection("users").doc(user.uid).set(accountUpdates, { merge: true });
+    } catch (err) {
+      console.error("Sign-up account sync failed", err);
+    }
+  }
+
+  return NextResponse.json({ id: ref.id, ...doc, account_updates: accountUpdates }, { status: 201 });
 });

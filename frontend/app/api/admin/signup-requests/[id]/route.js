@@ -5,6 +5,7 @@ import { normalizeClassIds } from "@/lib/classFilter";
 import { carNumberTaken, seasonAcceptsSignups } from "@/lib/carSelection";
 import { APPROVED, DENIED, NUMBER_CHANGE_KIND, PENDING, isNumberChange } from "@/lib/signupQueue";
 import { mergeAliases, normalizeAliases } from "@/lib/aliases";
+import { userAccountUpdatesFromSignup } from "@/lib/signupRequest";
 
 // Admin-only: let a pending sign-up onto the roster, or turn it down.
 //
@@ -196,6 +197,25 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
   const entryRef = await db().collection("entries").add(entryDoc);
 
   await reqRef.update({ status: APPROVED, ...stamp, entry_id: entryRef.id, driver_id: driverId });
+
+  // Bring the player's own account up to date with what they told us, exactly
+  // as the submission does. Filing the sign-up normally does this already; this
+  // covers a request filed before that existed, and an account that had no
+  // display name to improve at the time. Timid by the same rule — a name or
+  // number the player has since set themselves is left alone — and never fails
+  // an approval, which has already done the work that matters.
+  try {
+    const accountRef = db().collection("users").doc(req.uid);
+    const accountDoc = await accountRef.get();
+    const updates = userAccountUpdatesFromSignup({
+      profile: accountDoc.exists ? accountDoc.data() : {},
+      name: entryDoc.name,
+      number,
+    });
+    if (accountDoc.exists && Object.keys(updates).length) await accountRef.update(updates);
+  } catch (err) {
+    console.error("Approval account sync failed", err);
+  }
 
   return NextResponse.json({
     ok: true, id, status: APPROVED,

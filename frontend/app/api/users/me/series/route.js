@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { db } from "@/lib/firebase";
 import { getRequestLeagueId, withUser } from "@/lib/serverAuth";
 import { normalizeClassIds } from "@/lib/classFilter";
 import {
@@ -7,10 +8,12 @@ import {
 } from "@/lib/carSelection";
 import {
   entriesForDriver, leagueSeasonIndex, linkedDriver, newestFirst, pendingClaim,
-  pendingForSeasons, rostersForSeasons,
+  pendingForSeasons, pendingRequestsForUser, rostersForSeasons,
 } from "@/lib/carSelectionServer";
 import { pendingForSeason } from "@/lib/signupQueue";
-import { gameRequirementFlags } from "@/lib/signupRequest";
+import {
+  gameRequirementFlags, knownAliasesFor, knownRacingName,
+} from "@/lib/signupRequest";
 
 export const dynamic = "force-dynamic";
 
@@ -199,12 +202,33 @@ export const GET = withUser(async (request, ctx, user) => {
   const closed_signups = seasons.filter(s =>
     seasonIsCompleted(s) && !enteredSeasonIds.has(s.id) && listable(s)).length;
 
+  // Every platform username this ACCOUNT has already given, whether or not a
+  // driver profile exists to hold them yet. A first-time player's answers live
+  // on their pending sign-up until an admin approves it and the profile is
+  // created; without this they'd be asked for the same Discord name and iRacing
+  // ID again on their second sign-up, minutes after typing them. See
+  // knownAliasesFor in lib/signupRequest.js.
+  const myRequests = [...(await pendingRequestsForUser(user.uid)), ...(pending ? [pending] : [])];
+  const known_aliases = knownAliasesFor({ driver, requests: myRequests });
+  // The same for the name at the top of the form. Their account is the last
+  // resort — and only when its display name is one they chose, never the
+  // placeholder sign-in made up from their email address.
+  const accountDoc = await db().collection("users").doc(user.uid).get();
+  const known_name = knownRacingName({
+    driver, requests: myRequests,
+    profile: accountDoc.exists ? { ...accountDoc.data(), email: accountDoc.data().email || user.email } : null,
+  });
+
   return NextResponse.json({
     // `aliases` seeds the sign-up dialog's Aliases / Connected Accounts editor
     // from what this driver already has, so they confirm rather than retype.
     driver: driver
       ? { id: driver.id, name: driver.name || "Driver", aliases: driver.aliases || [] }
       : null,
+    // The same thing for somebody who hasn't got a profile yet — the form seeds
+    // from this, so it fills itself in for a brand-new player too.
+    known_aliases,
+    known_name,
     pending_claim: pending ? { id: pending.id, driver_id: pending.driver_id, driver_name: pending.driver_name } : null,
     my_seasons,
     open_signups,

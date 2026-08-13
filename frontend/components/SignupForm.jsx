@@ -54,13 +54,20 @@ const GAME_SCOPED_LABELS = new Set([IRACING_NAME_LABEL.toLowerCase(), IRACING_ID
 //
 // Used inline under the season selector on /series-info, and inside a dialog
 // from a season's own screen — one component, so the two can't drift.
-export function SignupForm({ season, driver, onDone, onCancel }) {
+// `knownAliases` is everything this ACCOUNT has already told the league it goes
+// by — the driver profile's rows when there is one, and otherwise whatever they
+// gave on a sign-up that's still waiting on an admin. It's separate from
+// `driver` because a first-time player has the second and not the first, and
+// asking them for their Discord name twice in one sitting because no admin has
+// been to the queue yet is exactly the retyping this is here to prevent.
+export function SignupForm({ season, driver, knownAliases, knownName, onDone, onCancel }) {
   const isNewDriver = !driver?.id;
-  const [name, setName] = useState(driver?.name || "");
+  const saved = knownAliases?.length ? knownAliases : driver?.aliases;
+  const [name, setName] = useState(driver?.name || knownName || "");
   const [classId, setClassId] = useState("");
   const [number, setNumber] = useState("");
   const [car, setCar] = useState("");
-  const [aliases, setAliases] = useState(() => withDefaults(driver?.aliases));
+  const [aliases, setAliases] = useState(() => withDefaults(saved));
   const [games, setGames] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -99,10 +106,13 @@ export function SignupForm({ season, driver, onDone, onCancel }) {
   // inputs come pre-filled and say so, rather than asking for something the
   // league already knows.
   const fromProfile = useMemo(() => {
-    const saved = withDefaults(driver?.aliases);
-    return new Set(saved.filter(a => a.value).map(a => a.label.toLowerCase()));
+    const rows = withDefaults(saved);
+    return new Set(rows.filter(a => a.value).map(a => a.label.toLowerCase()));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // Where those answers came from, so the tick beside a pre-filled box tells
+  // the truth for a player who hasn't got a profile yet.
+  const savedFrom = driver?.id ? "your profile" : "your last sign-up";
 
   // A car that isn't on the newly-picked class's list can't stay selected.
   useEffect(() => {
@@ -358,8 +368,8 @@ export function SignupForm({ season, driver, onDone, onCancel }) {
         <div className="signup-required-fields">
           <label style={{ display: "block" }}>Contact &amp; Platform Details</label>
           <p style={{ margin: "0 0 10px", fontSize: "0.78rem", color: "var(--ink-2)" }}>
-            Required to race in {season.game_name || "this game"}. We save these to your driver
-            profile, so you only ever type them once.
+            Required to race in {season.game_name || "this game"}. We save these to your profile,
+            so you only ever type them once — the next series you join fills them in for you.
           </p>
           {required.map(r => {
             const value = aliasValue(aliases, r.label);
@@ -374,8 +384,9 @@ export function SignupForm({ season, driver, onDone, onCancel }) {
                 <label htmlFor={id}>
                   {r.label} <span className="field-req">required</span>
                   {prefilled && (
-                    <span className="signup-prefilled" title="Taken from your driver profile — change it here if it's out of date">
-                      ✓ from your profile
+                    <span className="signup-prefilled"
+                      title={`Taken from ${savedFrom} — change it here if it's out of date`}>
+                      ✓ from {savedFrom}
                     </span>
                   )}
                 </label>

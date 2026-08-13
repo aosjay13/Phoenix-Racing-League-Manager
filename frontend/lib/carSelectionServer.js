@@ -11,7 +11,7 @@ import { db } from "@/lib/firebase";
 import { entryClassIds, orderClassIds } from "@/lib/classFilter";
 import { carSelectionSlots, sortRosterByNumber } from "@/lib/carSelection";
 import { scopeByLeague } from "@/lib/serverAuth";
-import { SIGNUP_KIND } from "@/lib/signupQueue";
+import { PENDING, SIGNUP_KIND } from "@/lib/signupQueue";
 import { sortSeasons } from "@/lib/seasonOrder";
 import { attachRaceDates, fetchSeasonRaceDates } from "@/lib/seasonOrderServer";
 
@@ -31,6 +31,19 @@ export async function pendingClaim(uid) {
     .where("uid", "==", uid).where("status", "==", "pending").limit(1).get();
   if (snap.empty) return null;
   return { id: snap.docs[0].id, ...snap.docs[0].data() };
+}
+
+// Every sign-up this ACCOUNT has waiting on an admin, across every season.
+//
+// Read for the platform usernames they carry: until an approval creates the
+// driver profile, a first-time player's answers live here and nowhere else, and
+// the sign-up form seeds itself from them so nobody is asked the same thing
+// twice in one sitting. See knownAliasesFor in lib/signupRequest.js.
+export async function pendingRequestsForUser(uid) {
+  if (!uid) return [];
+  const snap = await db().collection("signup_requests")
+    .where("uid", "==", uid).where("status", "==", PENDING).get();
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
 // A season plus everything the sign-up rules need to resolve against it.

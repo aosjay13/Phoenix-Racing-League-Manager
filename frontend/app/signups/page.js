@@ -81,7 +81,7 @@ function JoinCard({ season, onJoin }) {
 // Step 2: the form for the series they picked, with a way back that doesn't
 // look like a browser button, and the "here's what you'll need" list printed
 // above it so nothing in the form is a surprise.
-function JoinFlow({ season, driver, onBack, onDone }) {
+function JoinFlow({ season, driver, knownAliases, knownName, onBack, onDone }) {
   const needs = signupNeeds(season);
   return (
     <>
@@ -118,6 +118,7 @@ function JoinFlow({ season, driver, onBack, onDone }) {
 
       <div className="form-card join-form">
         <SignupForm key={season.season_id} season={season} driver={driver}
+          knownAliases={knownAliases} knownName={knownName}
           onDone={onDone} onCancel={onBack} />
       </div>
     </>
@@ -239,8 +240,8 @@ export default function SignupsPage() {
     return (
       <section>
         {header}
-        <JoinFlow season={chosen} driver={data.driver}
-          onBack={() => setChosenId("")} onDone={afterSignup} />
+        <JoinFlow season={chosen} driver={data.driver} knownAliases={data.known_aliases}
+          knownName={data.known_name} onBack={() => setChosenId("")} onDone={afterSignup} />
       </section>
     );
   }

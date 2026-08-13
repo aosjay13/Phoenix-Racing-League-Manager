@@ -200,6 +200,12 @@ throwaway key (`openssl genrsa`) — the emulator never checks it.
      queue* and that nothing else is needed from you — which is the question a first-timer
      otherwise answers by signing up a second time. The series then sits under **Waiting on an
      admin** until one of them approves it.
+   - **Your account keeps up on its own.** A sign-up is the moment the league learns who you
+     are, so the two fields your **Profile** owns and a sign-up answers — your display name and
+     your car number — are filled in from it. Only ever *filled in*: if you've set either
+     yourself, it's left exactly as it is, and a season that doesn't run car numbers can't blank
+     the one you have. So a brand-new account stops showing "jane.doe" the moment you tell the
+     league you race as J. May, and nobody's chosen name is ever overwritten.
    - **Nothing is red until you've had a go at it.** A required box you haven't visited yet is
      just something still to fill in, so it's left alone and what's outstanding is named calmly
      under the button. Touch one and leave it empty and *then* it's flagged, because by then it
@@ -237,10 +243,17 @@ throwaway key (`openssl genrsa`) — the emulator never checks it.
      **Your Discord name is required for every sign-up**, in every game, series, season and class:
      it's how the league reaches you. On top of that, each game asks for whatever identifies you
      *there* — a Steam name, a PSN ID, an Xbox gamertag, an iRacing name and customer ID — as
-     switched on by an admin in **League Setup ▸ Games**. Anything already saved on your driver
-     profile is filled in for you and marked *✓ from your profile*, so the usual sign-up is
-     read-and-submit; anything you type is saved back to your profile, so no series ever asks you
-     for it twice.
+     switched on by an admin in **League Setup ▸ Games**. Each one is named on the form with a
+     line saying why it's being asked for, and listed again in **What this form asks you for**
+     before you start.
+
+     **You type them once.** Anything the league already knows is filled in for you and marked
+     *✓ from your profile* — or *✓ from your last sign-up* if you're new and an admin hasn't
+     approved you yet, because your answers are on that request until they do. So a second
+     sign-up is usually read-and-submit with nothing to type at all: the name you race under
+     comes back too. What you type is saved on submit, **merged** rather than replacing, so a
+     Wreckfest sign-up that only asks for Discord can never wipe the Steam name an iRacing
+     sign-up saved.
 
      The season's **roster** sits in the form, in car-number order, showing who's racing under
      which number *and* who has already asked for one (marked **pending**) — so you can see what's
@@ -1054,7 +1067,48 @@ moment it's submitted — approval isn't waited for, because a platform username
 person, not about the roster place. The merge is by label and case-insensitive: a new value wins, a
 blank one **never** erases a saved one, and a platform this game didn't ask about is left alone.
 A player with no driver profile yet carries their answers on the request; approving it writes them
-onto the profile it creates.
+onto the profile it creates, and the form reads them off the request in the meantime — see
+*What a sign-up saves* below.
+
+### What a sign-up saves, and what it refuses to overwrite
+
+A sign-up is the one moment the app learns who somebody actually is: the name they race under,
+the number they run, and the platform usernames the league reaches them on. Those are facts
+about the **person**, not about the roster place, so they're written the moment the request is
+filed — approval isn't waited for, and nothing here touches a roster. Three records take them,
+and each takes only what it owns:
+
+| Record | Takes | Rule |
+|---|---|---|
+| `signup_requests/<id>` | everything submitted | the request itself; the only home for a new player's answers until an admin approves them |
+| `drivers/<id>.aliases` | the platform usernames | **merged**, never replaced |
+| `users/<uid>` | `display_name`, `number` | **filled in only**, never overwritten |
+
+**Merged, for the driver profile.** The form only asks for what the game it's for requires, so
+writing its answers over the profile would drop every platform it didn't ask about — a Wreckfest
+sign-up (Discord only) would wipe the Steam name an iRacing sign-up saved. `mergeAliases()` is
+by label and case-insensitive: a new value wins, and a blank one never erases a saved one.
+
+**Filled in only, for the account.** An account is created at sign-in with a display name
+invented from the email (`jane.doe@example.com` → "jane.doe"), which is a placeholder nobody
+chose; replacing that with the name they told us they race under is an improvement. Replacing a
+name they set on their **Profile** is not. `isPlaceholderDisplayName()` is the whole distinction,
+and `userAccountUpdatesFromSignup()` returns *only* the fields that should be written — an empty
+object means the account is left alone entirely. The same applies to the car number: written when
+the account has none, never changed, and never blanked by a season that doesn't run numbers.
+Both `POST /api/signup-requests` and the approval step apply it, so a request filed before this
+existed still brings the account up to date when it's approved.
+
+**Reading it back is what makes it worth saving.** `GET /api/users/me/series` returns
+`known_aliases` and `known_name` — everything this ACCOUNT has already given, whether or not a
+driver profile exists to hold it yet. This was a real bug: a first-time player signed up for one
+series, opened a second sign-up ten seconds later, and was asked for their Discord name, Steam
+name and iRacing customer ID all over again, because only the driver profile was being read and
+theirs wouldn't exist until an admin got to the queue — the retyping the sync exists to prevent,
+aimed at the one player least likely to tolerate it. `knownAliasesFor()` reads the profile when
+there is one and the pending requests when there isn't (oldest first, so the newest answer wins),
+and the tick beside a pre-filled box says which it came from: *✓ from your profile*, or *✓ from
+your last sign-up*.
 
 ### Car numbers on a self-service sign-up
 
