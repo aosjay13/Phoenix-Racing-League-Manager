@@ -11,7 +11,7 @@
 // can't be removed, and is flagged while it's still blank.
 export function AliasEditor({
   aliases, onChange, games = [], disabled = false,
-  required = [], suggested = [], showHelp = true,
+  required = [], suggested = [], showHelp = true, showLabel = true,
 }) {
   const requiredLabels = new Set(required.map(r => String(r.label ?? r).toLowerCase()));
   const suggestedLabels = new Set(suggested.map(s => String(s).toLowerCase()));
@@ -39,7 +39,9 @@ export function AliasEditor({
 
   return (
     <div className="field" style={{ marginTop: 8 }}>
-      <label style={{ display: "block" }}>Aliases / Connected Accounts</label>
+      {/* Off where the caller already titles the section — a card headed
+          "Connected Accounts" doesn't want the same words again under it. */}
+      {showLabel && <label style={{ display: "block" }}>Aliases / Connected Accounts</label>}
       {showHelp && (
         <p style={{ margin: "0 0 8px", fontSize: "0.78rem", color: "var(--ink-2)" }}>
           Platform usernames this driver races under. The Smart Importer matches imported names against

@@ -9,12 +9,14 @@ import { useAuth } from "@/components/AuthProvider";
 import { ImageUpload } from "@/components/ImageUpload";
 import { TrackSelect } from "@/components/TrackSelect";
 import { RaceLengthField } from "@/components/RaceLengthField";
+import { HeatPointsDefaultFields } from "@/components/HeatPointsDefaultFields";
 import { TrackMergeModal } from "@/components/TrackMergeModal";
+import { DriverMergeTool } from "@/components/DriverMergeTool";
 import { LENGTH_LAPS, raceLengthBody, raceLengthForm } from "@/lib/raceLength";
 import { api } from "@/lib/api";
 import { ALL_BONUS_TYPES, BONUS_TYPES } from "@/lib/standings";
 import { TRACK_TYPES } from "@/lib/trackTypes";
-import { listToTableOrZero, tableToList } from "@/lib/pointsTemplates";
+import { listToTableOrZero, normalizedBuiltinTemplates, tableToList } from "@/lib/pointsTemplates";
 import { carForClass } from "@/lib/classFilter";
 import { SeasonForm } from "@/components/SeasonForm";
 import { BangerBonusFields, PointsFields } from "@/components/PointsFields";
@@ -38,7 +40,7 @@ import { DISCORD_LABEL, GAME_PLATFORM_REQUIREMENTS, isIracingGame } from "@/lib/
 //   • the PLATFORM identities its sign-ups must carry (Discord/Steam/PSN/Xbox/
 //     iRacing) — these are the game's alone and apply to everything under it,
 //     however many series, seasons and classes are made. Nothing overrides them.
-//   • the sign-up REQUIREMENTS (car / number / manufacturer / lock) — the top of
+//   • the sign-up REQUIREMENTS (car / number / lock) — the top of
 //     the game → series → season → class chain, which any level below may
 //     override.
 //
@@ -122,6 +124,10 @@ const SECTIONS = [
   { key: "classes",   label: "Classes",         icon: "🎽", group: "structure", hint: "Split a season's field" },
   { key: "races",     label: "Races",           icon: "🏁", group: "structure", hint: "A season's calendar" },
   { key: "tracks",    label: "Tracks",          icon: "🏟", group: "library",   hint: "Shared venue database" },
+  // The driver pool's cleanup bench. Sits in the Shared Library beside Tracks
+  // because it's the same job on the other global pool: finding the rows that
+  // are secretly one thing and folding them together.
+  { key: "drivers",   label: "Drivers",         icon: "🧑‍🔧", group: "library",  hint: "Find & merge duplicate driver profiles" },
   { key: "templates", label: "Points Templates", icon: "🔢", group: "library",  hint: "Reusable scoring structures" },
   // Recovery tools. Owner-only — the whole row is hidden for the other staff
   // roles, since only an Owner can export or import the database.
@@ -239,12 +245,28 @@ function AdminInner() {
     name: "", track: "", track_id: "", date: "", round_number: "", track_logo_url: "", sessions: "Race", car: "",
     // Distance: a lap count, or a duration for a race run to the clock.
     length_type: LENGTH_LAPS, total_laps: "", race_minutes: "", total_rounds: "",
-    heat_format: false, heats: "", consolations: "", feature_name: "A-Main Feature",
+    // Pre-ticked for a season that runs heat racing — every round of it is a heat
+    // weekend, so the box starts where the season says it should. Untick it for
+    // the odd standard-format round.
+    heat_format: !!season?.heat_format, heats: "", consolations: "", feature_name: "A-Main Feature",
+    // The event's default points template for every heat / every consolation, so
+    // a weekend of heats needs one pick instead of one per session. Blank = those
+    // sessions score on the season's (or class's) points structure, as before.
+    heat_points_template_id: "", consolation_points_template_id: "",
     // Blank = shared by every class. Only settable while the season has
     // per-class schedules turned on.
     class_id: "",
   };
   const [raceForm, setRaceForm] = useState(blankRace);
+  // The season loads after the first render, so the heat tick above has to be
+  // applied once it arrives — but only to a blank form nobody has started
+  // filling in, and never while an existing race is being edited.
+  useEffect(() => {
+    if (editIds.race) return;
+    setRaceForm(f => (f.name || f.track || f.round_number || f.heats || f.consolations
+      ? f
+      : { ...f, heat_format: !!season?.heat_format }));
+  }, [season?.id, season?.heat_format, editIds.race]);
 
   // Classes divide the selected season's field into separately-scored groups
   // ("Pro"/"Amateur", GT3/LMP2). Empty list = a single-class season, which is
@@ -465,11 +487,10 @@ function AdminInner() {
                   // or not the boxes are ticked, so show them as on and say why.
                   const implied = isIracingGame(gameForm.name) && req.field.startsWith("requires_iracing");
                   return (
-                    <div key={req.field} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                    <div key={req.field} className="check-row">
                       <input type="checkbox" id={`game_${req.field}`}
                         checked={implied || !!gameForm[req.field]} disabled={implied}
-                        onChange={e => setGameForm(f => ({ ...f, [req.field]: e.target.checked }))}
-                        style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+                        onChange={e => setGameForm(f => ({ ...f, [req.field]: e.target.checked }))} />
                       <label htmlFor={`game_${req.field}`} style={{ margin: 0 }}>
                         {req.title}
                         <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
@@ -518,11 +539,10 @@ function AdminInner() {
                 it adds the derby stats to this series' results grids, the derby
                 bonuses to its points structures, and their totals to ITS
                 standings and stats — and nowhere else. */}
-            <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
+            <div className="field check-row">
               <input type="checkbox" id="series_banger_racing" disabled={!gameId}
                 checked={!!seriesForm.isBangerRacing}
-                onChange={e => setSeriesForm(f => ({ ...f, isBangerRacing: e.target.checked }))}
-                style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+                onChange={e => setSeriesForm(f => ({ ...f, isBangerRacing: e.target.checked }))} />
               <label htmlFor="series_banger_racing" style={{ margin: 0 }}>
                 Demo Derby / Banger Racing Mode
                 <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
@@ -540,11 +560,10 @@ function AdminInner() {
                 only the SHAPE of a results grid, so the drivers eliminated in
                 the same round share one finishing position. See
                 lib/bracketRacing.js. */}
-            <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
+            <div className="field check-row">
               <input type="checkbox" id="series_bracket_racing" disabled={!gameId}
                 checked={!!seriesForm.isBracketRacing}
-                onChange={e => setSeriesForm(f => ({ ...f, isBracketRacing: e.target.checked }))}
-                style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+                onChange={e => setSeriesForm(f => ({ ...f, isBracketRacing: e.target.checked }))} />
               <label htmlFor="series_bracket_racing" style={{ margin: 0 }}>
                 Bracket Style Racing
                 <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
@@ -755,11 +774,10 @@ function AdminInner() {
                 Hidden when the series or season above already runs derby, since
                 this class does too and the switch would be a no-op. */}
             {!bangerSeason && (
-              <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
+              <div className="field check-row">
                 <input type="checkbox" id="class_banger_racing" disabled={!seasonId}
                   checked={!!classForm.isBangerRacing}
-                  onChange={e => setClassForm(f => ({ ...f, isBangerRacing: e.target.checked }))}
-                  style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+                  onChange={e => setClassForm(f => ({ ...f, isBangerRacing: e.target.checked }))} />
                 <label htmlFor="class_banger_racing" style={{ margin: 0 }}>
                   Demo Derby / Banger Racing Class
                   <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
@@ -778,11 +796,10 @@ function AdminInner() {
                 Hidden when the series above already runs brackets, since this
                 class does too and the switch would be a no-op. */}
             {!bracketSeries && (
-              <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
+              <div className="field check-row">
                 <input type="checkbox" id="class_bracket_racing" disabled={!seasonId}
                   checked={!!classForm.isBracketRacing}
-                  onChange={e => setClassForm(f => ({ ...f, isBracketRacing: e.target.checked }))}
-                  style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+                  onChange={e => setClassForm(f => ({ ...f, isBracketRacing: e.target.checked }))} />
                 <label htmlFor="class_bracket_racing" style={{ margin: 0 }}>
                   Bracket Style Racing Class
                   <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
@@ -797,16 +814,42 @@ function AdminInner() {
               </div>
             )}
 
+            {/* Heat racing for this class alone, and the points defaults it
+                unlocks: a season that runs heats for one class (or runs them
+                differently per class) sets that class's heat and consolation
+                scoring here. A class's default outranks the season's, and sits
+                on top of the class's own points structure — see
+                inheritedSessionTemplate in lib/standings.js. */}
+            <div className="field check-row">
+              <input type="checkbox" id="class_heat_format" disabled={!seasonId}
+                checked={!!classForm.heat_format}
+                onChange={e => setClassForm(f => ({ ...f, heat_format: e.target.checked }))} />
+              <label htmlFor="class_heat_format" style={{ margin: 0 }}>
+                Heats and Consolation Races
+                <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
+                  On: <strong>this class</strong> runs heat racing, and you can name the points template
+                  every heat and every consolation it runs scores on — set once here instead of once per
+                  race entry. It overrides {season?.name ?? "the season"}&rsquo;s own heat defaults for this
+                  class; a single event can still override it on its Race Info tab.
+                </span>
+              </label>
+            </div>
+
+            {classForm.heat_format && (
+              <HeatPointsDefaultFields idPrefix="class" value={classForm} onPatch={patchClassForm}
+                disabled={!seasonId} scopeLabel="class"
+                templates={[...normalizedBuiltinTemplates(), ...templates]} />
+            )}
+
             {/* Car selection / lock-in for this class alone — a class that
                 sets its own list asks ITS drivers for their own pick, while
                 the rest of the season keeps picking from the season's. */}
             <CarSelectionFields value={classForm} onChange={setClassForm} level="class" disabled={!seasonId}
               inherited={resolveSignupRules({ game, series, season })} />
 
-            <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
+            <div className="field check-row">
               <input type="checkbox" id="class_own_points" disabled={!seasonId} checked={!!classForm.own_points}
-                onChange={e => toggleOwnPoints(e.target.checked)}
-                style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+                onChange={e => toggleOwnPoints(e.target.checked)} />
               <label htmlFor="class_own_points" style={{ margin: 0 }}>
                 This class scores on its own points structure
                 <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
@@ -897,6 +940,11 @@ function AdminInner() {
               heats: raceForm.heat_format ? (heats.length ? heats : ["Heat 1"]) : [],
               consolations: raceForm.heat_format ? toArray(raceForm.consolations) : [],
               feature_name: raceForm.feature_name.trim() || "A-Main Feature",
+              // Only a heat event has heats/consolations to default, so switching
+              // the format off clears them rather than leaving a template pointed
+              // at sessions the event no longer runs.
+              heat_points_template_id: raceForm.heat_format ? raceForm.heat_points_template_id : "",
+              consolation_points_template_id: raceForm.heat_format ? raceForm.consolation_points_template_id : "",
             };
             if (!editIds.race) body.season_id = seasonId;
             save("/api/races", body, editIds.race,
@@ -933,10 +981,9 @@ function AdminInner() {
             <div className="field"><label>Car Type</label>
               <input disabled={!seasonId} value={raceForm.car} placeholder={classes.length ? "Leave blank to use the class's / season's car" : "Leave blank to use the season's car"}
                 onChange={e => setRaceForm(f => ({ ...f, car: e.target.value }))} /></div>
-            <div className="field" style={{ display: "flex", alignItems: "center", gap: 8, flexDirection: "row" }}>
+            <div className="field check-row check-row-center">
               <input type="checkbox" id="race_heat_format" disabled={!seasonId} checked={raceForm.heat_format}
-                onChange={e => setRaceForm(f => ({ ...f, heat_format: e.target.checked }))}
-                style={{ width: 18, height: 18, accentColor: "var(--accent-cyan)" }} />
+                onChange={e => setRaceForm(f => ({ ...f, heat_format: e.target.checked }))} />
               <label htmlFor="race_heat_format" style={{ margin: 0 }}>This event uses heat racing (Heats → Consolation → Feature)</label>
             </div>
             {raceForm.heat_format ? (
@@ -950,6 +997,9 @@ function AdminInner() {
                 <div className="field"><label>Feature name</label>
                   <input disabled={!seasonId} value={raceForm.feature_name} placeholder="A-Main Feature"
                     onChange={e => setRaceForm(f => ({ ...f, feature_name: e.target.value }))} /></div>
+                <HeatPointsDefaultFields idPrefix="admin_race" disabled={!seasonId} value={raceForm}
+                  templates={[...normalizedBuiltinTemplates(), ...templates]}
+                  onPatch={patch => setRaceForm(f => ({ ...f, ...patch }))} />
               </>
             ) : (
               <div className="field"><label>Races in this event — comma-separated (e.g. Race 1, Race 2, Sprint)</label>
@@ -988,6 +1038,8 @@ function AdminInner() {
                   heats: Array.isArray(r.heats) ? r.heats.join(", ") : "",
                   consolations: Array.isArray(r.consolations) ? r.consolations.join(", ") : "",
                   feature_name: r.feature_name || "A-Main Feature",
+                  heat_points_template_id: r.heat_points_template_id || "",
+                  consolation_points_template_id: r.consolation_points_template_id || "",
                   class_id: r.class_id || "",
                 });
               }}
@@ -1079,6 +1131,12 @@ function AdminInner() {
               showToast("success", `Merged ${res.tracks_merged} track${res.tracks_merged === 1 ? "" : "s"} into “${res.track.name}” — ${res.races_moved} race${res.races_moved === 1 ? "" : "s"} moved across.`);
             }}
           />
+        )}
+
+        {section === "drivers" && (
+        <Panel title="Drivers" sub="Find duplicate profiles and merge them — no race, result or lap is lost">
+          <DriverMergeTool />
+        </Panel>
         )}
 
         {section === "templates" && (

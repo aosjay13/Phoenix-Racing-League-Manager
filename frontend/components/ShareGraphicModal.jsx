@@ -366,15 +366,15 @@ export function ShareGraphicModal({
                       const key = colKey(c, i);
                       const on = !hidden.has(key);
                       return (
-                        <label key={key} title={c.locked ? "Always shown — a row isn't readable without it" : undefined}
+                        <label key={key} className="check-row check-row-center"
+                          title={c.locked ? "Always shown — a row isn't readable without it" : undefined}
                           style={{
-                            display: "flex", alignItems: "center", gap: 9, margin: 0, padding: "7px 12px",
+                            gap: 9, margin: 0, padding: "7px 12px",
                             fontSize: "0.85rem", borderRadius: 6,
                             color: c.locked ? "var(--ink-2)" : "var(--ink-0)",
                             cursor: c.locked ? "default" : "pointer",
                           }}>
-                          <input type="checkbox" checked={on} disabled={c.locked} onChange={() => toggleColumn(key)}
-                            style={{ width: 16, height: 16, accentColor: "var(--accent-cyan)" }} />
+                          <input type="checkbox" checked={on} disabled={c.locked} onChange={() => toggleColumn(key)} />
                           <span style={{ flex: 1 }}>{c.label}</span>
                           {c.locked && <span style={{ fontSize: "0.72rem", color: "var(--ink-2)" }}>always on</span>}
                         </label>

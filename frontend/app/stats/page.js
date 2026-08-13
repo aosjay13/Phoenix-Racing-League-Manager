@@ -55,7 +55,10 @@ const TEAM_COLUMNS = [
   ["titles", "Titles", false, "Championships — season titles won by this team's drivers, class titles included"],
 ];
 
-const teamHref = name => `/teams/${encodeURIComponent(name)}`;
+// A team's profile is addressed by its document id — its persistent identity.
+// Rows carrying only a name (free-text team data from before the pool existed)
+// still resolve, since /api/team-stats accepts either.
+const teamHref = row => `/teams/${encodeURIComponent(row.team_id || row.team_name)}`;
 
 export default function StatsPage() {
   const league = useLeague();
@@ -201,9 +204,9 @@ export default function StatsPage() {
             <tbody>
               {tab === "teams"
                 ? rows.map(r => (
-                    <tr key={r.team_name}>
+                    <tr key={r.team_id || r.team_name}>
                       <td className="driver-name-cell sticky-col">
-                        <Link href={teamHref(r.team_name)} style={{ color: "var(--accent-cyan)", display: "inline-flex", alignItems: "center", gap: 8 }}>
+                        <Link href={teamHref(r)} style={{ color: "var(--accent-cyan)", display: "inline-flex", alignItems: "center", gap: 8 }}>
                           {r.logo_url && <img src={r.logo_url} alt="" className="avatar avatar-sm" style={{ borderRadius: 6 }} />}
                           {r.team_name}
                         </Link>

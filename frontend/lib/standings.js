@@ -256,6 +256,77 @@ export function classConfigs(baseConfig, classes = []) {
   return Object.fromEntries(classes.map(c => [c.id, configForClass(baseConfig, c)]));
 }
 
+// A heat weekend's DEFAULT points template per session type — the field each one
+// is stored in. Set from the Race Info form of an event ("every heat of this
+// event scores on this template") and, for a league that runs heats all year,
+// from the SEASON and from a single CLASS, which carry the same two fields plus
+// their own `heat_format` tick. An admin running eight heats and two B-Mains
+// therefore picks a template once, at whichever level it's true, instead of once
+// per session.
+//
+// Only the preliminary types have one: heats and consolations are the sessions
+// that repeat within an event. Qualifying, standard races and the Feature are
+// single sessions already, and score on the season/class structure as before.
+export const SESSION_TYPE_DEFAULT_FIELDS = {
+  heat: "heat_points_template_id",
+  consolation: "consolation_points_template_id",
+};
+
+// One scope's default points template id for a session type, or null when it
+// names none. `scope` is a race, a class or a season doc — all three store it
+// under the same field name.
+export function defaultTemplateIdFor(scope = {}, sessionType = "race") {
+  const field = SESSION_TYPE_DEFAULT_FIELDS[sessionType];
+  return (field && scope?.[field]) || null;
+}
+
+// The first scope in the list to name a default for this session type. Callers
+// pass them most specific first — event, then class, then season.
+export function defaultTemplateIdIn(scopes = [], sessionType = "race") {
+  for (const scope of scopes) {
+    const id = defaultTemplateIdFor(scope || {}, sessionType);
+    if (id) return id;
+  }
+  return null;
+}
+
+// Which default is in force for a session, and — the reason this returns more
+// than an id — WHICH LEVEL named it, because that decides how it layers (see
+// makeScorer):
+//
+//   • the event's (Race Info) and the season's are statements about the whole
+//     field, so they sit UNDER the class layer: a class scoring on its own
+//     points structure overrides them, exactly as it overrides an event-wide
+//     session assignment;
+//   • a CLASS's own default is a statement about that class, so it sits ON TOP
+//     of that class's structure — otherwise a class with its own points would
+//     ignore the very heat template it was given.
+//
+// Most specific wins: the event first (it's the round in front of you), then the
+// class, then the season.
+// `level` names the scope it came from, for the screens that say so out loud.
+export function inheritedSessionTemplate(result, { race = null, cls = null, season = null } = {}) {
+  const type = result.session_type || "race";
+  const fromRace = defaultTemplateIdFor(race || {}, type);
+  if (fromRace) return { id: fromRace, level: "event", forClass: false };
+  const fromClass = defaultTemplateIdFor(cls || {}, type);
+  if (fromClass) return { id: fromClass, level: "class", forClass: true };
+  const fromSeason = defaultTemplateIdFor(season || {}, type);
+  return fromSeason ? { id: fromSeason, level: "season", forClass: false } : null;
+}
+
+// The points template a result actually scores under: the one stamped on the
+// result (its session's own assignment, event-wide or per class) if it has one,
+// else the default inherited from its event, its class or its season.
+//
+// Resolving the default here rather than stamping it onto results at save time
+// is what makes it a default: change the season's heat template and every heat
+// result under it re-scores at once, exactly as changing a season's points
+// structure does — no re-save, no cascade over saved results.
+export function resolveTemplateId(result, scopes = {}) {
+  return result.points_template_id || inheritedSessionTemplate(result, scopes)?.id || null;
+}
+
 // Whether a session counts toward stats/points by default, before any admin
 // override. Preliminary sessions (heats, consolations/B- & C-Mains) are off by
 // default so they don't skew a driver's global Win/Top-5/Average-Finish metrics
@@ -263,21 +334,42 @@ export function classConfigs(baseConfig, classes = []) {
 // on — including Qualifying, which feeds Poles/Average Start unless an admin
 // turns its stats toggle off. Admin toggles (race.session_stats /
 // session_points_enabled, keyed by session name) override these per session.
-export function defaultSessionFlags(sessionType) {
+//
+// `scopes` are the event, class and season the session belongs to, and matter
+// for one thing: a level that names a default points template for heats (or
+// consolations) has said those sessions score, so championship points default ON
+// for that type instead of off. Stats stay off by default either way — a heat is
+// still a preliminary as far as Wins / Average Finish are concerned — and an
+// explicit per-session toggle still wins over both.
+export function defaultSessionFlags(sessionType, { race = null, cls = null, season = null } = {}) {
   const preliminary = sessionType === "heat" || sessionType === "consolation";
-  return { counts_stats: !preliminary, counts_points: !preliminary };
+  const scoresByDefault = !!defaultTemplateIdIn([race, cls, season], sessionType);
+  return { counts_stats: !preliminary, counts_points: !preliminary || scoresByDefault };
+}
+
+// The event's first standard race session — the name a result saved before the
+// session field existed belongs to.
+function firstStdSession(race = {}) {
+  return Array.isArray(race.sessions) && race.sessions.length ? race.sessions[0] : "Race";
+}
+
+// The session name a result was recorded under. A qualifying result with no
+// session name recorded (older data) is keyed as "Qualifying" — never as the
+// first race session, whose toggles are its own.
+export function sessionNameOf(result, race = {}) {
+  const type = result.session_type || "race";
+  return result.session || (type === "qualifying" ? "Qualifying" : firstStdSession(race));
 }
 
 // Resolve a result's stats/points flags: an explicit admin toggle on the race
-// doc wins; otherwise the session-type default applies.
-export function resolveSessionFlags(result, racesById = {}) {
+// doc wins; otherwise the session-type default applies. `scopes` (the result's
+// class and season, resolved by the caller) only reach the default — see
+// defaultSessionFlags.
+export function resolveSessionFlags(result, racesById = {}, scopes = {}) {
   const race = racesById[result.race_id] || {};
-  const firstStd = Array.isArray(race.sessions) && race.sessions.length ? race.sessions[0] : "Race";
   const type = result.session_type || "race";
-  // A qualifying result with no session name recorded (older data) is keyed as
-  // "Qualifying" — never as the first race session, whose toggles are its own.
-  const name = result.session || (type === "qualifying" ? "Qualifying" : firstStd);
-  const def = defaultSessionFlags(type);
+  const name = sessionNameOf(result, race);
+  const def = defaultSessionFlags(type, { ...scopes, race });
   const statsMap = race.session_stats || {};
   const pointsMap = race.session_points_enabled || {};
   return {
@@ -298,15 +390,24 @@ export function resolveSessionFlags(result, racesById = {}) {
 export function classSessionTemplates(result, racesById = {}) {
   const race = racesById[result.race_id] || {};
   const byClass = race.session_points_by_class || {};
-  const firstStd = Array.isArray(race.sessions) && race.sessions.length ? race.sessions[0] : "Race";
-  const type = result.session_type || "race";
-  const name = result.session || (type === "qualifying" ? "Qualifying" : firstStd);
+  const name = sessionNameOf(result, race);
   const out = {};
   for (const [classId, sessions] of Object.entries(byClass)) {
     const id = sessions?.[name];
     if (id) out[classId] = id;
   }
   return out;
+}
+
+// The season / class docs a result's defaults resolve against, in the shape
+// decorateSessionFlags wants them. Every caller already loads the season and its
+// classes to score with, so building the lookup is all this does.
+export function sessionScopeContext({ seasons = [], classes = [], entriesById = {} } = {}) {
+  return {
+    seasonsById: Object.fromEntries(seasons.filter(Boolean).map(s => [s.id, s])),
+    classesById: Object.fromEntries(classes.filter(Boolean).map(c => [c.id, c])),
+    entriesById,
+  };
 }
 
 // Stamp each result with its resolved counts_stats / counts_points flags so the
@@ -318,14 +419,38 @@ export function classSessionTemplates(result, racesById = {}) {
 //
 // The class-scoped template assignments ride along for the same reason — one
 // pass over the race docs, and every scorer downstream gets both.
-export function decorateSessionFlags(results, racesById = {}) {
+//
+// So does the heat/consolation DEFAULT points template (see resolveTemplateId):
+// a heat result with no template of its own picks up the default named by its
+// event, its class or its season here, which is why setting one re-scores every
+// heat under it immediately, on every screen. `ctx` (see sessionScopeContext)
+// carries the season and class docs that can name one, plus the entries needed
+// to tell which class a result counts toward; without it only the event's own
+// default applies, which is what every caller did before the season and class
+// levels existed.
+export function decorateSessionFlags(results, racesById = {}, ctx = {}) {
+  const { seasonsById = {}, classesById = {}, entriesById = {} } = ctx;
   return results
     .filter(r => racesById[r.race_id])
-    .map(r => ({
-      ...r,
-      ...resolveSessionFlags(r, racesById),
-      class_session_templates: classSessionTemplates(r, racesById),
-    }));
+    .map(r => {
+      const race = racesById[r.race_id];
+      const classId = classOfResult(r, entriesById) || "";
+      const scopes = { race, cls: classesById[classId] || null, season: seasonsById[race.season_id] || null };
+      const inherited = r.points_template_id ? null : inheritedSessionTemplate(r, scopes);
+      const byClass = classSessionTemplates(r, racesById);
+      return {
+        ...r,
+        ...resolveSessionFlags(r, racesById, scopes),
+        points_template_id: r.points_template_id || inherited?.id || null,
+        // A default named by the CLASS is recorded as that class's own template
+        // for the session, which is what puts it on top of the class's points
+        // structure rather than under it (see makeScorer). A per-session
+        // assignment already in the map is more specific, so it stays.
+        class_session_templates: inherited?.forClass && classId && !byClass[classId]
+          ? { ...byClass, [classId]: inherited.id }
+          : byClass,
+      };
+    });
 }
 
 // Mark per-race derived flags (most laps led) before scoring. Events can
@@ -353,16 +478,30 @@ export function decorateRaceBonuses(results) {
   return out;
 }
 
-// `qualPos` is the driver's actual Qualifying finish position for this race
-// (looked up separately — see buildQualPosMap), not a copy stored on the
-// race result itself. That's the only source of starting-position info now;
-// there is no editable "Start" field on race/heat/consolation/feature rows.
-// `qualConfig` resolves the qualifying-position points against the Qualifying
-// session's OWN assigned points system (see buildQualTemplateMap) — falling
-// back to `config` (the race result's own template) when Qualifying carries
-// no override of its own, so a session-specific Qualifying points structure
-// actually reaches the standings total instead of being silently ignored.
-export function pointsFor(result, config, qualPos = null, qualConfig = null) {
+// ── One session, one number ────────────────────────────────────────────────
+//
+// Every session scores itself, off its own scale, at the position the driver
+// took in it. Qualifying uses the qualifying scale and its grid slot; a race
+// uses the race scale and its finishing position. A driver's championship total
+// is the sum of those numbers and nothing else, so the Points column on any grid
+// (and on the event page) can simply be added up to reach the standings.
+//
+// It did NOT used to work that way. Qualifying scored nothing of its own, and
+// its points were instead folded invisibly into a race result — the race row's
+// Points showed 385 where 350 was the win and 35 was the pole, while the
+// Qualifying grid separately displayed that same 35 in a Points column of its
+// own. Nothing on screen added up to the total: adding the two visible numbers
+// double-counted the pole, and trusting either one alone under-counted it. That
+// is what made the championship impossible to check by hand, and it is why the
+// same 35 could look both double-counted and missing depending on which screen
+// you started from.
+//
+// Folding it in also meant the award had to pick ONE race to hide in whenever an
+// event ran several, which is a question with no good answer (the first race?
+// the one they actually started? what if its points are switched off?). Scoring
+// Qualifying where it happens removes the question entirely — an event has one
+// Qualifying, so it pays once, and it pays on its own line.
+export function pointsFor(result, config) {
   // Did Not Start: the driver never took the green flag, so there is nothing to
   // score — no position points, no qualifying points, no bonuses, and no
   // per-result adjustment either. A no-show that still needs to cost the driver
@@ -382,11 +521,19 @@ export function pointsFor(result, config, qualPos = null, qualConfig = null) {
   }
 
   const { racePoints, bonuses } = config;
-  const qualPoints = (qualConfig || config).qualPoints;
+
+  // A qualifying result is scored off the qualifying scale at the grid slot it
+  // won — pole is simply position 1 of that list (see BONUS_TYPES on why there
+  // is no separate pole bonus). None of the racing bonuses can apply to it:
+  // there is no fastest lap of a qualifying session to pay for, no laps led and
+  // no hard charger, so an admin ticking one on a race can't leak into it.
+  if (isQualifying(result)) {
+    return Number(config.qualPoints[result.finish_pos] ?? 0)
+      + Number(result.bonus_points || 0) - Number(result.penalty_points || 0)
+      + adjustment;
+  }
+
   let pts = Number(racePoints[result.finish_pos] ?? 0);
-  // Grid position pays through the qualifying scale alone — pole is just its
-  // position 1 (see BONUS_TYPES on why there's no separate pole bonus).
-  if (qualPos != null) pts += Number(qualPoints[qualPos] ?? 0);
   if (result.fastest_lap) pts += Number(bonuses.best_lap || 0);
   // Scored results carry the derived is_most_laps_led (decorateRaceBonuses);
   // the results editor's live rows only have the ticked most_laps_led box, so
@@ -410,20 +557,36 @@ export function pointsFor(result, config, qualPos = null, qualConfig = null) {
 // cell so a total that looks wrong can be read term by term, instead of an
 // admin having to work backwards from one number through four layers of points
 // structure. Returns [] for a result that scores nothing at all.
-export function explainPoints(result, config, qualPos = null, qualConfig = null) {
+export function explainPoints(result, config) {
   if (isDidNotStart(result)) return [{ label: "DNS — did not start", value: 0 }];
   const parts = [];
   const adjustment = Number(result.points_adjustment || 0);
+  const tail = () => {
+    const extra = Number(result.bonus_points || 0);
+    const penalty = Number(result.penalty_points || 0);
+    if (extra) parts.push({ label: "Bonus points", value: extra });
+    if (penalty) parts.push({ label: "Penalty points", value: -penalty });
+    if (adjustment) parts.push({ label: "Adjustment", value: adjustment });
+    return parts;
+  };
   if (result.provisional && result.manual_points != null && result.manual_points !== "") {
     parts.push({ label: "Provisional entry", value: Number(result.manual_points || 0) });
     if (adjustment) parts.push({ label: "Adjustment", value: adjustment });
     return parts;
   }
   const { racePoints, bonuses } = config;
-  const qualPoints = (qualConfig || config).qualPoints;
+  // Qualifying scores its own grid slot off the qualifying scale — pole being
+  // position 1 of it — and carries none of the racing bonuses.
+  if (isQualifying(result)) {
+    const pos = Number(result.finish_pos);
+    parts.push({
+      label: pos === 1 ? "Pole position" : `Qualified P${result.finish_pos || "—"}`,
+      value: Number(config.qualPoints[result.finish_pos] ?? 0),
+    });
+    return tail();
+  }
   const finish = Number(racePoints[result.finish_pos] ?? 0);
   parts.push({ label: `P${result.finish_pos || "—"} finish`, value: finish });
-  if (qualPos != null) parts.push({ label: `Qualified P${qualPos}`, value: Number(qualPoints[qualPos] ?? 0) });
   const flag = (on, label, key) => {
     const value = Number(bonuses[key] || 0);
     if (on && value) parts.push({ label, value });
@@ -446,24 +609,20 @@ export function explainPoints(result, config, qualPos = null, qualConfig = null)
       value: count * rate,
     });
   }
-  const extra = Number(result.bonus_points || 0);
-  const penalty = Number(result.penalty_points || 0);
-  if (extra) parts.push({ label: "Bonus points", value: extra });
-  if (penalty) parts.push({ label: "Penalty points", value: -penalty });
-  if (adjustment) parts.push({ label: "Adjustment", value: adjustment });
-  return parts;
+  return tail();
 }
 
 // `explainPoints` as one line of text, for a cell's tooltip.
-export function pointsBreakdown(result, config, qualPos = null, qualConfig = null) {
-  const parts = explainPoints(result, config, qualPos, qualConfig);
+export function pointsBreakdown(result, config) {
+  const parts = explainPoints(result, config);
   if (!parts.length) return "Scores 0";
   const total = parts.reduce((a, p) => a + Number(p.value || 0), 0);
   return `${parts.map(p => `${p.label}: ${p.value >= 0 ? "+" : ""}${p.value}`).join("\n")}\n────────\nTotal: ${total}`;
 }
 
-// A driver's Qualifying finish position, per event — the number the qualifying
-// points in pointsFor are scored off.
+// A driver's Qualifying finish position, per event — the grid slot every screen
+// shows in a Start column. It is NOT part of scoring any more: Qualifying scores
+// itself (see pointsFor), so nothing needs to look a grid slot up to pay for it.
 //
 // Keyed by race + entry + class, because one roster entry can race SEVERAL
 // classes at the same event: at a split event each class runs its own
@@ -484,8 +643,8 @@ export function buildQualPosMap(results, entriesById = {}) {
   const byEntry = {};
   for (const r of results) {
     if (r.session_type !== "qualifying") continue;
-    // A DNS in qualifying is no grid slot at all, so it pays no qualifying
-    // points in the race that follows.
+    // A DNS in qualifying is no grid slot at all, so there is no start position
+    // to report for the race that follows.
     if (isDidNotStart(r)) continue;
     const pos = Number(r.finish_pos);
     const key = `${r.race_id}|${r.entry_id}`;
@@ -498,51 +657,29 @@ export function buildQualPosMap(results, entriesById = {}) {
   return map;
 }
 
-// The Qualifying position a given result scores its grid bonus off: its own
-// class's Qualifying when that class ran one, else the event's single combined
+// The Qualifying position a given race result started from: its own class's
+// Qualifying when that class ran one, else the event's single combined
 // Qualifying, else null (the driver never qualified).
 export function qualPosFor(map, result, entriesById = {}) {
   const key = `${result.race_id}|${result.entry_id}`;
   return map[`${key}|${classOfResult(result, entriesById) || ""}`] ?? map[key] ?? null;
 }
 
-// The Qualifying session's own points_template_id (or null for the season/class
-// default), so the qualifying-position bonus folded into a race result (see
-// pointsFor) can be resolved against the actual points system assigned to
-// Qualifying rather than whatever template the race session happens to use.
-//
-// Keyed both by race and by race+class: at a split event each class runs its
-// OWN Qualifying, which can carry its own points system, so "the Qualifying
-// template for this race" is only an answer once you know whose race it is.
-export function buildQualTemplateMap(results, entriesById = {}) {
-  const map = {};
-  for (const r of results) {
-    if (r.session_type !== "qualifying") continue;
-    const template = r.points_template_id || null;
-    map[r.race_id] = template;
-    map[`${r.race_id}|${classOfResult(r, entriesById) || ""}`] = template;
-  }
-  return map;
-}
-
-// The Qualifying template a given result's qualifying points score under:
-// its own class's Qualifying when that class ran one, else the event's.
-export function qualTemplateFor(map, result, entriesById = {}) {
-  const key = `${result.race_id}|${classOfResult(result, entriesById) || ""}`;
-  return key in map ? map[key] : (map[result.race_id] ?? null);
-}
-
 // Everything needed to score one season's results in one place: each result is
 // scored under its own class's structure (configForClass), with the session's
-// assigned template laid on top, and its qualifying points resolved against that
-// same class's Qualifying session. Every screen and stat page builds its points
+// assigned template laid on top. Every screen and stat page builds its points
 // through this, so a per-class structure reaches all of them identically.
+//
+// Every session scores itself, so there is no cross-session arithmetic here at
+// all — no "which race does this driver's pole get folded into", which is the
+// question that used to make the same qualifying result worth different amounts
+// on different screens.
 export function makeScorer(results, { config, classes = [], entriesById = {}, templatesById = {} } = {}) {
   const byClass = classConfigs(config, classes);
   const classById = Object.fromEntries(classes.map(c => [c.id, c]));
   const baseFor = r => byClass[classOfResult(r, entriesById)] || config;
+  // Start positions for the Start column — not used for scoring.
   const qualPosMap = buildQualPosMap(results, entriesById);
-  const qualTemplates = buildQualTemplateMap(results, entriesById);
 
   // ── Where a session's template sits in the chain ─────────────────────────
   //
@@ -585,17 +722,21 @@ export function makeScorer(results, { config, classes = [], entriesById = {}, te
     return out;
   }
 
+  // A result's own structure — its class's, with the template its session was
+  // scored under laid on at the level it was assigned. For a qualifying result
+  // that IS Qualifying's own points system, which is what its qualifying scale
+  // is then read off, so a template assigned to Qualifying reaches the total
+  // with nothing else to resolve.
   const configFor = r => configWith(r, r.points_template_id);
-  const qualConfigFor = r => configWith(r, qualTemplateFor(qualTemplates, r, entriesById));
-  const posFor = r => qualPosFor(qualPosMap, r, entriesById);
 
   return {
     qualPosMap,
-    qualPosFor: posFor,
+    // The grid slot a race result started from, for Start columns. Scoring never
+    // asks — Qualifying is scored where it happened.
+    qualPosFor: r => qualPosFor(qualPosMap, r, entriesById),
     baseFor,
     configFor,
-    qualConfigFor,
-    points: r => pointsFor(r, configFor(r), posFor(r), qualConfigFor(r)),
+    points: r => pointsFor(r, configFor(r)),
   };
 }
 
@@ -772,21 +913,37 @@ export function calculateStandings(results, entries, teams = [], config, templat
   for (const [entryId, entryResults] of Object.entries(byEntry)) {
     const entry = entriesById[entryId] || {};
     const team = teamsById[entry.team_id] || {};
-    // Championship points come only from race-type sessions (race, heat,
-    // consolation, feature) — qualifying results never earn points on their
-    // own, only a starting-position bonus folded into the next session, scored
-    // against Qualifying's own points structure (see makeScorer) so a points
-    // system assigned specifically to Qualifying actually reaches the total.
-    // A session whose points toggle is off is skipped even if it carries a
-    // points template.
-    const raceResults = entryResults.filter(r => !isQualifying(r) && r.counts_points !== false);
-    const pointsList = raceResults.map(r => scorer.points(r));
+    // EVERY session the driver scored in counts, Qualifying included: its
+    // qualifying points are a line of the championship in their own right, worth
+    // exactly what the Qualifying grid's Points column shows. That is what makes
+    // a total addable — sum the Points column of every session a driver ran and
+    // you land on this number.
+    //
+    // Qualifying used to be excluded here, its points folded invisibly into a
+    // race result instead. The number was (usually) the same, but nothing on
+    // screen ever showed it: the Qualifying grid displayed the pole's points in a
+    // column that fed nothing, and the race row quietly carried them inside a
+    // larger figure. Adding up what you could see over-counted the pole; trusting
+    // the race row alone under-counted it.
+    //
+    // A session whose points toggle is off is skipped even if it carries a points
+    // template — that toggle is now the way to run a Qualifying session that sets
+    // the grid without paying for it.
+    const scored = entryResults.filter(r => r.counts_points !== false);
+    const pointsList = scored.map(r => scorer.points(r));
     const totalPoints = pointsList.reduce((a, b) => a + b, 0);
 
+    // A drop WEEK is an event, so what gets dropped is a whole round — every
+    // session of it added together — not a single session out of one. Dropping
+    // per session would throw away a driver's worst qualifying run (a small
+    // number, so always among the lowest) while keeping the bad race it went
+    // with, which is neither what "drop weeks" means nor what a league expects.
     let droppedPoints = 0;
     if (config.dropWeeks > 0) {
-      const sorted = [...pointsList].sort((a, b) => a - b);
-      droppedPoints = sorted.slice(0, config.dropWeeks).reduce((a, b) => a + b, 0);
+      const byRound = {};
+      for (const r of scored) byRound[r.race_id] = (byRound[r.race_id] || 0) + scorer.points(r);
+      const rounds = Object.values(byRound).sort((a, b) => a - b);
+      droppedPoints = rounds.slice(0, config.dropWeeks).reduce((a, b) => a + b, 0);
     }
 
     // Manual admin override for corrections (penalties, import mistakes, …).
@@ -874,7 +1031,10 @@ export function aggregateCareerStats(results, titles = 0) {
   const line = statLine(results);
   return {
     ...line,
-    points: results.filter(r => !isQualifying(r)).reduce((a, r) => a + Number(r.points || 0), 0),
+    // Qualifying included — it scores itself, so its points are part of a career
+    // total exactly as a race's are. The callers zero out anything whose points
+    // toggle is off before it gets here.
+    points: results.reduce((a, r) => a + Number(r.points || 0), 0),
     titles,
   };
 }

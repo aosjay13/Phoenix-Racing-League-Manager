@@ -15,7 +15,7 @@
 // Kept pure so the dialog, the API route and the admin approval all apply one
 // set of rules.
 
-import { normalizeAliases } from "@/lib/aliases";
+import { mergeAliases, normalizeAliases } from "@/lib/aliases";
 
 // The two kinds of thing that can sit in the approval queue.
 export const CLAIM_KIND = "claim";            // "that existing driver is me"
@@ -181,4 +181,102 @@ export function signupProblem({ name, aliases, game, gameName }) {
   const missing = missingRequiredAliases(aliases, game ?? gameName);
   if (missing.length) return missingAliasMessage(missing);
   return "";
+}
+
+// ── What a sign-up writes back to the player's own account ─────────────────
+//
+// A sign-up is the one moment the app learns who somebody actually is: the name
+// they race under, the number they run, and the platform usernames the league
+// reaches them on. Those are facts about the PERSON, not about the roster
+// place, so they're saved straight away rather than waiting on an approval —
+// and they're saved everywhere the person is described, not just on the
+// request:
+//
+//   • their DRIVER PROFILE takes the platform usernames (merged, so a game
+//     that didn't ask about Steam can't wipe a Steam name) — that's the
+//     canonical home for them, and it's what makes the next sign-up, for any
+//     series in any game, arrive pre-filled;
+//   • their USER ACCOUNT takes the two fields it owns and the sign-up happens
+//     to answer: the display name and the car number.
+//
+// The account half is what this function decides, and it is deliberately
+// timid. An account is created at sign-in with a display name made up from the
+// email ("jane.doe@example.com" → "jane.doe"), which is a placeholder nobody
+// chose; filling that in with the name they told us they race under is an
+// improvement. Overwriting a name they set themselves on their Profile is not,
+// so a display name that is anything else is left exactly as it is. Same for
+// the number: filled when blank, never changed.
+//
+// Returns only the fields that should actually be written — an empty object
+// means "leave the account alone", so the caller can skip the write entirely.
+
+// The display name the app invents at first sign-in, from whatever the auth
+// provider gave us. Anything else is a name the player chose.
+export function isPlaceholderDisplayName(displayName, email = "") {
+  const name = String(displayName ?? "").trim();
+  if (!name) return true;
+  const mail = String(email ?? "").trim().toLowerCase();
+  if (!mail) return false;
+  const lower = name.toLowerCase();
+  return lower === mail || lower === mail.split("@")[0] || name === "Driver";
+}
+
+export function userAccountUpdatesFromSignup({ profile = {}, name = "", number = "" } = {}) {
+  const updates = {};
+  const racingName = String(name ?? "").trim().slice(0, 60);
+  if (racingName && isPlaceholderDisplayName(profile.display_name, profile.email)) {
+    updates.display_name = racingName;
+  }
+  // The account's own car number, filled only when it has none — a player who
+  // runs different numbers in different series set theirs deliberately, and
+  // the per-season number lives on the roster entry regardless.
+  const carNumber = String(number ?? "").trim().slice(0, 3);
+  const hasNumber = String(profile.number ?? "").trim() !== "";
+  if (carNumber && !hasNumber) updates.number = carNumber;
+  return updates;
+}
+
+// ── Everything the app already knows this person goes by ───────────────────
+//
+// The sign-up form fills in what it can, so a platform username is typed once
+// and never again. The obvious source is the driver profile — but a player who
+// has just joined their FIRST series hasn't got one yet: it's created when an
+// admin approves them, and until then everything they typed lives on the
+// pending request. Reading only the profile meant a brand-new player who signed
+// up for two series in one sitting was asked for their Discord name, their
+// Steam name and their iRacing customer ID all over again, ten seconds after
+// giving them — which is exactly the retyping the profile sync exists to stop,
+// aimed at the one player least likely to put up with it.
+//
+// So: the profile when there is one, and otherwise whatever they've already
+// told us on requests that are still waiting. Merged oldest-first so the most
+// recent answer wins, and the profile last of all, because once it exists it's
+// the canonical record.
+export function knownAliasesFor({ driver = null, requests = [] } = {}) {
+  const byAge = [...requests].sort((a, b) =>
+    String(a.created_at || "").localeCompare(String(b.created_at || "")));
+  let known = [];
+  for (const req of byAge) {
+    known = mergeAliases(known, normalizeAliases(req?.aliases ?? req?.new_driver?.aliases));
+  }
+  return mergeAliases(known, normalizeAliases(driver?.aliases));
+}
+
+// The name to put in "the name you race under" before they type anything.
+//
+// Same reasoning as the aliases above, for the field at the very top of the
+// form: their driver profile's name once they have one; otherwise the name they
+// gave on a sign-up that's still waiting; otherwise the display name on their
+// account — but only if it's a name they chose rather than the placeholder
+// sign-in invented from their email, since "jane.doe" is not what anyone races
+// under.
+export function knownRacingName({ driver = null, requests = [], profile = null } = {}) {
+  if (driver?.name) return driver.name;
+  const newest = [...requests]
+    .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")))
+    .map(r => String(r?.name || r?.new_driver?.name || r?.driver_name || "").trim())
+    .find(Boolean);
+  if (newest) return newest;
+  const display = String(profile?.display_name ?? "").trim();
+  return isPlaceholderDisplayName(display, profile?.email) ? "" : display;
 }

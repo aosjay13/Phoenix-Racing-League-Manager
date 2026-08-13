@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { withUser } from "@/lib/serverAuth";
-import { PENDING, WITHDRAWN } from "@/lib/signupQueue";
+import { APPROVED, DENIED, PENDING, WITHDRAWN } from "@/lib/signupQueue";
 
 export const dynamic = "force-dynamic";
 
@@ -40,4 +40,41 @@ export const DELETE = withUser(async (request, { params }, user) => {
     resolved_by: user.uid,
   });
   return NextResponse.json({ ok: true, id: params.id, status: WITHDRAWN });
+});
+
+// A player marking a RESOLVED sign-up as read — in practice a denial ("I've
+// seen why, let me try again"). Approvals are announced on the message board
+// now (lib/messages.js) and acknowledged there; they're still accepted here so
+// rows stamped by the older Dashboard banner keep working.
+//
+// It's an explicit action rather than something opening the screen does, and
+// the reason is the same one the roster's additions panel has: a notice that
+// clears itself before it has been taken in is worse than none. Until this is
+// called, the denial sits at the top of their Sign-ups screen and that season
+// is held back from their join list, so the reason is read before the form is
+// filled in a second time.
+//
+// Nothing else about the row changes: it stays denied, with the admin's reason,
+// as the record of what happened. Ownership is the whole of the check — the row
+// must belong to the CALLER.
+export const PATCH = withUser(async (request, { params }, user) => {
+  const ref = db().collection("signup_requests").doc(params.id);
+  const doc = await ref.get();
+  if (!doc.exists) return NextResponse.json({ error: "Request not found" }, { status: 404 });
+
+  const req = doc.data();
+  if (req.uid !== user.uid) {
+    return NextResponse.json({ error: "That isn't your request." }, { status: 403 });
+  }
+  if (req.status !== DENIED && req.status !== APPROVED) {
+    return NextResponse.json(
+      { error: "There's nothing to acknowledge on that request." },
+      { status: 400 },
+    );
+  }
+
+  // Already acknowledged is a no-op, not an error: two tabs open, one button
+  // pressed twice, same outcome either way.
+  if (!req.player_seen_at) await ref.update({ player_seen_at: new Date().toISOString() });
+  return NextResponse.json({ ok: true, id: params.id, acknowledged: true });
 });

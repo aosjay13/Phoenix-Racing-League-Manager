@@ -28,11 +28,20 @@ export const BACKUP_VERSION = 1;
 // the containment migration at /api/admin/leagues/migrate.
 export const SCOPED_COLLECTIONS = [
   "games", "series", "seasons", "classes", "races", "entries", "teams",
+  // Which drivers raced for which team in one season (see lib/teams.js). A
+  // backup without it would restore the teams and the results but not the
+  // lineups that connect them, so every team's stats would come back empty.
+  "team_seasons",
   "results", "drivers", "tracks", "points_templates",
   // Players waiting for an admin to let them onto a roster. Backed up like
   // anything else: a restore that dropped the queue would silently lose
   // everyone who had signed up but not yet been approved.
   "signup_requests",
+  // Time Trial sessions and the laps submitted in them (see lib/timeTrials.js).
+  // They score no championship points, but they hold track records and they are
+  // what a season's placements were decided on — losing them would lose the
+  // evidence behind every division a driver was put in.
+  "time_trials", "time_trial_entries",
 ];
 
 // Collections that belong to the app as a whole rather than to one league.

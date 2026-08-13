@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { createPortal } from "react-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useAuth } from "@/components/AuthProvider";
@@ -73,22 +74,54 @@ const DRIVER_ROWS_VISIBLE = 10;
 const DRIVER_LIST_MAX = DRIVER_ROW_H * DRIVER_ROWS_VISIBLE;
 const SEARCH_BOX_H = 50;   // the search field above the list
 const VIEWPORT_GAP = 12;   // breathing room against the window edge
+const LIST_MIN = 120;      // never collapse to a sliver, even in a short window
+
+// The sticky page header the panel must never grow under. It's translucent, so
+// a dropdown sliding beneath it doesn't just get hidden — it shows through as a
+// smear of half-legible rows over the league selectors. Measured rather than
+// hard-coded: the topbar wraps to two rows on a narrow window.
+function usableTop() {
+  const bar = document.querySelector(".topbar");
+  return (bar ? bar.getBoundingClientRect().bottom : 0) + VIEWPORT_GAP;
+}
 
 // Searchable driver-profile picker rendered as a proper select: a trigger that
 // always shows the current link, and a roomy dropdown listing every driver with
 // its availability (unclaimed / linked here / linked to another account).
+//
+// The panel is rendered into <body> as a FIXED element rather than absolutely
+// inside the cell, and both halves of that matter:
+//
+//   • the picker sits in a table cell inside `.table-wrap`, which is
+//     `overflow: auto` — an absolutely positioned panel is clipped by it, which
+//     is what sliced the top row of the list in half;
+//   • measuring "room above" against the top of the WINDOW ignored the sticky
+//     topbar, so a row low on the page opened a full-height panel upwards that
+//     ran up behind the league selectors.
+//
+// Fixed + portalled + measured against the topbar fixes both: it can't be
+// clipped by any ancestor, and it can't grow into the one strip of the screen
+// that isn't its to use.
 function DriverLinkSelect({ drivers, valueId, valueName, disabled, onChange }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
-  // Where the panel hangs and how tall its list may be — recomputed whenever
-  // it opens (or the page moves) so a row near the bottom of the window opens
-  // upwards instead of being clipped off-screen.
-  const [placement, setPlacement] = useState({ up: false, listMax: DRIVER_LIST_MAX });
+  // Where the panel hangs, how tall its list may be, and the trigger's position
+  // on screen — recomputed whenever it opens, the window resizes, or anything
+  // scrolls, so a fixed panel tracks the row it belongs to.
+  const [placement, setPlacement] = useState(null);
   const boxRef = useRef(null);
+  const panelRef = useRef(null);
   const inputRef = useRef(null);
 
   useEffect(() => {
-    function onDown(e) { if (boxRef.current && !boxRef.current.contains(e.target)) { setOpen(false); setText(""); } }
+    // The panel lives in a portal, so it is NOT inside boxRef — without
+    // checking it too, mousedown inside the list would close the panel before
+    // the click landed, and picking a driver would do nothing at all.
+    function onDown(e) {
+      const inTrigger = boxRef.current?.contains(e.target);
+      const inPanel = panelRef.current?.contains(e.target);
+      if (!inTrigger && !inPanel) { setOpen(false); setText(""); }
+    }
     function onKey(e) { if (e.key === "Escape") { setOpen(false); setText(""); } }
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
@@ -97,26 +130,52 @@ function DriverLinkSelect({ drivers, valueId, valueName, disabled, onChange }) {
 
   useEffect(() => { if (open) inputRef.current?.focus(); }, [open]);
 
-  // Pick the side with more room and cap the list to what actually fits there,
-  // never asking for more than ten rows.
+  // Pick the side with more room — between the topbar and the bottom of the
+  // window, which is all the space this panel is entitled to — and cap the list
+  // to what actually fits there, never asking for more than ten rows.
   useEffect(() => {
-    if (!open) return;
+    if (!open) { setPlacement(null); return undefined; }
+
+    // Re-measured on every animation frame while the panel is open, rather than
+    // only on scroll and resize.
+    //
+    // A fixed panel is anchored to viewport coordinates, so it has to be told
+    // whenever its row moves — and scrolling is far from the only thing that
+    // moves it. A success toast appearing or collapsing, the account list
+    // reloading after a link, any of the app's reveal animations: each reflows
+    // the page under a panel that then sits where the row used to be. Listening
+    // for the specific causes means missing the next one; asking "where is the
+    // row now?" each frame cannot.
+    //
+    // It costs one getBoundingClientRect per frame, only while a picker is
+    // open, and state is only written when something actually moved — so the
+    // idle case is a single cheap read and no re-render.
+    let raf = 0;
+    let last = null;
     function measure() {
       const rect = boxRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const below = window.innerHeight - rect.bottom - VIEWPORT_GAP;
-      const above = rect.top - VIEWPORT_GAP;
-      const up = below < Math.min(DRIVER_LIST_MAX + SEARCH_BOX_H, above);
-      const room = (up ? above : below) - SEARCH_BOX_H;
-      setPlacement({ up, listMax: Math.max(DRIVER_ROW_H * 3, Math.min(DRIVER_LIST_MAX, room)) });
+      if (rect) {
+        const top = usableTop();
+        const below = window.innerHeight - VIEWPORT_GAP - rect.bottom;
+        const above = rect.top - top;
+        const up = below < Math.min(DRIVER_LIST_MAX + SEARCH_BOX_H, above);
+        const room = (up ? above : below) - SEARCH_BOX_H;
+        const next = {
+          up,
+          listMax: Math.max(LIST_MIN, Math.min(DRIVER_LIST_MAX, room)),
+          left: rect.left,
+          width: rect.width,
+          top: rect.bottom,
+          bottom: window.innerHeight - rect.top,
+        };
+        const moved = !last || Object.keys(next).some(k => (
+          typeof next[k] === "number" ? Math.abs(next[k] - last[k]) > 0.5 : next[k] !== last[k]));
+        if (moved) { last = next; setPlacement(next); }
+      }
+      raf = requestAnimationFrame(measure);
     }
     measure();
-    window.addEventListener("resize", measure);
-    window.addEventListener("scroll", measure, true);
-    return () => {
-      window.removeEventListener("resize", measure);
-      window.removeEventListener("scroll", measure, true);
-    };
+    return () => cancelAnimationFrame(raf);
   }, [open]);
 
   const list = drivers || [];
@@ -152,10 +211,15 @@ function DriverLinkSelect({ drivers, valueId, valueName, disabled, onChange }) {
         <span style={{ color: "var(--ink-2)", fontSize: "0.7rem" }}>▾</span>
       </button>
 
-      {open && !disabled && (
-        <div style={{
-          position: "absolute", zIndex: 30, left: 0, right: 0,
-          ...(placement.up ? { bottom: "calc(100% + 4px)" } : { top: "calc(100% + 4px)" }),
+      {open && !disabled && placement && createPortal(
+        <div ref={panelRef} style={{
+          position: "fixed",
+          // Under the sticky topbar (z-index 10) on purpose: the panel is
+          // measured never to reach it, and if a future layout change ever lets
+          // it, the header staying legible is the better failure.
+          zIndex: 9,
+          left: placement.left, width: placement.width,
+          ...(placement.up ? { bottom: placement.bottom + 4 } : { top: placement.top + 4 }),
           background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 10,
           boxShadow: "0 8px 24px rgba(0,0,0,0.35)", overflow: "hidden",
         }}>
@@ -211,7 +275,8 @@ function DriverLinkSelect({ drivers, valueId, valueName, disabled, onChange }) {
               );
             })}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

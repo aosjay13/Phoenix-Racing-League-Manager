@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { AdminGate } from "@/components/AdminGate";
+import { AdminMessages } from "@/components/AdminMessages";
 import { PendingSignups } from "@/components/PendingSignups";
 import { APPROVALS_MIN_LEVEL } from "@/lib/pendingSignupAlerts";
 
 // The league-wide approvals queue — where the sidebar's red badge points.
 //
-// The same queue is on Drivers ▸ Roster & Teams, but scoped to the season being
+// The same queue is on Admin ▸ Driver Roster, but scoped to the season being
 // worked on. This page answers the question the badge asks: "somebody is
 // waiting — who, and for what?", across every series in the league at once, so
 // nobody sits in the queue merely because an admin never selected their season.
@@ -25,17 +26,24 @@ export default function ApprovalsPage() {
         Everything players have asked for and nobody has decided yet, across the whole league —
         <strong> sign-ups</strong> (approving puts that driver on the season&rsquo;s roster with the
         number and car they asked for) and <strong>car number changes</strong> (approving moves the
-        number on the roster entry they already have).
+        number on the roster entry they already have) — plus anything players have said back
+        about a decision you&rsquo;ve already made.
       </p>
 
       <AdminGate minLevel={APPROVALS_MIN_LEVEL}>
+        {/* The conversation half. Every decision made below lands on that
+            player's Dashboard, and what they say in reply arrives here — see
+            components/AdminMessages.jsx. Renders nothing until the league has
+            sent its first message. */}
+        <AdminMessages />
+
         <PendingSignups
           scope="league"
           empty={(
             <div className="empty-state">
               <span className="empty-state-icon">✅</span>
               <p>Nothing waiting — every sign-up has been dealt with.</p>
-              <Link href="/drivers?tab=roster" className="btn btn-ghost">Go to Roster &amp; Teams</Link>
+              <Link href="/roster" className="btn btn-ghost">Go to Driver Roster</Link>
             </div>
           )}
         />

@@ -4,6 +4,8 @@ import { useState } from "react";
 import { ImageUpload } from "@/components/ImageUpload";
 import { PointsFields } from "@/components/PointsFields";
 import { CarSelectionFields } from "@/components/CarSelectionFields";
+import { HeatPointsDefaultFields } from "@/components/HeatPointsDefaultFields";
+import { normalizedBuiltinTemplates } from "@/lib/pointsTemplates";
 import { scoresNoPoints } from "@/lib/seasonForm";
 import { BANGER_MODES, bangerEntryScope } from "@/lib/bangerRacing";
 import { resolveSignupRules } from "@/lib/carSelection";
@@ -66,10 +68,9 @@ export function SeasonForm({
 
       <ImageUpload label="Season Logo" kind="season-logo" value={value.logo_url} onUploaded={url => set({ logo_url: url })} />
 
-      <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
+      <div className="field check-row">
         <input type="checkbox" id="season_combined_championship" disabled={disabled}
-          checked={value.combined_championship} onChange={check("combined_championship")}
-          style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+          checked={value.combined_championship} onChange={check("combined_championship")} />
         <label htmlFor="season_combined_championship" style={{ margin: 0 }}>
           Enable Overall Championship
           <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
@@ -82,10 +83,9 @@ export function SeasonForm({
         </label>
       </div>
 
-      <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
+      <div className="field check-row">
         <input type="checkbox" id="season_per_class_schedules" disabled={disabled}
-          checked={value.per_class_schedules} onChange={check("per_class_schedules")}
-          style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+          checked={value.per_class_schedules} onChange={check("per_class_schedules")} />
         <label htmlFor="season_per_class_schedules" style={{ margin: 0 }}>
           Per-Class Schedules
           <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
@@ -98,10 +98,9 @@ export function SeasonForm({
         </label>
       </div>
 
-      <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
+      <div className="field check-row">
         <input type="checkbox" id="season_per_class_results" disabled={disabled}
-          checked={value.per_class_results} onChange={check("per_class_results")}
-          style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+          checked={value.per_class_results} onChange={check("per_class_results")} />
         <label htmlFor="season_per_class_results" style={{ margin: 0 }}>
           Separate Results by Class
           <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
@@ -112,6 +111,30 @@ export function SeasonForm({
             flipped either way on its Race Info tab. With no single outright order, the overall
             championship above just adds the classes&rsquo; points together — turn it off for a
             pure class-championship season.
+          </span>
+        </label>
+      </div>
+
+      {/* Heat racing for the whole season. It sits with the other structural
+          ticks rather than below the derby dropdown, because it's the same kind
+          of answer: it says what shape this season's events are. Ticking it
+          doesn't build an event — each race still declares its own heats on its
+          Race Info tab — it pre-ticks heat format on new races and unlocks the
+          two points defaults below, so a league running heats all year sets its
+          scoring once here instead of once per event. An event's own defaults,
+          and a class's, override these; see lib/standings.js. */}
+      <div className="field check-row">
+        <input type="checkbox" id="season_heat_format" disabled={disabled}
+          checked={!!value.heat_format} onChange={check("heat_format")} />
+        <label htmlFor="season_heat_format" style={{ margin: 0 }}>
+          Heats and Consolation Races
+          <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
+            On: this season runs heat racing (Heats → Consolation → Feature). Every new race in it
+            starts in heat format, and you can name the points template every heat and every
+            consolation scores on — once, here, instead of once per race entry. Each event still lists
+            its own heats and B-Mains on its Race Info tab, and can override either default there.
+            The templates those sessions score on are set with the rest of the scoring, in
+            <strong> Points &amp; Bonuses</strong> below.
           </span>
         </label>
       </div>
@@ -154,9 +177,18 @@ export function SeasonForm({
         </p>
       )}
 
+      {/* The heat/consolation default templates ride INSIDE this block, under Race
+          Points and Qualifying Points, so a heat season's whole scoring setup —
+          the scales, what its heats and consolations score on, and the bonuses —
+          reads as one thing instead of two. They appear only for a season ticked
+          as running heats. */}
       {showPoints && (
         <PointsFields value={value} onPatch={set} templates={templates} onTemplatesChanged={onTemplatesChanged}
-          disabled={disabled} onError={onError} noPoints={noPoints} banger={bangerOn} />
+          disabled={disabled} onError={onError} noPoints={noPoints} banger={bangerOn}
+          afterScales={value.heat_format ? (
+            <HeatPointsDefaultFields idPrefix="season" value={value} onPatch={set} disabled={disabled}
+              templates={[...normalizedBuiltinTemplates(), ...templates]} scopeLabel="season" />
+          ) : null} />
       )}
     </>
   );

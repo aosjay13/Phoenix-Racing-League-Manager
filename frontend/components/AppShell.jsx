@@ -5,7 +5,16 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { useLeague } from "@/components/LeagueProvider";
+import { useMySignups } from "@/components/MySignupsProvider";
+import { useMessages } from "@/components/MessagesProvider";
+import { useAdminMessages } from "@/lib/messageAlerts";
+import {
+  adminInboxTitle, adminThreadsNeedingReply, playerInboxTitle, unreadPlayerMessages,
+} from "@/lib/messages";
+import { additionsTitle } from "@/lib/rosterAdditions";
+import { useRosterAdditions } from "@/lib/rosterAlerts";
 import { copyCurrentLink } from "@/lib/scopeLink";
+import { signupBadgeCount, signupBadgeTitle } from "@/lib/signupFlow";
 import { useUserAccountsAlerts, alertsTitle } from "@/lib/userAccountsAlerts";
 import {
   APPROVALS_MIN_LEVEL, pendingSignupsTitle, usePendingSignupCount,
@@ -18,11 +27,28 @@ export { USERS_SEEN_KEY, USERS_SEEN_EVENT } from "@/lib/userAccountsAlerts";
 
 const publicNav = [
   { href: "/",          label: "Dashboard", icon: "◈" },
+  // Joining a series — the one thing a brand-new player comes here to do, so it
+  // sits second, above every table they might read. It's a top-level menu of
+  // its own rather than a section of a page because somebody who has never used
+  // the app before shouldn't have to know that "sign-ups" live under anything.
+  // Its badge counts what is waiting on THEM (see lib/signupFlow.js).
+  { href: "/signups",   label: "Sign-ups",  title: "Join a series", icon: "📝" },
   { href: "/standings", label: "Standings", icon: "🏆" },
   { href: "/stats",     label: "Stats",     icon: "📊" },
   { href: "/records",   label: "Records",   icon: "🏅" },
   { href: "/skill-ratings", label: "Skill Ratings", icon: "📈" },
+  // Hot-lapping, time attack and division placements. It sits with the racing
+  // pages rather than under Admin because the sheets themselves are public —
+  // only creating and entering one is an admin job. See app/time-trials.
+  //
+  // Shortened here on purpose: the sidebar is a narrow column of one-word
+  // labels, and "Time Trials & Placements" was long enough to wrap and unsettle
+  // the column. The screen it opens still carries the full name, and `title`
+  // keeps it a hover away from the link itself.
+  { href: "/time-trials", label: "Time Trials", title: "Time Trials & Placements", icon: "⏱" },
   { href: "/schedule",  label: "Schedule",  icon: "📅" },
+  { href: "/calendar",  label: "Calendar",  icon: "🗓️" },
+  { href: "/history",   label: "History",   icon: "📜" },
   { href: "/drivers",   label: "Drivers",   icon: "🏎" },
   { href: "/teams",     label: "Teams",     icon: "🛡" },
   { href: "/tracks",    label: "Tracks",    icon: "🏁" },
@@ -39,6 +65,12 @@ const publicNav = [
 // queue — Moderator and up (see lib/pendingSignupAlerts.js).
 const adminNav = [
   { href: "/admin",       label: "League Setup",   icon: "⚙", exact: true },
+  // Who's on which roster, and everything done to it. It was a tab on Drivers
+  // ("Roster & Teams") that you had to know was there; it's a menu of its own
+  // because it's a job rather than a view, and because it carries a badge —
+  // approving a sign-up puts a driver on a roster the admin may not be looking
+  // at, which used to happen entirely silently (see lib/rosterAdditions.js).
+  { href: "/roster",      label: "Driver Roster",  title: "Season rosters, car numbers, teams & sign-ups", icon: "⊞" },
   { href: "/approvals",   label: "Approvals",      icon: "✅", minLevel: APPROVALS_MIN_LEVEL },
 ];
 
@@ -53,7 +85,8 @@ function NavLinks({ items, pathname, badges }) {
       ? `${badge} item${badge === 1 ? "" : "s"} need${badge === 1 ? "s" : ""} your attention`
       : entry?.title;
     return (
-      <Link className={`nav-link${isActive ? " active" : ""}`} key={item.href} href={item.href}>
+      <Link className={`nav-link${isActive ? " active" : ""}`} key={item.href} href={item.href}
+        title={item.title}>
         <span className="nav-icon">{item.icon}</span>
         {item.label}
         {badge > 0 && (
@@ -196,11 +229,34 @@ export function AppShell({ children }) {
   // Sign-ups waiting on an approval. The hook makes no API call at all below
   // Moderator, so a player's browser never asks for a count it isn't allowed.
   const pendingSignups = usePendingSignupCount(roleLevel);
+  // The player's own side of the same queue: series they could join, and cars
+  // they still have to choose. Nothing is fetched for a signed-out visitor.
+  const { data: mySignups } = useMySignups();
+  // Drivers approved onto a roster since this admin last read the panel. Unlike
+  // Approvals — an outstanding job that falls when somebody does it — this is
+  // news, so it clears by being read. See lib/rosterAlerts.js.
+  const rosterAdditions = useRosterAdditions(isAdmin);
+  // The two halves of the message board. Players read theirs on the Dashboard,
+  // so that's where their badge goes; a player's reply is a job for the staff
+  // who work the queue, so it joins the Approvals count.
+  const { rows: myMessages } = useMessages();
+  const unreadMessages = unreadPlayerMessages(myMessages);
+  const { rows: leagueMessages } = useAdminMessages(roleLevel);
+  const messageReplies = adminThreadsNeedingReply(leagueMessages);
   // New signups / pending claims are handled on the Drivers page's User
   // Accounts tab, so the badge rides along with that nav item.
   const navBadges = {
+    "/": { count: unreadMessages.length, title: playerInboxTitle(unreadMessages) },
     "/drivers": { count: userAccountsAlerts.total, title: alertsTitle(userAccountsAlerts) },
-    "/approvals": { count: pendingSignups, title: pendingSignupsTitle(pendingSignups) },
+    // One badge, two kinds of waiting: undecided requests and unanswered
+    // replies. Both are people waiting on an admin, and splitting them across
+    // two numbers on one link would only make the link harder to read.
+    "/approvals": {
+      count: pendingSignups + messageReplies.length,
+      title: [pendingSignupsTitle(pendingSignups), adminInboxTitle(messageReplies)].join(" · "),
+    },
+    "/signups": { count: signupBadgeCount(mySignups), title: signupBadgeTitle(mySignups) },
+    "/roster": { count: rosterAdditions.length, title: additionsTitle(rosterAdditions) },
   };
   // Admin entries the signed-in staff account is high enough to see.
   const adminItems = adminNav.filter(

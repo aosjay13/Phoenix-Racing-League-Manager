@@ -19,28 +19,29 @@ const DRIVER_COLS = [
 ];
 
 export default function TeamProfilePage() {
-  const { name } = useParams();
+  const { team } = useParams();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
 
-  // useParams() returns the route segment still percent-encoded, so decode it
-  // before re-encoding for the API call — otherwise "Firebird Racing" becomes
-  // "Firebird%2520Racing" and matches no team. decodeURIComponent is a safe
+  // The route segment is the team's id, but older links (and anything shared
+  // before teams became documents) carry its NAME instead — /api/team-stats
+  // accepts either. useParams() returns the segment still percent-encoded, so
+  // decode it before re-encoding for the API call; decodeURIComponent is a safe
   // no-op when the value is already plain text.
-  const teamName = (() => {
-    const raw = Array.isArray(name) ? name[0] : name;
+  const teamKey = (() => {
+    const raw = Array.isArray(team) ? team[0] : team;
     try { return decodeURIComponent(raw ?? ""); } catch { return raw ?? ""; }
   })();
 
   useEffect(() => {
-    if (!teamName) return;
-    api(`/api/team-stats?name=${encodeURIComponent(teamName)}`).then(setData).catch(err => setError(err.message));
-  }, [teamName]);
+    if (!teamKey) return;
+    api(`/api/team-stats?team=${encodeURIComponent(teamKey)}`).then(setData).catch(err => setError(err.message));
+  }, [teamKey]);
 
   if (error) return <div className="empty-state"><span className="empty-state-icon">🏁</span><p>{error}</p></div>;
   if (!data) return <div className="skeleton" style={{ height: 280 }} />;
 
-  const { team_name, logo_url, color, stats, drivers, seasons, seasons_raced } = data;
+  const { team_name, logo_url, color, stats, drivers, seasons, seasons_raced, seasons_entered } = data;
 
   return (
     <section>
@@ -50,7 +51,7 @@ export default function TeamProfilePage() {
           : <span className="avatar avatar-xl avatar-fallback" style={color ? { background: color } : undefined}>{String(team_name || "?")[0]?.toUpperCase()}</span>}
         <div style={{ flex: 1, minWidth: 220 }}>
           <div className="page-title" style={{ marginBottom: 2 }}><h2>{team_name}</h2></div>
-          <span className="page-badge">{seasons_raced} Season{seasons_raced === 1 ? "" : "s"} · {drivers.length} Driver{drivers.length === 1 ? "" : "s"}</span>
+          <span className="page-badge">{seasons_entered ?? seasons_raced} Season{(seasons_entered ?? seasons_raced) === 1 ? "" : "s"} · {drivers.length} Driver{drivers.length === 1 ? "" : "s"}</span>
         </div>
       </div>
 
@@ -99,11 +100,16 @@ export default function TeamProfilePage() {
       {seasons.length > 0 && (
         <>
           <div className="section-header"><h3>By Season</h3></div>
+          <p style={{ margin: "0 0 8px", color: "var(--ink-2)", fontSize: "0.85rem" }}>
+            Each season&rsquo;s total is what that season&rsquo;s line-up scored; the career stats above are
+            these seasons added together.
+          </p>
           <div className="table-wrap">
             <table className="stats-table">
               <thead>
                 <tr>
                   <th className="sticky-col" style={{ textAlign: "left" }}>Season</th>
+                  <th style={{ textAlign: "left" }}>Line-up</th>
                   <th>Points</th><th>Starts</th><th>Wins</th><th>Podiums</th><th>Poles</th>
                 </tr>
               </thead>
@@ -111,6 +117,7 @@ export default function TeamProfilePage() {
                 {seasons.map(s => (
                   <tr key={s.season_id}>
                     <td className="sticky-col" style={{ textAlign: "left" }}>{s.season_name}</td>
+                    <td style={{ textAlign: "left", color: "var(--ink-1)" }}>{(s.drivers ?? []).join(", ") || "—"}</td>
                     <td>{s.points}</td><td>{s.starts}</td><td>{s.wins}</td><td>{s.podiums}</td><td>{s.poles}</td>
                   </tr>
                 ))}

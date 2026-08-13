@@ -1,14 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { useLeague } from "@/components/LeagueProvider";
+import { useMySignups } from "@/components/MySignupsProvider";
 import { rowInScope } from "@/lib/carSelection";
-import { api } from "@/lib/api";
 
-// The Dashboard's "Series Information" section — deliberately NOT a sidebar
-// item, so it only takes up room when it has something to say.
+// The Dashboard's "Series Information" section — a scoped shortcut, not a menu
+// of its own, so it only takes up room when it has something to say. Joining a
+// series has its own sidebar item now (Sign-ups, app/signups); this card sends
+// a player there when that's what's outstanding, and to My Series when what's
+// outstanding is a car to lock in.
 //
 // It shows ACTIVE seasons only, in the scope the page is already on. A season
 // an admin marked complete is gone from here AND from /series-info behind it —
@@ -28,18 +30,11 @@ export function SeriesInfoPanel() {
   // section is about the series you're looking at rather than every series you
   // have ever raced. /api/users/me/series answers league-wide and the filtering
   // happens here, which means changing the dropdown re-scopes instantly with no
-  // refetch.
+  // refetch. The payload itself is loaded once for the whole app — see
+  // components/MySignupsProvider.jsx — so this card, the Sign-ups screen and the
+  // badge on its nav item all read one answer.
   const { gameId, seriesId } = useLeague();
-  const [data, setData] = useState(null);
-
-  useEffect(() => {
-    if (!user) { setData(null); return; }
-    let live = true;
-    api("/api/users/me/series")
-      .then(res => { if (live) setData(res); })
-      .catch(() => { if (live) setData(null); });
-    return () => { live = false; };
-  }, [user]);
+  const { data } = useMySignups();
 
   if (loading || !user || !data) return null;
 
@@ -57,20 +52,26 @@ export function SeriesInfoPanel() {
 
   // Nothing to answer and nothing to join in this scope — stay out of the way.
   // A player with no driver profile still sees it when there's something to
-  // join, since linking is the first step of doing so.
+  // join: signing up is how they get one, so the card sends them to Sign-ups.
   if (!openSeasons.length && !signups.length) return null;
+
+  // Where the card goes. Anything about JOINING — a player with no driver
+  // profile, or nothing to answer but a season open to sign up for — belongs on
+  // the Sign-ups menu, which walks a first-timer through it. A car still to
+  // lock in is answered on My Series, so that's where the card points instead.
+  const href = needsDriver || (!toPick && !openSeasons.length) ? "/signups" : "/series-info";
 
   return (
     <>
       <div className="section-header" style={{ marginTop: 28 }}>
         <h3>Series Information</h3>
       </div>
-      <Link href="/series-info" className="series-info-card">
-        <span className="series-info-icon" aria-hidden="true">🚗</span>
+      <Link href={href} className="series-info-card">
+        <span className="series-info-icon" aria-hidden="true">{href === "/signups" ? "📝" : "🚗"}</span>
         <span className="series-info-body">
           <strong>
             {needsDriver
-              ? "Link your driver profile to get started"
+              ? "Sign up for a series to get started"
               : toPick
                 ? `Lock in your car — ${toPick} season${toPick === 1 ? "" : "s"} waiting on you`
                 : openSeasons.length
@@ -79,7 +80,7 @@ export function SeriesInfoPanel() {
           </strong>
           <span>
             {needsDriver
-              ? "Claim your driver from the roster (or add yourself) to sign up and pick a car."
+              ? "Pick a series, fill in a short form, and an admin puts you on the grid."
               : [
                 openSeasons.length
                   ? `${openSeasons.length} active season${openSeasons.length === 1 ? "" : "s"} ${openSeasons.length === 1 ? "asks" : "ask"} you to choose a car`

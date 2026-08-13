@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
 import { SPECS, coerceField } from "@/lib/entityApi";
 import { db } from "@/lib/firebase";
-import { withAdmin } from "@/lib/serverAuth";
+import { getUserRole, withAdmin } from "@/lib/serverAuth";
+import { canUploadImages, imageFieldNames, stripImageFields } from "@/lib/imagePermissions";
 import { recalcGameSkillRatings, gameIdForSeason } from "@/lib/skillRatingServer";
 
 // PATCH a race. Mirrors the generic entityApi doc-update, but a change to the
 // event's DATE or ROUND NUMBER reorders the game's SR timeline, so we trigger a
 // chronological recalc afterwards — this is the retroactive "ripple" for a race
 // that gets re-dated into the past (or future).
-export const PATCH = withAdmin(async (request, { params }) => {
+export const PATCH = withAdmin(async (request, { params }, user) => {
   const body = await request.json();
   const updates = {};
   for (const [name, opts] of Object.entries(SPECS.races.fields)) {
@@ -18,12 +19,25 @@ export const PATCH = withAdmin(async (request, { params }) => {
       updates[name] = coerced.value;
     }
   }
-  if (!Object.keys(updates).length) {
-    return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
-  }
   const ref = db().collection("races").doc(params.id);
   const doc = await ref.get();
   if (!doc.exists) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // The track logo is an image, and images are the Owner's to set (see
+  // lib/imagePermissions.js). Re-posting the one the form was showing isn't a
+  // change and passes through, so an Admin re-dating an event never has their
+  // save refused — or the logo wiped — over a field they didn't touch.
+  const guarded = stripImageFields(updates, {
+    fields: imageFieldNames(SPECS.races.fields),
+    existing: doc.data(),
+    allowed: canUploadImages(await getUserRole(user)),
+  });
+  Object.keys(updates).forEach(k => { if (!(k in guarded.updates)) delete updates[k]; });
+  if (!Object.keys(updates).length) {
+    return NextResponse.json({
+      error: guarded.stripped.length ? "Only the league Owner can change images." : "No valid fields to update",
+    }, { status: guarded.stripped.length ? 403 : 400 });
+  }
   await ref.update(updates);
 
   // Only a date/round change alters SR chronology — recompute the game then.

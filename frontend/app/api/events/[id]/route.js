@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
-import { decorateRaceBonuses, isQualifying, makeScorer, resolveSeasonConfig } from "@/lib/standings";
+import { decorateRaceBonuses, decorateSessionFlags, isQualifying, makeScorer, resolveSeasonConfig, sessionScopeContext } from "@/lib/standings";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
 import { fetchDriverNames } from "@/lib/driverNamesServer";
 import { fetchSeasonClasses, classOfResult, racePerClassResults } from "@/lib/classServer";
 import { fetchSeriesForSeason } from "@/lib/seriesServer";
 import { isBracketDoc, isBracketEvent } from "@/lib/bracketRacing";
 import { isBangerDoc, isBangerEvent } from "@/lib/bangerRacing";
+import { applySeasonTeams } from "@/lib/teams";
+import { loadTeamIndex } from "@/lib/teamsServer";
+import { getRequestLeagueId } from "@/lib/serverAuth";
 
 // Full detail for one event: a dedicated qualifying session plus every race
 // session (including heat/consolation/feature sessions for heat-format
@@ -17,10 +20,10 @@ export async function GET(request, { params }) {
   if (!raceDoc.exists) return NextResponse.json({ error: "Event not found" }, { status: 404 });
   const event = { id: raceDoc.id, ...raceDoc.data() };
 
-  const [seasonDoc, entriesSnap, teamsSnap, resultsSnap, templatesById, classes] = await Promise.all([
+  const [seasonDoc, entriesSnap, teamIndex, resultsSnap, templatesById, classes] = await Promise.all([
     db().collection("seasons").doc(event.season_id).get(),
     db().collection("entries").where("season_id", "==", event.season_id).get(),
-    db().collection("teams").where("season_id", "==", event.season_id).get(),
+    loadTeamIndex({ leagueId: getRequestLeagueId(request) }),
     db().collection("results").where("race_id", "==", event.id).get(),
     fetchTemplatesById(),
     fetchSeasonClasses(event.season_id),
@@ -29,9 +32,21 @@ export async function GET(request, { params }) {
   const season = seasonDoc.exists ? { id: seasonDoc.id, ...seasonDoc.data() } : null;
   const series = await fetchSeriesForSeason(season);
   const config = resolveSeasonConfig(season || {}, series);
-  const entriesById = Object.fromEntries(entriesSnap.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
-  const teamsById = Object.fromEntries(teamsSnap.docs.map(d => [d.id, d.data()]));
-  const all = decorateRaceBonuses(resultsSnap.docs.map(d => d.data()));
+  // Each row shows the team its driver raced for in THIS season, taken from the
+  // season's team lineup (see lib/teams.js) so it matches the standings.
+  const entriesById = Object.fromEntries(
+    applySeasonTeams(entriesSnap.docs.map(d => ({ id: d.id, ...d.data() })), event.season_id, teamIndex)
+      .map(e => [e.id, e]),
+  );
+  // The event's own doc is the only race in scope here. Decorating against it
+  // resolves each session's stats/points toggles and which class its points
+  // template was assigned to, so the points printed on this page are the same
+  // numbers the standings total.
+  const all = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), { [event.id]: event },
+    // The season and this event's classes can each name a heat/consolation points
+    // default of their own, so they're resolved here too — the numbers on this
+    // page have to be the ones the standings total.
+    sessionScopeContext({ seasons: [season], classes, entriesById })));
   // Points shown per row come from the class that row raced in — its own points
   // structure when it has one — with the session's template on top.
   const scorer = makeScorer(all, { config, classes, entriesById, templatesById });
@@ -60,7 +75,7 @@ export async function GET(request, { params }) {
       driver_number: entry.number ?? null,
       driver_id: entry.driver_id ?? null,
       user_id: entry.user_id ?? null,
-      team: teamsById[entry.team_id]?.name ?? null,
+      team: (entry.team_id ? teamIndex.teamById(entry.team_id)?.name : null) ?? entry.team ?? null,
       game_alias: entry.driver_id ? (aliasByDriver[entry.driver_id] ?? null) : null,
     };
   };
@@ -115,11 +130,19 @@ export async function GET(request, { params }) {
 
   // Qualifying is the only source of starting position — there's no fallback
   // to anything recorded on a race result.
+  //
+  // The Pts column is what this grid slot is WORTH — scored by the same scorer
+  // the standings use, off Qualifying's own points structure. It is a line of
+  // the championship in its own right, so the Qualifying table below and the
+  // race tables beside it simply add up to what this event contributed.
   const qualifying = qualResults
-    .map(r => {
-      const qc = configFor(r);
-      return { ...joinEntry(r), position: Number(r.finish_pos), qual_points: Number(qc.qualPoints[r.finish_pos] ?? 0) };
-    })
+    .map(r => ({
+      ...joinEntry(r),
+      position: Number(r.finish_pos),
+      points: scorer.points(r),
+      // Kept under its old name too, for anything still reading qual_points.
+      qual_points: scorer.points(r),
+    }))
     .sort((a, b) => a.position - b.position);
 
   // The race stores only the venue's NAME; the exporter's metadata strip wants

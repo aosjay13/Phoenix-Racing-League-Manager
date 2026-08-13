@@ -1,0 +1,329 @@
+// Every session scores itself. The one invariant that matters:
+//
+//   a driver's championship total == the sum of the Points column on every
+//   session they ran
+//
+// Each case below asserts the total AND that it equals the per-session sum, so
+// the standings can always be checked by adding up what is on screen.
+import assert from "node:assert";
+import {
+  calculateStandings, decorateRaceBonuses, decorateSessionFlags,
+  resolveSeasonConfig, makeScorer, pointsFor, explainPoints, sessionScopeContext,
+} from "../standings.js";
+
+// race P1 100 / P2 90 / P3 80 · qualifying P1 10 / P2 5
+const season = {
+  race_points: JSON.stringify({ 1: 100, 2: 90, 3: 80 }),
+  qual_points: JSON.stringify({ 1: 10, 2: 5 }),
+  bonus_points: {},
+};
+const config = resolveSeasonConfig(season, null);
+const entries = [{ id: "e1", name: "Ana" }, { id: "e2", name: "Bo" }];
+
+let n = 0;
+const check = (label, got, want) => { n++; assert.deepStrictEqual(got, want, `${label}: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`); };
+
+// Score a season, and prove the total is the sum of what each grid displays.
+// `seasonDoc` is only needed by the tests that put a heat/consolation points
+// default on the season itself — decoration resolves those against it.
+function score(results, racesById, { templatesById = {}, classes = [], cfg = config, seasonDoc = null } = {}) {
+  const entriesById = Object.fromEntries(entries.map(e => [e.id, e]));
+  const decorated = decorateRaceBonuses(decorateSessionFlags(results, racesById,
+    sessionScopeContext({ seasons: [seasonDoc], classes, entriesById })));
+  const out = calculateStandings(decorated, entries, [], cfg, templatesById, classes);
+  const totals = Object.fromEntries(out.rows.map(r => [r.entry_id, r.adjusted_points]));
+
+  // The Points column every grid renders, driver by driver.
+  const scorer = makeScorer(decorated, { config: cfg, classes, entriesById: Object.fromEntries(entries.map(e => [e.id, e])), templatesById });
+  const onScreen = {};
+  for (const r of decorated) {
+    if (r.counts_points === false) continue;
+    onScreen[r.entry_id] = (onScreen[r.entry_id] || 0) + scorer.points(r);
+  }
+  if (!cfg.dropWeeks) {
+    for (const id of Object.keys(totals)) {
+      assert.strictEqual(totals[id], onScreen[id] ?? 0,
+        `the standings must equal the sum of every grid's Points column for ${id}: total ${totals[id]}, grids ${onScreen[id]}`);
+    }
+  }
+  return totals;
+}
+
+const q = (entry, pos, extra = {}) => ({ race_id: "r1", entry_id: entry, session: "Qualifying", session_type: "qualifying", finish_pos: pos, ...extra });
+const race = (entry, session, pos, extra = {}) => ({ race_id: "r1", entry_id: entry, session, session_type: "race", finish_pos: pos, ...extra });
+
+// ── 1. The ordinary weekend: qualifying is a line of its own ──────────────
+// Ana: pole 10 + win 100 = 110. Bo: P2 qual 5 + P2 race 90 = 95.
+check("one race", score([q("e1", 1), q("e2", 2), race("e1", "Race", 1), race("e2", "Race", 2)],
+  { r1: { sessions: ["Race"] } }), { e1: 110, e2: 95 });
+
+// ── 2. Qualifying alone already scores — before the race is even entered ──
+// This is what "qualifying isn't being added" looked like: enter Qualifying,
+// check the standings, see nothing, because the points had nowhere to be folded.
+check("qualifying entered, race not yet", score([q("e1", 1), q("e2", 2)], { r1: { sessions: ["Race"] } }),
+  { e1: 10, e2: 5 });
+
+// ── 3. A doubleheader pays qualifying ONCE — there is one Qualifying ──────
+// Ana: 10 + 100 + 90 = 200. Bo: 5 + 90 + 100 = 195.
+check("doubleheader", score([
+  q("e1", 1), q("e2", 2),
+  race("e1", "Race 1", 1), race("e2", "Race 1", 2),
+  race("e1", "Race 2", 2), race("e2", "Race 2", 1),
+], { r1: { sessions: ["Race 1", "Race 2"] } }), { e1: 200, e2: 195 });
+
+// ── 4. Three races, still one Qualifying ─────────────────────────────────
+check("three races", score([
+  q("e1", 1), race("e1", "Race 1", 1), race("e1", "Race 2", 1), race("e1", "Sprint", 1),
+], { r1: { sessions: ["Race 1", "Race 2", "Sprint"] } }), { e1: 310 });
+
+// ── 5. Heat format, default toggles: heats/consolations score nothing ─────
+check("heat default", score([
+  q("e1", 1),
+  { race_id: "r1", entry_id: "e1", session: "Heat 1", session_type: "heat", finish_pos: 1 },
+  { race_id: "r1", entry_id: "e1", session: "A-Main Feature", session_type: "feature", finish_pos: 1 },
+], { r1: { heat_format: true, heats: ["Heat 1"], consolations: [], feature_name: "A-Main Feature" } }), { e1: 110 });
+
+// ── 6. Heats switched on: every scoring session adds, nothing is folded ───
+check("heats on", score([
+  q("e1", 1),
+  { race_id: "r1", entry_id: "e1", session: "Heat 1", session_type: "heat", finish_pos: 2 },
+  { race_id: "r1", entry_id: "e1", session: "A-Main Feature", session_type: "feature", finish_pos: 1 },
+], { r1: { heat_format: true, heats: ["Heat 1"], consolations: [], feature_name: "A-Main Feature", session_points_enabled: { "Heat 1": true } } }), { e1: 200 });
+
+// ── 7. Qualifying's points toggle turns the award off ─────────────────────
+// A grid-setting-only qualifying session: still shown, still feeds Poles and
+// Average Start, pays nothing.
+check("qualifying points off", score([q("e1", 1), race("e1", "Race", 1)],
+  { r1: { sessions: ["Race"], session_points_enabled: { Qualifying: false } } }), { e1: 100 });
+
+// ── 8. A DNS in qualifying scores nothing ────────────────────────────────
+check("qualifying DNS", score([q("e1", 1, { status: "dns" }), race("e1", "Race", 1)],
+  { r1: { sessions: ["Race"] } }), { e1: 100 });
+
+// ── 9. The session list naming Qualifying is now irrelevant to scoring ────
+// It was the source of a whole class of bugs while the award had to be hidden
+// inside a race. Nothing reads it for points any more.
+check("sessions names Qualifying", score([q("e1", 1), race("e1", "Race", 1)],
+  { r1: { sessions: ["Qualifying", "Race"] } }), { e1: 110 });
+
+// ── 10. Legacy rows with no session name ─────────────────────────────────
+check("legacy rows", score([
+  { race_id: "r1", entry_id: "e1", session_type: "qualifying", finish_pos: 1 },
+  { race_id: "r1", entry_id: "e1", session_type: "race", finish_pos: 1 },
+], { r1: { sessions: ["Race"] } }), { e1: 110 });
+
+// ── 11. Split event: each class's Qualifying scores in its own class ──────
+{
+  const cq = (entry, cls, pos) => ({ ...q(entry, pos), class_id: cls });
+  const cr = (entry, cls, session, pos) => ({ ...race(entry, session, pos), class_id: cls });
+  // 4 wins (400) + pro pole (10) + am P2 (5) = 415.
+  check("split classes", score([
+    cq("e1", "pro", 1), cq("e1", "am", 2),
+    cr("e1", "pro", "Race 1", 1), cr("e1", "am", "Race 1", 1),
+    cr("e1", "pro", "Race 2", 1), cr("e1", "am", "Race 2", 1),
+  ], { r1: { sessions: ["Race 1", "Race 2"] } }), { e1: 415 });
+}
+
+// ── 12. Undecorated results score identically ────────────────────────────
+// Nothing about scoring depends on the race docs any more.
+{
+  const raw = decorateRaceBonuses([q("e1", 1), race("e1", "Race", 1)]);
+  const out = calculateStandings(raw, entries, [], config, {}, []);
+  check("undecorated", { e1: out.rows[0].adjusted_points }, { e1: 110 });
+}
+
+// ── 13. A points template on the race does not govern Qualifying ─────────
+// Qualifying scores off ITS OWN structure. A template assigned to Qualifying is
+// what changes the qualifying scale; one assigned to the race changes the race.
+{
+  const blankQual = { race_points: JSON.stringify({ 1: 100 }), qual_points: JSON.stringify({ 1: 0 }), bonus_points: {} };
+  const cfg = resolveSeasonConfig(blankQual, null);
+  const templates = {
+    imsa: { id: "imsa", race_points: { 1: 100 }, qual_points: { 1: 10 }, bonus_points: {} },
+  };
+  const races = { r1: { sessions: ["Race"] } };
+  check("template on the race only",
+    score([q("e1", 1), race("e1", "Race", 1, { points_template_id: "imsa" })], races, { templatesById: templates, cfg }),
+    { e1: 100 });
+  check("template on Qualifying pays the pole",
+    score([q("e1", 1, { points_template_id: "imsa" }), race("e1", "Race", 1, { points_template_id: "imsa" })], races,
+      { templatesById: templates, cfg }),
+    { e1: 110 });
+}
+
+// ── 14. Racing bonuses can never leak into a qualifying row ──────────────
+{
+  const bonusCfg = resolveSeasonConfig({
+    race_points: JSON.stringify({ 1: 100 }), qual_points: JSON.stringify({ 1: 10 }),
+    bonus_points: { best_lap: 5, most_laps_led: 5, lead_a_lap: 5, halfway_point: 5, hard_charger: 5 },
+  }, null);
+  const ticked = { fastest_lap: true, most_laps_led: true, laps_led: 12, halfway_leader: true, hard_charger: true };
+  check("qualifying ignores racing bonuses",
+    pointsFor({ ...q("e1", 1), ...ticked }, bonusCfg), 10);
+  check("a race pays them", pointsFor({ ...race("e1", "Race", 1), ...ticked }, bonusCfg), 125);
+}
+
+// ── 15. Per-result adjustments still apply to a qualifying row ───────────
+check("qualifying adjustment", pointsFor({ ...q("e1", 1), points_adjustment: -4, bonus_points: 2 }, config), 8);
+
+// ── 16. The itemised breakdown matches the number, on both kinds of row ──
+{
+  const sum = parts => parts.reduce((a, p) => a + Number(p.value || 0), 0);
+  const pole = q("e1", 1);
+  check("pole breakdown labelled", explainPoints(pole, config)[0].label, "Pole position");
+  check("pole breakdown sums", sum(explainPoints(pole, config)), pointsFor(pole, config));
+  const third = q("e1", 2);
+  check("grid slot breakdown labelled", explainPoints(third, config)[0].label, "Qualified P2");
+  check("grid slot breakdown sums", sum(explainPoints(third, config)), pointsFor(third, config));
+  const win = race("e1", "Race", 1);
+  check("race breakdown sums", sum(explainPoints(win, config)), pointsFor(win, config));
+}
+
+
+// ── 17. Drop weeks drop a whole ROUND, sessions added together ───────────
+// Not the single lowest session — that would always throw away a qualifying
+// run (a small number by design) and keep the bad race it went with.
+{
+  const dropCfg = { ...config, dropWeeks: 1 };
+  const ev = (id, entry, qualPos, racePos) => ([
+    { race_id: id, entry_id: entry, session: "Qualifying", session_type: "qualifying", finish_pos: qualPos },
+    { race_id: id, entry_id: entry, session: "Race", session_type: "race", finish_pos: racePos },
+  ]);
+  const results = decorateRaceBonuses([...ev("r1", "e1", 1, 1), ...ev("r2", "e1", 2, 3)]);
+  const out = calculateStandings(results, entries, [], dropCfg, {}, []);
+  const row = out.rows[0];
+  // Round 1 = 10 + 100 = 110. Round 2 = 5 + 80 = 85. Drop the worse ROUND (85).
+  check("drop weeks: earned", row.points, 195);
+  check("drop weeks: dropped a whole round", row.dropped_points, 85);
+  check("drop weeks: total", row.adjusted_points, 110);
+}
+
+// ── 18. The event's DEFAULT points template for heats / consolations ──────
+// Set on the Race Info form ("every heat scores on this") so a weekend of eight
+// heats and two B-Mains needs one pick, not ten. Naming one also makes that
+// session type score, which is off by default for preliminary sessions.
+{
+  const templatesById = {
+    "t-heat": { id: "t-heat", name: "Heat scale", race_points: { 1: 20, 2: 15 }, qual_points: { 1: 2 }, bonus_points: {} },
+    "t-bmain": { id: "t-bmain", name: "B-Main scale", race_points: { 1: 50, 2: 40 }, qual_points: { 1: 5 }, bonus_points: {} },
+    "t-other": { id: "t-other", name: "One-off", race_points: { 1: 7, 2: 6 }, qual_points: { 1: 1 }, bonus_points: {} },
+  };
+  const heatEvent = extra => ({
+    r1: {
+      heat_format: true, heats: ["Heat 1", "Heat 2"], consolations: ["B-Main"], feature_name: "A-Main Feature",
+      heat_points_template_id: "t-heat", consolation_points_template_id: "t-bmain", ...extra,
+    },
+  });
+  const sess = (session, session_type, pos) => ({ race_id: "r1", entry_id: "e1", session, session_type, finish_pos: pos });
+  const weekend = [
+    q("e1", 1),
+    sess("Heat 1", "heat", 1),
+    sess("Heat 2", "heat", 2),
+    sess("B-Main", "consolation", 1),
+    sess("A-Main Feature", "feature", 1),
+  ];
+
+  // Pole 10 + Heat 1 20 + Heat 2 15 + B-Main 50 + Feature 100.
+  check("type default scores every heat and consolation",
+    score(weekend, heatEvent(), { templatesById }), { e1: 195 });
+
+  // One session re-pointed from its own tab still wins over its type's default.
+  // That assignment is stamped on the session's own results (the session-points
+  // route cascades it), so Heat 2 drops from 15 to 6 and Heat 1 keeps the default.
+  const repointed = weekend.map(r => (r.session === "Heat 2" ? { ...r, points_template_id: "t-other" } : r));
+  check("a session's own assignment overrides the type default",
+    score(repointed, heatEvent({ session_points: { "Heat 2": "t-other" } }), { templatesById }), { e1: 186 });
+
+  // The per-session points switch still excludes a session outright: Heat 1's 20 goes.
+  check("a session's points switch still wins",
+    score(weekend, heatEvent({ session_points_enabled: { "Heat 1": false } }), { templatesById }), { e1: 175 });
+
+  // No default named = exactly the old behaviour: heats and consolations pay nothing.
+  check("no default named leaves heats scoreless",
+    score(weekend, { r1: { heat_format: true, heats: ["Heat 1", "Heat 2"], consolations: ["B-Main"], feature_name: "A-Main Feature" } },
+      { templatesById }), { e1: 110 });
+
+  // The default is resolved at scoring time, never stamped on the result — which
+  // is what lets one edit of the event re-score every heat it runs.
+  const decorated = decorateSessionFlags([sess("Heat 1", "heat", 1)], heatEvent());
+  check("default resolved onto the result at scoring time", decorated[0].points_template_id, "t-heat");
+  check("naming a default turns heat points on", decorated[0].counts_points, true);
+  // …but stats stay off: a heat is still a preliminary for Wins / Average Finish.
+  check("naming a default leaves heat stats off", decorated[0].counts_stats, false);
+}
+
+
+// ── 19. The same defaults, named on the SEASON and on a CLASS ─────────────
+// A league that runs heats all year sets its heat scoring once on the season;
+// a season whose classes run different heat scales sets it per class. Most
+// specific wins — event, then class, then season — and a CLASS's default sits on
+// top of that class's own points structure, unlike the season's and the event's.
+{
+  const templatesById = {
+    "t-heat": { id: "t-heat", name: "Heat scale", race_points: { 1: 20, 2: 15 }, qual_points: { 1: 2 }, bonus_points: {} },
+    "t-bmain": { id: "t-bmain", name: "B-Main scale", race_points: { 1: 50, 2: 40 }, qual_points: { 1: 5 }, bonus_points: {} },
+    "t-class": { id: "t-class", name: "Pro heat scale", race_points: { 1: 30, 2: 25 }, qual_points: { 1: 3 }, bonus_points: {} },
+    "t-event": { id: "t-event", name: "This event's heats", race_points: { 1: 8, 2: 6 }, qual_points: { 1: 1 }, bonus_points: {} },
+  };
+  const heatSeason = {
+    id: "s1", heat_format: true,
+    heat_points_template_id: "t-heat", consolation_points_template_id: "t-bmain",
+  };
+  const raceDoc = extra => ({
+    r1: {
+      season_id: "s1", heat_format: true, heats: ["Heat 1"], consolations: ["B-Main"],
+      feature_name: "A-Main Feature", ...extra,
+    },
+  });
+  const sess = (session, session_type, pos, extra = {}) =>
+    ({ race_id: "r1", entry_id: "e1", session, session_type, finish_pos: pos, ...extra });
+  const weekend = [
+    q("e1", 1),
+    sess("Heat 1", "heat", 1),
+    sess("B-Main", "consolation", 1),
+    sess("A-Main Feature", "feature", 1),
+  ];
+
+  // Season default only: pole 10 + heat 20 + B-Main 50 + feature 100.
+  check("a season's heat / consolation defaults score every event under it",
+    score(weekend, raceDoc(), { templatesById, seasonDoc: heatSeason }), { e1: 180 });
+
+  // The event's own default wins over the season's: the heat pays 8, not 20.
+  check("an event's default overrides the season's",
+    score(weekend, raceDoc({ heat_points_template_id: "t-event" }), { templatesById, seasonDoc: heatSeason }),
+    { e1: 168 });
+
+  // A class's default outranks the season's for that class's results, and — the
+  // point of the class level — it applies ON TOP of the class's own points
+  // structure, so a class scoring its own scale still pays its heat template.
+  // Pro scores 200 a win of its own; its heat pays t-class (30), its B-Main falls
+  // through to the season's B-Main scale (50) laid under Pro's structure, so the
+  // B-Main win pays Pro's 200.
+  const pro = {
+    id: "c-pro", name: "Pro", heat_format: true, heat_points_template_id: "t-class",
+    race_points: { 1: 200, 2: 180 }, qual_points: { 1: 20 },
+  };
+  const proWeekend = weekend.map(r => ({ ...r, class_id: "c-pro" }));
+  check("a class's own heat default sits on top of its own points structure",
+    score(proWeekend, raceDoc(), { templatesById, classes: [pro], seasonDoc: heatSeason }),
+    { e1: 20 + 30 + 200 + 200 });
+
+  // And the event still wins over the class.
+  check("an event's default overrides a class's",
+    score(proWeekend, raceDoc({ heat_points_template_id: "t-event" }),
+      { templatesById, classes: [pro], seasonDoc: heatSeason }),
+    { e1: 20 + 200 + 200 + 200 });
+
+  // Nothing named anywhere = the old behaviour, heats and consolations scoreless.
+  check("no default at any level leaves heats scoreless",
+    score(weekend, raceDoc(), { templatesById, seasonDoc: { id: "s1" } }), { e1: 110 });
+
+  // The decorated result records where its default came from.
+  const decorated = decorateSessionFlags([sess("Heat 1", "heat", 1)], raceDoc(),
+    sessionScopeContext({ seasons: [heatSeason], classes: [], entriesById: { e1: {} } }));
+  check("a season default reaches the result", decorated[0].points_template_id, "t-heat");
+  check("a season default turns heat points on", decorated[0].counts_points, true);
+}
+
+
+console.log(`all ${n} checks passed — totals equal the sum of every grid's Points column`);

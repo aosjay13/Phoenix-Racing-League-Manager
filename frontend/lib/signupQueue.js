@@ -55,7 +55,6 @@ export function pendingAsRosterRow(req) {
     number: req.number ?? null,
     name: req.name || req.driver_name || "Driver",
     car: req.car || "",
-    manufacturer: req.manufacturer || "",
     class_names: req.class_names || [],
     pending: true,
   };
@@ -139,7 +138,6 @@ export function requestSummary(req) {
   const bits = [];
   if (normalizeCarNumber(req?.number)) bits.push(`#${normalizeCarNumber(req.number)}`);
   if (req?.car) bits.push(req.car);
-  if (req?.manufacturer && req.manufacturer !== req.car) bits.push(req.manufacturer);
   if (req?.class_names?.length) bits.push(req.class_names.join(" · "));
   return bits.join(" · ");
 }

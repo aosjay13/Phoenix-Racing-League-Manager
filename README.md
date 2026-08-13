@@ -27,6 +27,9 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
 - 🏆 **Live standings** — driver *and* team championships with a configurable points scale,
   bonus points, drop weeks per season, and a full tie-breaker chain (wins → podiums → top 5s →
   top 10s → average finish → poles → average start → best laps → laps led)
+- 🛡 **Persistent teams** — teams live in a league-wide pool and keep their name, badge and record
+  for good; each season gets its own driver line-up, so a driver can switch teams between seasons
+  and every point stays credited to the team they actually drove for
 - 🎽 **Multi-class championships** — split a season into classes (Pro/Amateur, GT3/LMP2); each
   scores its own isolated championship, with an optional combined overall title across the field,
   optionally its own race calendar, and optionally its own qualifying and race at events every
@@ -46,13 +49,46 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   on. Unlike Demo Derby these are ordinary racing finishes — a bracket 3rd is a straight **3** in
   Average Finish, both 3rd-place drivers are paid identical points, and it all cascades into Wins,
   Podiums, Top 5s and the Overall and per-Game stats like any other result
-- 📝 **Player sign-ups with admin approval** — players join a series from their Dashboard: pick the
-  season from a selector listing only what's open, fill in a form the league configured, and submit.
+- ⏱ **Time Trials & Placements** — a hub of its own for hot-lapping, time attack and division
+  placement nights. Each session takes **as many laps per driver as you allow** (a Maximum Laps
+  limit, or unlimited) and works out **Best Time** and **Best Average Time** from them, both
+  one-click sortable; every driver's fastest lap is found from the laps themselves and shown in
+  bold, and clicking a name opens the full lap list. Tick **Placement Session** and the sheet gains a
+  **board**: pick the destinations from a checkbox list of everything the selected game runs, and
+  each becomes a column you **drag driver cards into** — or press **⚡ Auto-Place Drivers**, which
+  asks *Best Lap or Average Lap?*, shows the split it would make, and deals the ranked field evenly
+  across the columns for you to tweak. **Complete Session** then pushes the whole field onto the
+  official roster in those divisions — the manual entry a placement night otherwise creates. **A division doesn't have to be a class**: leagues whose divisions are
+  *separate series* place drivers into **series** instead, each building the roster of the season
+  behind it, so one night can build several rosters at once — and you can use both together, sorting
+  a driver into a series *and* into a class within it. **Export to Qualifying** copies the best laps onto a scheduled race as
+  its official qualifying grid, and the race's Qualifying tab has an **Import from Time Trial**
+  button for the same trip the other way. A time trial counts toward **no** racing statistic — no
+  Wins, Top 5s, Average Finish or Championships — but its laps *are* eligible for the Global /
+  Series / Class **Track Records**
+- 📝 **Player sign-ups with admin approval** — **Sign-ups** is its own sidebar menu, written for
+  the least tech-savvy player in the league: a three-step walkthrough that says up front what the
+  whole process is (pick a series → fill in the short form → an admin approves you), lists every
+  series open to join as a card you click anywhere on, tells you what the form will ask for
+  *before* you start it, and finishes on a confirmation that says plainly that your sign-up is in
+  the queue and nothing else is needed from you.
   Nothing reaches the official roster on its own — every sign-up lands in a **Pending Sign-ups**
   queue on the admin's roster screen, where **Approve** adds them with the number and car they asked
   for (creating their driver profile too, if they're new to the league) and **Deny** leaves them off.
-  Admins choose per **series, season or class** what a sign-up must carry: a **car number**, a **car**,
-  a **manufacturer / model**, or nothing at all
+  Admins choose per **series, season or class** what a sign-up must carry: a **car number**, a **car**
+  from the league's own **Car Selection** list, or nothing at all.
+  Each series card also carries **Not Interested** (out of the list and off the sidebar badge, into
+  a section you can reopen and join from any time) and **Clear Notification** (keep it in the list,
+  just stop counting it) — a league running six series otherwise leaves a permanent red badge for
+  somebody who races one of them
+- 💬 **A message board between admins and players** — every decision an admin makes about somebody
+  says so on that player's **Dashboard**: a sign-up approved (with the full welcome — schedule,
+  calendar, Discord) or denied with the reason, a car number granted or refused, a driver profile
+  linked, a removal from a season's roster. Every card can be **replied to**, and replies land in
+  the admins' **Approvals** queue with a badge, where they can be answered or marked read. Before
+  this, an admin's decision was a state change on a document and nothing else — being removed from
+  a season was completely silent, and read far more like the app losing your entry than like a
+  decision somebody made
 - 🎮 **Account requirements per game** — every sign-up in every game needs the player's **Discord
   name**, and each **Game** carries its own switches for the platform identity it actually needs:
   **Steam**, **PSN**, **Xbox Gamertag**, **iRacing Name** and **iRacing Customer ID**. The sign-up
@@ -83,17 +119,39 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   multi-select of *every* stat column the screen offers (with Select all / Clear / Reset), and full
   event metadata on results exports, so the downloaded PNG/JPG stands alone as a broadcast-style
   graphic
-- ⬆ **Bulk roster import** — roll a whole roster into a new season in one click, from the series
-  or a cloned past season, with duplicates skipped automatically
+- ⬆ **Bulk roster import** — roll a whole roster into a new season in one click, from the series,
+  a cloned past season, or any season of another series in the game (so a brand-new series starts
+  with the drivers you already have). Every name is matched against the drivers already in the app
+  first — you review who lines up with whom, settle anything doubtful, and only genuinely new
+  people get a new profile
+- 🙅 **No accidental duplicate drivers** — one racer answers to a pile of names (their profile
+  name, their name in each game, Discord / PSN / Xbox / Steam / iRacing usernames, anything a
+  merge folded in), and *every* one of them is recognised wherever a driver can be added. A name
+  that belongs to somebody you already have is linked to them and says so; a name that merely
+  resembles one asks before creating a second profile
 - ⏱ **Fast race entry** — one grid per race, pre-filled with the roster; supports multiple
-  sessions per race (e.g. Qualifying + Race), scored independently; re-submitting a race
-  overwrites cleanly for corrections
+  sessions per race (e.g. Qualifying + Race), each scoring itself — a driver's championship total
+  is the sum of the Points column on every session they ran, Qualifying included, so the standings
+  can be checked by adding up what's on screen; re-submitting a race overwrites cleanly for
+  corrections
+- 🗓 **Global race calendar** — a month-by-month grid of **every** event in the league, past and
+  future, on the day it runs. Each race is a pill carrying its series' abbreviation and the track,
+  and clicking one opens that event's page (its results, once it has run). The same **Game ▸
+  Series** menus as everywhere else narrow it; with **no game selected it shows every upcoming
+  event in the league, from every game**. It opens on the month that actually has racing in it,
+  and a **Jump to** row skips straight to any other month that does
 - 📊 **Stats & Roster filtering** — Game/Series/Season dropdowns filter Stats and Roster
   everywhere, with sortable columns and per-series car numbers
-- 🖼 **Custom branding** — upload game, series, season, team, and track logos
+- 🖼 **Custom branding** — the **Owner** uploads game, series, season, team and track logos; every
+  page renders them for everybody. Uploading is Owner-only on purpose — cloud storage is billed by
+  the byte, and it's the one league power the other staff roles don't share
+- 🧑‍🔧 **Duplicate driver cleanup** — League Setup ▸ Drivers hunts down the profiles that are
+  secretly the same person (through every name each of them answers to) and merges them, moving
+  every race, result, point and lap onto the profile you keep and remembering the old names so an
+  import can't re-create what you just cleaned up
 - 👑 **Admin roles** — set `ADMIN_EMAILS`; admins get results entry from the Schedule, the
-  Roster & Teams and User Accounts tabs on Drivers, League Setup, and (Moderator and above)
-  the Approvals queue
+  the Driver Roster menu, the User Accounts tab on Drivers, the Team Roster tab on Teams, League Setup,
+  and (Moderator and above) the Approvals queue
 - 💾 **Backup & restore** — the Owner can export the *entire* application to one JSON file and
   import it back after a crash, a corruption or a hack, with every record keeping its original ID
   so all the links survive; plus an automatic backup every Saturday at 3 AM Eastern, filed into the
@@ -115,6 +173,23 @@ npm run dev
 Create `frontend/.env.local` from the root `.env.example` and fill in your Firebase values.
 The app runs at `http://localhost:3000`.
 
+### Running against the Firebase emulators
+
+You can develop without touching a real Firebase project. Start the Auth + Firestore emulators
+(`firebase emulators:start`) and add these to `frontend/.env.local`:
+
+```
+FIRESTORE_EMULATOR_HOST=127.0.0.1:8080
+FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099
+NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099
+```
+
+The first two are read by the Admin SDK on its own; the third is the browser half, which
+`lib/firebaseClient.js` uses to point sign-in at the emulator instead of the real project. All
+three are unset in every deployed environment, and with no host configured the app connects to
+Firebase exactly as it always has. `FIREBASE_PRIVATE_KEY` still has to *parse*, so generate a
+throwaway key (`openssl genrsa`) — the emulator never checks it.
+
 ## How to Use
 
 ### For players
@@ -123,6 +198,15 @@ The app runs at `http://localhost:3000`.
    profile automatically.
 2. **Profile** — edit your display name, avatar, bio, country, and car number. Ask a league
    admin to link your roster entry to your account so your race results feed your stats.
+   - **Connected Accounts**, in its own card below, is the names you go by on Discord and on
+     each platform. Two things use them: it's how the league gets hold of you about races, and
+     it's how results imported under any of your names find their way onto your profile. A
+     series sign-up fills them in and keeps them current, so this is mainly where you *correct*
+     one that's gone out of date — before this the only way to change a Discord handle was to
+     join another series. Leave a box empty to drop that platform; add any the list doesn't
+     name with **＋ Add platform**. They're saved against your **driver profile**, not your
+     account, which is why the card says so — and why it explains how to get one rather than
+     showing a dead form if you haven't signed up for anything yet.
 3. **Drivers** — browse every registered player; open a profile for three tabs of their record:
    - **Career Stats** — the totals, per game and combined across all games (starts, wins,
      podiums, poles, average finish, titles, etc.), plus every championship won and a by-game
@@ -135,41 +219,117 @@ The app runs at `http://localhost:3000`.
      as its own row, because each is scored on its own.
    - **Per Track Stats** — the same career broken down by venue, each track linking to its own
      page.
-4. **Series Information** — a section on your **Dashboard** (not the sidebar) that appears only
-   when there's something for you to do **in the series you're currently viewing**: a running
-   season that wants you to lock in a car, or a season open to sign up for. It follows the
-   Game/Series menus at the top of the page like everything else, and lists **active seasons
-   only** — finished ones aren't shown there. Click through and you get:
-   - **Linking your driver.** Sign-ups and car choices are recorded against a *driver*, not an
-     account, so you need to point yours at one. If you've raced here before, find yourself in
-     the list and hit **That's me**. If you're new, ask to be added. **Either way an admin
-     approves it** — a driver profile is never created or linked automatically. Brand new
-     players don't have to do this first: signing up for a series asks for the same details and
-     files the same request, with the season attached.
-   - **Signing up.** A selector lists every season still upcoming or under way that you're not on
-     yet — pick one and its form appears underneath. Seasons marked complete never appear, and
-     can't be joined.
+4. **Sign-ups** — a menu of its own in the sidebar, and the one screen in the app written for
+   somebody who has never used it before. Joining a series is a walkthrough, and its three steps
+   are printed at the top *before* anything is asked of you: **pick a series → fill in the short
+   form → an admin approves you**. The screen shows one step at a time, so there is never more
+   than one thing on it to do.
+   - **Pick a series.** Every season still upcoming or under way that you're not on yet is a
+     full-width card you can click anywhere on. Each carries the game it's played on, how many
+     drivers are already in and how many are waiting, and what its form is going to ask for
+     (*Car number needed*, *Choose your car*, *2 classes*) — so two series can be told apart
+     without opening either. Seasons marked complete never appear, and can't be joined.
+   - **Not every series is one you want.** Beside **Join this series** each card carries
+     **Not Interested** — which takes it out of your list *and* off the red number on the
+     Sign-ups menu, into a section underneath you can reopen and join from at any time — and
+     **Clear Notification**, which keeps it in the list and only stops it counting. A league
+     running six series otherwise leaves a permanent red 6 sitting in the sidebar of somebody who
+     races one of them, and a number that never reaches zero is one you stop reading. Both are
+     undoable, and neither tells the admins anything.
+   - **Know what you'll need before you start.** Above the form, **What this form asks you for**
+     lists every question that's coming and why — your racing name, your Discord name, whichever
+     platform IDs this game requires, a car number, a car. Nothing in the form is a surprise, and
+     anything already saved on your profile is filled in for you.
+   - **Know that it worked.** Submitting lands on a confirmation saying your sign-up is *in the
+     queue* and that nothing else is needed from you — which is the question a first-timer
+     otherwise answers by signing up a second time. The series then sits under **Waiting on an
+     admin** until one of them approves it.
+   - **Your account keeps up on its own.** A sign-up is the moment the league learns who you
+     are, so the two fields your **Profile** owns and a sign-up answers — your display name and
+     your car number — are filled in from it. Only ever *filled in*: if you've set either
+     yourself, it's left exactly as it is, and a season that doesn't run car numbers can't blank
+     the one you have. So a brand-new account stops showing "jane.doe" the moment you tell the
+     league you race as J. May, and nobody's chosen name is ever overwritten.
+   - **The Dashboard is where the admins talk to you.** Everything they decide about you lands
+     there as a card you can answer: approved into a series, turned down, a number granted or
+     refused, a profile linked, or taken off a roster. Being **let in** gets the loudest of them —
+     it welcomes you to the series by name, says which season you're on and what number and car
+     you're running, and points at the three things you need next: **your series schedule**, the
+     **league calendar**, and the **Discord**. Cards clear on a deliberate **Got it** and fold
+     away into *Earlier messages* rather than vanishing. Every one of them has a **Reply** box, and
+     what you write goes to the admins' Approvals queue — so a decision starts a conversation
+     instead of ending one. All of it used to happen in complete silence.
+   - **If a sign-up is turned down, you're told why.** An admin denying one types a reason, and
+     that reason reaches you twice: an **email to your account's address**, and a red panel at the
+     very top of Sign-ups the next time you open it. The panel quotes the admin's words, and that
+     series is held out of the "pick a series" list until you press **Got it — let me try again**,
+     which clears it and drops you straight back into that series' form. The point is that the
+     reason is read before the identical form is filled in a second time. (A denial with no reason
+     says so plainly rather than leaving a blank.) Nothing is held against you — your details are
+     already saved, so the second attempt is a much shorter form.
+   - **Nothing is red until you've had a go at it.** A required box you haven't visited yet is
+     just something still to fill in, so it's left alone and what's outstanding is named calmly
+     under the button. Touch one and leave it empty and *then* it's flagged, because by then it
+     is genuinely undone. Opening a form to four red-outlined boxes reads as "you've done
+     something wrong" to somebody who has done nothing at all yet.
+   - **Discord is mandatory**, and the screen says so before you start: a card under the three
+     steps, in Discord's own colour, linking straight to the league's invite. Signing up here is
+     only half of it — you also have to be in the Discord and pick the correct roles in the
+     channels, or nobody knows who you are. It's repeated on the confirmation, worded as the next
+     thing to do, because that's the moment it's actionable. The invite lives in one constant,
+     `DISCORD_INVITE_URL` in `components/DiscordCallout.jsx` — change it there and every place it
+     appears follows.
+   - **The badge on the menu** counts what is waiting on **you**: series you could join, plus
+     cars you still have to choose. Sign-ups already sent are deliberately not counted — those
+     are waiting on somebody else, and a number that only falls when an admin acts is nagging
+     rather than useful.
+   - **Brand new?** Nothing has to be set up first. Pick a series, and the form asks for
+     everything the league needs; an admin approving it creates your driver profile *and* your
+     roster entry in one click. **Raced here before?** *I've raced in this league before — find
+     my name* opens the claim panel: find yourself in the driver list, hit **That's me**, and
+     your whole race history comes with you. Either way **an admin approves it** — a driver
+     profile is never created or linked automatically. Sign-ups and car choices are recorded
+     against a *driver*, not an account, which is why the two have to meet.
+   - **The form itself.**
 
-     **The form renders itself from what that league asked for.** A car number box, a car
-     dropdown, a manufacturer / model dropdown — each appears only if the series, season or class
-     you're joining wants it, marked *required* where it's mandatory, and **Submit Sign Up** stays
-     disabled until every required choice is made. Alongside them: the name you race under, your
-     class, and a **Contact & Platform Details** panel — the accounts this league needs to reach
-     you and to find you in-game. Under those, collapsed, sits the full **Aliases / Connected
-     Accounts** list — every platform username (Discord, PSN, Xbox, Steam, iRacing…) the Smart
-     Importer matches results against, so a result posted under any of them lands on your profile.
+     **The form renders itself from what that league asked for.** A car number box and a
+     **Car Selection** question — each appears only if the series, season or class you're joining
+     wants it, and **Submit Sign Up** stays disabled until every required choice is made. There is
+     one car question, not two: whatever the admin typed into **Car Selection** becomes one radio
+     button each, drawn by the app's shared tick-box rule, and whichever one is picked is what
+     shows against that driver on the roster once an admin approves them. The **car number** question is asked *only where a number is required*: a league that
+     doesn't run car numbers — or a season, or a single class of it, that switches them off — shows
+     no number box at all, rather than an optional field for something nobody uses. Pick a class
+     that does require one and the question appears there and then.
+
+     Alongside them: the name you race under, your class, and a **Contact & Platform Details**
+     panel — the accounts this league needs to reach you and to find you in-game. Under those,
+     collapsed, sits the full **Aliases / Connected Accounts** list — every platform username
+     (Discord, PSN, Xbox, Steam, iRacing…) the Smart Importer matches results against, so a result
+     posted under any of them lands on your profile.
 
      **Your Discord name is required for every sign-up**, in every game, series, season and class:
      it's how the league reaches you. On top of that, each game asks for whatever identifies you
      *there* — a Steam name, a PSN ID, an Xbox gamertag, an iRacing name and customer ID — as
-     switched on by an admin in **League Setup ▸ Games**. Anything already saved on your driver
-     profile is filled in for you and marked *✓ from your profile*, so the usual sign-up is
-     read-and-submit; anything you type is saved back to your profile, so no series ever asks you
-     for it twice.
+     switched on by an admin in **League Setup ▸ Games**. Each one is named on the form with a
+     line saying why it's being asked for, and listed again in **What this form asks you for**
+     before you start.
+
+     **You type them once.** Anything the league already knows is filled in for you and marked
+     *✓ from your profile* — or *✓ from your last sign-up* if you're new and an admin hasn't
+     approved you yet, because your answers are on that request until they do. So a second
+     sign-up is usually read-and-submit with nothing to type at all: the name you race under
+     comes back too. What you type is saved on submit, **merged** rather than replacing, so a
+     Wreckfest sign-up that only asks for Discord can never wipe the Steam name an iRacing
+     sign-up saved.
 
      The season's **roster** sits in the form, in car-number order, showing who's racing under
      which number *and* who has already asked for one (marked **pending**) — so you can see what's
-     spoken for before you choose. Type a number somebody has, or has requested, and it's rejected
+     spoken for before you choose. It's collapsed on a big roster, behind a strip that leads with
+     the instruction (**See which numbers are taken**, with the count under it, a **#** badge and a
+     chevron that turns as it opens) rather than a caption. That matters: as a dim grey line the
+     size of body text it was being missed outright, and a driver who can't find it picks a number
+     blind. Type a number somebody has, or has requested, and it's rejected
      as you type with *"That number is already taken, please choose another number."*
 
      **Submitting doesn't put you on the roster.** It goes to the league's admins as a pending
@@ -193,11 +353,21 @@ The app runs at `http://localhost:3000`.
      admin approving it creates your driver profile *and* your roster entry in one click. The
      form says so before you send it.
    - **When a season ends.** The moment an admin marks it complete, it closes to players: nobody
-     else can sign up and nobody can change the car they locked in. It also **drops out of Series
-     Information entirely** — off the Dashboard section and off this page — because this flow is
-     about what you still have to do. A series whose seasons have all finished disappears with
-     them. Your results are on **Standings** and **Stats** as always, and the season's own page
-     still opens from a direct link, marked **Season over**. Reopening the season undoes all of it.
+     else can sign up and nobody can change the car they locked in. It also **drops out of the
+     player flow entirely** — off Sign-ups, off My Series and off the Dashboard's Series
+     Information card — because that flow is about what you still have to do. A series whose
+     seasons have all finished disappears with them. Your results are on **Standings** and
+     **Stats** as always, and the season's own page still opens from a direct link, marked
+     **Season over**. Reopening the season undoes all of it.
+   - **Where your sign-ups have got to.** The same screen lists **Waiting on an admin** (sent,
+     nothing else for you to do) and **Series you're racing in** (approved), each row saying in
+     one line what — if anything — is still wanted from you. If a series is waiting on a car,
+     that's called out in its own banner at the top, since it's the one job an approved driver
+     can still have.
+   - **My Series** (`/series-info`, reached from that list or from the Dashboard card) is the
+     other half: the seasons you're **already** on, and each season's own screen behind them.
+     Nothing is signed up for here — it links back to Sign-ups for that, so a sign-up is only
+     ever filled in in one place.
    - **The series roster.** Every season's own screen shows its roster — number, driver, class
      and locked-in car — to anyone who opens it, admin or not. It's ordered by car number rather
      than alphabetically, because "who has 24?" and "which numbers are free?" are what it's read
@@ -207,23 +377,65 @@ The app runs at `http://localhost:3000`.
      the full roster shows exactly which car everyone else has taken, with a tally of how
      popular each one is.
 5. **Schedule** — the season's race calendar. Completed races are clickable and show full
-   results. Admins get **+ New Race** here; on the cross-season feed (Season set to "All
+   results. With **no single season selected** ("All Games" / "All Series") it becomes a feed of
+   the league's racing in two halves, split on the calendar: **Upcoming** is everything whose day
+   hasn't come yet, soonest first, and **Archive · Recent Results** is everything whose day has
+   been and gone, most recent first. A round that ran but never had its results entered belongs to
+   the archive — it shows there as **TBD** rather than sitting in Upcoming forever. Admins get
+   **+ New Race** here; on the cross-season feed (Season set to "All
    Seasons" with a series picked) there's a **+ New Season** button too, offering every option
    League Setup does and dropping you onto the new season's empty calendar. **🖼 Share Graphic**
    exports the calendar as an image — the whole season's rounds, or (on the cross-season feed)
-   Upcoming and Recent Results as separate posts.
-6. **Standings** — driver and team championship tables for the selected season, with
+   Upcoming and Recent Results as separate posts. Events that have session times set (see the
+   Calendar below) show a **Session Times** column right of the race date, in the reader's own
+   timezone.
+6. **Calendar** — every race in the league on a month-by-month grid, past and future, on the day
+   it runs. Each event is a pill showing its series (abbreviated) and the track; click one to open
+   that race's page. The **Game** and **Series** menus at the top narrow it to a single series —
+   with **no game selected you get every upcoming event in the league, from every game**, which is
+   what the page opens on. It lands on the month with racing in it rather than on today's empty
+   one, and the **Jump to** row hops straight to any other month that has events. Where the
+   Schedule answers *what's next and what just happened*, the Calendar answers *what does June
+   look like*.
+
+   **Session times, in every reader's own timezone.** An admin can opt any event into showing when
+   it actually runs: on that race's **Race Info** tab, tick **Show session times on the Calendar**,
+   pick the timezone the league's times are quoted in, and enter **Practice**, **Qualifying** and
+   **Race** start times (leave any of them blank to leave it off). The event's pill then carries a
+   **P · Q · R** line, and every reader sees those times converted to *their own* clock
+   automatically — 7:00 PM in New York reads as midnight to somebody in London, with the date shown
+   beside it when their clock puts the session on a different day. Daylight saving is handled per
+   event, from the race's own date, so a March round and an August round both come out right.
+
+   The same times appear on the **Schedule**, in a **Session Times** column immediately right of
+   the race date — on a season's own table and on the cross-season Upcoming / Recent Results feed
+   alike. The column only appears when something in the table actually has times set, so a league
+   that hasn't used the toggle sees the schedule exactly as before. It stays out of the **🖼 Share
+   Graphic** export on purpose: the times are converted to whoever is *reading* them, so baking one
+   person's clock into an image everybody else looks at would be wrong.
+
+   Underneath, this is a display of the race's date, not a change to it: the date is still the plain
+   calendar date it always was, and the results screens, the standings and every other reader are
+   untouched. An event with the toggle off looks exactly as it did before.
+
+   **Subscribe it into your own calendar.** The **📆 Subscribe** button hands over a feed URL for
+   whatever scope is on screen, with one-click links for Google Calendar and for Apple Calendar /
+   Outlook. Subscribe once and it keeps itself in sync — new rounds, moved dates and session times
+   all follow, with each session arriving as its own appointment at the right time for wherever the
+   subscriber is. Races without published times arrive as all-day entries. See the `.ics` feed
+   under Project Layout for the details.
+7. **Standings** — driver and team championship tables for the selected season, with
    points, gaps to the leader, and per-category stats. Click any column header to sort. Level
    on points? The tie-breaker chain below decides, and every step of it is a column in the
    table so you can see why.
-7. **Stats** — use the Game/Series/Season/Class menus to scope driver stats to a class, a
+8. **Stats** — use the Game/Series/Season/Class menus to scope driver stats to a class, a
    season, a whole series, a whole game, or the entire league. Pick "All" at any level to
    widen the scope.
-8. **Tracks** — open a venue for its own page: every race held there, a leaderboard of who has
+9. **Tracks** — open a venue for its own page: every race held there, a leaderboard of who has
    gone best, and its lap records. The **Class** menu scopes it too — the leaderboard, winners
    and headline record become that class's — while the per-game and per-class record breakdowns
    always stay side by side, since that's the comparison they exist to show.
-9. **Records** — the record holder in each category for the current scope, plus **Avg Drivers
+10. **Records** — the record holder in each category for the current scope, plus **Avg Drivers
    per Race**: the average field size across every completed race in scope. Empty and upcoming
    events are ignored, and a heat weekend counts its Feature field once rather than each heat.
    **🖼 Share Graphic** posts the record book as one image — a row per category that has a holder
@@ -250,7 +462,9 @@ The rules are the same everywhere: `season=all` (or `game=all`, `class=all`) is 
 "All …", which is why a link to the all-time table stays on the all-time table. Anything the
 link leaves out falls back to the reader's own saved selection, so an old bare link like
 `/standings` behaves exactly as it always has. Driver, team and track pages
-(`/drivers/<id>`, `/teams/<name>`, `/tracks/<id>`) were already direct links and are unchanged.
+(`/drivers/<id>`, `/teams/<id>`, `/tracks/<id>`) were already direct links and are unchanged — a
+team link shared before teams became league-wide documents carried its *name* instead of an id, and
+still opens the right profile.
 
 ### For league admins
 
@@ -269,7 +483,10 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
    - **Season** — name (e.g. "Season 3") under a series; set drop weeks, the points scale
      (or pick a built-in template), qualifying points, and bonus points (most laps led,
      fastest lap, etc.). There is no separate pole bonus — pole is position 1 of the qualifying
-     points list, so a pole is worth whatever the first number in that list says. **Enable Overall Championship** decides whether a multi-class season
+     points list, so a pole is worth whatever the first number in that list says. The Qualifying
+     session **scores those points itself**, like any other session — they are their own line of the
+     championship, not a bonus hidden inside a race result.
+     **Enable Overall Championship** decides whether a multi-class season
      also crowns one champion across the whole field on top of the per-class titles.
      Seasons list **newest first**, ordered by the **race dates** on their schedules rather than
      by the order they were typed in — so a Season 5 entered before Seasons 2, 3 and 4 still sits
@@ -280,7 +497,7 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      ("Pro"/"Amateur", "GT3"/"LMP2"). Leave it empty for an ordinary single-class season —
      nothing changes. Classes created here fill the **Class** menu in the top bar, which scopes
      Standings, Stats and Records to one class at a time. Assign drivers to a class on the
-     Drivers ▸ Roster & Teams tab or from the Class column in the results grid; deleting a class
+     Admin ▸ Driver Roster or from the Class column in the results grid; deleting a class
      only unassigns
      its drivers, never their points or stats. Give a class a **Car Type** and the schedule,
      event pages and Class menu all show which car goes with which class — leave it blank to
@@ -315,13 +532,17 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      car for the upcoming season") shows above their dropdown. **Lock the selections** freezes
      every pick when the entry list is final — set it back to reopen.
 
-     Two more switches sit beside it, each independent: **Require Car Number Selection** (no
-     sign-up without a number) and **Require Car Manufacturer / Model Selection** (pick a make
-     from the **Available Manufacturers / Models** list, or from the car list when you leave that
-     blank — which is what you want when the car and the make are one choice). A league can demand
-     numbers without caring what anyone drives, or run a spec car where only the make varies.
+     One more switch sits beside it, independent of it: **Require Car Number Selection** (no
+     sign-up without a number) — a league can demand numbers without caring what anyone drives.
      Whatever you switch on is what the player's sign-up form renders and refuses to submit
      without.
+
+     There is **one** car list. A separate *Require Car Manufacturer / Model Selection* switch with
+     a second list used to sit here, and on the sign-up form it read as the same prompt asked
+     twice; a spec series that only cares which make somebody runs types *Chevrolet / Ford /
+     Toyota* into **Car Selection** instead. A league that had filled in only the old manufacturer
+     box keeps its options: that field is read as the car list when no car list of its own was set,
+     and saving the level moves the options across for good.
 
      **The inheritance rule, in one line: the most specific level with an opinion wins.**
 
@@ -347,6 +568,14 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      season's. Picks are stored on the driver's roster entry (`entries.selected_car`), so an admin
      can correct one from the roster like any other entry field.
 
+     Two more panels sit under **Shared Library**, beside the hierarchy itself:
+
+   - **Tracks** — the shared venue database every race and time trial picks from, with its own
+     merge tool for the same circuit entered twice.
+   - **🧑‍🔧 Drivers** — the driver pool's cleanup bench: it finds the profiles that are secretly the
+     same person and merges them without losing a race. See *Cleaning up the duplicates you already
+     have* below.
+
      Not part of this chain: the **platform identities** (Discord, Steam, PSN, Xbox, iRacing).
      Those belong to the **Game** alone and apply to every series, season and class under it,
      however many are made — nothing below overrides them. See the Games panel above.
@@ -368,6 +597,11 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
        names back to one profile. An alias mapped to a game still acts as that game's display
        name when no per-game Display Name is set, so nothing set up before this existed
        changes.
+
+       These are worth filling in for a second reason: **every name on this page is a name the
+       app recognises as this driver.** Adding "Ryanbirdman" to a roster, or typing a PSN
+       username into a race grid, finds the driver those names belong to instead of creating a
+       second profile for them — see *One driver, however many names* below.
    - **Approvals** *(`/approvals`, Moderator and above)* — the same queue as below, but for the
      **whole league** in one list, and the place the sidebar's red badge points at. Each row names
      the series and season being asked for, so nothing sits unnoticed just because no admin
@@ -379,11 +613,12 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      Moderator-and-above throughout — the nav item, the page and `GET
      /api/admin/signup-requests/count` behind them — so a Statistician (who clears the general
      staff gate) and every ordinary player see neither the badge nor the count.
-   - **Pending Approvals** *(admin, on Roster & Teams)* — the selected season's slice of the
-     queue above: players who submitted a sign-up from their Dashboard waiting to be let in, plus
-     anyone already on the roster asking for a different car number. Nothing they sent is live.
+   - **Pending Approvals** *(admin, on Driver Roster)* — the selected season's slice of the
+     queue above: players who submitted a sign-up from the Sign-ups menu waiting to be let in,
+     plus anyone already on the roster asking for a different car number. Nothing they sent is
+     live.
 
-     A **sign-up** row shows the number, car and manufacturer they asked for and the platform
+     A **sign-up** row shows the number and car they asked for and the platform
      usernames they gave; **Approve** puts them on the roster with exactly those choices — creating
      their driver profile too when they're new to the league. A **number change** row is marked as
      one and reads `Car number #7 → #24`, with whatever reason they gave; **Approve** moves the
@@ -395,16 +630,37 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      they're seated without one rather than the approval failing outright — but a number *change*
      whose number has gone is refused instead, since granting it would either clash or silently do
      nothing, and neither is what the driver asked for.
-   - **⬆ Bulk Import Drivers** *(admin, on Roster & Teams)* — the season-rollover shortcut, for
-     everyone who never goes near the Dashboard sign-up. Pick a source — **every driver in this
-     series** (across all its seasons) or **clone one past season's roster** — and they're added in
-     one shot, carrying their name, car number, driver profile and linked account. Anyone already
-     on the target roster is **skipped, never duplicated and never an error**, so it's safe to press
-     twice or to top up a half-built roster. Team and class don't carry over: those are per-season
-     records whose ids mean nothing in the new season.
+   - **⬆ Bulk Import Drivers** *(admin, on Driver Roster)* — the season-rollover shortcut, for
+     everyone who never goes near the Sign-ups menu. Pick a source — **every driver in this
+     series** (across all its seasons), or **copy one season's roster**, which can be a past season
+     of this series *or any season of another series in the game*, so a brand-new series starts
+     with the drivers the league already has. They're added carrying their name, car number,
+     driver profile and linked account. Anyone already on the target roster is **skipped, never
+     duplicated and never an error**, so it's safe to press twice or to top up a half-built roster.
+     Team and class don't carry over: those are per-season records whose ids mean nothing in the
+     new season.
+
+     **You review before anything is written.** Every driver being imported is matched against the
+     drivers already in the app — through every name they answer to, not just the one on the entry
+     being copied — and the review table marks each one *already in the app*, *new to the league*,
+     or *needs checking*. Nothing imports until every "needs checking" row has been answered
+     (there's a **They're all new drivers** button when they genuinely are), and everyone who
+     really is new gets a driver profile created as part of the import — so an imported roster is
+     never full of entries attached to nobody. The result says how it split: how many landed on
+     drivers you already had, and how many profiles were made.
    - **User Accounts** *(admin)* — every account that has signed up: set its **role**, link it to
      the driver profile it races as, rename it, delete it, and approve or deny **pending driver
      requests**. The red badge on the Drivers nav item counts new signups + pending requests.
+
+     The **Linked Driver Profile** cell is a searchable picker listing every driver with its
+     availability (unclaimed / linked here / linked to another account). It renders into `<body>`
+     as a *fixed* element rather than inside the table cell, and measures its room against the
+     bottom of the sticky topbar rather than the top of the window. Both matter: the table scrolls
+     inside `overflow: auto`, which clipped an absolutely positioned panel and sliced its top row
+     in half, and measuring to the window let a row low on the page open a full-height list that
+     ran up behind the league selectors. It re-measures every animation frame while open, so it
+     stays welded to its row through scrolling, a toast collapsing, or the list reloading after a
+     link — flipping above or below as the room runs out, never off-screen.
 
      Two kinds land in that queue, and this screen is the **only** place either is ever applied —
      a player-requested driver profile is never created automatically. *Claims* ("that existing
@@ -419,9 +675,37 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      or *Not opened yet* (verified, but hasn't returned to the app since, so its profile document
      doesn't exist yet). Roles and driver links can be set on either; they're kept and applied
      when the player next signs in.
-   - **Roster & Teams** *(admin)* — select a **Series** in the top dropdowns to manage that
-     series' roster:
-     - **Teams** — create teams with logos.
+   - **Driver Roster** *(admin — its own sidebar menu, under Admin)* — select a **Series** in the
+     top dropdowns to manage that series' roster. It was a tab on Drivers ("Roster & Teams"); it
+     is a menu of its own because it's a *job* rather than a view, and a job needs somewhere it
+     can carry a badge. Its own URL, `/roster`, works again; `?tab=roster` redirects there.
+     - **A red badge, for drivers who were added while you weren't looking.** Approving a sign-up
+       is the one admin action whose result lands out of sight: the driver appears on *one*
+       season's roster, which is very often not the season you're scoped to, and the queue you
+       approved them from then empties — so nothing was left on screen to say it had happened, or
+       where. The badge counts them, and the panel at the top of the screen names each driver, the
+       roster they landed on, and their number and car, with an **Open this roster →** button that
+       steers the Game / Series / Season menus straight at it. It's *news*, not a job, so it
+       clears by being **read**: a deliberate **Got it**, never merely opening the page.
+     - **Sign-ups waiting in other seasons** get the same treatment, at the other end of the
+       process. The approve queue below is scoped to the season you're on — which is right for
+       working through it, and meant a sign-up for any *other* season was invisible until you
+       happened to steer the dropdowns at it. A strip at the top now names who's waiting where,
+       with a **Review these →** button that takes you to that season's queue.
+     - **Which season you're editing, said out loud.** Three dropdowns decide what this screen
+       writes to, so the scope strip under the header names the season edits are written to
+       rather than leaving you to infer it from the menus.
+     - **Capping a car.** In **League Setup**, a car's line in the Car Selection list can carry a
+       limit after a pipe — `Ferrari 296 GT3 | 4`. Once four drivers have it the car is greyed out
+       on the sign-up form, badged **FULL · 4 of 4**, and refused by the API; the others show how
+       many seats are left. What counts toward a cap is everyone on the roster **plus** everyone
+       still waiting on approval, because five people all picking the last seat while nobody has
+       been approved yet is the pile-up a cap exists to prevent. A line with no pipe has no limit,
+       so every list saved before this works unchanged. The field shows what it parsed, car by car,
+       so a limit that was mistyped is visible immediately.
+     - **Teams** — add a team to this season (creating it in the league-wide pool if it's new)
+       and give it a logo. Building its driver line-up happens on **Teams ▸ Team Roster**; the ✕
+       here takes a team *out of this season*, never out of the league.
      - **Roster** — add a driver, assign their team, classes, car number, and (optionally) link
        them to a registered player account so their results count toward that account's profile
        stats.
@@ -439,26 +723,81 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
        If you already worked around this by adding a driver once per class, the roster shows a
        **Combine** button on that row: it folds those entries into one multi-class entry and
        moves every saved result across, each keeping the class it was scored in.
+     - **Nobody is added twice, and you're told when somebody matches.** Whatever you type into
+       **Add Driver** is checked against every driver in the app — and against every name each of
+       them answers to: their profile name, the name they use in each game, their Discord / PSN /
+       Xbox / Steam / iRacing usernames, and any name a merge folded into them. A name that
+       clearly belongs to an existing driver is added *under that driver*, and the toast says so
+       ("Added to Ryan Maynard's profile — they were already in the app"). A name that merely
+       resembles one stops and asks, listing who it might be and why each came up, with **Use
+       &lt;driver&gt;** or **No — create a new driver**. The same question guards the **Driver
+       Pool** form below, and a live note under the name field says who it recognises as you type.
+       See *One driver, however many names* under the data model for the full rules.
      - **Driver Pool** — create driver identities without assigning them to a season or series
        yet, ready to pull into any series (or into a race, mid-entry) later.
      - **Import Roster** — the season-rollover shortcut. Bulk-add every driver in the series, or
-       clone a specific past season's roster, in one write. Drivers already on the season's
-       roster are skipped rather than duplicated (matched by global driver id, then linked
-       account, then name), so it's safe to run twice or to top up a half-built roster. Team and
-       class don't carry over — both are per-season records — so imported drivers land
-       unassigned.
+       copy a specific season's roster (this series' or another series' in the game), in one
+       write. Drivers already on the season's roster are skipped rather than duplicated (matched
+       by global driver id, then linked account, then name), and everyone else is resolved against
+       the global driver pool in a review step you settle before anything is written — so imported
+       drivers always come out attached to the right driver profile, with new ones created for the
+       people who genuinely are new. Team and class don't carry over — both are per-season records
+       — so imported drivers land unassigned.
      - **Car numbers by series** — a driver can run a different number in each series they're
        part of; when editing a driver, set/update their number per series in one place.
      - With **no series selected**, the Roster shows the combined driver list across every
        series in scope (Number column is hidden, since a single number doesn't apply) —
        useful for seeing the whole league roster at a glance.
-3. **Results entry** — everything about an event is managed from **Schedule**. Each row's
+3. **Teams** — the team-side mirror of Drivers, with two tabs.
+   - **Teams** — the public directory: one row per team in the league-wide pool, with how many
+     seasons and drivers it has fielded. **＋ New Team** adds one to the pool (and, when the
+     dropdowns are on a season, enters it there). Editing a team changes it everywhere; deleting
+     it removes it from every season it raced in — drivers keep their results, they just lose the
+     team tag.
+   - **Team Roster** *(admin)* — who drives for each team **in one season**. Pick the season with
+     the **Game ▸ Series ▸ Season** menus at the top of the page (with a series selected and "All
+     Seasons" showing, it manages that series' newest season, like the Driver Roster does).
+     - **＋ Add Team to Season** — search the team pool and bring a team in, or create a brand-new
+       one inline. A team can be entered in as many seasons as it races.
+     - **＋ Add Driver** — a searchable list of the season's roster first, then the whole global
+       driver pool, so a team's line-up is built from the same driver identities everything else
+       uses. A driver races for one team per season: picking someone already on another team
+       *moves* them. Someone on the team but not on the season's roster is flagged, since they
+       have no results to contribute.
+     - Each team's card shows its **season points, wins and poles** as they stand, so the
+       aggregation is visible the moment a line-up changes.
+     - **Remove From Season** ends the team's entry in *this* season only. Its other seasons, its
+       record and every race result are untouched.
+     A team's points, wins, top 5s, poles, laps led and average finish are the combined totals of
+     whoever was on its line-up that season; those seasons add up to the team's all-time record on
+     its profile, in the Stats page's **Teams** tab, and in every scope in between.
+4. **Results entry** — everything about an event is managed from **Schedule**. Each row's
    **⏱** button opens that event's results grid and **✎** its details; both land on the same
    race edit screen, which carries **Race Info**, **Qualifying** and **Race Results** tabs
    (Heats / Consolation / Feature on a heat-racing event). Fill in the grid (one row per
    driver: finishing position, laps led, incidents, DNF/DNS status) and save — standings,
    stats, and every linked player's profile update immediately. Re-open and re-save a race
    any time to correct results; it overwrites cleanly.
+
+   **Adding a driver mid-entry picks from the drivers you already have.** The
+   **＋ Add a driver to this race…** box at the bottom of the grid searches **every name a driver
+   answers to** — their profile name, the name they use in *this* game, their Discord / PSN /
+   Xbox / Steam / iRacing usernames, and any name a merge folded into them — so a name copied off
+   a game's own results sheet finds the right person. Rows found through something other than
+   their profile name say which name matched underneath ("PSN Username: Ryan_Bird_77"), so an
+   unfamiliar-looking match can be placed at a glance. Type, press Enter, next name. **＋ Create
+   new driver** is still there for someone genuinely new — but if the name resembles a driver
+   already in the app it asks first, offering them, rather than quietly making a second profile
+   that splits one person's history in two. The Smart Importer's per-row **＋ Create new
+   driver…** goes through the same question.
+
+   **Previous / next round** buttons sit at the top of both the results editor and the public
+   results page, so a season can be worked (or read) straight through without going back to the
+   Schedule between rounds. They keep you where you are — the editor stays the editor, the viewer
+   stays the viewer — and the editor also keeps the tab you're on, so entering ten Features in a row
+   never touches Race Info. They follow the Schedule's own order (round number), and on a season
+   running per-class calendars a class-pinned round steps through that class's calendar, skipping
+   rounds it doesn't run. See `lib/raceNav.js` and `components/RaceNav.jsx`.
    The **Status** column decides how a row is counted. **DNS** ("did not start") is not
    scored at all — no position points, no qualifying points, no bonuses — and counts toward
    no stat: not a start, not a finish to average, not a pole or grid slot, not a DNF. The
@@ -488,11 +827,97 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
    time plus its stored interval; a lapped car or a DNF has no comparable time and reads as a dash.
    All of these columns are offered in the Share Graphic exporter too.
 
+### Running a Time Trial or a placement night
+
+**Time Trials & Placements** in the sidebar is a hub of its own, for the sessions that aren't races:
+hot-lapping, time attack, and the placement night that sorts a new field into divisions.
+
+1. **Create the session.** Name it, pick the **track** (pick it from the Tracks database rather than
+   typing it, so the laps set here are eligible for that venue's track records), and choose how many
+   laps a driver may submit — **Maximum Laps**, or leave it blank for an unlimited hot-lapping
+   window. **Best Average Time counts…** decides what that column means: blank averages *every* lap
+   a driver submits, while a number gives the classic best N-consecutive-lap average.
+2. **Add drivers and type their laps.** The picker searches **every name a driver answers to** —
+   profile name, display name, their name in each game, Discord/PSN/Xbox/Steam/iRacing, and any name
+   a merge folded into them — and says which one it matched through. That matters most here, because
+   a placement sheet is typed straight off the game's own timing screen, so the name in front of you
+   is the one that *isn't* on their profile. A name that matches nobody is still perfectly valid (a
+   placement night is run *for* drivers who aren't on a roster yet), but one that resembles somebody
+   already in the app asks first, so a night's laps don't end up filed against a second copy of
+   someone. Lap times take any clock format (`1:23.456`, `83.456`, `1:02:03.004`). Each driver's
+   fastest lap is found from the laps themselves and shown in **bold**; click their name for the
+   full list.
+3. **Sort the sheet.** **Best Time** and **Best Average Time** are one-click sortable column headers.
+   The sheet holds its order while you're typing — a lap that improves someone's best time would
+   otherwise fling their row up the table mid-entry — and re-ranks when you sort, hit **Re-sort now**,
+   or save.
+4. **Place them — on the board.** A placement session opens on the **🎽 Board**: the unplaced field
+   in the first column, one column per division across the rest, and every driver a card carrying
+   their best and average lap. Sorting the field is picking cards up and putting them down.
+
+   - **🎯 Destinations** is where the columns come from. It lists everything the **Game** in the top
+     menu runs — every series, the season each one would build, and the classes inside them — as
+     checkboxes. Tick "Pro Class" and "Amateur Class" and you have two columns; tick a series and you
+     have a column for the series itself. Ticking a class inside a series ticks the series too.
+   - **Drag a card** into a column to place that driver, drag it back to the pool to un-place them.
+     Every card also carries a **move menu**, which is the same action for a phone, a tablet or a
+     keyboard — the board has never needed a mouse.
+   - **⚡ Auto-Place Drivers** asks the one question that matters first — **Best Lap or Average
+     Lap?** — because the two genuinely disagree: one rewards a single perfect lap, the other rewards
+     repeating it. It shows the resulting split (how many land in each column, and who it can't place
+     for having set no lap) *before* applying it, then deals the ranked field evenly across the
+     columns, quickest first, with the remainder landing on the quicker end.
+   - Auto-placing is a first pass, never a verdict. Every card stays draggable afterwards, and
+     nothing is written until **Save Session**.
+
+   **⏱ Lap sheet** switches back to the grid for typing times; both views edit the same session, so
+   swapping between them mid-night loses nothing, unsaved laps included. The sheet's own per-column
+   **⇅ Sort into … by time** buttons are still there for anyone who prefers them.
+5. **Complete Session** (top right) closes the sheet and offers to **build the roster** — every
+   driver on it joins a roster in the division they were placed in. It shows exactly what it will do
+   before writing, and a driver already on a roster is *moved* into their new division rather than
+   duplicated, so re-sorting the field and pressing it again corrects rather than doubles.
+
+**Classes or series — whichever your league calls a division.** Some leagues split a season into
+classes; others run each division as its own **series**, with its own seasons, schedule and
+championship. A placement night can sort into either, and the two compose:
+
+- Tick the **series** to place into, and give each one the **season** whose roster it builds — a
+  roster belongs to a season, not to a series, so each series names one (defaulting to its newest,
+  the one being raced). Completing the session then builds *every* one of those rosters in a single
+  run, and the summary reports each separately.
+- Tick the **classes** to place into for divisions inside a season, exactly as before.
+- Use **both** and a driver is sorted into a series *and* into a class within it. The divisions a
+  row can be given then come from **that driver's own series' season** — never another season's
+  classes, which would stamp a roster entry with an id it can't resolve. Sorting into divisions
+  splits inside each series too, so the top of the Pro Series fills Pro's first division rather than
+  the whole field's fastest drivers taking every quick division everywhere.
+
+A driver sorted into a series has been placed whether or not they also drew a class — the series is
+their division. On a class-only night, a driver with no division is still left alone rather than
+guessed at. And a session that places into series needs no season of its own at all: the series
+carry their own destinations.
+
+**Getting the times onto a race weekend** works from either end. **Export to Qualifying** on the
+session screen picks a scheduled event and copies the best laps over as its official qualifying
+results — fastest lap on pole — replacing whatever qualifying that event had. Or, from the event's
+**Qualifying** tab, **⏱ Import from Time Trial** fills the grid for you to review and save, exactly
+like the CSV import beside it. Either way, anyone who isn't on that season's roster is named rather
+than silently dropped: a result can only be filed against a roster entry.
+
+**What a time trial does and doesn't count for.** It counts toward **no** racing statistic — not
+Wins, Top 5s, Average Finish, Poles, or Championships — because it isn't a race and its laps are
+never written as results. Its laps **are** eligible for the Global / Series / Class **Track
+Records**, competing with race and qualifying laps on equal terms: the venue's record card names the
+session and links back to the sheet. The one route into the official statistics is the export above,
+which an admin performs deliberately, on an event they name.
+
 ### Typical first-time flow
 
 `Sign in as admin → League Setup: create Game → Series → Season → Races → Drivers ▸ Roster &
-Teams: add Teams and Drivers (link accounts where possible) → Schedule: ⏱ on an event to enter
-results after each race → Standings/Stats update automatically.`
+Teams: add Drivers (link accounts where possible) → Teams ▸ Team Roster: add Teams to the season
+and build their line-ups → Schedule: ⏱ on an event to enter results after each race →
+Standings/Stats update automatically.`
 
 ## Project Layout
 
@@ -500,25 +925,43 @@ results after each race → Standings/Stats update automatically.`
 frontend/
   app/
     api/            ← Next.js API routes (all writes require a Firebase ID token)
-      games/ series/ seasons/ teams/ entries/ races/ results/ standings/
-      stats/ roster/ users/ upload/ car-selection/
+      games/ series/ seasons/ teams/ team-seasons/ entries/ races/ results/
+      standings/ stats/ roster/ users/ upload/ car-selection/
     page.js         ← Dashboard (per selected season)
     standings/      ← Driver + team points tables
     stats/          ← Scoped driver stats (season/series/game/league), sortable
     schedule/       ← Season calendar (admin: ⏱ enter results, ✎ edit event, 🗑 delete)
-    admin/          ← Admin: League Setup — build games/series/seasons/races, upload logos
+    calendar/       ← Global month-by-month calendar of every event in the league,
+                      filtered by Game ▸ Series (lib/calendar.js holds its arithmetic)
+    admin/          ← Admin: League Setup — build games/series/seasons/races, the shared Tracks
+                      and Drivers libraries (incl. the duplicate-driver merge tool), Owner logos
     drivers/        ← Driver directory + public profiles (/drivers/[uid]: career stats,
-                      race history, per-track stats), plus the admin Roster & Teams and
-                      User Accounts tabs (?tab=roster / ?tab=accounts)
+                      race history, per-track stats), plus the admin User Accounts tab
+                      (?tab=accounts)
+    teams/          ← Team directory + public profiles (/teams/[team]: career stats, drivers,
+                      season-by-season line-ups), plus the admin Team Roster tab (?tab=roster)
     approvals/      ← League-wide pending sign-up queue (Moderator+), behind the sidebar badge
+    roster/         ← Admin ▸ Driver Roster: season rosters, car numbers, classes, teams, the
+                      driver pool, the season's sign-up queue, and the badge for drivers
+                      approved onto a roster since the admin last looked
     races/[id]/     ← Race results view; races/[id]/edit ← admin race info + results editor
-    series-info/    ← A player's series: driver linking, series sign-up, and
+    time-trials/    ← Time Trials & Placements hub; time-trials/[id] ← one session, in two
+                      views: the placement BOARD (destinations as columns, driver cards dragged
+                      between them, Auto-Place) and the lap SHEET (Best Time / Best Average),
+                      plus Complete Session and Export to Qualifying
+    signups/        ← Sign-ups: the player's three-step "join a series" walkthrough, the
+                      seasons open to join, and where their sent sign-ups have got to
+    series-info/    ← My Series: the seasons a player is already on, plus driver claiming, and
                       series-info/[seasonId] ← that season's car lock-in + who's racing what
     profile/        ← Edit your own profile
     login/          ← Sign in / create account
   lib/              ← Firebase admin + client init, auth guards, standings math, shared CRUD
-  components/       ← AppShell, Auth/League providers, ImageUpload, AdminGate, SessionEditor,
-                      RosterManager + UserAccountsManager (the Drivers page's admin tabs)
+  components/       ← AppShell, Auth/League/Messages providers, ImageUpload (the app's single
+                      door to cloud storage, Owner-gated), AdminGate, SessionEditor,
+                      RosterManager + UserAccountsManager (the Drivers page's admin tabs),
+                      DriverMergeTool (find & fold duplicate profiles), PlacementBoard +
+                      PlacementTargetFields + AutoPlaceModal (the placement night),
+                      MessageBoard + AdminMessages (the two ends of the board)
 firebase/           ← Firestore + Storage security rules
 backend/            ← Legacy Python backend (unused; superseded by Next.js API routes)
 scripts/            ← Ops scripts: fetch-backup.mjs, upload-to-drive.mjs (see Backups below)
@@ -535,11 +978,108 @@ the submit button — so a quick-create dialog can never quietly offer fewer opt
 different document, than the full setup screen. Add a field once, in the shared form, and every
 entry point gets it. Follow the same split when adding a second way to create something.
 
+### One tick box for the whole app
+
+Every checkbox and radio in the app — League Setup's switches, a results grid's tick cells, the
+class picker, a modal's options — is drawn by **one block in `app/globals.css`**, keyed off
+`input[type="checkbox"]` and `input[type="radio"]`. There are no per-screen sizes, and no
+`style={{ width: 18, height: 18, accentColor: … }}` on individual inputs; that is what let them
+drift into different shapes and sizes screen by screen in the first place.
+
+Two things the shared rule fixes:
+
+- **Size.** `.field input` stretches inputs to 100% width, which a bare browser checkbox obeyed —
+  hence the hand-rolled sizes on *some* of them and not others. The size now lives in one place,
+  with `.field`-scoped selectors included so it wins wherever a box sits inside a field.
+- **Contrast.** The native control on this dark theme drew a faint outline when off and a small
+  tick when on, and at a glance the two looked alike. **Off** is a clearly drawn empty box; **on**
+  is a filled cyan box with a tick (a filled ring with a dot, for a radio), with matching
+  focus, hover, indeterminate and disabled states.
+
+Two helper classes go with it, for the row a box sits in: `check-row` (box beside a label, aligned
+to the label's first line — the shape used by every "switch + explanation" row) and
+`check-row-center`, for a one-line label that has nothing to align to the top of. Use those rather
+than re-inlining flex on the wrapper.
+
+### The global calendar
+
+`/calendar` reads the **same** endpoint the Schedule's cross-season feed does — `GET /api/schedule`
+with no `season_id`, optionally narrowed by `game_id` / `series_id` — so an event appears on the
+calendar the moment it's created, with the same series/season/game context and the same
+"has results yet?" answer. There is deliberately no second query for "all races": one feed, two
+presentations.
+
+The month arithmetic lives in `lib/calendar.js`, apart from the page that draws it and covered by
+`lib/__tests__/calendar.test.mjs`. Its load-bearing rule is the one from `lib/raceDate.js`: a race
+date is a bare `YYYY-MM-DD`, never an instant. `buildMonthGrid()` builds each cell from **local**
+date fields and hands it its own date string, so plotting an event is a map lookup rather than a
+date comparison — which is what stops a race sliding into the previous day west of Greenwich.
+Days from the neighbouring months pad every week whole (dimmed, so they can't be mistaken for this
+month's), undated events are listed under the grid instead of being dropped, and the page opens on
+`initialMonth()` — the month being lived through if it has racing in it, else the next that does,
+else the last that did.
+
+**No game selected means no narrowing.** `calendarScopeQuery()` is the one place that decides what
+the calendar asks for, and it reads a single rule: with no **Game** chosen, the calendar shows every
+event in the league — every game, every series, upcoming and past. A **Series** narrows it *only*
+while a game is selected, because a series belongs to a game; honouring one at "All Games" would
+show a single game's racing under a heading that says every game.
+
+That isn't a hypothetical. The scope tiers settle one at a time — choosing "All Games" empties
+`gameId` immediately and `LeagueProvider` clears `seriesId` in a follow-up effect — so there is a
+render where the game is "all" and the series is still the previous one. Two things keep the grid
+honest across it: the query rule above ignores the stale series, and the fetch carries a **sequence
+guard**, so an earlier narrow response that lands late can't overwrite the wide one. The page
+heading, the filter hint and the empty state all derive from the same `gameId` check, so none of
+them can claim a scope the grid isn't showing.
+
+### Subscribing the calendar (the .ics feed)
+
+`GET /api/calendar.ics` serves the league's racing as an iCalendar feed — the **📆 Subscribe**
+button on the Calendar page hands over the URL, with one-click links for Google Calendar and for
+Apple Calendar / Outlook (`webcal:`). It is a *subscription*, not an export: new rounds, moved
+dates and newly published session times all reach every subscriber on their client's next refresh,
+with nothing to re-download.
+
+```
+/api/calendar.ics                     every game in the league
+/api/calendar.ics?game_id=…           one game
+/api/calendar.ics?series_id=…         one series
+/api/calendar.ics?season_id=…         one season
+…&league_id=…                         which league
+```
+
+The scope comes from `calendarFeedPath()` in `lib/calendar.js`, which is built on
+`calendarScopeQuery()` — so the feed you copy is exactly the calendar you were looking at. The
+league rides in the URL rather than the usual `X-League-Id` header for the reason the route is
+public in the first place: **a calendar client can't send headers or sign in**, so a feed that
+required either could not be subscribed to at all. It exposes only what the public Calendar and
+Schedule pages already show any visitor — event names, tracks, dates, and the session times an
+admin chose to publish. No results, no drivers, no accounts, no write path.
+
+How a race becomes calendar entries (`lib/icsFeed.js`, covered by `lib/__tests__/icsFeed.test.mjs`):
+
+- **Session times published** → one timed entry *per session*: Practice, Qualifying and Race each
+  arrive as their own appointment, so a driver can set a reminder on qualifying alone. Each is
+  written as a **UTC instant** computed from the race's own zone and its own date, which is what
+  lets every subscriber's client render it in their own timezone with no `VTIMEZONE` block to keep
+  in step with the world's tzdata. Practice and qualifying block out 30 minutes, a race an hour —
+  or its real length when the event runs to the clock.
+- **No published times** → one **all-day** entry on the date the admin picked, which is exactly
+  what a bare `YYYY-MM-DD` race date means. A race whose timezone was never saved falls back to
+  this rather than publishing a start that might be hours out.
+- **No date at all** → nothing. There is no day to put it on; it stays on the Calendar page under
+  "Date to be announced".
+
+Every entry carries a **stable UID** (`<session>-<race id>@phoenix-racing-league-manager`). That is
+the whole difference between a subscription that updates a moved race in place and one that leaves
+last week's copy behind next to it.
+
 ## Data model (Firestore collections)
 
 `leagues (name, owner_id, logo_url, created_at)` is the top-level partition. Every
 hierarchy/pool collection — `games`, `series`, `seasons`, `races`, `entries`, `teams`,
-`results`, `drivers`, `tracks`, `points_templates` — carries a `league_id` and is read/written
+`team_seasons`, `results`, `drivers`, `tracks`, `points_templates` — carries a `league_id` and is read/written
 scoped to the active league (sent as an `X-League-Id` header; see `lib/serverAuth.js`
 `getRequestLeagueId`/`scopeByLeague`). `users` and `claim_requests` are **not** league-scoped —
 accounts and their roles span leagues. That partition map lives once, in `lib/backup.js`
@@ -590,11 +1130,13 @@ the same pass, so the profile costs no extra reads. One row per **race session**
 started, carrying the race, its date and venue, the season/series/game it belonged to, the class
 they ran in, their start and finish positions, laps, laps led, status and points.
 
-Qualifying is not a race, so it never gets a row of its own — it's folded into the race it set the
-grid for, as that row's start position. A result's own `start_pos` wins where the grid recorded
-one, since that's what the driver actually started from after any penalty. Rows come back newest
-first (by race date, then round number), and each links to `/races/<id>` — the same event page the
-Schedule opens — so a driver's profile is a way *into* every race they ran.
+Qualifying gets a row of its own, because it scores points of its own — leaving it out would print
+a history whose points don't add up to the career total above it. Its position is a grid slot, so it
+reports as a start with no finish. A race row still shows what it started from: the result's own
+`start_pos` where the grid recorded one, since that's what the driver actually started from after
+any penalty, else their qualifying position. Rows come back newest first (by race date, then round
+number), and each links to `/races/<id>` — the same event page the Schedule opens — so a driver's
+profile is a way *into* every race they ran.
 
 ### The pending request queue
 
@@ -633,12 +1175,12 @@ the entry has results, answering with how many; the roster's dialog reports that
 again before passing `?confirm=results`. Dropping somebody who signed up and never raced stays one
 click; deleting eight races of history is never one.
 
-`POST /api/signup-requests` only ever writes a `pending` row — there is no path from the Dashboard
-to the `entries` collection — and `PATCH /api/admin/signup-requests/[id]`, admin-gated, is what
-creates the roster entry. The car
-and manufacturer chosen at sign-up are written onto that entry in the same fields the lock-in
-screen uses (`selected_car`, `selected_manufacturer`), so an approved sign-up needs no second trip
-to choose what was already chosen.
+`POST /api/signup-requests` only ever writes a `pending` row — there is no path from the Sign-ups
+screen to the `entries` collection — and `PATCH /api/admin/signup-requests/[id]`, admin-gated, is what
+creates the roster entry. The car chosen at
+sign-up is written onto that entry in the same field the lock-in screen uses (`selected_car`), so
+an approved sign-up needs no second trip to choose what was already chosen — and the season's
+screen shows that pick on the roster grid even where no standing lock-in question is asked.
 
 Pending rows count as **spoken for** when a later player picks a number: `numberClaimed` in
 `lib/signupQueue.js` reads the roster and the queue together, so two people can't both be waiting
@@ -651,6 +1193,35 @@ comes from, so none of it is trusted at approval time.
 
 The collection is league-scoped and included in backups: a restore that dropped it would silently
 lose everyone who had signed up but not yet been approved.
+
+### Who may upload an image
+
+Every logo and avatar in this league lives in cloud storage, and cloud storage is billed by the byte
+for as long as the file exists. So uploading is the one league power the four staff roles do **not**
+share: it belongs to the **Owner** alone, the person whose storage it is. Admins, Moderators and
+Statisticians keep every other power they had — they create and edit games, series, seasons,
+classes, tracks, races, drivers and teams exactly as before — they just can't add a picture to one.
+
+- **In the browser**, every upload field in the app is the same component, so the rule is applied in
+  one place and covers every creation and edit form at once (and any form added later). For a
+  non-Owner the field doesn't vanish — it goes **read-only**, still showing the image that's there
+  with one line saying who can change it, so an Admin can see what a game's logo *is* without being
+  able to spend the league's storage on a new one.
+- **On the server**, `POST /api/upload` refuses the file outright for anyone who isn't an Owner —
+  before reading the body, so a rejected megabyte is never pulled off the wire. That's the part that
+  means it: Firebase Storage rules refuse every direct client write, so this route is the only door
+  into storage there is.
+- **On the entity routes**, an image field in a create or update from a non-Owner is dropped rather
+  than written. *Changing* is the operative word: an edit form posts every field it renders, so a
+  save that carries back the logo it was showing is not a new image and passes through untouched —
+  renaming a game never quietly wipes its logo, and never fails over a field the person didn't
+  touch. A write that is *only* an image change is refused with **403**.
+
+**Nothing about displaying images changed.** The Owner is still uploading them, and every `<img>`,
+avatar and logo across Drivers, Tracks, Teams, Standings and the rest renders whatever is stored,
+exactly as before.
+
+The rule is `lib/imagePermissions.js`, covered by `lib/__tests__/imagePermissions.test.mjs`.
 
 ### Who may create a driver profile
 
@@ -668,9 +1239,95 @@ has been marked complete, or their car number was taken while the request sat in
 profile is still created and the admin is told what didn't carry over — a stale detail never costs
 them the whole approval.
 
+### One driver, however many names
+
+The same human racer answers to a pile of different names: the one on their profile, an overall
+display name, a different name in every game they race, a Discord handle, a PSN username, an Xbox
+gamertag, an iRacing name and customer id, and whatever they were called before a merge tidied
+them up. Which of those you happen to type must never decide whether they get a second profile.
+
+`lib/driverMatch.js` holds that rule, once, for every screen and route that can create a driver. It
+gathers every name a driver answers to — `name`, `display_name`, each `game_names[]`, each
+`aliases[].value`, each `merged_names[]` — normalizes away case, spacing, punctuation and accents
+(so `Ryan_Birdman`, `ryan birdman` and `RyanBirdman` are one name), and returns a verdict:
+
+| Verdict | What it means | What happens |
+|---|---|---|
+| `none` | nobody in the pool is close | the driver is created, silently and correctly |
+| `linked` | exactly one driver demonstrably answers to this name — or owns this player account | they're **used**, and the screen says which name gave them away |
+| `ambiguous` | several drivers answer to it | you pick; the app never guesses |
+| `possible` | close but not a match ("Jon" / "John") | you're asked, with the candidates and their reasons |
+
+Two things follow from that, and they're the point of the whole thing:
+
+- **A name from another game finds the right driver.** Typing `Ryanbirdman` off a BeamNG sheet,
+  or a PSN username off a GT7 export, resolves to the driver those names are already on file for
+  rather than making a second one.
+- **Nothing is created behind your back.** Every path that can add a driver — the Driver Roster's
+  **Add Driver** card, the **Driver Pool** form, the race-entry **＋ Add a driver to this race**
+  box, the Smart Importer's **＋ Create new driver…**, and the bulk **Import Roster** — asks first
+  when the name resembles somebody already in the league, and offers to use them instead. The
+  driver-name fields also carry a live note as you type, so you can see the match coming before
+  you press anything.
+
+The thresholds err towards *asking*: a prompt you dismiss costs a click, while a duplicate that
+slips through splits one driver's history across two profiles and needs a merge to undo. Neither
+threshold ever blocks anything — two people with similar names is an ordinary thing in a league,
+and **No — create a new driver** is always right there.
+
+`POST /api/drivers` runs the same check server-side and answers **409** with `code:
+"possible-duplicate"` and the candidates unless the body carries `confirm_duplicate: true`. That's
+the backstop: a screen that forgot to ask, a stale browser tab, or anything posting straight at
+the API still can't create a silent duplicate — and because the API reads the pool as it stands
+rather than a copy a page loaded ten minutes ago, it also catches the driver another admin added
+in the meantime. `POST /api/claim-requests` uses the same rules to tell a player asking for a new
+profile that the league already has them, so they claim it instead of splitting their own history.
+
+The matcher is pure and covered by `lib/__tests__/driverMatch.test.mjs`; the screens that raise the
+prompt are render-tested in `lib/__tests__/driverDedupeFlow.test.jsx`.
+
+### Cleaning up the duplicates you already have
+
+Asking before creating a driver stops *new* duplicates. It does nothing about the ones a league
+already has — made before that check existed, or waved through by an admin who didn't recognise an
+in-game name — and those are the ones that quietly break the standings, because one person's season
+is split across two profiles and neither total is right.
+
+**League Setup ▸ 🧑‍🔧 Drivers** is the bench for that.
+
+- **It finds them for you.** Every driver is checked against every other, through *every* name each
+  one answers to, and the pairs worth a look are listed with the reason each came up ("their BeamNG
+  name is “Ryanbirdman”", "used to race as “Ryan M”"). Nobody scrolls four hundred names looking for
+  the same person twice, which is exactly why nobody ever found these. Suggestions only — two people
+  with similar names is ordinary, and nothing merges until you say so.
+- **You choose which profile survives.** Pick the **duplicate** and the **primary**; ⇄ swaps them.
+  The pair with a linked player account is offered the right way round to begin with.
+- **It shows the merge before it runs it.** How many roster entries and time-trial rows move, what
+  is carried across from the duplicate, and which names are kept — all from the same code that then
+  performs it (`POST /api/admin/drivers/merge` with `dry_run: true`), so the preview can't disagree
+  with the result.
+
+**What a merge does, and why nothing is lost.** Results reference roster *entries*, not drivers, so
+re-pointing the duplicate's entries at the primary carries every race, point, win, podium,
+championship and lap record with them — none of it is copied, rewritten or recalculated. Time-trial
+rows carry a driver directly and are re-pointed the same way, so a hot lap in the record books keeps
+its holder. Per-game **Skill Ratings** are then replayed for every game the moved races touched, so
+they count them.
+
+The profile is reconciled field by field, and the direction is always the same: **the primary is the
+truth, the duplicate fills the gaps** (`lib/driverMerge.js`). The survivor's Discord handle stands;
+an Xbox gamertag only the duplicate had is carried across; a game only the duplicate raced brings
+its in-game name; a survivor with no player account inherits the duplicate's, which is the usual
+shape of this mistake. And every name the duplicate ever raced under — its profile name, its display
+name, its in-game names, the names on its entries, and any names an *earlier* merge folded into it —
+is kept on the survivor as a **former name**, so the next import listing one of them finds this
+driver instead of re-creating the duplicate that was just cleaned up.
+
+Covered by `lib/__tests__/driverMerge.test.mjs`.
+
 ### The sign-up requirement chain
 
-Everything a sign-up can be made to carry — a car lock-in, a car number, a manufacturer, and the
+Everything a sign-up can be made to carry — a car lock-in, a car number, and the
 lock itself — is set on any of **four** levels and resolved in `lib/carSelection.js` by one rule:
 
     game  →  series  →  season  →  class        the most specific level with an OPINION wins
@@ -687,7 +1344,7 @@ requiring them under seasons that store a bare `false`, while an admin now has a
 one season off.
 
 `resolveSignupRules({ game, series, season, cls })` returns the resolved answers plus
-`require_number_from` / `require_car_from` / `require_manufacturer_from`, naming the level that
+`require_number_from` / `require_car_from`, naming the level that
 decided — which is what lets League Setup label a switch *"Inherit — required by the series"*
 instead of leaving an admin to guess. `seasonContext` loads the game alongside the series, so no
 caller can accidentally resolve a season without the top of its chain.
@@ -714,7 +1371,58 @@ moment it's submitted — approval isn't waited for, because a platform username
 person, not about the roster place. The merge is by label and case-insensitive: a new value wins, a
 blank one **never** erases a saved one, and a platform this game didn't ask about is left alone.
 A player with no driver profile yet carries their answers on the request; approving it writes them
-onto the profile it creates.
+onto the profile it creates, and the form reads them off the request in the meantime — see
+*What a sign-up saves* below.
+
+### What a sign-up saves, and what it refuses to overwrite
+
+A sign-up is the one moment the app learns who somebody actually is: the name they race under,
+the number they run, and the platform usernames the league reaches them on. Those are facts
+about the **person**, not about the roster place, so they're written the moment the request is
+filed — approval isn't waited for, and nothing here touches a roster. Three records take them,
+and each takes only what it owns:
+
+| Record | Takes | Rule |
+|---|---|---|
+| `signup_requests/<id>` | everything submitted | the request itself; the only home for a new player's answers until an admin approves them |
+| `drivers/<id>.aliases` | the platform usernames | **merged**, never replaced |
+| `users/<uid>` | `display_name`, `number` | **filled in only**, never overwritten |
+
+**Merged, for the driver profile.** The form only asks for what the game it's for requires, so
+writing its answers over the profile would drop every platform it didn't ask about — a Wreckfest
+sign-up (Discord only) would wipe the Steam name an iRacing sign-up saved. `mergeAliases()` is
+by label and case-insensitive: a new value wins, and a blank one never erases a saved one.
+
+**Filled in only, for the account.** An account is created at sign-in with a display name
+invented from the email (`jane.doe@example.com` → "jane.doe"), which is a placeholder nobody
+chose; replacing that with the name they told us they race under is an improvement. Replacing a
+name they set on their **Profile** is not. `isPlaceholderDisplayName()` is the whole distinction,
+and `userAccountUpdatesFromSignup()` returns *only* the fields that should be written — an empty
+object means the account is left alone entirely. The same applies to the car number: written when
+the account has none, never changed, and never blanked by a season that doesn't run numbers.
+Both `POST /api/signup-requests` and the approval step apply it, so a request filed before this
+existed still brings the account up to date when it's approved.
+
+**Editing it afterwards.** `GET`/`PATCH /api/users/me/driver` are the player's own door to those
+aliases — the profile is resolved from the caller's account rather than taken from the request, so
+there is no way to edit somebody else's. Aliases are the *only* field of a driver profile a player
+may write; the name, display names and notes stay admin-only, since those decide how the whole
+league sees them. `components/ConnectedAccounts.jsx` renders it on **Profile** as a card of its own
+with its own Save, beside the account form rather than inside it, because the two write to
+different records — saving one must never silently rewrite the other. It shares `<AliasEditor>`
+with the admin's Driver Edit dialog and the sign-up form, so a driver describes themselves the same
+way whoever is filling it in.
+
+**Reading it back is what makes it worth saving.** `GET /api/users/me/series` returns
+`known_aliases` and `known_name` — everything this ACCOUNT has already given, whether or not a
+driver profile exists to hold it yet. This was a real bug: a first-time player signed up for one
+series, opened a second sign-up ten seconds later, and was asked for their Discord name, Steam
+name and iRacing customer ID all over again, because only the driver profile was being read and
+theirs wouldn't exist until an admin got to the queue — the retyping the sync exists to prevent,
+aimed at the one player least likely to tolerate it. `knownAliasesFor()` reads the profile when
+there is one and the pending requests when there isn't (oldest first, so the newest answer wins),
+and the tick beside a pre-filled box says which it came from: *✓ from your profile*, or *✓ from
+your last sign-up*.
 
 ### Car numbers on a self-service sign-up
 
@@ -728,6 +1436,226 @@ as strings (`entries.number`, max 3 chars): a league that runs both a **1** and 
 different numbers, and neither blocks the other. Ordering is by value though — `compareCarNumbers`
 in `lib/carSelection.js` puts 2 before 10 rather than after it, keeps `01` beside `1`, and drops
 drivers with no number to the end. Every roster a player reads is sorted through it.
+
+**The question is only asked where a number is required.** `resolveSignupRules()` answers
+`require_number` down the usual game → series → season → class chain, and `<SignupForm>` renders the
+number field only when it comes back true — a league that doesn't run numbers sees nothing, not an
+optional box. Because a class can require what its season doesn't, picking one re-resolves the rule
+mid-form: the field appears (or disappears) as the class changes. Everything about the number reads
+that same answer, so the three can't disagree — the field, the as-you-type "that number is taken"
+check, and what's submitted. A number typed before the question went away is cleared from the form
+state *and* dropped again at submit, which is what stops a value nobody was asked for riding along
+on the request — or, worse, a stale clash disabling **Submit** with nothing on screen to explain it.
+
+### The Sign-ups screen
+
+`app/signups` is the only screen in the app aimed at somebody who has never used it, and it's
+built as a **walkthrough, not a page**: it renders exactly one of three things at a time — the
+list of series, the form for the one that was chosen, or the "you're in the queue" confirmation.
+The three steps are printed above whichever one is showing, with the current one lit, so nothing
+about the process has to be inferred from a disabled button.
+
+It decides nothing itself. One call to `GET /api/users/me/series` answers which seasons are open,
+what each asks a sign-up to carry, and whether this account already has one waiting; every list,
+count and sentence on screen is then derived by **`lib/signupFlow.js`**, which is pure and covered
+by `lib/__tests__/signupFlow.test.mjs`. The rules that matter are asserted there rather than left
+to a human to spot:
+
+- a sign-up already sent never appears as something to join again (`my_pending` splits
+  `joinableSeasons` from `awaitingSeasons`) — the commonest way a first-timer ends up in the queue
+  twice;
+- the sidebar badge counts only what is waiting on the **player** — series they could join, plus
+  cars they still have to choose — so it falls when *they* act, never when an admin does, and a
+  series they've answered with *Not Interested* or *Clear Notification* stops counting entirely
+  (see below);
+- **What this form asks you for**, printed above the form, is derived from the same two sources
+  the form renders itself from, so it can't promise a different set of questions than the one
+  that follows;
+- an empty list says **which** of five things happened — everything put aside by the player
+  themselves, a sign-up already in flight, every season already joined, every other season
+  finished, or a league with nothing scheduled. This one was caught in testing: a player who had
+  just sent a sign-up was told "every other season has been marked finished", which reads as
+  though their sign-up had gone nowhere. `nothingToJoinReason()` picks the reason and is asserted
+  against every state.
+
+#### Not Interested / Clear Notification
+
+The badge counting what's waiting on the player is the right rule, and it's also how the badge
+breaks: a league running six series means a permanent red **6** for somebody who races one of
+them, and a number that never reaches zero is a number people stop reading — at which point it no
+longer works for the sign-up they *do* want. So each series card carries two answers beside
+**Join this series**:
+
+- **Not Interested** (red) — out of the list *and* off the badge. Nothing is refused or deleted:
+  the season moves to a *"series you said you're not interested in"* section directly below,
+  which says it's still open and carries both **Put it back in my list** and **Join it after all**.
+  A choice nobody can undo is one nobody sensible would make.
+- **Clear Notification** — keep it in the list, just stop counting it, for the series they might
+  get to later. The card then says **🔕 Not counted on the badge** in words rather than leaving
+  the player to notice a missing number, and the button flips to **Notify me again** so it can be
+  undone where it was done.
+
+The rules live in **`lib/signupPrefs.js`** (pure, `lib/__tests__/signupPrefs.test.mjs`), applied by
+both the screen and the badge so they can't disagree about what's been silenced. Two properties are
+asserted hard: *only one of the two answers hides the series* (fold them together and one button
+becomes a lie), and *anything stored that isn't one of the two answers means no answer* — failing
+open is the only safe direction, since a bad value in the other direction silently removes a
+league's season from somebody's screen forever.
+
+Cars still to choose keep counting whatever a player has said: that's a season they have already
+joined and a genuinely outstanding job, not an invitation.
+
+Answers are stored per season on the player's **own account** (`users/<uid>.signup_prefs`) and
+written by `PUT /api/users/me/signup-prefs`, which takes its target from the caller's uid and
+nothing else — there is no way to silence somebody else's notifications, and a state that isn't one
+of the three is refused outright rather than stored. No admin ever sees them, and nothing about the
+sign-up itself changes.
+
+Submitting still goes through the shared `<SignupForm>` — the same component a season's own screen
+opens in a dialog — so the two ways in ask for identical things, and neither can put anybody on a
+roster: both file a pending request (see the approval queue above).
+
+That payload is fetched **once for the whole app** by `components/MySignupsProvider.jsx`, mounted
+inside `LeagueProvider` so a league switch re-asks. The Sign-ups screen, the sidebar badge and the
+Dashboard card all read that one context — the route does a roster query and a pending-queue query
+per open season, so three independent copies of it would be three times the reads for one answer,
+and three answers that could disagree for a second after a sign-up. `mySignupsChanged()` refreshes
+every reader at once, the moment a sign-up is sent or a car is locked in.
+
+Joining lives here and **only** here: `/series-info` is now My Series (the seasons you're already
+on) and links across rather than carrying a second copy of the form.
+
+### Telling an admin where an approval went
+
+Approving a sign-up is the only admin action whose *result* lands somewhere the admin isn't
+looking. It creates a roster entry in one season — very often not the season the dropdowns are
+on — and the queue it was approved from then empties, so nothing was left on screen to say it had
+happened or where. The fix is a badge and two strips on **Admin ▸ Driver Roster**, and the rules
+behind them live in **`lib/rosterAdditions.js`**, which is pure and covered by
+`lib/__tests__/rosterAdditions.test.mjs`:
+
+- **Only what's new.** `newAdditions(rows, seen)` counts approvals resolved after a "seen" stamp
+  in localStorage (`lib/rosterAlerts.js`), stamped to *now* on first ever load so a new admin
+  isn't greeted by the league's entire back catalogue.
+- **Only people who joined.** A car-number change is in the same queue and is approved the same
+  way, but nobody joined anything — announcing it as "added to a roster" sends an admin hunting
+  for a driver who was already there. `isNumberChange` filters them out of both strips.
+- **Grouped by the roster they landed on**, because that's the unit an admin acts on: one trip to
+  a season's roster settles everyone who joined it, so there's one **Open this roster →** button
+  per season rather than one per person. It calls `setGameId`/`setSeriesId`/`setSeasonId` in that
+  order — parent first, so each tier's refetch keeps a selection that's valid underneath it.
+
+**It clears by being read, not by being worked.** That's the difference from the Approvals badge
+next to it: Approvals counts an outstanding *job* and falls when somebody does it, so it must not
+be dismissible. This counts *news* — the work is already done — so it clears on a deliberate
+**Got it** and never merely by opening the page, since an admin who glanced at the screen on
+their way elsewhere hasn't read it.
+
+**The same blind spot exists at the other end**, and `pendingElsewhere()` closes it: the approve
+queue on this screen is scoped to one season (approving from a list spanning every season is how
+you approve somebody onto the wrong one), which meant a sign-up for any other season was
+invisible until the admin happened to steer the dropdowns at it. A second strip names who is
+waiting where, with a button to that season's queue.
+
+### Telling a player their sign-up was denied
+
+Denying a sign-up used to be silent. The request went to `denied` with the admin's reason attached,
+the approvals queue emptied, and the player was told nothing — from their side indistinguishable
+from a sign-up that never arrived, so they filled in the identical form again and were denied again
+for the identical reason.
+
+The reason now reaches them **twice**, and both messages are built from one request document by
+`lib/denialNotice.js` (pure, tested) so they can't tell different stories:
+
+- **Email**, queued as a Firestore document by `lib/mailer.js` in the shape Firebase's official
+  **Trigger Email from Firestore** extension consumes (`mail` collection, `{ to, message }`). No
+  SMTP credentials, no new dependency, and the admin's click never waits on a mail server. **If
+  that extension isn't installed nothing is delivered** — the documents simply queue up as a
+  record. That's deliberate: email is the nudge, the app is the source of truth.
+- **A panel at the top of Sign-ups**, which is the half that always works. It quotes the admin's
+  words, and until the player presses **Got it — let me try again** (`PATCH
+  /api/signup-requests/[id]`, owner-checked, stamping `player_seen_at`) that season is held out of
+  their join list — so the reason is read before the same form is filled in a second time. The
+  button also drops them straight into that series' form, so "fix it and retry" is one action.
+
+The reason is free text an admin typed and it lands in an HTML email body, so `denialHtml` escapes
+every human-supplied value; the plain-text half keeps it verbatim. Both are asserted.
+
+The panel is kept for one thing the message board below can't do: an unacknowledged denial **holds
+that season back** from the join list. Everything else an admin decides — including approvals —
+goes to the board.
+
+### The message board: admins and players talking to each other
+
+A denial was the loudest of a whole class of silent admin actions. **Every** decision was a state
+change on a document and nothing else: the queue emptied, and the player was left to infer what had
+happened from a roster they might not think to look at. Being *removed* from a season was the worst
+of them — entirely silent, and the one most likely to be read as the app losing an entry.
+
+So there is one board, with two ends:
+
+- **The player's end is their Dashboard** (`components/MessageBoard.jsx`). Every admin decision
+  about them lands there as a card: a sign-up approved (which gets the full welcome — schedule,
+  calendar, Discord, because it's somebody's first minute in the league) or denied, a car number
+  granted or refused, a driver profile linked, a removal from a roster.
+- **The admins' end is Approvals** (`components/AdminMessages.jsx`). Requests arrive there as they
+  always did, and now so do the players' replies — so "why was I turned down?" reaches somebody
+  instead of sitting unread on a Dashboard.
+
+Every card can be replied to, both ways, so a decision starts a conversation rather than ending one.
+
+The model is **`lib/messages.js`** — pure, covered by `lib/__tests__/messages.test.mjs`, and shared
+by both ends so the two sides can't describe the same decision differently. Every kind must render
+a title and body from *any* context, including none: a message whose season was later deleted still
+has to say something, and a blank card is worse than no card.
+
+Writes go through **`lib/messagesServer.js`**. `postMessage()` never throws into its caller — an
+admin approving a sign-up has made a decision, and that decision is already recorded; failing to
+announce it must not undo it. It also queues the same message by email, except where a fuller mail
+has already gone out (the denial), because two emails for one decision is how people learn to
+filter a league's mail into the bin.
+
+**Each side has its own read stamp**, and each is moved only by that side. A player reading their
+Dashboard must never clear the admin's flag, or a question would be marked answered by the person
+who asked it. A player's reply is treated like a pending sign-up — an outstanding *job*, not a
+notification — so it stays on the Approvals badge until an admin answers it or presses **Mark
+read**, and the admins' queue runs longest-wait-first.
+
+One subtlety worth its own rule: writing a reply marks a thread read for its author. On its own
+that would drop the card into "earlier messages" the instant a player pressed Send, so
+`openPlayerMessages()` keeps a thread at the top of the Dashboard while it's still waiting on an
+answer (`awaitingAdmin`) — asking a question and watching it disappear is how people conclude it
+never went anywhere. The **badge**, by contrast, counts strictly unread, or it would never fall to
+zero on a message the player wrote themselves.
+
+Ownership is the whole of the check on the player routes: `/api/messages/[id]` gives nobody power
+over anybody else's thread, staff included, and staff answer through `/api/admin/messages/[id]`
+instead. The admin list is league-scoped, so one league's staff never read another's conversations.
+
+### Capping how many drivers may run a car
+
+A car's line in the Car Selection list can carry a limit after a pipe — `Ferrari 296 GT3 | 4`.
+
+The pipe is the separator because it appears in no car name anyone has typed, unlike the `x4` an
+admin reaches for first (a real car could be `Cup Car x4`), and because it keeps the list a
+**single text field** — so a cap inherits down the game → series → season → class chain exactly as
+the list does, with no second field to resolve and no migration for lists already saved. A line
+with no pipe has no cap, which is every list that existed before this. Anything after the pipe that
+isn't a positive whole number means "no cap" rather than "nobody may pick this", because silently
+offering a car nobody can choose is the worse failure.
+
+**What counts toward a cap is the roster PLUS the queue.** Five people each picking the last
+Ferrari, every one of them told it was free because nobody had been approved yet, is precisely the
+pile-up the cap exists to prevent — the same rule car numbers already use. A driver's own current
+car never counts against them, or the person holding the last seat couldn't re-save their own
+choice.
+
+It's enforced in four places, all reading `carAvailability`/`carCapacity` in `lib/carSelection.js`
+so they cannot disagree: the sign-up form greys the option out and badges it **FULL**, `POST
+/api/signup-requests` refuses it with a `car-full` code, `POST /api/car-selection` refuses it on the
+lock-in screen, and the approval step seats a driver **without** a car (saying so in its note) when
+the one they asked for filled up while they waited — the same way it already handles a car number
+being taken. Being on the roster matters more than the car, which they can pick again.
 
 ### Where points are configured
 
@@ -869,9 +1797,118 @@ be one the bracket has, and no round may hold more drivers than it eliminates.
 
 `games (league_id)` → `series (game_id, isBangerRacing, isBracketRacing)` → `seasons (series_id, game_id, drop_weeks, points_scale,
 combined_championship)` → `races (season_id, sessions[], bracket_size?)`, `classes (season_id, name, sort_order, race_points?, isBracketRacing)`
-and `entries (season_id, team_id, class_id, user_id, number)` / `teams (season_id)` →
+and `entries (season_id, team_id, class_id, user_id, number)` / `teams (name, logo_url, color)` +
+`team_seasons (team_id, season_id, driver_ids[])` →
 `results (race_id, season_id, entry_id, class_id, points_template_id)`. `users` holds player profiles; linking a
 roster entry to a user account is what feeds their public career stats.
+
+`time_trials (league_id, name, game_id?, series_id?, season_id?, track_id, track, date, max_laps,
+average_laps, is_placement, class_ids[], series_ids[], series_seasons{}, sort_key, status)` and
+`time_trial_entries (time_trial_id, league_id, name, driver_id?, user_id?, entry_id?, laps[],
+assigned_class_id, assigned_class_name, assigned_series_id, assigned_series_name, position)` hold
+the Time Trials & Placements sessions.
+
+**They are deliberately not `results`, and that is the whole design.** The stats engine reads
+`results`; a trial's laps are never written there, so a time trial counts toward **no** standard
+racing statistic — no Wins, Top 5s, Average Finish, Poles or Championships — and there is nothing to
+exclude and nothing that can leak in by accident as new stats are added. Every trial is optional at
+every level of the hierarchy (a placement night usually happens *before* the season it feeds exists),
+which is another thing a `results` document could never be: a result belongs to a race, and a race
+belongs to a season.
+
+Laps ride on the entry as an **array of clock strings**, exactly as they were typed — one driver
+submits many laps and how many is not known in advance, so they are the row rather than a row each.
+Everything derived from them (each driver's fastest lap, Best Time, Best Average Time, the ranked
+order, the placement split, the qualifying grid an export produces) is computed by one dependency-free
+module, `lib/timeTrials.js`, covered by `lib/__tests__/timeTrials.test.mjs`; `lib/timeTrialsServer.js`
+supplies the Firestore reads around it. That is why the bolded fastest lap in the grid, the Best Time
+column beside it, the expanded lap list and the exported qualifying time can never disagree — they
+are the same function.
+
+**Best Average Time says which laps it averages.** `average_laps` of 0 (the default) averages *every*
+lap a driver submitted — the consistency measure a placement night wants, where one scruffy lap
+counts. Set it to N and the column becomes the classic best **N-consecutive-lap** average, and a run
+may not jump a lap that wasn't completed. `max_laps` of 0 is an unlimited hot-lapping window.
+
+**Two deliberate bridges out.** Time trial laps *are* eligible for the Global / Series / Class
+**Track Records** — a lap is a lap, whatever session turned it — so `fetchTrackRecordLaps` hands each
+driver's fastest lap to `lib/trackStatsServer.js`, which folds them through the same `keepFastest`
+rules the race laps go through; a trial lap holds a venue record only by being quicker than every
+race lap, and vice versa. They reach the records and nothing else: never the venue leaderboard, never
+the past-winners list. The other bridge is **admin-driven and named**: `POST
+/api/time-trials/{id}/export-qualifying` copies the best laps onto one scheduled race as its
+Qualifying, and from that moment they are ordinary qualifying results that score qualifying points
+and set poles like any other. Nothing crosses over without an admin asking for it, on a named event.
+
+**A division is not always a class.** Some leagues run each division as its own **series**, so a
+placement night can sort into `series_ids` as well as (or instead of) `class_ids`. A roster belongs
+to a *season*, not to a series, so `series_seasons` maps each series to the season whose roster it
+builds — `targetSeasonFor()` is the single rule that decides where a row's entry is written (its
+series' season, else the trial's own), and the same rule decides which season's classes that row's
+Division cell may offer, so a class stamped on an entry always exists in the season that entry lives
+in. `groupByTargetSeason()` then splits the sheet per season and the roster run builds each one,
+which is how a single night produces several rosters. Sorting into divisions on such a night splits
+*within* each series (`autoAssignClassesWithinSeries`), so each series' own field fills its own
+divisions. A trial placing only into series needs no `season_id` at all.
+
+**The board is those destinations, as trays.** `lib/placements.js` turns a trial's targets into
+**buckets** — one per division the admin ticked, whether that's a class inside a season, a class
+inside a series' season, or a series that has no divisions of its own — and answers the four
+questions the board asks: what buckets exist (`buildBuckets`), which one a driver is in
+(`bucketKeyForRow` / `groupRowsByBucket`), what changes when they're dropped somewhere
+(`assignRowToBucket`), and how to fill them from the times (`autoPlace` / `previewAutoPlace`).
+
+Three properties of that module are load-bearing:
+
+- **A series pointed at the session's own season is folded in rather than listed twice**, so one
+  division can never appear as two columns with the same driver "in" both.
+- **Dropping somebody sets both halves of their placement together.** A class belongs to one season
+  and the series decides which season's roster the entry is written to, so a division the new series
+  doesn't run is cleared rather than left as an id that roster can't resolve.
+- **Nobody vanishes.** A driver whose stored placement matches no current bucket — sorted into a
+  destination that was later untucked — returns to the unplaced pool, visible and re-placeable,
+  rather than off the screen.
+
+`autoPlace` splits on the metric the modal asked about (`best` / `average`) via the same
+`splitEvenly` the sheet's own sort buttons use, so the two can't disagree; only drivers with a
+usable lap are placed, because a blank row is not evidence of pace. It returns an assignment for the
+caller to apply — nothing is written until the admin saves. Covered by
+`lib/__tests__/placements.test.mjs`, with the screens render-tested in
+`lib/__tests__/placementBoardFlow.test.jsx`.
+
+**Building a roster from a placement is idempotent.** `planRosterBuild` matches drivers to that
+season's roster the way the rest of the app matches them — global `driver_id`, then linked account,
+then lowercased name — and a driver already there is **updated** into their new division rather than
+duplicated. Re-sort the field and press **Complete Session** again; it corrects, it doesn't double.
+Its `requireClass` rule may be a function of the row, which is what lets a series placement stand on
+its own: being sorted into the Pro Series *is* a placement, class or no class, while on a class-only
+night an unplaced driver is still left alone.
+
+**Teams are persistent, line-ups are seasonal.** A `teams` document is the team itself — league-wide,
+with its own name, badge and colour, exactly like a driver in the global pool. Who drives for it is a
+*separate* document, `team_seasons`, holding one `driver_ids[]` per season. That's what lets Ana race
+for Phoenix Motorsports in Season 1 and for Falcon Racing in Season 2 without either team losing a
+point of its history: her Season 1 results stay Phoenix's forever, and her Season 2 results are
+Falcon's. `driver_ids` are **global** driver ids (`drivers/{id}` — what `entries.driver_id` points
+at), so a line-up survives a rename, a new car number, or the driver being entered under a different
+alias in another series.
+
+`entries.team_id` is kept **mirrored** from the line-up, the same way `entries.class_id` mirrors
+`class_ids[0]`: the line-up is the source of truth, and the mirror is what keeps every reader written
+before `team_seasons` existed — a results grid, an event page, an export — showing the right team. The
+sync runs both ways, so setting a driver's team on the roster puts them on that team's line-up, and
+editing the line-up re-tags their entry. A driver belongs to **one team per season**; adding them to a
+second team moves them, which is what makes the aggregation unambiguous.
+
+The rules live once, in `lib/teams.js` (pure, and covered by `lib/__tests__/teams.test.mjs`) with the
+Firestore reads and writes in `lib/teamsServer.js`. Every stats path — standings, the stats tables, a
+team's profile, the event page, the roster — resolves a driver's team through the same index, so the
+three tables can never disagree about who scored what. Teams created before this existed were one doc
+*per season*, matched up by name; that shape still resolves (the canonical doc for a name is the
+oldest, or any global one), and **Teams ▸ Team Roster** offers a one-click upgrade
+(`POST /api/admin/teams/migrate`) that folds each name into a single permanent team and writes its
+season line-ups. The migration is idempotent and re-points every roster entry *before* deleting a
+duplicate, so no driver — and no result — is ever stranded.
 
 **Display names** live on the global driver doc: `drivers.display_name` (the overall override) and
 `drivers.game_names` — `[{ game_id, name }]`, one entry per game the driver is shown differently in.
@@ -937,7 +1974,7 @@ outright order, an overall championship across classes just adds their points to
 **Which class pays what.** Points resolve through the same shape of fallback the car does, most
 specific last:
 
-    series default → season → event-wide session template → the class's own structure → that class's own session template
+    series default → season → the season's or event's heat/consolation default, or an event-wide session template → the class's own structure → the class's own heat/consolation default → that class's own session template
 
 The **class's own structure** (`classes.race_points` / `qual_points` / `bonus_points`, all unset by
 default = inherit) therefore **overrides the season and the event's default points template alike**.
@@ -961,17 +1998,77 @@ On an event whose classes run separate sessions, the per-session assignment is p
 (`races.session_points_by_class[class][session]`, falling back to the event-wide
 `races.session_points[session]`). Assigning one re-points only that class's saved results, so
 re-scoring Pro's Feature leaves Amateur's alone, and clearing it hands that class back to the
-event-wide assignment rather than to nothing. A class's Qualifying is resolved the same way, so the
-qualifying points folded into a race result come from *that class's* Qualifying structure.
+event-wide assignment rather than to nothing. A class's Qualifying is resolved the same way, so its
+qualifying points are scored under *that class's* Qualifying structure.
 
-The grid *position* those points are paid on is per class too. One roster entry can race several
-classes at the same round, so "where did this driver qualify?" has one answer per class, and
-`buildQualPosMap` keys on race + entry + **class** to keep them apart (`qualPosFor` in
-`lib/standings.js` resolves a race result against its own class's Qualifying, falling back to the
-event's single combined Qualifying when a class didn't run one). Keying on race + entry alone
-silently kept whichever class was read last — invisible inside a class championship, where only that
-class's Qualifying is in scope, but wrong in the combined table where all of them are, which is what
-made a multi-class driver's class totals stop adding up to their overall total.
+**Heats and consolations score on a default, set once — per season, per class or per event.** A heat
+weekend is the one shape where the per-session dropdown becomes a chore: eight heats and two B-Mains
+means ten trips through it, every round of the season. So three levels carry a **Heat Races and
+Consolation Races** tick, and each one that's ticked offers the same two pickers — a default points
+template **for every Heat** (`heat_points_template_id`) and one **for every Consolation**
+(`consolation_points_template_id`):
+
+| Where | Ticked on | Covers |
+| --- | --- | --- |
+| **Season** (League Setup → Seasons, and the Schedule's *New Season* dialog — the tick sits with the other season switches, its two pickers inside **Points & Bonuses**, under Race Points and Qualifying Points) | `seasons.heat_format` | every heat/consolation of every event in the season |
+| **Class** (League Setup → Classes) | `classes.heat_format` | every heat/consolation **that class** runs |
+| **Event** (Race Info — League Setup's Races panel, the New Race dialog, the race edit screen) | `races.heat_format` | every heat/consolation of that one event |
+
+Pick a template at whichever level is true for your league and every heat (or every consolation) in
+scope scores on it, including sessions added later — nothing is copied onto the sessions themselves.
+A season with the tick on also **pre-ticks heat racing on every new race** — in League Setup's Races
+panel and the *New Race* dialog alike — since every round of a heat season is a heat weekend; untick
+it on the odd standard-format round.
+**Most specific wins:** the event's default beats the class's, which beats the season's, and a
+template assigned to ONE session from its own results tab beats all three. `inheritedSessionTemplate`
+in `lib/standings.js` holds that order.
+
+Where a default sits in the class chain depends on who named it, for the same reason a session
+assignment does. The **season's** and the **event's** are statements about the whole field, so they
+sit *under* the class layer — a class scoring on its own points structure outranks them. A **class's**
+own default sits *on top* of that class's structure, since it is a statement about that class:
+otherwise a class with its own points would ignore the very heat template it was given.
+
+The default is resolved at scoring time (`resolveTemplateId`, stamped onto each result by
+`decorateSessionFlags`, which reads the season/class docs through `sessionScopeContext`) rather than
+written onto saved results — which is what makes it a default: change the season's heat template and
+every heat under it re-scores at once, on every screen, with no re-save. Naming a default also flips
+**championship points on** for that session type, which is off by default for preliminary sessions —
+the point of picking a heat scale is that the heats pay it. Stats stay off (a heat is still a
+preliminary for Wins and Average Finish), and each session keeps its own points switch, so one heat
+can still be excluded. The results screen's points dropdown names the default and the level it came
+from ("Heat default · season — PRA Heats"), so it is always visible which of the three is scoring.
+Leave the pickers on *No default* — or leave the ticks off — and heats and consolations behave exactly
+as they always have. A copied race carries its own two defaults over with the rest of its scoring
+setup.
+
+**Qualifying scores itself.** Every session scores itself, off its own structure, at the position the
+driver took in it: Qualifying pays the qualifying scale for the grid slot won (pole being position 1
+of it), a race pays the race scale for where they finished. A driver's championship total is the sum
+of those numbers and nothing else, which gives the standings a property they did not have before —
+**you can add up the Points column of every session and land on the total**. `pointsFor` in
+`lib/standings.js` branches on the session type; `calculateStandings` sums every session whose points
+toggle is on.
+
+Qualifying used to score nothing of its own. Its points were folded invisibly into a race result
+instead, and that is what made the championship impossible to check by hand: the race row showed 385
+where 350 was the win and 35 was the pole, while the Qualifying grid separately printed that same 35
+in a Points column that fed nothing. Adding the two visible numbers double-counted the pole; trusting
+either alone under-counted it — so the identical result could look both double-counted and missing
+depending on which screen you started from.
+
+Folding also forced a question with no good answer: when an event runs several races, which one hides
+the award? The first? The first that scores points? The first the driver actually started? Each
+answer broke a different setup — a session list that happens to name "Qualifying" (which this
+README's own example once suggested) pointed the award at a session holding no race results at all,
+and a race scored on a points template read its qualifying scale off a season scale that leagues
+usually leave blank. Scoring Qualifying where it happens deletes the question: an event has one
+Qualifying, so it pays once, on its own line, and nothing has to be resolved across sessions.
+
+**Turning it off.** Qualifying carries the same championship-points switch every other session has
+(`races.session_points_enabled["Qualifying"]`, on the Qualifying tab). Turn it off for a session that
+sets the grid and pays nothing — it still shows on the event page and still feeds Poles and Average
+Start. Setting Qualifying's points system to **No Points** does the same for one event's scale.
 
 **Which car goes with which class.** The car on track is a three-level fallback, most specific
 first: `races.car` (this one event runs something different) → `classes.car` (this class's machinery
@@ -1056,8 +2153,8 @@ things:
   tab left open from before the season closed still can't write to it. The season also drops out of
   the sign-up list everywhere it's offered.
 
-Series Information is about what a player still has to do, so a completed season leaves it
-altogether — the Dashboard section and `/series-info` alike. That's enforced once, in
+The player flow is about what a player still has to do, so a completed season leaves it
+altogether — `/signups`, `/series-info` and the Dashboard card alike. That's enforced once, in
 `/api/users/me/series`, which filters `my_seasons` through `seasonAcceptsSignups` before either
 screen sees it, so no screen can reinstate them. A series whose seasons are all complete therefore
 disappears from the flow on its own; there is no separate "series is over" flag, and none is
@@ -1253,3 +2350,9 @@ npm run backup
 It refuses to write a file that doesn't parse as one of our backups, or that comes back with zero
 records — a backup folder full of plausible-looking garbage is worse than one that's visibly
 missing a week.
+
+## License
+
+Released under the MIT License — see [LICENSE.txt](LICENSE.txt). The software is provided
+"as is", without warranty of any kind, and the authors are not liable for any claim or damages
+arising from its use.

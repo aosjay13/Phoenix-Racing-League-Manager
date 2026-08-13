@@ -5,10 +5,10 @@ import { api } from "@/lib/api";
 import { Modal } from "@/components/Modal";
 import { ImageUpload } from "@/components/ImageUpload";
 
-// Edit a team straight from the Teams directory. A "team" here is really every
-// per-season doc that shares the name (see /api/teams/all), so a rename/re-logo
-// must fan out across all of `team.ids` to keep the identity intact — otherwise
-// only one season's doc changes and the directory splits into two teams.
+// Edit a team straight from the Teams directory. A team is ONE document now
+// (see lib/teams.js), so a rename/re-logo is a single write that every season
+// it has raced in picks up — the API fans the change out to any legacy
+// per-season document still sharing its identity, so nothing splits in two.
 export function TeamEditModal({ team, onClose, onSaved }) {
   const [form, setForm] = useState({
     name: team.name || "",
@@ -24,10 +24,7 @@ export function TeamEditModal({ team, onClose, onSaved }) {
     setError(null);
     try {
       const body = { name: form.name.trim(), color: form.color, logo_url: form.logo_url };
-      // Apply to every backing per-season doc so the whole team updates at once.
-      for (const id of team.ids) {
-        await api(`/api/teams/${id}`, { method: "PATCH", body });
-      }
+      await api(`/api/teams/${team.id}`, { method: "PATCH", body });
       onSaved({ ...team, ...body });
     } catch (err) {
       setError(err.message);

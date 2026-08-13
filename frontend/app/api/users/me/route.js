@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { withUser, getUserRole, isEnvAdmin } from "@/lib/serverAuth";
 import { isStaffRole, roleLevel } from "@/lib/roles";
+import { UPLOAD_DENIED_ERROR, canUploadImages, stripImageFields } from "@/lib/imagePermissions";
 
 // Called after sign-in: creates/refreshes the user doc and returns it. Also
 // reports the single driver profile linked to this account (driver_id/name) —
@@ -36,14 +37,34 @@ export const GET = withUser(async (request, ctx, user) => {
 });
 
 const EDITABLE = ["display_name", "photo_url", "bio", "country", "number", "favorite_car", "socials"];
+// `photo_url` is an image, and images cost storage — only the Owner may put a
+// new one in (see lib/imagePermissions.js). The picture a player already has,
+// including the one their sign-in account came with, keeps showing everywhere;
+// what they can't do is upload another. Saving the rest of the profile with
+// the same photo_url they were shown is not a change and passes through.
+const IMAGE_EDITABLE = ["photo_url"];
 
 export const PATCH = withUser(async (request, ctx, user) => {
   const body = await request.json();
+  const ref = db().collection("users").doc(user.uid);
   const updates = {};
   for (const f of EDITABLE) if (body[f] !== undefined) updates[f] = body[f];
-  if (!Object.keys(updates).length) {
+
+  let write = updates;
+  if (IMAGE_EDITABLE.some(f => f in updates) && !canUploadImages(await getUserRole(user))) {
+    const guarded = stripImageFields(updates, {
+      fields: IMAGE_EDITABLE,
+      existing: (await ref.get()).data() || {},
+    });
+    if (guarded.stripped.length && !Object.keys(guarded.updates).length) {
+      return NextResponse.json({ error: UPLOAD_DENIED_ERROR }, { status: 403 });
+    }
+    write = guarded.updates;
+  }
+
+  if (!Object.keys(write).length) {
     return NextResponse.json({ error: "No editable fields provided" }, { status: 400 });
   }
-  await db().collection("users").doc(user.uid).set(updates, { merge: true });
+  await ref.set(write, { merge: true });
   return NextResponse.json({ ok: true });
 });

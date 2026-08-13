@@ -2,14 +2,20 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { withAdmin } from "@/lib/serverAuth";
 import { normalizeClassIds } from "@/lib/classFilter";
-import { carNumberTaken, seasonAcceptsSignups } from "@/lib/carSelection";
+import {
+  carCapacity, carCounts, carNumberTaken, resolveSignupRules, seasonAcceptsSignups,
+} from "@/lib/carSelection";
 import { APPROVED, DENIED, NUMBER_CHANGE_KIND, PENDING, isNumberChange } from "@/lib/signupQueue";
 import { mergeAliases, normalizeAliases } from "@/lib/aliases";
+import { userAccountUpdatesFromSignup } from "@/lib/signupRequest";
+import { denialHtml, denialSubject, denialText } from "@/lib/denialNotice";
+import { queueEmail } from "@/lib/mailer";
+import { emailForUser, postMessage } from "@/lib/messagesServer";
 
 // Admin-only: let a pending sign-up onto the roster, or turn it down.
 //
-//   body.action = "approve" → creates the roster entry with the number, car and
-//                             manufacturer the player asked for. When the
+//   body.action = "approve" → creates the roster entry with the number and car
+//                             the player asked for. When the
 //                             request came from someone with no driver profile,
 //                             the profile is created here too — this route and
 //                             the claim queue are the ONLY places a
@@ -36,11 +42,43 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
   const stamp = { resolved_at: new Date().toISOString(), resolved_by: admin.uid };
 
   if (action === "deny") {
+    const reason = String(body.reason ?? "").trim().slice(0, 300) || null;
     await reqRef.update({
       status: DENIED, ...stamp,
-      deny_reason: String(body.reason ?? "").trim().slice(0, 300) || null,
+      deny_reason: reason,
+      // Not read by the player yet. Until it is, the notice sits at the top of
+      // their Sign-ups screen and that season is held back from their join
+      // list — see lib/denialNotice.js.
+      player_seen_at: null,
     });
-    return NextResponse.json({ ok: true, id, status: DENIED });
+
+    // Tell them. A denial the player never hears about is the same to them as a
+    // sign-up that vanished, and they'll re-submit the identical form.
+    //
+    // Queued, not sent inline (lib/mailer.js): the admin's decision is already
+    // recorded, and it must not depend on a mail server answering. The same
+    // message is waiting in the app either way, which is what makes email the
+    // nudge rather than the mechanism.
+    const denied = { id, ...req, deny_reason: reason };
+    const to = req.user_email || null;
+    const origin = new URL(request.url).origin;
+    const mail_id = await queueEmail({
+      to,
+      subject: denialSubject(denied),
+      text: denialText(denied, { signupUrl: `${origin}/signups` }),
+      html: denialHtml(denied, { signupUrl: `${origin}/signups` }),
+      kind: "signup-denied",
+      meta: { uid: req.uid || null, request_id: id, season_id: req.season_id || null },
+    });
+
+    // And onto the board, where they can answer it. A number change refused is
+    // a different sentence from a sign-up refused — the driver is still racing,
+    // just not under the number they wanted.
+    await announce(req, isNumberChange(req) ? "number_denied" : "signup_denied",
+      { adminNote: reason || "", admin, emailed: !!mail_id,
+        extra: { previous_number: String(req.current_number ?? "").trim() } });
+
+    return NextResponse.json({ ok: true, id, status: DENIED, reason, emailed: !!mail_id });
   }
   if (action !== "approve") {
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
@@ -85,6 +123,8 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
     const previous = String(entryDoc.data().number ?? "").trim();
     await entryRef.update({ number });
     await reqRef.update({ status: APPROVED, ...stamp, applied_number: number, previous_number: previous });
+    await announce(req, "number_approved",
+      { admin, extra: { number, previous_number: previous } });
     return NextResponse.json({
       ok: true, id, status: APPROVED, kind: NUMBER_CHANGE_KIND,
       driver_id: req.driver_id ?? null,
@@ -154,6 +194,7 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
   });
   if (existing) {
     await reqRef.update({ status: APPROVED, ...stamp, entry_id: existing.id, driver_id: driverId });
+    await announce(req, "signup_approved", { admin });
     return NextResponse.json({
       ok: true, id, status: APPROVED, driver_id: driverId, driver_name: driverName,
       entry_id: existing.id, created_driver,
@@ -164,11 +205,27 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
   // Their number may have gone while the request waited. Better to seat them
   // without one — and say so — than to refuse the approval outright.
   let number = String(req.number ?? "").trim().slice(0, 3);
-  let note = "";
+  const notes = [];
   if (number && carNumberTaken(rosterSnap.docs.map(d => d.data().number), number)) {
-    note = `#${number} was taken while this sign-up was waiting, so they were added without a number.`;
+    notes.push(`#${number} was taken while this sign-up was waiting, so they were added without a number.`);
     number = "";
   }
+
+  // Same for the car they picked: an admin can cap how many drivers run each
+  // one, and the last seat can go while a request sits in the queue. Seating
+  // them without a car and SAYING so beats refusing the approval outright —
+  // they're on the roster, and the car is a question they can answer again on
+  // the season's own screen.
+  let car = req.car || "";
+  if (car) {
+    const cap = await carCapacityAtApproval(req, season, rosterSnap, car);
+    if (cap?.full) {
+      notes.push(`${cap.name} was full (${cap.taken} of ${cap.max}) by the time this was approved,`
+        + " so they were added without a car and can pick another one.");
+      car = "";
+    }
+  }
+  const note = notes.join(" ");
 
   const classSnap = await db().collection("classes").where("season_id", "==", req.season_id).get();
   const valid = new Set(classSnap.docs.map(d => d.id));
@@ -186,8 +243,7 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
     // The car they locked in at sign-up carries straight onto the entry, in the
     // same fields the lock-in screen writes — so an approved sign-up needs no
     // second trip to choose what they already chose.
-    ...(req.car ? { selected_car: req.car, selected_car_at: new Date().toISOString() } : {}),
-    ...(req.manufacturer ? { selected_manufacturer: req.manufacturer } : {}),
+    ...(car ? { selected_car: car, selected_car_at: new Date().toISOString() } : {}),
     created_at: new Date().toISOString(),
     created_by: admin.uid,
     self_signup: true,
@@ -198,9 +254,96 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
 
   await reqRef.update({ status: APPROVED, ...stamp, entry_id: entryRef.id, driver_id: driverId });
 
+  // Onto the board: this is somebody's first minute in the series, and the
+  // welcome card is what tells them where to go next. `note` carries anything
+  // that had to change on the way in (a number or car that went while they
+  // waited), so they're not left to notice it themselves.
+  await announce(req, "signup_approved",
+    { adminNote: note, admin, extra: { number, car } });
+
+  // Bring the player's own account up to date with what they told us, exactly
+  // as the submission does. Filing the sign-up normally does this already; this
+  // covers a request filed before that existed, and an account that had no
+  // display name to improve at the time. Timid by the same rule — a name or
+  // number the player has since set themselves is left alone — and never fails
+  // an approval, which has already done the work that matters.
+  try {
+    const accountRef = db().collection("users").doc(req.uid);
+    const accountDoc = await accountRef.get();
+    const updates = userAccountUpdatesFromSignup({
+      profile: accountDoc.exists ? accountDoc.data() : {},
+      name: entryDoc.name,
+      number,
+    });
+    if (accountDoc.exists && Object.keys(updates).length) await accountRef.update(updates);
+  } catch (err) {
+    console.error("Approval account sync failed", err);
+  }
+
   return NextResponse.json({
     ok: true, id, status: APPROVED,
     driver_id: driverId, driver_name: driverName, created_driver,
     entry_id: entryRef.id, number, note,
   });
 });
+
+// Is the car this sign-up asked for full, as of right now? Resolved against the
+// season's own settings rather than anything stored on the request, because the
+// admin may have added, removed or re-capped cars while it waited.
+async function carCapacityAtApproval(req, season, rosterSnap, car) {
+  try {
+    const [seriesDoc, classSnap] = await Promise.all([
+      season.series_id ? db().collection("series").doc(season.series_id).get() : null,
+      db().collection("classes").where("season_id", "==", season.id).get(),
+    ]);
+    const series = seriesDoc?.exists ? { id: seriesDoc.id, ...seriesDoc.data() } : null;
+    const gameId = season.game_id || series?.game_id;
+    const gameDoc = gameId ? await db().collection("games").doc(gameId).get() : null;
+    const game = gameDoc?.exists ? { id: gameDoc.id, ...gameDoc.data() } : null;
+    const classes = classSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const cls = classes.find(c => (req.class_ids || []).includes(c.id)) || null;
+    const rules = resolveSignupRules({ game, series, season, cls });
+
+    // Everyone already seated, plus everyone else still queued — but NOT this
+    // request, which is the one being seated.
+    const others = (await db().collection("signup_requests")
+      .where("season_id", "==", season.id).where("status", "==", PENDING).get())
+      .docs.filter(d => d.id !== req.id).map(d => d.data());
+    return carCapacity(
+      rules.car_entries, carCounts([...rosterSnap.docs.map(d => d.data()), ...others]), car);
+  } catch (err) {
+    // Never fail an approval over the capacity check — the roster place is what
+    // matters, and a car that slipped past a cap is a thing an admin can fix.
+    console.error("Car capacity check failed at approval", err);
+    return null;
+  }
+}
+
+// Announce a decision on the league's message board, so it reaches the player's
+// Dashboard rather than only changing a document they can't see. Never allowed
+// to fail the decision itself — see postMessage.
+async function announce(req, kind, { adminNote = "", admin, extra = {}, emailed = false } = {}) {
+  return postMessage({
+    uid: req.uid,
+    leagueId: req.league_id || null,
+    kind,
+    adminNote,
+    admin: { uid: admin?.uid || null, name: admin?.name || admin?.email || null },
+    // `emailed` says a fuller message has already gone out for this decision —
+    // the denial mail, which explains the reason properly. Two emails for one
+    // decision is how people learn to filter a league's mail into the bin.
+    email: emailed ? null : await emailForUser(req.uid),
+    context: {
+      season_id: req.season_id || "",
+      season_name: req.season_name || "Season",
+      series_id: req.series_id || "",
+      series_name: req.series_name || "Series",
+      game_id: req.game_id || "",
+      game_name: req.game_name || "",
+      number: String(req.number ?? "").trim(),
+      car: req.car || "",
+      driver_name: req.driver_name || req.name || "",
+      ...extra,
+    },
+  });
+}

@@ -596,12 +596,36 @@ tbody tr:hover {
   margin-top: 16px;
 }
 
-.field label {
+.field label,
+.field .field-label {
   font-size: 0.75rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--ink-1);
+}
+
+/* A group of radio (or tick box) choices inside a .field — the sign-up form's
+   Car Selection question, one row per car the admin listed. The controls
+   themselves are the app's shared ones from the checkboxes & radios block
+   below; nothing here redraws them.
+
+   The one thing this does undo is `.field label` above: a field's label names
+   the question and is small, bold and uppercase, but these labels are the
+   ANSWERS — car names, which have to read exactly as the admin typed them. */
+.option-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.field .option-rows label {
+  font-size: 0.92rem;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--ink-0);
+  cursor: pointer;
 }
 
 .field input,
@@ -1996,36 +2020,106 @@ tbody tr:hover {
   color: var(--accent-red);
 }
 
+/* The same sentence as .field-error, on a form nobody has typed in yet: what's
+   left to fill in, said calmly. An untouched required box isn't a mistake, and
+   greeting a first-time player with red text (and red-outlined inputs) for
+   having done nothing wrong is the fastest way to make signing up feel like an
+   exam. Both flip to the error styling the moment the form is started. */
+.signup-todo {
+  margin: 6px 0 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--ink-1);
+}
+
 /* The public series roster folded into a sign-up card: who's racing under which
    number, in car-number order, so a driver can pick a free one without leaving
    the form. */
+/* This is the answer to "which numbers can I have?", and as a dim grey line in
+   body-text size marked with a small ▸ it was being missed outright — read as a
+   caption rather than as something to press. It's drawn as a control now: an
+   accented panel the width of the form, a badge on the left, an instruction in
+   full-size type telling you what pressing it does, and a chevron in a ring on
+   the right that turns as it opens. */
 .roster-peek {
-  margin: 0 0 14px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--bg-elevated);
+  /* Room above it: flush against the last car radio it read as part of that
+     question rather than as its own thing to press. */
+  margin: 18px 0 14px;
+  border: 1px solid var(--border-accent);
+  border-radius: 12px;
+  background: linear-gradient(120deg, var(--accent-cyan-dim), var(--bg-elevated));
+  overflow: hidden;
 }
 
 .roster-peek > summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   cursor: pointer;
-  padding: 8px 12px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--ink-1);
+  padding: 12px 14px;
   list-style: none;
+  transition: background 140ms ease;
 }
 
 .roster-peek > summary::-webkit-details-marker { display: none; }
-.roster-peek > summary::before { content: "▸ "; color: var(--ink-2); }
-.roster-peek[open] > summary::before { content: "▾ "; }
-.roster-peek > summary:hover { color: var(--ink-0); }
+.roster-peek > summary:hover { background: var(--card-hover); }
+/* Keyboard users get the same ring the rest of the app's controls have — a
+   <summary> is focusable, and this is now the shape of a button. */
+.roster-peek > summary:focus-visible {
+  outline: 2px solid var(--accent-cyan);
+  outline-offset: -2px;
+}
+
+.roster-peek-icon {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--accent-cyan);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-accent);
+}
+
+.roster-peek-summary { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
+.roster-peek-summary strong { font-size: 0.92rem; color: var(--ink-0); }
+.roster-peek-sub { font-size: 0.78rem; color: var(--ink-1); }
+
+/* Which of the two headings shows depends on the <details> being open, so the
+   control says what pressing it does rather than what it is. */
+.roster-peek-when-open { display: none; }
+.roster-peek[open] .roster-peek-when-open { display: inline; }
+.roster-peek[open] .roster-peek-when-shut { display: none; }
+
+.roster-peek-chevron {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  color: var(--accent-cyan);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-accent);
+  transition: transform 180ms ease;
+}
+
+.roster-peek[open] .roster-peek-chevron { transform: rotate(180deg); }
 
 .roster-peek-list {
   margin: 0;
-  padding: 0 12px 10px;
+  padding: 4px 14px 12px;
   list-style: none;
   max-height: 190px;
   overflow-y: auto;
+  border-top: 1px solid var(--border);
+  background: var(--bg-surface);
 }
 
 .roster-peek-list li {
@@ -2039,7 +2133,14 @@ tbody tr:hover {
 
 .roster-peek-name { color: var(--ink-0); flex: 1; min-width: 0; }
 .roster-peek-class { color: var(--ink-2); font-size: 0.74rem; white-space: nowrap; }
-.roster-peek-empty { margin: 0; padding: 0 12px 10px; font-size: 0.8rem; color: var(--ink-2); }
+.roster-peek-empty {
+  margin: 0;
+  padding: 10px 14px 12px;
+  font-size: 0.8rem;
+  color: var(--ink-2);
+  border-top: 1px solid var(--border);
+  background: var(--bg-surface);
+}
 
 /* The series sign-up dialog: what a player fills in before they're on a roster
    (components/SeriesSignupModal.jsx). */
@@ -2227,4 +2328,1746 @@ tbody tr:hover {
   color: var(--accent-gold);
   background: rgba(244, 162, 40, 0.12);
   border: 1px solid rgba(244, 162, 40, 0.3);
+}
+
+/* ── Checkboxes & radios ───────────────────────────────────────────────────
+   ONE tick box for the whole app. Every checkbox and radio anywhere — League
+   Setup's switches, a results grid's tick cells, the class picker, a modal's
+   options — is drawn here and nowhere else, so they can't drift into different
+   sizes and shapes screen by screen.
+
+   Two things this fixes. First, size: `.field input` above stretches inputs to
+   100% width, which a bare browser checkbox obeyed — hence the hand-rolled
+   `style={{ width: 18, height: 18 }}` that used to be sprinkled around some (but
+   not all) of them. The size lives here now, and `.field`-scoped selectors are
+   included so it wins over that rule wherever a box sits inside a field.
+
+   Second, contrast: the native control on a dark background gave an unchecked
+   box a faint outline and a checked one a small tick, and at a glance the two
+   looked alike. Off is a clearly drawn empty box; ON is a filled cyan box with a
+   white tick (a filled ring with a dot, for a radio) — readable across the room,
+   not just up close. */
+input[type="checkbox"],
+input[type="radio"],
+.field input[type="checkbox"],
+.field input[type="radio"] {
+  appearance: none;
+  -webkit-appearance: none;
+  /* Fixed box: never stretched by a flex/grid parent, never squashed by a long
+     label beside it. */
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  max-width: 18px;
+  flex: 0 0 auto;
+  padding: 0;
+  margin: 0;
+  display: inline-grid;
+  place-content: center;
+  vertical-align: middle;
+  border: 2px solid var(--ink-2);
+  border-radius: 5px;
+  background: var(--bg-0);
+  color: var(--ink-0);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+  box-sizing: border-box;
+}
+
+input[type="radio"],
+.field input[type="radio"] {
+  border-radius: 50%;
+}
+
+/* The mark itself, drawn by the box rather than by a font glyph so it scales
+   with the control and can't be missing on a platform. */
+input[type="checkbox"]::before,
+input[type="radio"]::before {
+  content: "";
+  display: block;
+  transform: scale(0);
+  transition: transform 120ms ease;
+}
+
+input[type="checkbox"]::before {
+  width: 10px;
+  height: 10px;
+  /* A tick, as a clip path — no background-image, so it inherits currentColor
+     and stays crisp at any zoom. */
+  background: currentColor;
+  clip-path: polygon(14% 47%, 0 60%, 40% 100%, 100% 22%, 86% 10%, 38% 71%);
+}
+
+input[type="radio"]::before {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+input[type="checkbox"]:hover:not(:disabled),
+input[type="radio"]:hover:not(:disabled) {
+  border-color: var(--accent-cyan);
+}
+
+/* ON. Filled, not outlined — the whole point is that a glance tells you. */
+input[type="checkbox"]:checked,
+input[type="radio"]:checked,
+.field input[type="checkbox"]:checked,
+.field input[type="radio"]:checked {
+  background: var(--accent-cyan);
+  border-color: var(--accent-cyan);
+  color: #03060a;
+  box-shadow: 0 0 0 1px rgba(0, 180, 216, 0.35), var(--shadow-glow-cyan);
+}
+
+input[type="checkbox"]:checked::before,
+input[type="radio"]:checked::before {
+  transform: scale(1);
+}
+
+/* A part-selected group ("some of these classes"), for anything that sets it. */
+input[type="checkbox"]:indeterminate {
+  background: var(--accent-cyan-dim);
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+}
+
+input[type="checkbox"]:indeterminate::before {
+  transform: scale(1);
+  width: 10px;
+  height: 2px;
+  clip-path: none;
+  border-radius: 1px;
+}
+
+input[type="checkbox"]:focus-visible,
+input[type="radio"]:focus-visible {
+  outline: none;
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 3px rgba(0, 180, 216, 0.25);
+}
+
+input[type="checkbox"]:disabled,
+input[type="radio"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  border-color: var(--ink-2);
+  box-shadow: none;
+}
+
+input[type="checkbox"]:disabled:checked,
+input[type="radio"]:disabled:checked {
+  background: var(--ink-2);
+  border-color: var(--ink-2);
+  color: var(--bg-0);
+}
+
+/* A label sitting next to a box is part of the control: clicking the words
+   toggles it, and the pair lines up on the first line of a wrapped label rather
+   than centring on a three-line block of help text. */
+.check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  flex-direction: row;
+}
+
+.check-row > input[type="checkbox"],
+.check-row > input[type="radio"] {
+  margin-top: 2px;
+}
+
+.check-row label,
+.check-row > span {
+  margin: 0;
+  cursor: pointer;
+}
+
+/* A one-line label has nothing to align to the top OF, so its box sits centred
+   against the text instead. */
+.check-row-center {
+  align-items: center;
+}
+
+.check-row-center > input[type="checkbox"],
+.check-row-center > input[type="radio"] {
+  margin-top: 0;
+}
+
+/* ── Calendar (month grid) ─────────────────────────────────────────────────
+   The league's whole year, a month at a time. Every event is a pill in the
+   square for the day it runs, and every pill is a link to that race. */
+.calendar-filters {
+  margin-top: 16px;
+  align-items: flex-end;
+  gap: 14px;
+}
+
+.calendar-filter-hint {
+  align-self: flex-end;
+  padding-bottom: 6px;
+  font-size: 0.78rem;
+  color: var(--ink-2);
+}
+
+.calendar-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.calendar-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.calendar-month {
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  min-width: 190px;
+  text-align: center;
+}
+
+.calendar-today-btn {
+  margin-top: 0;
+  padding: 6px 12px;
+  font-size: 0.8rem;
+}
+
+.calendar-count {
+  font-size: 0.82rem;
+  color: var(--ink-1);
+}
+
+.calendar-jumper {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.calendar-jumper-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-2);
+  margin-right: 2px;
+}
+
+.calendar-jump-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--ink-1);
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.calendar-jump-chip:hover {
+  background: var(--card-hover);
+  color: var(--ink-0);
+}
+
+.calendar-jump-chip.active {
+  background: var(--accent-cyan-dim);
+  border-color: var(--border-accent);
+  color: var(--accent-cyan);
+}
+
+.calendar-jump-count {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+.calendar-jump-chip.active .calendar-jump-count { color: var(--accent-cyan); }
+
+/* The grid scrolls sideways as a whole on a narrow screen rather than crushing
+   seven columns into a phone's width, which is what makes a day unreadable. */
+.calendar-wrap {
+  margin-top: 14px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(132px, 1fr));
+  min-width: 760px;
+}
+
+.calendar-weekday {
+  padding: 10px 8px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-2);
+  text-align: center;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+}
+
+.calendar-weekday-short { display: none; }
+
+.calendar-cell {
+  min-height: 118px;
+  padding: 6px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* The seven weekday headers are children 1–7, so a cell in the last column
+   is every 7th child from there on. */
+.calendar-cell:nth-child(7n) { border-right: 0; }
+
+.calendar-cell.is-weekend { background: rgba(255, 255, 255, 0.015); }
+
+/* Days spilling in from the neighbouring months: present so every week is
+   whole, dimmed so they can't be mistaken for this month's. */
+.calendar-cell.is-outside {
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.calendar-cell.is-outside .calendar-daynum { color: var(--ink-2); opacity: 0.6; }
+
+.calendar-cell.is-today {
+  box-shadow: inset 0 0 0 2px var(--accent-cyan);
+}
+
+.calendar-cell.is-today .calendar-daynum {
+  background: var(--accent-cyan);
+  color: #03060a;
+  font-weight: 800;
+}
+
+.calendar-daynum {
+  align-self: flex-start;
+  min-width: 22px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--ink-1);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.calendar-events {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* One race. Reads as "series · track", which is what somebody scanning a month
+   is actually looking for. */
+.calendar-event {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--border-accent);
+  background: var(--accent-cyan-dim);
+  color: var(--ink-0);
+  font-size: 0.74rem;
+  line-height: 1.25;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+
+.calendar-event:hover {
+  background: rgba(0, 180, 216, 0.22);
+  border-color: var(--accent-cyan);
+  transform: translateY(-1px);
+}
+
+/* An event that has run: history, so it steps back visually and carries the
+   flag that means "results are in". */
+.calendar-event.is-done {
+  background: var(--card);
+  border-color: var(--border);
+  color: var(--ink-1);
+}
+
+.calendar-event.is-done:hover {
+  background: var(--card-hover);
+  border-color: var(--accent-gold);
+}
+
+.calendar-event-series {
+  flex-shrink: 0;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--accent-cyan);
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.calendar-event.is-done .calendar-event-series { color: var(--accent-gold); }
+
+.calendar-event-track {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.calendar-event-flag { margin-left: auto; font-size: 0.7rem; }
+
+/* An event showing session times becomes two stacked rows: the race line it
+   always was, then the P/Q/R times under it. Without times the pill is exactly
+   the single flex row above. */
+.calendar-event.has-times {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+}
+
+/* The race line itself, whether or not times sit under it — it fills the pill
+   so the track name still ellipsises and the flag still sits hard right. */
+.calendar-event-main {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+}
+
+.calendar-event-times {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  font-size: 0.66rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-1);
+}
+
+.calendar-event.is-done .calendar-event-times { color: var(--ink-2); }
+
+.calendar-event-time {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.calendar-event-time-key {
+  font-weight: 800;
+  font-size: 0.6rem;
+  letter-spacing: 0.04em;
+  color: var(--accent-cyan);
+}
+
+.calendar-event.is-done .calendar-event-time-key { color: var(--accent-gold); }
+
+/* The date a session lands on for THIS reader, shown only when it isn't the
+   race's own date — a US evening race is the next morning in Europe. */
+.calendar-event-time-day { font-style: normal; opacity: 0.75; }
+
+/* Subscribing the calendar into Google / Apple / Outlook. */
+.calendar-subscribe { margin-top: 10px; }
+
+.calendar-subscribe-btn { margin-top: 0; font-size: 0.82rem; }
+
+.calendar-subscribe-panel {
+  margin-top: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--card);
+  max-width: 640px;
+}
+
+.calendar-subscribe-panel p {
+  margin: 0 0 10px;
+  font-size: 0.82rem;
+  color: var(--ink-1);
+}
+
+.calendar-subscribe-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.calendar-subscribe-row input {
+  flex: 1;
+  min-width: 0;
+  font-family: monospace;
+  font-size: 0.76rem;
+}
+
+.calendar-subscribe-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 10px;
+  font-size: 0.82rem;
+}
+
+.calendar-subscribe-links a { color: var(--accent-cyan); }
+
+.calendar-subscribe-help {
+  margin: 10px 0 0 !important;
+  font-size: 0.76rem !important;
+  color: var(--ink-2) !important;
+}
+
+/* Whose clock the times above are quoting. */
+.calendar-tz-note {
+  margin: 10px 0 0;
+  font-size: 0.78rem;
+  color: var(--ink-2);
+}
+
+.calendar-tz-note strong { color: var(--ink-1); }
+
+.calendar-tz-key {
+  font-weight: 800;
+  color: var(--accent-cyan);
+}
+
+/* Visible to a screen reader, to nothing else — each session time carries its
+   full name this way, since "Q" on its own reads as a letter. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* The same P/Q/R times in a TABLE cell — the Schedule's column right of the
+   race date. Stacked rather than wrapped, so three sessions read as three
+   lines against the one date they belong to. */
+.session-times {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+}
+
+.session-time-key {
+  display: inline-block;
+  min-width: 11px;
+  margin-right: 4px;
+  font-weight: 800;
+  font-size: 0.68rem;
+  color: var(--accent-cyan);
+}
+
+/* The day a session lands on for this reader, shown only when it isn't the
+   race's own date. */
+.session-time-day { font-style: normal; color: var(--ink-2); }
+
+.calendar-undated {
+  margin-top: 20px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--card);
+}
+
+.calendar-undated h3 { margin: 0 0 4px; font-size: 0.95rem; }
+
+.calendar-undated p { margin: 0 0 10px; font-size: 0.8rem; color: var(--ink-2); }
+
+.calendar-undated-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.calendar-undated-list .calendar-event { max-width: 320px; }
+
+@media (max-width: 640px) {
+  .calendar-grid { grid-template-columns: repeat(7, minmax(112px, 1fr)); min-width: 700px; }
+  .calendar-weekday-long { display: none; }
+  .calendar-weekday-short { display: inline; }
+  .calendar-month { min-width: 0; font-size: 1rem; }
+}
+
+/* ── Sign-ups (app/signups) ────────────────────────────────────────────────
+   The player-facing "join a series" screen. It's the one part of the app aimed
+   squarely at somebody who has never used it before, so everything here is
+   bigger, plainer and more spaced out than the admin surfaces: whole cards are
+   the click target rather than a link inside them, and no state is signalled by
+   colour alone — every card that means something says so in words too. */
+
+.page-intro {
+  margin: 4px 0 0;
+  max-width: 680px;
+  font-size: 0.92rem;
+  line-height: 1.6;
+  color: var(--ink-1);
+}
+
+/* The three steps of joining, printed before anything is asked for. A numbered
+   list element so it reads as a sequence to a screen reader as well. */
+.join-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: none;
+}
+
+.join-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+}
+
+.join-step-num {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--ink-1);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+}
+
+.join-step-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.join-step-body strong { font-size: 0.9rem; color: var(--ink-1); }
+.join-step-body span { font-size: 0.78rem; line-height: 1.45; color: var(--ink-2); }
+
+/* The step being worked on. Cyan is the app's "this is live" colour. */
+.join-step.is-current {
+  border-color: var(--border-accent);
+  background: linear-gradient(120deg, var(--accent-cyan-dim), var(--bg-surface));
+}
+
+.join-step.is-current .join-step-num {
+  color: #03060a;
+  background: var(--accent-cyan);
+  border-color: var(--accent-cyan);
+}
+
+.join-step.is-current .join-step-body strong { color: var(--ink-0); }
+.join-step.is-current .join-step-body span { color: var(--ink-1); }
+
+.join-step.is-done .join-step-num { color: var(--accent-cyan); }
+
+/* Every list on the screen — series to join, sign-ups waiting, series already
+   raced — is the same single column of full-width cards. One shape to learn. */
+.join-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* A series that can be joined. The card carries three actions now — join, put
+   it aside, or silence it — so it can't be one big <button> any more; the
+   left-hand side is the button instead, and it fills the row so a mis-aimed tap
+   still opens the form. */
+.join-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+  transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.join-card-main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.join-card:hover,
+.join-card:focus-within {
+  transform: translateY(-2px);
+  border-color: var(--accent-cyan);
+  background: var(--card-hover);
+}
+
+/* Silenced: still in the list and still joinable, just quieter than the ones
+   they haven't answered — and the card says so in words as well (see the
+   "not counted on the badge" chip). */
+.join-card.is-muted { opacity: 0.82; }
+.join-card.is-muted:hover { opacity: 1; }
+
+.join-chip-muted {
+  border-color: rgba(244, 162, 40, 0.4);
+  background: rgba(244, 162, 40, 0.1);
+  color: var(--accent-gold);
+}
+
+.join-card-logo {
+  width: 46px;
+  height: 46px;
+  border-radius: 10px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.join-card-logo-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+}
+
+.join-card-body { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.join-card-body strong { font-size: 1.02rem; color: var(--ink-0); }
+.join-card-season { font-size: 0.85rem; color: var(--ink-1); }
+
+.join-card-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+
+.join-chip {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  font-size: 0.72rem;
+  color: var(--ink-1);
+  white-space: nowrap;
+}
+
+/* Join · Not Interested · Clear Notification, in the order a player weighs
+   them up. They wrap under each other on a narrow card rather than squeezing. */
+.join-card-go {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.join-card-btn { margin-top: 0; white-space: nowrap; }
+
+/* ── Put aside, not thrown away ────────────────────────────────────────────
+   "Not Interested" has to be undoable, or nobody sensible would press it. The
+   series lives here, folded away, with the button that puts it back. */
+.join-aside {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--card);
+}
+
+.join-aside > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 16px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink-1);
+  list-style: none;
+  user-select: none;
+}
+
+.join-aside > summary::-webkit-details-marker { display: none; }
+.join-aside > summary:hover { color: var(--ink-0); background: var(--card-hover); border-radius: var(--radius-card); }
+
+.join-aside-caret { transition: transform 0.15s ease; display: inline-block; }
+.join-aside[open] > summary > .join-aside-caret { transform: rotate(90deg); }
+
+.join-aside-count {
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  font-size: 0.75rem;
+  color: var(--ink-1);
+}
+
+.join-aside-body { padding: 4px 14px 14px; }
+.join-aside-note { margin: 0 0 10px; font-size: 0.82rem; color: var(--ink-1); }
+
+.join-aside-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-surface);
+}
+
+.join-aside-row:last-child { margin-bottom: 0; }
+
+.join-aside-name { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.join-aside-name strong { font-size: 0.95rem; color: var(--ink-0); }
+.join-aside-name span { font-size: 0.8rem; color: var(--ink-1); }
+
+.join-aside-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.join-aside-actions .btn { margin-top: 0; }
+
+@media (max-width: 720px) {
+  .join-card { flex-wrap: wrap; }
+  .join-card-go { width: 100%; justify-content: stretch; }
+  .join-card-go .btn { flex: 1; justify-content: center; }
+  .join-aside-actions { width: 100%; }
+  .join-aside-actions .btn { flex: 1; justify-content: center; }
+}
+
+.join-back { margin-top: 14px; }
+
+/* Step 2's header: which series is being signed up for, said once, large. */
+.join-hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 12px;
+  padding: 16px 18px;
+  border: 1px solid var(--border-accent);
+  border-radius: var(--radius-card);
+  background: linear-gradient(120deg, var(--accent-cyan-dim), var(--bg-surface));
+}
+
+.join-hero h3 { margin: 0; font-size: 1.1rem; color: var(--ink-0); }
+.join-hero p { margin: 2px 0 0; font-size: 0.86rem; color: var(--ink-1); }
+
+.join-hero-logo {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+/* "What this form asks you for", above the form itself — so somebody who
+   doesn't have their customer ID to hand finds out now, not four fields in. */
+.join-needs {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-gold);
+  border-radius: 14px;
+  background: var(--bg-elevated);
+}
+
+.join-needs > strong { font-size: 0.9rem; color: var(--ink-0); }
+
+.join-needs ul {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.join-needs li {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-left: 18px;
+  position: relative;
+}
+
+.join-needs li::before {
+  content: "•";
+  position: absolute;
+  left: 4px;
+  color: var(--accent-gold);
+}
+
+.join-needs-label { font-size: 0.88rem; color: var(--ink-0); }
+.join-needs-detail { font-size: 0.78rem; line-height: 1.45; color: var(--ink-2); }
+
+.join-needs-foot { margin: 12px 0 0; font-size: 0.78rem; color: var(--ink-2); }
+
+/* Step 2 is ONE column: the hero, the "what you'll need" list and the form
+   share a width, so the eye runs straight down them. Without this the panels
+   above ran the full page while the form sat narrow beneath, which read as two
+   unrelated things rather than one walkthrough. */
+.join-hero,
+.join-needs,
+.join-form { max-width: 720px; }
+
+.join-form { margin-top: 14px; }
+
+/* Step 3. Confirmation gets its own full card because "did that work?" is the
+   question a first-time player most often answers by signing up twice. */
+.join-done {
+  margin-top: 14px;
+  padding: 28px 24px;
+  text-align: center;
+  border: 1px solid var(--border-accent);
+  border-radius: var(--radius-card);
+  background: linear-gradient(160deg, var(--accent-cyan-dim), var(--bg-surface));
+  animation: reveal 0.45s ease;
+}
+
+.join-done-icon { font-size: 2.4rem; display: block; margin-bottom: 8px; }
+.join-done h3 { margin: 0 0 10px; font-size: 1.2rem; color: var(--ink-0); }
+
+.join-done p {
+  margin: 0 auto;
+  max-width: 560px;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: var(--ink-1);
+}
+
+.join-done-sub { margin-top: 8px !important; color: var(--ink-2) !important; font-size: 0.82rem !important; }
+
+.join-done-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
+
+/* The one job that can be outstanding for a driver already on a roster:
+   choosing their car. Gold, like every other "waiting on you" surface. */
+.join-todo {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-gold);
+  border-radius: var(--radius-card);
+  background: var(--bg-elevated);
+}
+
+.join-todo-icon { font-size: 1.5rem; line-height: 1; }
+.join-todo-body { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 180px; }
+.join-todo-body strong { font-size: 0.95rem; color: var(--ink-0); }
+.join-todo-body span { font-size: 0.82rem; color: var(--ink-1); }
+
+.join-todo-links { display: flex; flex-wrap: wrap; gap: 8px; }
+.join-todo-links .btn { margin-top: 0; }
+
+/* A sign-up that's been sent, or a season already being raced. Same shape as a
+   join card so the screen reads as one list of series in different states. */
+.join-status-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--card);
+}
+
+.join-status-card.is-link { transition: transform 0.15s ease, border-color 0.15s ease; }
+.join-status-card.is-link:hover { transform: translateY(-2px); border-color: var(--accent-cyan); }
+.join-status-card.is-todo { border-left: 3px solid var(--accent-gold); }
+
+.join-status-icon { font-size: 1.4rem; line-height: 1; flex-shrink: 0; }
+.join-status-body { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.join-status-body strong { font-size: 0.95rem; color: var(--ink-0); }
+.join-status-body span { font-size: 0.82rem; line-height: 1.5; color: var(--ink-1); }
+.join-status-go { color: var(--accent-cyan); font-size: 1.1rem; flex-shrink: 0; }
+
+/* "New here?" — reassurance that nothing has to be set up first. */
+.join-newcomer {
+  margin-bottom: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--card);
+}
+
+.join-newcomer > p { margin: 0; font-size: 0.88rem; line-height: 1.6; color: var(--ink-1); }
+.join-newcomer > p strong { color: var(--ink-0); }
+.join-newcomer .btn { margin-top: 12px; }
+.join-newcomer .form-card { margin-top: 14px; max-width: 100%; }
+
+.join-foot {
+  margin-top: 26px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  font-size: 0.8rem;
+  color: var(--ink-2);
+}
+
+@media (max-width: 640px) {
+  /* On a phone the join button goes under the series name rather than being
+     squeezed to two words beside it. */
+  .join-card { flex-wrap: wrap; }
+  .join-card-go { width: 100%; }
+  .join-card-btn { width: 100%; justify-content: center; }
+}
+
+/* ── Driver Roster (app/roster) ────────────────────────────────────────────
+   The admin side of "who races this season". Two things here are new furniture
+   rather than restyled tables: the scope strip, which says out loud which
+   season is being edited, and the additions panel, which announces drivers who
+   were approved onto a roster while the admin was looking elsewhere. */
+
+/* Which season this screen is reading and writing. It's stated because three
+   dropdowns at the top of the page decide it, and an admin who hasn't noticed
+   which one they're on can edit the wrong season's roster without ever being
+   told which season that was. */
+.roster-scope {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-cyan);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+}
+
+.roster-scope-icon { font-size: 1.2rem; line-height: 1; color: var(--accent-cyan); }
+.roster-scope-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.roster-scope-body strong { font-size: 0.95rem; color: var(--ink-0); }
+.roster-scope-body span { font-size: 0.8rem; color: var(--ink-1); }
+.roster-scope-body span strong { font-size: inherit; color: var(--accent-cyan); }
+
+/* "3 drivers added to 2 rosters since you last looked" — the panel behind the
+   sidebar badge. Gold, like every other surface in the app that is telling an
+   admin something they haven't dealt with yet. */
+.roster-news {
+  margin: 18px 0 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-gold);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+  animation: reveal 0.45s ease;
+}
+
+.roster-news-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.roster-news-head > div { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 200px; }
+.roster-news-head strong { font-size: 0.98rem; color: var(--ink-0); }
+.roster-news-head span { font-size: 0.82rem; line-height: 1.5; color: var(--ink-1); }
+.roster-news-icon { font-size: 1.4rem; line-height: 1; }
+.roster-news-dismiss { margin-top: 0; flex-shrink: 0; }
+
+/* One season's worth of new arrivals, with the button that steers the scope
+   menus at it. */
+.roster-news-group {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.roster-news-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.roster-news-group-head strong { font-size: 0.9rem; color: var(--ink-0); }
+.roster-news-game { font-size: 0.78rem; color: var(--ink-2); }
+.roster-news-go { margin-top: 0; padding: 6px 14px; }
+
+.roster-news-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.roster-news-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.84rem;
+}
+
+.roster-news-name { color: var(--ink-0); font-weight: 600; }
+.roster-news-detail { color: var(--ink-2); font-size: 0.78rem; }
+
+@media (max-width: 640px) {
+  /* The "Open this roster" button goes under the season name rather than being
+     squeezed against it. */
+  .roster-news-group-head { align-items: stretch; }
+  .roster-news-go { width: 100%; justify-content: center; }
+}
+
+/* The same strip in its "waiting on you" colour: cyan for a job still to do,
+   gold for news already actioned. */
+.roster-news.is-waiting {
+  border-left-color: var(--accent-cyan);
+  background: linear-gradient(120deg, var(--accent-cyan-dim), var(--bg-surface));
+}
+
+/* ── Discord callout (components/DiscordCallout.jsx) ───────────────────────
+   Being in the league's Discord is a REQUIREMENT, not a suggestion: a player
+   who misses it fills in the whole sign-up form and then never gets a role,
+   which looks to them like the sign-up failed. So it's a full-width card in
+   Discord's own blurple rather than a line of small print — the one thing on
+   this screen that isn't part of the app's own cyan/gold vocabulary, because
+   it's the one thing that sends you out of the app. */
+.discord-callout {
+  --discord: #5865f2;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: 16px 0 4px;
+  padding: 14px 16px;
+  border: 1px solid rgba(88, 101, 242, 0.45);
+  border-left: 3px solid var(--discord);
+  border-radius: var(--radius-card);
+  background: linear-gradient(120deg, rgba(88, 101, 242, 0.16), var(--bg-surface));
+}
+
+.discord-callout-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  color: #fff;
+  background: var(--discord);
+}
+
+.discord-callout-body { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 210px; }
+.discord-callout-body strong { font-size: 0.98rem; color: var(--ink-0); }
+.discord-callout-body span { font-size: 0.85rem; line-height: 1.55; color: var(--ink-1); }
+
+.discord-callout-btn {
+  margin-top: 0;
+  flex-shrink: 0;
+  color: #fff;
+  background: var(--discord);
+  border-color: var(--discord);
+}
+
+.discord-callout-btn:hover {
+  opacity: 0.92;
+  box-shadow: 0 0 20px rgba(88, 101, 242, 0.35);
+}
+
+@media (max-width: 640px) {
+  /* The button goes under the text rather than being squeezed beside it. */
+  .discord-callout-btn { width: 100%; justify-content: center; }
+}
+
+/* What League Setup's car list parsed to, each car beside its cap — so an admin
+   who typed "Ferrari 296 GT3 | 4" can see the 4 was read as a limit rather than
+   as part of the car's name. */
+.car-cap-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 2px;
+}
+
+.car-cap-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  font-size: 0.78rem;
+  color: var(--ink-0);
+}
+
+.car-cap-max { font-weight: 700; color: var(--accent-gold); }
+.car-cap-any { color: var(--ink-2); }
+
+/* A car whose cap is used up. Greyed AND labelled: colour on its own doesn't
+   tell a driver why the option won't take their click. */
+.check-row.is-full { opacity: 0.55; cursor: not-allowed; }
+.check-row.is-full > span { color: var(--ink-2); }
+
+.car-full-tag {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #1a1000;
+  background: var(--accent-gold);
+}
+
+/* ── A denied sign-up (components/SignupDenials.jsx) ───────────────────────
+   The first thing on the Sign-ups screen for anyone an admin turned down, and
+   it stays there until they acknowledge it. Red, because it's the one panel on
+   this screen reporting that something didn't go their way — but the tone of
+   the copy is "here's how to fix it", not a telling-off. */
+.signup-denials { display: flex; flex-direction: column; gap: 12px; margin: 18px 0 4px; }
+
+.signup-denial {
+  padding: 16px 18px;
+  border: 1px solid rgba(230, 57, 70, 0.4);
+  border-left: 3px solid var(--accent-red);
+  border-radius: var(--radius-card);
+  background: linear-gradient(120deg, var(--accent-red-dim), var(--bg-surface));
+  animation: reveal 0.45s ease;
+}
+
+.signup-denial-head { display: flex; align-items: flex-start; gap: 12px; }
+.signup-denial-icon { font-size: 1.4rem; line-height: 1; }
+.signup-denial-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.signup-denial-title strong { font-size: 1rem; color: var(--ink-0); }
+.signup-denial-title span { font-size: 0.8rem; color: var(--ink-2); }
+
+/* The admin's own words. Quoted rather than folded into a sentence — it's the
+   entire reason this panel exists, and a player scanning the screen has to
+   land on it. */
+.signup-denial-reason {
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  border-left: 3px solid var(--accent-gold);
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--ink-0);
+}
+
+.signup-denial-reason-label {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-gold);
+}
+
+.signup-denial-noreason {
+  margin: 12px 0 0;
+  font-size: 0.86rem;
+  line-height: 1.55;
+  color: var(--ink-1);
+}
+
+.signup-denial-foot { margin: 10px 0 0; font-size: 0.82rem; color: var(--ink-1); }
+
+.signup-denial-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.signup-denial-actions .btn { margin-top: 0; }
+
+/* ── The message board (components/MessageBoard.jsx, AdminMessages.jsx) ─────
+   The league talking to a player, on their Dashboard, and their answers coming
+   back on the admins' Approvals screen. Every admin decision lands as a card
+   here; an approved sign-up gets the loudest treatment of the lot, because
+   being let in used to happen in complete silence and it is the one moment a
+   league most wants to feel like an arrival.
+
+   Tone is carried by the left border and the wash behind the card — but never
+   by colour ALONE: every card says what happened in words, and the icon
+   repeats it. */
+.msg-board { margin-bottom: 20px; }
+
+.msg-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 14px;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--ink-2);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+  animation: reveal 0.5s ease;
+}
+
+/* Unread is the state that has to carry across a busy screen, so it gets the
+   glow and the gradient; a card already dealt with settles down to flat. */
+.msg-card.msg-unread.msg-good {
+  border-color: var(--border-accent);
+  border-left-color: var(--accent-cyan);
+  background:
+    radial-gradient(ellipse at 0% 0%, rgba(244, 162, 40, 0.16) 0%, transparent 55%),
+    linear-gradient(120deg, var(--accent-cyan-dim), var(--bg-surface));
+  box-shadow: var(--shadow-glow-cyan);
+}
+
+.msg-card.msg-unread.msg-bad {
+  border-color: rgba(230, 57, 70, 0.3);
+  border-left-color: var(--accent-red);
+  background: linear-gradient(120deg, var(--accent-red-dim), var(--bg-surface));
+  box-shadow: var(--shadow-glow-red);
+}
+
+.msg-card.msg-unread.msg-info {
+  border-left-color: var(--accent-gold);
+  background: linear-gradient(120deg, rgba(244, 162, 40, 0.12), var(--bg-surface));
+}
+
+.msg-icon { font-size: 1.8rem; line-height: 1; flex-shrink: 0; }
+.msg-body { flex: 1; min-width: 0; }
+
+.msg-card h3 {
+  margin: 0 0 4px;
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--ink-0);
+}
+
+.msg-card.msg-unread.msg-good h3 { font-size: 1.3rem; }
+
+.msg-sub { margin: 0 0 12px; font-size: 0.92rem; line-height: 1.55; color: var(--ink-1); }
+
+/* The admin's own words. The part players actually want, so it is quoted
+   rather than folded into a sentence. */
+.msg-note {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border-left: 3px solid var(--accent-gold);
+  border-radius: 0 8px 8px 0;
+  background: rgba(244, 162, 40, 0.08);
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--ink-0);
+}
+
+.msg-note-label {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-gold);
+}
+
+.msg-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.msg-actions .btn { margin-top: 0; }
+
+/* Discord keeps its own colour, so the one action that leaves the app looks
+   like it does everywhere else in the app. */
+.msg-discord { color: #fff; background: #5865f2; border-color: #5865f2; }
+.msg-discord:hover { opacity: 0.92; box-shadow: 0 0 20px rgba(88, 101, 242, 0.35); }
+
+.msg-foot { margin: 14px 0 0; font-size: 0.85rem; line-height: 1.55; color: var(--ink-1); }
+
+/* ── The thread ────────────────────────────────────────────────────────────
+   Both sides of the conversation, indented under the decision that started it.
+   Who said what is spelled out in words above each one — an alignment trick
+   alone would tell a screen reader nothing. */
+.msg-thread {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.msg-reply {
+  padding: 9px 13px;
+  border-radius: 10px;
+  background: var(--card);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.msg-reply p { margin: 0; color: var(--ink-0); white-space: pre-wrap; }
+
+.msg-reply-who {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.msg-reply-admin {
+  border-left: 3px solid var(--accent-cyan);
+  background: var(--accent-cyan-dim);
+}
+
+.msg-reply-admin .msg-reply-who { color: var(--accent-cyan); }
+
+.msg-reply-player { border-left: 3px solid var(--border); }
+
+.msg-waiting {
+  margin: 12px 0 0;
+  font-size: 0.82rem;
+  color: var(--ink-1);
+}
+
+.msg-reply-form { margin-top: 14px; }
+
+.msg-reply-form textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-1);
+  color: var(--ink-0);
+  font-family: inherit;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.msg-reply-form textarea:focus {
+  outline: none;
+  border-color: var(--accent-cyan);
+  box-shadow: var(--shadow-glow-cyan);
+}
+
+.msg-reply-actions,
+.msg-card-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.msg-reply-actions .btn,
+.msg-card-actions .btn { margin-top: 0; }
+
+.msg-dismiss { margin-left: auto; }
+
+/* ── Everything already dealt with ─────────────────────────────────────────
+   Folded away rather than thrown away: the record of what was decided, and
+   what was said about it, is worth keeping. */
+.msg-earlier {
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--card);
+}
+
+.msg-earlier > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 16px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink-1);
+  list-style: none;
+  user-select: none;
+}
+
+.msg-earlier > summary::-webkit-details-marker { display: none; }
+.msg-earlier > summary:hover { color: var(--ink-0); background: var(--card-hover); border-radius: var(--radius-card); }
+
+.msg-earlier-caret { transition: transform 0.15s ease; display: inline-block; }
+.msg-earlier[open] > summary > .msg-earlier-caret { transform: rotate(90deg); }
+
+.msg-earlier-count {
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  font-size: 0.75rem;
+  color: var(--ink-1);
+}
+
+.msg-earlier-body { padding: 4px 14px 14px; }
+.msg-earlier-body .msg-card:last-child { margin-bottom: 0; }
+
+/* ── The admins' side (Approvals) ──────────────────────────────────────────
+   Compact by comparison: this is a work queue, not an announcement. */
+.admin-msgs { margin-bottom: 26px; }
+
+.admin-msgs-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 9px;
+  border-radius: 999px;
+  background: var(--accent-red);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 800;
+  vertical-align: middle;
+}
+
+.admin-msgs-intro {
+  margin: 0 0 12px;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--ink-1);
+  max-width: 760px;
+}
+
+.admin-msgs-clear { margin: 0 0 12px; font-size: 0.85rem; color: var(--ink-1); }
+
+.admin-msg {
+  margin-bottom: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--ink-2);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+}
+
+/* Waiting on an answer — the only thing on this screen that should pull an
+   eye, and it says so in words in the header above it too. */
+.admin-msg-waiting {
+  border-color: rgba(230, 57, 70, 0.3);
+  border-left-color: var(--accent-red);
+  background: linear-gradient(120deg, var(--accent-red-dim), var(--bg-surface));
+}
+
+.admin-msg-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin-bottom: 10px;
+}
+
+.admin-msg-head strong { font-size: 0.98rem; color: var(--ink-0); }
+.admin-msg-about { font-size: 0.82rem; color: var(--ink-1); }
+
+@media (max-width: 640px) {
+  .msg-card { flex-wrap: wrap; }
+  .msg-actions .btn { width: 100%; justify-content: center; }
+  .msg-card-actions .btn { width: 100%; justify-content: center; }
+  .msg-dismiss { margin-left: 0; }
+}
+
+/* ── Placement board ───────────────────────────────────────────────────────
+   The division-sorting screen for a Time Trial / Placement night: the unplaced
+   field in the first column, one tray per division across the rest, and driver
+   cards dragged between them.
+
+   Built to be read at a glance rather than studied — the count in each column
+   head is the number an admin is actually trying to balance, and the card
+   carries the two lap times a placement decision is made on. It scrolls
+   sideways rather than wrapping, so eight divisions read as eight columns
+   instead of collapsing into a wall.
+
+   Touch and keyboard users never drag: each card carries a "move to" menu that
+   does exactly the same thing (see components/PlacementBoard.jsx). */
+
+.placement-bar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--card);
+}
+
+.placement-bar-views { display: flex; gap: 6px; }
+.placement-bar-views .tab { padding: 6px 14px; }
+
+.placement-bar-progress {
+  font-size: 0.85rem;
+  color: var(--ink-1);
+  margin-right: auto;
+}
+.placement-bar-progress strong { color: var(--ink-0); }
+.placement-bar-left { color: var(--accent-gold); }
+
+.placement-board {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-top: 14px;
+  padding-bottom: 8px;
+  overflow-x: auto;
+}
+
+.placement-column {
+  flex: 0 0 240px;
+  display: flex;
+  flex-direction: column;
+  min-height: 160px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--card);
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+/* The unplaced pool reads as the "in tray" rather than as another division. */
+.placement-column.is-pool {
+  background: transparent;
+  border-style: dashed;
+}
+
+/* Lit only while a card is genuinely in the air over this column. */
+.placement-column.is-over {
+  border-color: var(--accent-cyan);
+  background: var(--accent-cyan-dim);
+}
+
+/* A destination with no season behind it can't build a roster at the end of
+   the night, so it's marked before the night is spent filling it. */
+.placement-column.is-incomplete { border-left: 3px solid var(--accent-gold); }
+
+.placement-column-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.placement-column-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--ink-0);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.placement-column-count {
+  flex-shrink: 0;
+  min-width: 26px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--accent-cyan-dim);
+  color: var(--accent-cyan);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.placement-column-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.74rem;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
+.placement-column-warn {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.72rem;
+  color: var(--accent-gold);
+}
+
+.placement-column-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.placement-column-empty {
+  margin: 0;
+  padding: 18px 8px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  color: var(--ink-2);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.placement-card {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  cursor: grab;
+}
+
+.placement-card:active { cursor: grabbing; }
+.placement-card:hover { border-color: var(--border-accent); }
+
+/* Somebody who set no lap: they can't be auto-placed, and the card says so
+   quietly rather than looking like a driver whose time failed to load. */
+.placement-card.is-timeless { opacity: 0.75; border-style: dashed; }
+
+.placement-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  justify-content: space-between;
+}
+
+.placement-card-name {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--ink-0);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.placement-card-number { margin-left: 6px; color: var(--ink-2); font-weight: 400; }
+
+.placement-card-times { display: flex; align-items: baseline; gap: 8px; margin-top: 2px; }
+
+.placement-card-time {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--accent-gold);
+  font-variant-numeric: tabular-nums;
+}
+
+.placement-card-alt { font-size: 0.7rem; color: var(--ink-2); }
+
+.placement-card-move {
+  width: 100%;
+  margin-top: 6px;
+  padding: 3px 6px;
+  font-size: 0.76rem;
+}
+
+@media (max-width: 640px) {
+  /* No dragging on a phone, so the columns stack and every card is moved with
+     its own menu — the board still works, it just reads as a list of trays. */
+  .placement-board { flex-direction: column; overflow-x: visible; }
+  .placement-column { flex: 1 1 auto; width: 100%; }
+  .placement-bar-progress { margin-right: 0; width: 100%; }
 }

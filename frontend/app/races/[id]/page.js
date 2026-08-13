@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
+import { RaceNav } from "@/components/RaceNav";
 import { useLeague } from "@/components/LeagueProvider";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ShareGraphicModal } from "@/components/ShareGraphicModal";
@@ -365,6 +366,12 @@ export default function EventResultsPage() {
               ))}
             </p>
           )}
+          {/* Straight to the round either side of this one, without a detour
+              through the Schedule. Stays in the viewer, since that's where the
+              reader already is — see components/RaceNav.jsx. */}
+          <div style={{ margin: "10px 0 0" }}>
+            <RaceNav race={event} mode="view" />
+          </div>
           <p style={{ margin: "6px 0 0", display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
             <Link href="/schedule" style={{ color: "var(--accent-cyan)", fontSize: "0.85rem" }}>← Back to Schedule</Link>
             {shareRows.length > 0 && (

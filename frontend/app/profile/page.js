@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
+import { ConnectedAccounts } from "@/components/ConnectedAccounts";
 import { ImageUpload } from "@/components/ImageUpload";
 import { api } from "@/lib/api";
 
@@ -91,6 +92,13 @@ export default function MyProfilePage() {
           <button className="btn btn-primary" disabled={busy} type="submit">{busy ? "Saving…" : "Save Profile"}</button>
         </form>
       </div>
+
+      {/* The platform usernames, which live on the DRIVER profile rather than
+          on this account — a separate record, so a separate card with its own
+          Save. Until now they could only be reached through a series sign-up
+          form, which left a player with no way to correct a changed Discord
+          handle short of joining another series. */}
+      <ConnectedAccounts />
     </section>
   );
 }

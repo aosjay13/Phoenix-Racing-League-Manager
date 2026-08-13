@@ -6,14 +6,17 @@ import { useRouter } from "next/navigation";
 import { useLeague } from "@/components/LeagueProvider";
 import { useAuth } from "@/components/AuthProvider";
 import { RaceCreateModal } from "@/components/RaceCreateModal";
+import { RaceCopyModal } from "@/components/RaceCopyModal";
 import { SeasonCreateModal } from "@/components/SeasonCreateModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ShareGraphicButton, ShareGraphicModal } from "@/components/ShareGraphicModal";
 import { leagueLogos, specToGraphicTable } from "@/lib/shareGraphic";
 import { api } from "@/lib/api";
-import { formatRaceDate, isPastRaceDate, raceDateSortKey } from "@/lib/raceDate";
+import { formatRaceDate, isPastRaceDate, todayDateString } from "@/lib/raceDate";
+import { splitScheduleFeed } from "@/lib/scheduleFeed";
 import { racePerClassResults } from "@/lib/classFilter";
 import { lapsAreSecondary } from "@/lib/raceLength";
+import { hasSessionTimes, localZoneLabel, raceSessionTimes, sessionTimeLine } from "@/lib/raceTimes";
 
 // A driver cell that links to the profile when we can resolve one, else plain
 // text. Falls back to an em-dash for events with no recorded pole/winner yet.
@@ -28,6 +31,55 @@ function Person({ p }) {
 // A race date is a bare calendar date, rendered exactly as the admin picked it
 // in every timezone — see lib/raceDate.js.
 const fmtDate = d => formatRaceDate(d, "short");
+
+// ── Session times, beside the date ────────────────────────────────────────
+//
+// The same opt-in the Calendar reads (Race Info → "Show session times on the
+// Calendar"), shown here in the column right of the date so the schedule
+// answers "what time do we go green" as well as "what day".
+//
+// The column only exists when something in the table actually carries times, so
+// a league that has never used the toggle sees the schedule exactly as before.
+// The date to its left is untouched — still the bare calendar date the admin
+// picked (lib/raceDate.js) — while these times are converted to whoever is
+// reading them, which is why the header says whose clock they're on.
+function anySessionTimes(rows = []) {
+  return rows.some(hasSessionTimes);
+}
+
+function SessionTimesHeader({ zoneLabel }) {
+  return (
+    <th style={{ whiteSpace: "nowrap" }}
+      title="Practice, Qualifying and Race start times — converted to your own timezone">
+      Session Times
+      <span style={{ display: "block", fontWeight: 400, textTransform: "none", fontSize: "0.68rem", color: "var(--ink-2)" }}>
+        your time{zoneLabel ? ` (${zoneLabel})` : ""}
+      </span>
+    </th>
+  );
+}
+
+// One race's sessions, stacked P / Q / R. A session whose start lands on a
+// different day for THIS reader carries that day beside it — the row still
+// belongs to the race's own date, exactly as the calendar pill does.
+function SessionTimesCell({ race }) {
+  const times = raceSessionTimes(race);
+  if (!times.length) return <td style={{ color: "var(--ink-2)" }}>—</td>;
+  return (
+    <td style={{ whiteSpace: "nowrap" }}>
+      <span className="session-times">
+        {times.map(s => (
+          <span key={s.key} className="session-time" title={sessionTimeLine(s)}>
+            <span className="session-time-key" aria-hidden="true">{s.short}</span>
+            <span className="sr-only">{s.label}</span>
+            {s.time}
+            {s.dayOffset !== 0 && <em className="session-time-day"> {s.dateLabel}</em>}
+          </span>
+        ))}
+      </span>
+    </td>
+  );
+}
 
 // The Car cell. Normally one car for the round. At "All Classes" on a season
 // whose classes race different machinery, the server sends `class_cars` instead
@@ -117,20 +169,13 @@ function GlobalSchedule() {
     api(`/api/schedule${qs ? `?${qs}` : ""}`).then(setRows).catch(() => setRows([]));
   }, [gameId, seriesId]);
 
-  const { upcoming, archive } = useMemo(() => {
-    const all = rows || [];
-    // Upcoming: events without saved results yet, soonest first (undated last).
-    const upcoming = all
-      .filter(r => !r.summary?.has_results)
-      .sort((a, b) => raceDateSortKey(a.date, Infinity) - raceDateSortKey(b.date, Infinity))
-      .slice(0, 40);
-    // Archive: events with results, most recently run first (undated last).
-    const archive = all
-      .filter(r => r.summary?.has_results)
-      .sort((a, b) => raceDateSortKey(b.date, -Infinity) - raceDateSortKey(a.date, -Infinity))
-      .slice(0, 40);
-    return { upcoming, archive };
-  }, [rows]);
+  // Upcoming (soonest first) and Archive (most recent first), split on the
+  // CALENDAR rather than on whether anybody entered results — see
+  // lib/scheduleFeed.js. A race whose day has passed is history even if its
+  // results sheet was never filled in; leaving it in Upcoming is what used to
+  // put a two-year-old round at the top of the table.
+  const today = useMemo(() => todayDateString(), []);
+  const { upcoming, archive } = useMemo(() => splitScheduleFeed(rows || [], today), [rows, today]);
 
   const scopeLabel = series?.name || game?.name || "All Games";
   // Available at every scope, including "All Games": whatever the scope leaves
@@ -216,6 +261,10 @@ function FeedSection({ title, icon, rows, kind }) {
   ];
   const shareTable = specToGraphicTable(shareSpec, rows);
   const scopeLabel = series?.name || game?.name || "All Games";
+  // Session times are the READER's, so they stay out of the share graphic — an
+  // exported image would freeze one person's clock and hand it to everybody.
+  const showTimes = anySessionTimes(rows);
+  const zoneLabel = showTimes ? localZoneLabel() : "";
 
   return (
     <div style={{ marginTop: 22 }}>
@@ -245,6 +294,7 @@ function FeedSection({ title, icon, rows, kind }) {
           <thead>
             <tr>
               <th style={{ whiteSpace: "nowrap" }}>Date</th>
+              {showTimes && <SessionTimesHeader zoneLabel={zoneLabel} />}
               <th style={{ textAlign: "left" }}>Event / Track</th>
               <th style={{ textAlign: "left" }}>Series · Season</th>
               <th style={{ textAlign: "left" }}>{archive ? "Winner" : "Car"}</th>
@@ -257,6 +307,7 @@ function FeedSection({ title, icon, rows, kind }) {
               return (
                 <tr key={r.id}>
                   <td style={{ whiteSpace: "nowrap" }}>{fmtDate(r.date)}</td>
+                  {showTimes && <SessionTimesCell race={r} />}
                   <td style={{ textAlign: "left" }}>
                     <Link href={`/races/${r.id}`} style={{ color: "var(--accent-cyan)", fontWeight: 600 }}>{r.name}</Link>
                     {r.track && <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.78rem" }}>{r.track}</span>}
@@ -274,10 +325,19 @@ function FeedSection({ title, icon, rows, kind }) {
                       ? <PersonCell summary={s} classSummaries={r.class_summaries} field="winner" />
                       : <CarCell summary={s} classCars={r.class_cars} />}
                   </td>
+                  {/* The archive is "days that have been", so it also holds
+                      rounds that ran without anybody entering a sheet — those
+                      say TBD rather than offering a results link to nothing,
+                      exactly as a season's own table does. An event still to
+                      come but with no date yet reads TBA. */}
                   <td>
                     {archive
-                      ? <Link href={`/races/${r.id}`} title="View race results" style={{ fontSize: "1.1rem" }}>🏁</Link>
-                      : <span className="race-status status-upcoming" style={{ fontSize: "0.7rem" }}>UPCOMING</span>}
+                      ? (s.has_results
+                        ? <Link href={`/races/${r.id}`} title="View race results" style={{ fontSize: "1.1rem" }}>🏁</Link>
+                        : <span className="race-status status-completed" style={{ fontSize: "0.7rem" }}
+                          title="This event's date has passed — no results entered yet">TBD</span>)
+                      : <span className="race-status status-upcoming" style={{ fontSize: "0.7rem" }}
+                        title={r.date ? "" : "No date set for this event yet"}>{r.date ? "UPCOMING" : "TBA"}</span>}
                   </td>
                 </tr>
               );
@@ -298,6 +358,7 @@ function SeasonSchedule() {
   const [races, setRaces] = useState(null);
   const [sharing, setSharing] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
+  const [showCopy, setShowCopy] = useState(false);
   const [toDelete, setToDelete] = useState(null); // race pending delete confirmation
   const [toggleComplete, setToggleComplete] = useState(false); // season completion pending confirmation
 
@@ -366,6 +427,11 @@ function SeasonSchedule() {
   ];
   const shareTable = specToGraphicTable(shareSpec, ordered);
   const scopeName = [season?.name, raceClass?.name].filter(Boolean).join(" · ");
+  // As on the cross-season feed: the column appears only when some round in
+  // this season actually carries times, and stays out of the share graphic
+  // because the times are the reader's own, not the season's.
+  const showTimes = anySessionTimes(ordered);
+  const zoneLabel = showTimes ? localZoneLabel() : "";
 
   return (
     <section>
@@ -393,6 +459,16 @@ function SeasonSchedule() {
                 : "Mark this season complete — its champion(s) earn a Championship in career stats, and it closes to player sign-ups and car lock-ins."}
               onClick={() => setToggleComplete(true)}>
               {completed ? "✓ Season Complete" : "Mark Season Complete"}
+            </button>
+            {/* Copy an event (and its results) between seasons — either
+                direction, any series. Sits beside + New Race because it's the
+                other way a round joins a calendar. */}
+            <button
+              className="btn btn-ghost"
+              style={{ marginTop: 0 }}
+              title="Copy a race — and the results it scored — from one season into another, in this series or a different one"
+              onClick={() => setShowCopy(true)}>
+              ⧉ Copy Race
             </button>
             <button className="btn btn-primary" style={{ marginTop: 0 }} onClick={() => setShowCreate(true)}>
               + New Race
@@ -424,7 +500,8 @@ function SeasonSchedule() {
         <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.85rem" }}>
           Every event is managed from this table: <strong>⏱</strong> opens its results grid (qualifying,
           races, heats and points), <strong>✎</strong> edits the event itself — name, date, track, sessions
-          and heat racing — and <strong>🗑</strong> deletes it.
+          and heat racing — and <strong>🗑</strong> deletes it. <strong>⧉ Copy Race</strong> above brings an
+          event and its results across from another season, in this series or a different one.
         </p>
       )}
 
@@ -452,8 +529,21 @@ function SeasonSchedule() {
           perClassSchedules={perClassSchedules}
           defaultClassId={classId}
           perClassResults={!!season?.per_class_results}
+          // A heat-racing season starts each new round in heat format.
+          heatFormat={!!season?.heat_format}
           onClose={() => setShowCreate(false)}
           onCreated={() => { setShowCreate(false); loadRaces(); }}
+        />
+      )}
+
+      {isAdmin && showCopy && (
+        <RaceCopyModal
+          seasonId={seasonId}
+          onClose={() => { setShowCopy(false); loadRaces(); }}
+          // A copy INTO the season being viewed lands on this calendar, so
+          // reload it as soon as the copy reports back rather than waiting for
+          // the dialog to be dismissed.
+          onCopied={() => loadRaces()}
         />
       )}
 
@@ -476,6 +566,7 @@ function SeasonSchedule() {
               <tr>
                 <th>Race</th>
                 <th>Race Date</th>
+                {showTimes && <SessionTimesHeader zoneLabel={zoneLabel} />}
                 <th className="sticky-col" style={{ textAlign: "left" }}>Event / Track</th>
                 {showClassCol && <th style={{ textAlign: "left" }}>Class</th>}
                 <th>Race Length</th>
@@ -495,6 +586,7 @@ function SeasonSchedule() {
                   <tr key={r.id}>
                     <td style={{ fontVariantNumeric: "tabular-nums" }}>{r.round_number ?? "—"}</td>
                     <td style={{ whiteSpace: "nowrap" }}>{fmtDate(r.date)}</td>
+                    {showTimes && <SessionTimesCell race={r} />}
                     <td className="sticky-col" style={{ textAlign: "left" }}>
                       <Link href={`/races/${r.id}`} style={{ color: "var(--accent-cyan)", fontWeight: 600 }}>{r.name}</Link>
                       {r.track && <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.78rem" }}>{r.track}</span>}

@@ -3,15 +3,17 @@ import { db } from "@/lib/firebase";
 import { getRequestLeagueId, getRequestUser, withUser } from "@/lib/serverAuth";
 import { normalizeClassIds } from "@/lib/classFilter";
 import {
-  NUMBER_TAKEN_MESSAGE, matchCarOption, missingSignupFields, missingSignupMessage,
-  resolveSignupRules, seasonAcceptsSignups,
+  NUMBER_TAKEN_MESSAGE, carCapacity, carCounts, carFullMessage, matchCarOption, missingSignupFields,
+  missingSignupMessage, resolveSignupRules, seasonAcceptsSignups,
 } from "@/lib/carSelection";
 import {
   NUMBER_CHANGE_KIND, PENDING, SIGNUP_KIND, isOwnNumber, numberClaimed, numberRequestFor,
   pendingForSeason, requestKind,
 } from "@/lib/signupQueue";
 import { linkedDriver, seasonContext, seasonEntries } from "@/lib/carSelectionServer";
-import { missingAliasMessage, missingRequiredAliases } from "@/lib/signupRequest";
+import {
+  missingAliasMessage, missingRequiredAliases, userAccountUpdatesFromSignup,
+} from "@/lib/signupRequest";
 import { mergeAliases, normalizeAliases } from "@/lib/aliases";
 
 export const dynamic = "force-dynamic";
@@ -39,7 +41,6 @@ export async function GET(request) {
       name: r.name || r.driver_name || "Driver",
       number: r.number ?? null,
       car: r.car || "",
-      manufacturer: r.manufacturer || "",
       class_names: r.class_names || [],
       // Only ever true for the caller's own row, so someone can see their own
       // request in the list without anyone else's account being exposed.
@@ -150,9 +151,9 @@ async function numberChangeRequest({ request, user, driver, season, series, game
 // already knows them — an existing driver's request is still a request.
 //
 // What's required of the submission is whatever the series, season and class
-// ask for between them (see resolveSignupRules): a car number, a car, a
-// manufacturer, and any alias the game insists on — an iRacing customer ID, so
-// the organiser can send a league invite.
+// ask for between them (see resolveSignupRules): a car number, a car from the
+// season's one car list, and any alias the game insists on — an iRacing
+// customer ID, so the organiser can send a league invite.
 export const POST = withUser(async (request, ctx, user) => {
   const body = await request.json().catch(() => ({}));
   const seasonId = String(body.season_id ?? "").trim();
@@ -203,7 +204,6 @@ export const POST = withUser(async (request, ctx, user) => {
 
   const number = String(body.number ?? "").trim().slice(0, 3);
   const rawCar = String(body.car ?? "").trim();
-  const rawManufacturer = String(body.manufacturer ?? "").trim();
 
   // Anything picked must be from the admin's own list, matched case-insensitively
   // and stored under the list's spelling.
@@ -214,15 +214,8 @@ export const POST = withUser(async (request, ctx, user) => {
       return NextResponse.json({ error: `“${rawCar}” isn't one of the cars offered for this season.` }, { status: 400 });
     }
   }
-  let manufacturer = "";
-  if (rawManufacturer) {
-    manufacturer = matchCarOption(rules.manufacturer_options, rawManufacturer) ?? "";
-    if (!manufacturer) {
-      return NextResponse.json({ error: `“${rawManufacturer}” isn't one of the manufacturers offered for this season.` }, { status: 400 });
-    }
-  }
 
-  const missing = missingSignupFields(rules, { number, car, manufacturer });
+  const missing = missingSignupFields(rules, { number, car });
   if (missing.length) {
     return NextResponse.json({ error: missingSignupMessage(missing), code: "missing-fields" }, { status: 400 });
   }
@@ -265,6 +258,19 @@ export const POST = withUser(async (request, ctx, user) => {
     return NextResponse.json({ error: NUMBER_TAKEN_MESSAGE, code: "number-taken", number }, { status: 409 });
   }
 
+  // A car whose cap filled up — possibly while this form sat open. Checked
+  // here as well as on the form, because the form is not the boundary, and
+  // against the roster AND the queue for the same reason the number is: two
+  // people can be holding the last seat at the same moment and only one of
+  // them can have it.
+  if (car) {
+    const cap = carCapacity(rules.car_entries, carCounts([...entries, ...pending]), car);
+    if (cap.full) {
+      return NextResponse.json(
+        { error: carFullMessage(cap), code: "car-full", car: cap.name }, { status: 409 });
+    }
+  }
+
   const userDoc = await db().collection("users").doc(user.uid).get();
   const u = userDoc.exists ? userDoc.data() : {};
   const leagueId = season.league_id || getRequestLeagueId(request);
@@ -290,7 +296,6 @@ export const POST = withUser(async (request, ctx, user) => {
     name: (String(body.name ?? "").trim() || driver?.name || newDriverName).slice(0, 60),
     number,
     car,
-    manufacturer,
     class_ids: classIds,
     class_names: classIds.map(id => validClasses.get(id)?.name).filter(Boolean),
     aliases,
@@ -322,5 +327,27 @@ export const POST = withUser(async (request, ctx, user) => {
     }
   }
 
-  return NextResponse.json({ id: ref.id, ...doc }, { status: 201 });
+  // And onto their own ACCOUNT, for the two fields it owns that a sign-up
+  // answers: the display name and the car number. Only ever fills in what the
+  // account hasn't got — a name or number the player set on their Profile is
+  // never overwritten (see userAccountUpdatesFromSignup). This runs for a
+  // brand-new player too, who has an account from the moment they signed in
+  // even though their driver profile is still waiting on an admin, so their
+  // Profile stops saying "jane.doe" the moment they tell us their racing name.
+  //
+  // Never fail a sign-up over it: the request is filed either way.
+  const accountUpdates = userAccountUpdatesFromSignup({
+    profile: { ...u, email: u.email || user.email },
+    name: doc.name,
+    number,
+  });
+  if (Object.keys(accountUpdates).length) {
+    try {
+      await db().collection("users").doc(user.uid).set(accountUpdates, { merge: true });
+    } catch (err) {
+      console.error("Sign-up account sync failed", err);
+    }
+  }
+
+  return NextResponse.json({ id: ref.id, ...doc, account_updates: accountUpdates }, { status: 201 });
 });

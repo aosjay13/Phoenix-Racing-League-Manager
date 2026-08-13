@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
 import { DirectoryRow } from "@/components/DirectoryRow";
-import { RosterManager } from "@/components/RosterManager";
 import { UserAccountsManager } from "@/components/UserAccountsManager";
 import { DriverPoolCreateModal } from "@/components/DriverPoolCreateModal";
 import { DriverEditModal } from "@/components/DriverEditModal";
@@ -304,14 +303,19 @@ function DriversDirectory() {
 }
 
 // ── The Drivers menu ───────────────────────────────────────────────────────
-// Everything about the people in the league lives here, one tab per view, so
-// an admin never has to hop between menus (or scroll past one screen to reach
-// the next): the public directory, the season roster & teams manager, and the
-// player accounts behind the profiles.
+// Who the people in the league ARE: the public directory, and the player
+// accounts behind those profiles.
+//
+// Managing a season's roster used to be a third tab here ("Roster & Teams").
+// It's its own sidebar menu now — Admin ▸ Driver Roster, app/roster — because
+// it's a job rather than a view: it carries a badge for drivers approved onto a
+// roster, and a job you have to know is hidden behind a tab is a job that gets
+// missed. `?tab=roster` is redirected there in next.config.js — a server
+// redirect, because the client-side one raced LeagueProvider writing the scope
+// back into the address bar.
 const TABS = [
-  { key: "directory", label: "Drivers",        icon: "🏎", admin: false },
-  { key: "roster",    label: "Roster & Teams", icon: "⊞",  admin: true  },
-  { key: "accounts",  label: "User Accounts",  icon: "👥", admin: true  },
+  { key: "directory", label: "Drivers",       icon: "🏎", admin: false },
+  { key: "accounts",  label: "User Accounts", icon: "👥", admin: true  },
 ];
 
 function DriversTabs() {
@@ -354,7 +358,6 @@ function DriversTabs() {
       )}
 
       {tab === "directory" && <DriversDirectory />}
-      {tab === "roster" && isAdmin && <RosterManager />}
       {tab === "accounts" && isAdmin && <UserAccountsManager />}
     </section>
   );

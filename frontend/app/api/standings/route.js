@@ -5,6 +5,7 @@ import {
   calculateTeamStandings,
   decorateRaceBonuses,
   decorateSessionFlags,
+  sessionScopeContext,
   isQualifying,
   makeScorer,
   parseMaybeJson,
@@ -16,6 +17,9 @@ import { classIdsInSeason, classNamesFor, entryClassIds, entryClassIdsOrdered, f
 import { seasonChampions } from "@/lib/champions";
 import { fetchSeriesForSeason } from "@/lib/seriesServer";
 import { fetchDriverNames } from "@/lib/driverNamesServer";
+import { applySeasonTeams, teamsForEntries } from "@/lib/teams";
+import { loadTeamIndex } from "@/lib/teamsServer";
+import { getRequestLeagueId } from "@/lib/serverAuth";
 
 // One season's championship tables.
 //   ?season_id=…              → the overall (whole-field) championship
@@ -32,10 +36,10 @@ export async function GET(request) {
   const className = searchParams.get("class_name") || "";
   if (!seasonId) return NextResponse.json({ error: "season_id required" }, { status: 400 });
 
-  const [seasonDoc, entriesSnap, teamsSnap, resultsSnap, racesSnap, templatesById, classes] = await Promise.all([
+  const [seasonDoc, entriesSnap, teamIndex, resultsSnap, racesSnap, templatesById, classes] = await Promise.all([
     db().collection("seasons").doc(seasonId).get(),
     db().collection("entries").where("season_id", "==", seasonId).get(),
-    db().collection("teams").where("season_id", "==", seasonId).get(),
+    loadTeamIndex({ leagueId: getRequestLeagueId(request) }),
     db().collection("results").where("season_id", "==", seasonId).get(),
     db().collection("races").where("season_id", "==", seasonId).get(),
     fetchTemplatesById(),
@@ -44,7 +48,16 @@ export async function GET(request) {
   if (!seasonDoc.exists) return NextResponse.json({ error: "Season not found" }, { status: 404 });
 
   const season = seasonDoc.data();
-  const allEntries = entriesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  // Every entry is stamped with the team that driver raced for IN THIS SEASON
+  // (its `team_seasons` lineup, falling back to the entry's own tag — see
+  // lib/teams.js). Doing it here, once, is what makes the team table below a
+  // straight roll-up of the driver table: same points, same wins, same poles,
+  // just grouped by team.
+  const allEntries = applySeasonTeams(
+    entriesSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+    seasonId,
+    teamIndex,
+  );
   // Put every entry's classes into the season's order first, so a result that
   // records no class of its own resolves to a stable primary class (see
   // orderEntryClasses) instead of whichever class was ticked first.
@@ -52,9 +65,12 @@ export async function GET(request) {
     Object.fromEntries(allEntries.map(e => [e.id, e])),
     classes,
   );
-  const teams = teamsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const teams = teamsForEntries(allEntries, seasonId, teamIndex);
   const racesById = Object.fromEntries(racesSnap.docs.map(d => [d.id, d.data()]));
-  const allResults = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById));
+  const allResults = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById,
+    // The season and its classes can name heat/consolation points defaults of
+    // their own; they resolve per result, under its own class.
+    sessionScopeContext({ seasons: [{ id: seasonId, ...season }], classes, entriesById })));
 
   // Resolve the selection against THIS season's class docs, so a class picked
   // at series level still narrows the season it drills into.

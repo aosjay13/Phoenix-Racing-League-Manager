@@ -54,10 +54,15 @@ export function BangerBonusFields({ value, onPatch, disabled = false }) {
 // Survival, Most Lethal — see lib/bangerRacing.js) to the bonus list. They're
 // stored in every points structure regardless, but only a banger series'
 // editors offer them, so an ordinary series' form is untouched.
+// `afterScales` is an extra block rendered directly under the two scales, before
+// the bonuses — for points settings that belong with Race Points and Qualifying
+// Points rather than in a section of their own. The Season form puts the
+// heat/consolation default templates there, so everything about how a season
+// scores is in one place.
 export function PointsFields({
   value, onPatch, templates = [], onTemplatesChanged,
   disabled = false, onError, noPoints = false, blankWarning = "", banger = false, inherits = false,
-  seriesLevel = false,
+  seriesLevel = false, afterScales = null,
 }) {
   // How a blank scale reads at this level: a class inherits its season, a
   // series simply sets nothing (its seasons keep their own), and a season —
@@ -181,8 +186,12 @@ export function PointsFields({
         {/* There's no Pole Bonus field any more — it paid for the same result as
             the first number here, so a season with both scored a pole twice. */}
         <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
-          Pole is position 1 of this list — set what a pole is worth here; there is no separate pole bonus.
+          Pole is position 1 of this list — set what a pole is worth here; there is no separate pole
+          bonus. The Qualifying session scores these points itself, as its own line of the
+          championship, so a driver&rsquo;s total is the sum of every session they ran.
         </span></div>
+
+      {afterScales}
 
       {BONUS_TYPES.map(([key, label]) => (
         <div className="field" key={key}><label>{label}</label>

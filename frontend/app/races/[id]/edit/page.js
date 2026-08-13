@@ -8,11 +8,18 @@ import { ImageUpload } from "@/components/ImageUpload";
 import { SessionEditor } from "@/components/SessionEditor";
 import { TrackSelect } from "@/components/TrackSelect";
 import { RaceLengthField } from "@/components/RaceLengthField";
+import { RaceNav } from "@/components/RaceNav";
+import { HeatPointsDefaultFields } from "@/components/HeatPointsDefaultFields";
 import { LENGTH_LAPS, raceLengthBody, raceLengthForm } from "@/lib/raceLength";
 import { normalizedBuiltinTemplates } from "@/lib/pointsTemplates";
 import { carForRace, racePerClassResults, sessionClassScopes } from "@/lib/classFilter";
+import { gameNameFor } from "@/lib/driverNames";
 import { isBangerEvent, isBangerScope, derbyPointsTarget } from "@/lib/bangerRacing";
 import { isBracketEvent, isBracketScope } from "@/lib/bracketRacing";
+import {
+  SESSION_TIME_KEYS, SESSION_TIME_LABELS, browserTimeZone, raceSessionTimes,
+  sessionTimeLine, sessionTimesBody, sessionTimesForm, timeZoneOptions,
+} from "@/lib/raceTimes";
 import { api } from "@/lib/api";
 
 const BLANK_INFO = {
@@ -21,10 +28,103 @@ const BLANK_INFO = {
   // of rounds. See lib/raceLength.js.
   length_type: LENGTH_LAPS, total_laps: "", race_minutes: "", total_rounds: "",
   car: "", heat_format: false, heats: "", consolations: "", feature_name: "A-Main Feature",
+  // Default points template for every heat / every consolation of this event.
+  // Blank = they score on the season's (or class's) points structure.
+  heat_points_template_id: "", consolation_points_template_id: "",
   class_id: "", per_class_results: false,
+  // Calendar session times — off until an admin opts this event in. See
+  // lib/raceTimes.js, and CalendarTimesField below for what they do and don't
+  // affect.
+  show_session_times: false, session_timezone: "", practice_time: "", qualifying_time: "", race_time: "",
 };
 
-function RaceInfoTab({ race, season, classes = [], onSaved }) {
+// Session start times for the CALENDAR — the whole of what this block does.
+//
+// An admin types the times once, in their league's own timezone, and every
+// reader sees them converted to their own clock on the Calendar. Nothing else
+// reads them: the race's Date above stays the bare calendar date it has always
+// been (lib/raceDate.js), the Schedule, the results screens and the standings
+// are untouched, and an event with the toggle off renders exactly as it did
+// before this existed.
+//
+// The zone is not optional decoration — a wall-clock time with no zone attached
+// can't be converted for anybody, which is why it defaults to the admin's own
+// browser zone rather than to blank.
+function CalendarTimesField({ form, setForm }) {
+  const on = !!form.show_session_times;
+  const zones = useMemo(() => timeZoneOptions(form.session_timezone || browserTimeZone()), [form.session_timezone]);
+  // What a reader in the SELECTED zone would see, built from the same function
+  // the calendar itself calls — so the preview can't drift from the real thing,
+  // and a time that failed to parse (or a zone that didn't take) shows up here
+  // rather than on the public calendar.
+  const preview = useMemo(() => raceSessionTimes({
+    show_session_times: true, date: form.date,
+    session_timezone: form.session_timezone,
+    session_times: Object.fromEntries(SESSION_TIME_KEYS.map(k => [k, form[`${k}_time`]])),
+  }, { timeZone: form.session_timezone || undefined }), [form]);
+
+  return (
+    <div className="field" style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+      <div className="check-row">
+        <input type="checkbox" id="show_session_times" checked={on}
+          onChange={e => setForm(f => ({ ...f, show_session_times: e.target.checked }))} />
+        <label htmlFor="show_session_times" style={{ margin: 0 }}>
+          Show session times on the Calendar
+          <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
+            Put the Practice, Qualifying and Race start times on this event&rsquo;s calendar entry.
+            Everyone sees them in <strong>their own timezone</strong>, worked out automatically. This
+            affects the <strong>Calendar only</strong> — the date above, the schedule, the results
+            screens and the standings are all unchanged.
+          </span>
+        </label>
+      </div>
+
+      {on && (
+        <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
+          <div className="field" style={{ margin: 0 }}>
+            <label htmlFor="session_timezone">Times are in this timezone</label>
+            <select id="session_timezone" value={form.session_timezone || ""}
+              onChange={e => setForm(f => ({ ...f, session_timezone: e.target.value }))}>
+              {zones.map(z => <option key={z} value={z}>{z}</option>)}
+            </select>
+            <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
+              Your league&rsquo;s own clock — the zone you are typing the times below in. Everything
+              else is converted from it.
+            </span>
+          </div>
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            {SESSION_TIME_KEYS.map(key => (
+              <div className="field" key={key} style={{ margin: 0, minWidth: 130 }}>
+                <label htmlFor={`session_time_${key}`}>{SESSION_TIME_LABELS[key]}</label>
+                <input id={`session_time_${key}`} type="time" value={form[`${key}_time`] || ""}
+                  onChange={e => setForm(f => ({ ...f, [`${key}_time`]: e.target.value }))} />
+              </div>
+            ))}
+          </div>
+          <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
+            Leave a session blank to leave it off the calendar — a weekend with no practice just
+            shows Qualifying and the Race.
+          </span>
+
+          {!form.date ? (
+            <span style={{ fontSize: "0.78rem", color: "var(--accent-gold)" }}>
+              Set a <strong>Date</strong> above — times need a day to hang off before the calendar
+              can show them.
+            </span>
+          ) : preview.length > 0 && (
+            <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
+              On the calendar, someone in {form.session_timezone} sees:{" "}
+              <strong>{preview.map(sessionTimeLine).join(" · ")}</strong>
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RaceInfoTab({ race, season, classes = [], templates = [], onSaved }) {
   const router = useRouter();
   const [form, setForm] = useState(BLANK_INFO);
   const [tracks, setTracks] = useState([]);
@@ -49,9 +149,16 @@ function RaceInfoTab({ race, season, classes = [], onSaved }) {
       heats: Array.isArray(race.heats) ? race.heats.join(", ") : "",
       consolations: Array.isArray(race.consolations) ? race.consolations.join(", ") : "",
       feature_name: race.feature_name || "A-Main Feature",
+      heat_points_template_id: race.heat_points_template_id || "",
+      consolation_points_template_id: race.consolation_points_template_id || "",
       class_id: race.class_id || "",
       // Unset on the race = inherit the season default.
       per_class_results: racePerClassResults(race, season),
+      show_session_times: !!race.show_session_times,
+      // An event with no zone of its own defaults to the admin's browser zone —
+      // an admin types their league's times in their own clock.
+      session_timezone: race.session_timezone || browserTimeZone(),
+      ...sessionTimesForm(race),
     });
   }, [race, season]);
 
@@ -93,6 +200,10 @@ function RaceInfoTab({ race, season, classes = [], onSaved }) {
         heats: form.heat_format ? (heats.length ? heats : ["Heat 1"]) : [],
         consolations: form.heat_format ? consolations : [],
         feature_name: form.feature_name.trim() || "A-Main Feature",
+        // Cleared with the format itself — a standard-race event has no heats or
+        // consolations for a default to apply to.
+        heat_points_template_id: form.heat_format ? form.heat_points_template_id : "",
+        consolation_points_template_id: form.heat_format ? form.consolation_points_template_id : "",
         // Only writable while the season runs per-class schedules; otherwise the
         // event stays shared by every class.
         class_id: showClass ? form.class_id : "",
@@ -100,6 +211,9 @@ function RaceInfoTab({ race, season, classes = [], onSaved }) {
         // been saved from this form, so changing the season default later never
         // silently re-splits or re-merges an event whose results already exist.
         per_class_results: showSplit ? !!form.per_class_results : false,
+        // Calendar session times. These are read by the Calendar and nowhere
+        // else — the race's `date` above is untouched by them.
+        ...sessionTimesBody(form),
       };
       const updated = await api(`/api/races/${race.id}`, { method: "PATCH", body });
       onSaved?.(updated);
@@ -149,10 +263,9 @@ function RaceInfoTab({ race, season, classes = [], onSaved }) {
           </div>
         )}
         {showSplit && (
-          <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexDirection: "row" }}>
+          <div className="field check-row">
             <input type="checkbox" id="race_per_class_results" checked={!!form.per_class_results}
-              onChange={e => setForm(f => ({ ...f, per_class_results: e.target.checked }))}
-              style={{ width: 18, height: 18, marginTop: 3, accentColor: "var(--accent-cyan)" }} />
+              onChange={e => setForm(f => ({ ...f, per_class_results: e.target.checked }))} />
             <label htmlFor="race_per_class_results" style={{ margin: 0 }}>
               Separate results by class
               <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
@@ -164,6 +277,8 @@ function RaceInfoTab({ race, season, classes = [], onSaved }) {
             </label>
           </div>
         )}
+        <CalendarTimesField form={form} setForm={setForm} />
+
         <RaceLengthField idPrefix="edit_race_length"
           lengthType={form.length_type} totalLaps={form.total_laps} raceMinutes={form.race_minutes}
           totalRounds={form.total_rounds}
@@ -176,10 +291,9 @@ function RaceInfoTab({ race, season, classes = [], onSaved }) {
           </span>
         </div>
 
-        <div className="field" style={{ display: "flex", alignItems: "center", gap: 8, flexDirection: "row" }}>
+        <div className="field check-row check-row-center">
           <input type="checkbox" id="heat_format" checked={form.heat_format}
-            onChange={e => setForm(f => ({ ...f, heat_format: e.target.checked }))}
-            style={{ width: 18, height: 18, accentColor: "var(--accent-cyan)" }} />
+            onChange={e => setForm(f => ({ ...f, heat_format: e.target.checked }))} />
           <label htmlFor="heat_format" style={{ margin: 0 }}>This event uses heat racing (Heats → Consolation → Feature)</label>
         </div>
 
@@ -191,6 +305,8 @@ function RaceInfoTab({ race, season, classes = [], onSaved }) {
               <input value={form.consolations} onChange={set("consolations")} placeholder="B-Main" /></div>
             <div className="field"><label>Feature name</label>
               <input value={form.feature_name} onChange={set("feature_name")} placeholder="A-Main Feature" /></div>
+            <HeatPointsDefaultFields idPrefix="edit_race" value={form} templates={templates}
+              onPatch={patch => setForm(f => ({ ...f, ...patch }))} />
           </>
         ) : (
           <div className="field"><label>Races in this event — comma-separated (e.g. Race 1, Race 2, Sprint)</label>
@@ -225,6 +341,12 @@ function UnifiedEditInner() {
   // which decides whether the grids below carry the banger stat columns.
   const [series, setSeries] = useState(null);
   const [entries, setEntries] = useState([]);
+  // The global driver pool, for per-game display names. Only the OVERALL name is
+  // denormalized onto a roster entry (entries.name); the name a driver races
+  // under in one game lives on their driver doc (game_names, or a game-mapped
+  // alias) and is applied at read time — see lib/driverNames.js. This screen is
+  // scoped to one game, so it needs the pool to do that.
+  const [drivers, setDrivers] = useState([]);
   // This screen is reached by race id, so its season can differ from whatever
   // the top-bar dropdowns have selected — read the classes off THIS race's
   // season rather than the league context.
@@ -244,11 +366,12 @@ function UnifiedEditInner() {
         setRace({ id: ev.event.id, ...ev.event });
         setSeason(ev.season || null);
         setSeasonId(ev.event.season_id);
-        const [e, c] = await Promise.all([
+        const [e, c, pool] = await Promise.all([
           api(`/api/entries?season_id=${ev.event.season_id}`),
           api(`/api/classes?season_id=${ev.event.season_id}`).catch(() => []),
+          api("/api/drivers").catch(() => []),
         ]);
-        if (!cancelled) { setEntries(e); setClasses(c); }
+        if (!cancelled) { setEntries(e); setClasses(c); setDrivers(pool); }
         const saved = await api("/api/points-templates");
         if (!cancelled) setTemplates([...normalizedBuiltinTemplates(), ...saved]);
         if (ev.season?.game_id && ev.season?.series_id) {
@@ -262,6 +385,27 @@ function UnifiedEditInner() {
     })();
     return () => { cancelled = true; };
   }, [id]);
+
+  // The roster as THIS GAME names it — what every grid below (Qualifying, Heats,
+  // Consolations, Feature, Race) shows in its driver dropdowns and its filled
+  // Driver cells.
+  //
+  // A season belongs to exactly one game, so a driver entered here should appear
+  // under the name they race under in that game: "Chucky Walden III" on an
+  // iRacing sheet, not the "lilmaytag" their profile is filed under league-wide.
+  // That name is set per driver on the Drivers screen (game_names, or an alias
+  // mapped to the game) and is applied at READ time — entries.name keeps the
+  // overall name it was cascaded with, and nothing here writes a resolved name
+  // back. A driver with no name set for this game keeps the entry's own name.
+  const gameEntries = useMemo(() => {
+    const gameId = season?.game_id || null;
+    if (!gameId || !drivers.length) return entries;
+    const byId = new Map(drivers.map(d => [d.id, d]));
+    return entries.map(e => {
+      const name = e.driver_id ? gameNameFor(byId.get(e.driver_id), gameId) : null;
+      return name && name !== e.name ? { ...e, name } : e;
+    });
+  }, [entries, drivers, season?.game_id]);
 
   // On a split event every session belongs to exactly one class, so the editor
   // needs a class chosen before it can show a grid. The scopes are the season's
@@ -383,7 +527,14 @@ function UnifiedEditInner() {
   // after a driver is added inline from within a results/qualifying editor.
   const reloadEntries = useCallback(async () => {
     if (!seasonId) return;
-    setEntries(await api(`/api/entries?season_id=${seasonId}`));
+    const [e, pool] = await Promise.all([
+      api(`/api/entries?season_id=${seasonId}`),
+      api("/api/drivers").catch(() => null),
+    ]);
+    setEntries(e);
+    // A driver created inline is new to the pool too, so refresh both — without
+    // it their entry would render off a stale pool until the page reloaded.
+    if (pool) setDrivers(pool);
   }, [seasonId]);
 
   // Refreshes the template list after one is created/edited from the inline
@@ -497,7 +648,11 @@ function UnifiedEditInner() {
             {race.track ? `${race.track} · ` : ""}{season?.name ?? ""}
           </p>
         </div>
-        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+          {/* Previous / next round, staying in the editor and on the tab being
+              worked in — entering a season's results shouldn't mean a trip
+              through the Schedule between every round. */}
+          <RaceNav race={race} mode="edit" tab={tab} />
           <Link href={`/races/${race.id}`} style={{ color: "var(--accent-cyan)", fontSize: "0.85rem" }}>View results →</Link>
           <Link href="/schedule" style={{ color: "var(--ink-1)", fontSize: "0.85rem" }}>Schedule</Link>
         </div>
@@ -536,17 +691,18 @@ function UnifiedEditInner() {
       </div>
 
       {tab === "info" && (
-        <RaceInfoTab race={race} season={season} classes={classes}
+        <RaceInfoTab race={race} season={season} classes={classes} templates={templates}
           onSaved={updated => setRace(r => ({ ...r, ...updated }))} />
       )}
 
       {tab === "qualifying" && (
         <div className="form-card" style={{ maxWidth: "100%" }}>
           <SessionEditor
-            race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName} {...classProps}
+            race={race} seasonId={seasonId} entries={gameEntries} onEntriesChanged={reloadEntries} seriesName={seriesName} {...classProps}
             sessionType="qualifying" sessionNames={["Qualifying"]}
             season={season} templates={templates} sessionPoints={sessionPoints} sessionPointsByClass={sessionPointsByClass} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
             sessionStats={sessionStats} onSessionStatsChange={saveSessionStats}
+            sessionPointsEnabled={sessionPointsEnabled} onSessionPointsEnabledChange={saveSessionPointsEnabled}
           />
         </div>
       )}
@@ -554,7 +710,7 @@ function UnifiedEditInner() {
       {tab === "results" && (
         <div className="form-card" style={{ maxWidth: "100%" }}>
           <SessionEditor
-            race={race} seasonId={seasonId} entries={entries} initialSession={initialSession} onEntriesChanged={reloadEntries} seriesName={seriesName} {...classProps}
+            race={race} seasonId={seasonId} entries={gameEntries} initialSession={initialSession} onEntriesChanged={reloadEntries} seriesName={seriesName} {...classProps}
             sessionType="race" sessionNames={standardSessions}
             season={season} templates={templates} sessionPoints={sessionPoints} sessionPointsByClass={sessionPointsByClass} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
             sessionStats={sessionStats} onSessionStatsChange={saveSessionStats}
@@ -568,7 +724,7 @@ function UnifiedEditInner() {
       {tab === "heats" && (
         <div className="form-card" style={{ maxWidth: "100%" }}>
           <SessionEditor
-            race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName} {...classProps}
+            race={race} seasonId={seasonId} entries={gameEntries} onEntriesChanged={reloadEntries} seriesName={seriesName} {...classProps}
             sessionType="heat" sessionNames={heats}
             season={season} templates={templates} sessionPoints={sessionPoints} sessionPointsByClass={sessionPointsByClass} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
             sessionStats={sessionStats} onSessionStatsChange={saveSessionStats}
@@ -583,7 +739,7 @@ function UnifiedEditInner() {
         <div className="form-card" style={{ maxWidth: "100%" }}>
           {consolations.length ? (
             <SessionEditor
-              race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName} {...classProps}
+              race={race} seasonId={seasonId} entries={gameEntries} onEntriesChanged={reloadEntries} seriesName={seriesName} {...classProps}
               sessionType="consolation" sessionNames={consolations}
               season={season} templates={templates} sessionPoints={sessionPoints} sessionPointsByClass={sessionPointsByClass} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
               sessionStats={sessionStats} onSessionStatsChange={saveSessionStats}
@@ -605,7 +761,7 @@ function UnifiedEditInner() {
       {tab === "feature" && (
         <div className="form-card" style={{ maxWidth: "100%" }}>
           <SessionEditor
-            race={race} seasonId={seasonId} entries={entries} onEntriesChanged={reloadEntries} seriesName={seriesName} {...classProps}
+            race={race} seasonId={seasonId} entries={gameEntries} onEntriesChanged={reloadEntries} seriesName={seriesName} {...classProps}
             sessionType="feature" sessionNames={[featureName]}
             season={season} templates={templates} sessionPoints={sessionPoints} sessionPointsByClass={sessionPointsByClass} onSessionPointsChange={saveSessionPoints} onTemplatesChanged={reloadTemplates}
             sessionStats={sessionStats} onSessionStatsChange={saveSessionStats}

@@ -24,6 +24,49 @@ const DRIVER_COLS = [
   ["poles", "Poles"], ["best_laps", "Best Laps"], ["laps_led", "Laps Led"], ["avg_finish", "Avg Fin"],
 ];
 
+// Where a record lap was set. Most are race or qualifying laps and read as
+// "· Qualifying · Season 4"; a lap from a Time Trial says so and links back to
+// the session, since a hot-lap sheet is a thing you can go and read.
+function RecordSource({ rec }) {
+  return (
+    <>
+      {rec.from_time_trial && rec.time_trial_id ? (
+        <> · <Link href={`/time-trials/${rec.time_trial_id}`} style={{ color: "var(--accent-cyan)" }}>
+          {rec.race_name || "Time Trial"}
+        </Link> · Time Trial</>
+      ) : (
+        <>
+          {rec.race_name ? ` · ${rec.race_name}` : ""}
+          {rec.session ? ` · ${rec.session}` : ""}
+        </>
+      )}
+      {rec.season_name ? ` · ${rec.season_name}` : ""}
+    </>
+  );
+}
+
+// The venue's outright fastest lap, in the scope being viewed. Race laps,
+// qualifying hot laps and Time Trial laps all compete for it on equal terms —
+// a lap is a lap, whatever session turned it.
+function HeadlineRecord({ record }) {
+  if (!record) return null;
+  return (
+    <article className="metric-card" style={{ marginTop: 18, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", borderColor: "var(--accent-cyan)" }}>
+      <span style={{ fontSize: "2rem" }}>⏱</span>
+      <div style={{ flex: 1, minWidth: 200 }}>
+        <div className="metric-label" style={{ marginBottom: 2 }}>Track Record (Fastest Lap)</div>
+        <div className="metric-num" style={{ fontVariantNumeric: "tabular-nums" }}>{record.time}</div>
+        <div style={{ color: "var(--ink-1)", fontSize: "0.85rem", marginTop: 2 }}>
+          {(record.driver_id || record.user_id)
+            ? <Link href={`/drivers/${record.driver_id || record.user_id}`} style={{ color: "var(--accent-cyan)" }}>{record.driver_name}</Link>
+            : record.driver_name}
+          <RecordSource rec={record} />
+        </div>
+      </div>
+    </article>
+  );
+}
+
 // Fastest-lap record for each game raced at this venue. Lap times don't compare
 // across games, so every game gets its own track record listed side by side.
 function GameRecords({ records }) {
@@ -42,8 +85,7 @@ function GameRecords({ records }) {
               {(rec.driver_id || rec.user_id)
                 ? <Link href={`/drivers/${rec.driver_id || rec.user_id}`} style={{ color: "var(--accent-cyan)" }}>{rec.driver_name}</Link>
                 : rec.driver_name}
-              {rec.session ? ` · ${rec.session}` : ""}
-              {rec.season_name ? ` · ${rec.season_name}` : ""}
+              <RecordSource rec={rec} />
             </div>
           </article>
         ))}
@@ -78,8 +120,7 @@ function ClassRecords({ records }) {
               {(rec.driver_id || rec.user_id)
                 ? <Link href={`/drivers/${rec.driver_id || rec.user_id}`} style={{ color: "var(--accent-cyan)" }}>{rec.driver_name}</Link>
                 : rec.driver_name}
-              {rec.session ? ` · ${rec.session}` : ""}
-              {rec.season_name ? ` · ${rec.season_name}` : ""}
+              <RecordSource rec={rec} />
             </div>
           </article>
         ))}
@@ -178,14 +219,19 @@ export default function TrackProfilePage() {
         <>
           {/* The current Game selection has no races here, but other games might
               — still surface their track records so the per-game view is never
-              hidden by the top-bar Game filter. */}
+              hidden by the top-bar Game filter. A venue that has only ever
+              hosted a Time Trial lands here too, and its hot laps are records
+              exactly like race laps are. */}
+          <HeadlineRecord record={record} />
           {records_by_game.length > 0 && <div style={{ marginTop: 18 }}><GameRecords records={records_by_game} /></div>}
           {records_by_class.length > 0 && <div style={{ marginTop: 18 }}><ClassRecords records={records_by_class} /></div>}
           <div className="empty-state" style={{ marginTop: 24 }}>
             <span className="empty-state-icon">📊</span>
             <p>{(gameId || seriesId || seasonId)
               ? "No races held here in the current selection — adjust the Game / Series / Season filters at the top."
-              : "No races have been held here yet. Assign this track to a race in League Setup."}</p>
+              : record
+                ? "No races have been held here yet — the lap above was set in a Time Trial."
+                : "No races have been held here yet. Assign this track to a race in League Setup."}</p>
           </div>
         </>
       ) : (
@@ -199,23 +245,7 @@ export default function TrackProfilePage() {
 
           {tab === "records" ? (
             <>
-              {record && (
-                <article className="metric-card" style={{ marginTop: 18, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", borderColor: "var(--accent-cyan)" }}>
-                  <span style={{ fontSize: "2rem" }}>⏱</span>
-                  <div style={{ flex: 1, minWidth: 200 }}>
-                    <div className="metric-label" style={{ marginBottom: 2 }}>Track Record (Fastest Lap)</div>
-                    <div className="metric-num" style={{ fontVariantNumeric: "tabular-nums" }}>{record.time}</div>
-                    <div style={{ color: "var(--ink-1)", fontSize: "0.85rem", marginTop: 2 }}>
-                      {(record.driver_id || record.user_id)
-                        ? <Link href={`/drivers/${record.driver_id || record.user_id}`} style={{ color: "var(--accent-cyan)" }}>{record.driver_name}</Link>
-                        : record.driver_name}
-                      {record.race_name ? ` · ${record.race_name}` : ""}
-                      {record.session ? ` · ${record.session}` : ""}
-                      {record.season_name ? ` · ${record.season_name}` : ""}
-                    </div>
-                  </div>
-                </article>
-              )}
+              <HeadlineRecord record={record} />
 
               <GameRecords records={records_by_game} />
               <ClassRecords records={records_by_class} />

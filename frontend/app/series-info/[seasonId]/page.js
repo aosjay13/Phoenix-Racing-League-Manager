@@ -5,14 +5,15 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { DriverLinkGate } from "@/components/DriverLinkGate";
+import { mySignupsChanged } from "@/components/MySignupsProvider";
 import { SeriesSignupModal } from "@/components/SeriesSignupModal";
 import { api } from "@/lib/api";
 import { NUMBER_CHANGE_KIND } from "@/lib/signupQueue";
 import { NUMBER_TAKEN_MESSAGE } from "@/lib/carSelection";
 
 // One season's car lock-in screen: what the admin is asking for, the cars on
-// offer, what the rest of the field has already taken, and the player's own
-// dropdown + Lock-in Car button.
+// offer as one radio each, what the rest of the field has already taken, and
+// the player's own Lock-in Car button.
 //
 // Everything on it is driven by /api/car-selection, which resolves the settings
 // down the series → season → class chain and answers with one "slot" per
@@ -100,7 +101,7 @@ function NumberCard({ current, request, taken, seasonOver, onRequest, onCancel, 
   );
 }
 
-// One "pick your car" block — a slot, its instructions and the dropdown.
+// One "pick your car" block — a slot, its instructions and one radio per car.
 // `seasonOver` (the admin marked the season complete) and `slot.locked` both
 // make it read-only; the season being over is reported first, since it's the
 // more final of the two.
@@ -127,36 +128,60 @@ function SlotPicker({ slot, current, seasonOver, onSave, busy }) {
         </p>
       ) : (
         <>
-          {/* The cars on offer, spelled out — the dropdown holds the same list,
-              but a driver deciding wants to see all of them at once. */}
           <p style={{ margin: "0 0 6px", fontSize: "0.78rem", color: "var(--ink-2)" }}>
             {slot.options.length} car{slot.options.length === 1 ? "" : "s"} available
           </p>
-          <div className="lockin-options">
-            {slot.options.map(car => (
-              <span className={`badge${car === current ? " is-mine" : ""}`} key={car}>{car}</span>
-            ))}
-          </div>
 
           {disabled ? (
-            <p style={{ fontSize: "0.85rem", color: "var(--ink-2)", margin: 0 }}>
-              {seasonOver
-                ? "Season over — car selections are final."
-                : "Selections have been locked by an admin — your car can no longer be changed."}
-            </p>
+            /* Read-only: the cars on offer are still worth showing, but as
+               badges rather than controls nobody can work. */
+            <>
+              <div className="lockin-options">
+                {slot.options.map(car => (
+                  <span className={`badge${car === current ? " is-mine" : ""}`} key={car}>{car}</span>
+                ))}
+              </div>
+              <p style={{ fontSize: "0.85rem", color: "var(--ink-2)", margin: 0 }}>
+                {seasonOver
+                  ? "Season over — car selections are final."
+                  : "Selections have been locked by an admin — your car can no longer be changed."}
+              </p>
+            </>
           ) : (
             <>
+              {/* One radio per car, the same control the sign-up form asks the
+                  same question with — the list used to be spelled out as badges
+                  AND repeated in a dropdown, which is the whole list twice for
+                  one choice. */}
               <div className="field">
-                <label>Choose from the available cars</label>
-                <select value={choice} onChange={e => setChoice(e.target.value)}>
-                  <option value="">— No car selected —</option>
-                  {slot.options.map(car => <option key={car} value={car}>{car}</option>)}
-                  {/* A car chosen before the admin edited the list stays visible,
-                      so saving doesn't silently blank it. */}
+                <span className="field-label" id={`slot_label_${slot.class_id || "season"}`}>
+                  Choose from the available cars
+                </span>
+                <div className="option-rows" role="radiogroup"
+                  aria-labelledby={`slot_label_${slot.class_id || "season"}`}>
+                  {slot.options.map(car => (
+                    <label className="check-row check-row-center" key={car}>
+                      <input type="radio" name={`slot_car_${slot.class_id || "season"}`}
+                        value={car} checked={choice === car} onChange={() => setChoice(car)} />
+                      <span>{car}</span>
+                    </label>
+                  ))}
+                  {/* A car chosen before the admin edited the list stays
+                      selectable, so saving doesn't silently blank it. */}
                   {current && !slot.options.includes(current) && (
-                    <option value={current}>{current} (no longer offered)</option>
+                    <label className="check-row check-row-center">
+                      <input type="radio" name={`slot_car_${slot.class_id || "season"}`}
+                        value={current} checked={choice === current}
+                        onChange={() => setChoice(current)} />
+                      <span>{current} <span style={{ color: "var(--ink-2)", fontSize: "0.78rem" }}>(no longer offered)</span></span>
+                    </label>
                   )}
-                </select>
+                  <label className="check-row check-row-center">
+                    <input type="radio" name={`slot_car_${slot.class_id || "season"}`}
+                      value="" checked={!choice} onChange={() => setChoice("")} />
+                    <span style={{ color: "var(--ink-2)" }}>No car selected</span>
+                  </label>
+                </div>
               </div>
               <button className="btn btn-primary" type="button" disabled={busy || !changed}
                 onClick={() => onSave(slot.class_id, choice)}>
@@ -203,6 +228,8 @@ export default function SeasonCarSelectionPage() {
     try {
       await api("/api/car-selection", { method: "POST", body: { season_id: seasonId, class_id: classId, car } });
       await load();
+      // Drops the "car to choose" count on the Sign-ups badge straight away.
+      mySignupsChanged();
       showToast("success", car ? `${car} locked in.` : "Car selection cleared.");
     } catch (err) { showToast("error", err.message); }
     finally { setBusy(false); }
@@ -243,6 +270,7 @@ export default function SeasonCarSelectionPage() {
   async function afterSignup() {
     setSigningUp(false);
     await load();
+    mySignupsChanged();
     showToast("success",
       "Sign-up submitted. An admin will review it, and you'll be on the roster once they approve.");
   }
@@ -255,18 +283,23 @@ export default function SeasonCarSelectionPage() {
         <span className="empty-state-icon">⚠</span>
         <p>Couldn&rsquo;t load this season.</p>
         <p style={{ fontSize: "0.85rem", color: "var(--ink-2)", margin: "0 0 12px" }}>{error}</p>
-        <Link href="/series-info" className="btn btn-primary">Back to Series Information</Link>
+        <Link href="/series-info" className="btn btn-primary">Back to My Series</Link>
       </div>
     );
   }
 
   const { season, series, slots, roster, me, open } = data;
-  // Which columns the transparency grid needs: one per slot the season offers,
-  // so a season whose classes run their own lists shows a column per class.
   // A Car column per slot the season offers, so a season whose classes run
-  // their own lists shows a column per class. None at all when no car lock-in
-  // is required — the roster is then just the numbered entry list.
-  const columns = slots;
+  // their own lists shows a column per class. With no slots at all there's
+  // still a column whenever anybody HAS a car — that's the pick they made on
+  // the sign-up form, and this grid is where the league reads who's in what.
+  // Only a season where nothing has been chosen by anyone drops the column and
+  // becomes the plain numbered entry list.
+  const columns = slots.length
+    ? slots
+    : roster.some(r => r.cars.some(c => c.car))
+      ? [{ class_id: "", class_name: "" }]
+      : [];
   const carFor = (row, classId) => row.cars.find(c => String(c.class_id || "") === String(classId || ""))?.car || "";
   // Numbers somebody ELSE holds or has asked for. The caller's own entry is
   // excluded — that's the row a change would move, not a clash with it.
@@ -289,7 +322,7 @@ export default function SeasonCarSelectionPage() {
         <span className={`page-badge${open ? "" : " is-muted"}`}>{open ? "Open" : "Season over"}</span>
       </div>
       <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.9rem" }}>
-        <Link href="/series-info" style={{ color: "var(--accent-cyan)" }}>← All my series</Link>
+        <Link href="/series-info" style={{ color: "var(--accent-cyan)" }}>← My Series</Link>
       </p>
 
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
@@ -371,8 +404,14 @@ export default function SeasonCarSelectionPage() {
 
           {slots.length === 0 ? (
             <p style={{ marginTop: 10, fontSize: "0.85rem", color: "var(--ink-2)" }}>
-              No car selection is required for this season — you&rsquo;re on the roster
-              {me.class_ids.length ? "" : " (unclassified)"}.
+              {/* No standing lock-in question here — but they may still have
+                  chosen a car when they signed up, and that pick is theirs to
+                  see rather than something only the roster grid knows. */}
+              {me.selected_car
+                ? <>You signed up in the <strong>{me.selected_car}</strong>. This season doesn&rsquo;t
+                    ask you to lock a car in again, so an admin changes it from here on.</>
+                : <>No car selection is required for this season — you&rsquo;re on the roster
+                    {me.class_ids.length ? "" : " (unclassified)"}.</>}
             </p>
           ) : me.slots.length === 0 ? (
             <p style={{ marginTop: 10, fontSize: "0.85rem", color: "var(--ink-2)" }}>
@@ -391,13 +430,13 @@ export default function SeasonCarSelectionPage() {
       {(
         <>
           <div className="section-header" style={{ marginTop: 26 }}>
-            <h3>{slots.length > 0 ? "Who’s Racing What" : "Series Roster"}</h3>
+            <h3>{columns.length > 0 ? "Who’s Racing What" : "Series Roster"}</h3>
           </div>
           <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.82rem" }}>
             {roster.length} driver{roster.length === 1 ? "" : "s"} on the roster ·{" "}
             {roster.filter(r => String(r.number ?? "").trim()).length} number
             {roster.filter(r => String(r.number ?? "").trim()).length === 1 ? "" : "s"} taken
-            {slots.length > 0 && <> · {roster.filter(r => r.cars.some(c => c.car)).length} locked in</>}.
+            {columns.length > 0 && <> · {roster.filter(r => r.cars.some(c => c.car)).length} locked in</>}.
           </p>
           <div className="table-wrap">
             <table>

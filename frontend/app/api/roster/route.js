@@ -3,6 +3,8 @@ import { db } from "@/lib/firebase";
 import { getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
 import { fetchDriverNames } from "@/lib/driverNamesServer";
 import { entryClassIds, orderClassIds } from "@/lib/classServer";
+import { applySeasonTeams } from "@/lib/teams";
+import { loadTeamIndex } from "@/lib/teamsServer";
 
 export const dynamic = "force-dynamic";
 
@@ -56,18 +58,18 @@ export async function GET(request) {
   seasons.sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
 
   const showNumber = scope === "season" || scope === "series";
+  // Teams for the whole league, read once and asked per season below.
+  const teamIndex = await loadTeamIndex({ leagueId: getRequestLeagueId(request) });
   const drivers = {};        // key -> driver bucket
   let editSeasonId = null;   // latest season in scope; the write target for edits
 
   for (const season of seasons) {
     editSeasonId = season.id;
     const seriesId = season.series_id || "unknown";
-    const [entriesSnap, teamsSnap, classesSnap] = await Promise.all([
+    const [entriesSnap, classesSnap] = await Promise.all([
       db().collection("entries").where("season_id", "==", season.id).get(),
-      db().collection("teams").where("season_id", "==", season.id).get(),
       db().collection("classes").where("season_id", "==", season.id).get(),
     ]);
-    const teamName = Object.fromEntries(teamsSnap.docs.map(d => [d.id, d.data().name]));
     const className = Object.fromEntries(classesSnap.docs.map(d => [d.id, d.data().name]));
     // The season's classes in their display order (sort_order, then name), so a
     // driver's classes list the same way on every row — see orderClassIds.
@@ -76,8 +78,16 @@ export async function GET(request) {
       .sort((a, b) => (Number(a.sort_order || 0) - Number(b.sort_order || 0)) ||
         String(a.name || "").localeCompare(String(b.name || "")));
 
-    for (const doc of entriesSnap.docs) {
-      const entry = { id: doc.id, ...doc.data() };
+    // The team each driver races for THIS season comes from the season's team
+    // lineup (see lib/teams.js), falling back to the tag on their entry — the
+    // same answer the standings and stats screens resolve.
+    const seasonEntries = applySeasonTeams(
+      entriesSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+      season.id,
+      teamIndex,
+    );
+
+    for (const entry of seasonEntries) {
       const key = entry.driver_id
         ? `d:${entry.driver_id}`
         : entry.user_id
@@ -107,7 +117,9 @@ export async function GET(request) {
       bucket.driver_id = entry.driver_id ?? bucket.driver_id;
       bucket.user_id = entry.user_id ?? bucket.user_id;
       bucket.team_id = entry.team_id ?? bucket.team_id;
-      bucket.team_name = entry.team_id ? teamName[entry.team_id] ?? bucket.team_name : bucket.team_name;
+      bucket.team_name = entry.team_id
+        ? teamIndex.teamById(entry.team_id)?.name ?? entry.team ?? bucket.team_name
+        : bucket.team_name;
       // Classes are per-season, so the latest season in scope wins — matching
       // how team/number resolve. A driver can race SEVERAL classes, so the row
       // carries all of them; and because the same driver can still hold more

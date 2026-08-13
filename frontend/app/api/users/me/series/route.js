@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { db } from "@/lib/firebase";
 import { getRequestLeagueId, withUser } from "@/lib/serverAuth";
 import { normalizeClassIds } from "@/lib/classFilter";
 import {
@@ -7,10 +8,15 @@ import {
 } from "@/lib/carSelection";
 import {
   entriesForDriver, leagueSeasonIndex, linkedDriver, newestFirst, pendingClaim,
-  pendingForSeasons, rostersForSeasons,
+  deniedRequestsForUser, pendingForSeasons, pendingRequestsForUser,
+  rostersForSeasons,
 } from "@/lib/carSelectionServer";
 import { pendingForSeason } from "@/lib/signupQueue";
-import { gameRequirementFlags } from "@/lib/signupRequest";
+import {
+  gameRequirementFlags, knownAliasesFor, knownRacingName,
+} from "@/lib/signupRequest";
+import { unreadDenials } from "@/lib/denialNotice";
+import { normalizePrefs } from "@/lib/signupPrefs";
 
 export const dynamic = "force-dynamic";
 
@@ -123,6 +129,15 @@ export const GET = withUser(async (request, ctx, user) => {
     pendingForSeasons(openSeasons.map(s => s.id)),
   ]);
 
+  // Sign-ups of theirs an admin turned down and they haven't read yet. Shown at
+  // the top of the Sign-ups screen with the admin's reason, and the season is
+  // held back from the join list until they acknowledge it — see
+  // lib/denialNotice.js.
+  const denied = unreadDenials(await deniedRequestsForUser(user.uid));
+  // The good half — being let in — is announced on the message board instead
+  // (lib/messages.js), together with every other decision an admin makes.
+  const deniedSeasonIds = new Set(denied.map(d => d.season_id).filter(Boolean));
+
   const open_signups = openSeasons
     .map(season => {
       const series = seriesById[season.series_id];
@@ -132,9 +147,9 @@ export const GET = withUser(async (request, ctx, user) => {
       const roster = rosters[season.id] || [];
       const pending = pendings[season.id] || [];
       const classNameById = Object.fromEntries(classes.map(c => [c.id, c.name]));
-      // What this season asks of a sign-up — a number, a car, a manufacturer —
-      // resolved down the series → season chain. A class that asks for more is
-      // resolved on the form once one is picked.
+      // What this season asks of a sign-up — a number and a car — resolved down
+      // the series → season chain. A class that asks for more is resolved on
+      // the form once one is picked.
       const rules = resolveSignupRules({ game, series, season });
       return {
         season_id: season.id,
@@ -156,9 +171,8 @@ export const GET = withUser(async (request, ctx, user) => {
         rules: {
           require_car: rules.require_car,
           require_number: rules.require_number,
-          require_manufacturer: rules.require_manufacturer,
           car_options: rules.car_options,
-          manufacturer_options: rules.manufacturer_options,
+          car_entries: rules.car_entries,
           note: rules.note,
         },
         // Per class, so picking one on the form can tighten what's asked for.
@@ -166,9 +180,7 @@ export const GET = withUser(async (request, ctx, user) => {
           const r = resolveSignupRules({ game, series, season, cls: c });
           return [c.id, {
             require_car: r.require_car, require_number: r.require_number,
-            require_manufacturer: r.require_manufacturer,
-            car_options: r.car_options, manufacturer_options: r.manufacturer_options,
-            note: r.note,
+            car_options: r.car_options, car_entries: r.car_entries, note: r.note,
           }];
         })),
         // Both kinds: a sign-up is another person waiting for a place, a
@@ -178,17 +190,25 @@ export const GET = withUser(async (request, ctx, user) => {
         pending: pending.map(p => ({
           kind: p.kind, entry_id: p.entry_id,
           name: p.name, number: p.number, car: p.car,
-          manufacturer: p.manufacturer, class_names: p.class_names,
+          class_names: p.class_names,
         })),
         // This account's own sign-up already waiting on an admin, if any.
         my_pending: pendingForSeason(pending, { uid: user.uid, driverId: driver?.id })
           ? true : false,
+        // A denial of theirs for this season that they haven't read. The screen
+        // keeps it out of the "pick a series" list while this is true, so the
+        // reason gets read before the same form is filled in again.
+        my_denied: deniedSeasonIds.has(season.id),
         // The season's public roster, in car-number order — the "which numbers
         // are gone?" list a driver reads before picking one, and the source of
         // the instant clash check on the number field.
         roster: roster.map(r => ({
           number: r.number,
           name: r.name,
+          // Carried so the form can show who runs what and count a capped car
+          // against its limit — see carAvailability in lib/carSelection.js.
+          car: r.car || "",
+          selected_cars: r.selected_cars || null,
           class_names: r.class_ids.map(id => classNameById[id]).filter(Boolean),
         })),
         taken_numbers: roster
@@ -203,12 +223,39 @@ export const GET = withUser(async (request, ctx, user) => {
   const closed_signups = seasons.filter(s =>
     seasonIsCompleted(s) && !enteredSeasonIds.has(s.id) && listable(s)).length;
 
+  // Every platform username this ACCOUNT has already given, whether or not a
+  // driver profile exists to hold them yet. A first-time player's answers live
+  // on their pending sign-up until an admin approves it and the profile is
+  // created; without this they'd be asked for the same Discord name and iRacing
+  // ID again on their second sign-up, minutes after typing them. See
+  // knownAliasesFor in lib/signupRequest.js.
+  const myRequests = [...(await pendingRequestsForUser(user.uid)), ...(pending ? [pending] : [])];
+  const known_aliases = knownAliasesFor({ driver, requests: myRequests });
+  // The same for the name at the top of the form. Their account is the last
+  // resort — and only when its display name is one they chose, never the
+  // placeholder sign-in made up from their email address.
+  const accountDoc = await db().collection("users").doc(user.uid).get();
+  const known_name = knownRacingName({
+    driver, requests: myRequests,
+    profile: accountDoc.exists ? { ...accountDoc.data(), email: accountDoc.data().email || user.email } : null,
+  });
+
   return NextResponse.json({
     // `aliases` seeds the sign-up dialog's Aliases / Connected Accounts editor
     // from what this driver already has, so they confirm rather than retype.
     driver: driver
       ? { id: driver.id, name: driver.name || "Driver", aliases: driver.aliases || [] }
       : null,
+    // The same thing for somebody who hasn't got a profile yet — the form seeds
+    // from this, so it fills itself in for a brand-new player too.
+    known_aliases,
+    known_name,
+    denied,
+    // What this player has said about each season they could join — "not
+    // interested", or "stop counting this one". Their own display preference,
+    // read straight off the account doc that was loaded above; the screen and
+    // the sidebar badge both apply it through lib/signupPrefs.js.
+    signup_prefs: normalizePrefs(accountDoc.exists ? accountDoc.data().signup_prefs : null),
     pending_claim: pending ? { id: pending.id, driver_id: pending.driver_id, driver_name: pending.driver_name } : null,
     my_seasons,
     open_signups,

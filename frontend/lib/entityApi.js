@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
-import { withAdmin, getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
+import { withAdmin, getRequestLeagueId, getUserRole, scopeByLeague } from "@/lib/serverAuth";
+import { canUploadImages, imageFieldNames, stripImageFields } from "@/lib/imagePermissions";
 import { toDateOnly } from "@/lib/raceDate";
 import { normalizeClassIds } from "@/lib/classFilter";
+import { normalizeRaceSessionTimes } from "@/lib/raceTimes";
 import { orderSeasons } from "@/lib/seasonOrderServer";
 
 // A roster entry's classes are stored twice on purpose: `class_ids` is the real
@@ -60,7 +62,14 @@ export function coerceField(opts, raw) {
 // the race dates inside them (see lib/seasonOrderServer.js). It may be async,
 // since working that out means a second read, and whatever it returns is the
 // response body, so it can decorate the docs on the way past.
-export function makeCollectionRoutes({ collection, parentField, fields, sortField = "created_at", normalize = null, orderDocs = null }) {
+//
+// `guard` is an async last look at a POST before anything is written. It's
+// handed the request body and the request, and returning a NextResponse
+// REFUSES the create with it — which is how POST /api/drivers stops a second
+// profile for somebody the league already has without the caller confirming it
+// first (see app/api/drivers/route.js). Returning nothing lets the write
+// proceed, so a collection with no guard behaves exactly as it always did.
+export function makeCollectionRoutes({ collection, parentField, fields, sortField = "created_at", normalize = null, orderDocs = null, guard = null }) {
   async function GET(request) {
     const { searchParams } = new URL(request.url);
     let query = db().collection(collection);
@@ -87,6 +96,16 @@ export function makeCollectionRoutes({ collection, parentField, fields, sortFiel
 
   const POST = withAdmin(async (request, ctx, user) => {
     const body = await request.json();
+    if (guard) {
+      const refusal = await guard(body, request);
+      if (refusal) return refusal;
+    }
+    // Images are the one thing the four staff roles do NOT share: they cost
+    // storage, so only the Owner may add one. A logo sent by anybody else is
+    // dropped and the rest of the create goes through — refusing the whole
+    // write would stop an Admin creating a season over a field they can't set
+    // anyway. See lib/imagePermissions.js.
+    const mayUpload = canUploadImages(await getUserRole(user));
     const doc = { created_at: new Date().toISOString(), created_by: user.uid };
     // Stamp the active league so new rows are partitioned like migrated ones.
     // Absent header (pre-migration) leaves it unset; a later migration run
@@ -100,6 +119,7 @@ export function makeCollectionRoutes({ collection, parentField, fields, sortFiel
       doc[parentField] = body[parentField];
     }
     for (const [name, opts] of Object.entries(fields)) {
+      if (opts.image && !mayUpload) continue;   // Owner-only; silently left unset
       const value = body[name];
       if (opts.required && (value === undefined || value === null || value === "")) {
         return NextResponse.json({ error: `${name} required` }, { status: 400 });
@@ -120,7 +140,7 @@ export function makeCollectionRoutes({ collection, parentField, fields, sortFiel
 }
 
 export function makeDocRoutes({ collection, fields, normalize = null }) {
-  const PATCH = withAdmin(async (request, { params }) => {
+  const PATCH = withAdmin(async (request, { params }, user) => {
     const body = await request.json();
     const updates = {};
     for (const [name, opts] of Object.entries(fields)) {
@@ -131,14 +151,30 @@ export function makeDocRoutes({ collection, fields, normalize = null }) {
       }
     }
     if (normalize) Object.assign(updates, normalize(updates) || {});
-    if (!Object.keys(updates).length) {
-      return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
-    }
+
     const ref = db().collection(collection).doc(params.id);
     const doc = await ref.get();
     if (!doc.exists) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    await ref.update(updates);
-    return NextResponse.json({ id: params.id, ...doc.data(), ...updates });
+
+    // Owner-only images (see lib/imagePermissions.js). An edit form posts every
+    // field it renders, so a non-Owner saving a rename sends the logo it was
+    // shown straight back — that isn't a new image and passes through
+    // untouched. Only a value that would actually CHANGE the stored picture is
+    // dropped, so editing a game's name never quietly wipes its logo.
+    const guarded = stripImageFields(updates, {
+      fields: imageFieldNames(fields),
+      existing: doc.data(),
+      allowed: canUploadImages(await getUserRole(user)),
+    });
+    if (!Object.keys(guarded.updates).length) {
+      return NextResponse.json({
+        error: guarded.stripped.length
+          ? "Only the league Owner can change images."
+          : "No valid fields to update",
+      }, { status: guarded.stripped.length ? 403 : 400 });
+    }
+    await ref.update(guarded.updates);
+    return NextResponse.json({ id: params.id, ...doc.data(), ...guarded.updates });
   });
 
   const DELETE = withAdmin(async (request, { params }) => {
@@ -168,12 +204,18 @@ export function makeDocRoutes({ collection, fields, normalize = null }) {
 const SIGNUP_REQUIREMENT_FIELDS = Object.fromEntries([
   "require_car_selection",
   "require_car_number",
-  "require_car_manufacturer",
   "car_selection_locked",
 ].flatMap(field => [
   [field, { bool: true, default: false }],
   [`${field}_mode`, { default: "" }],
 ]));
+
+// The old second car list. There is one car question now, not a car one and a
+// manufacturer one asked side by side, so nothing writes an option into this
+// field any more — it stays writable only so saving a level can EMPTY it, which
+// is how the options move into `car_options` for good (see
+// carSelectionFormToBody and carOptionList in lib/carSelection.js).
+const RETIRED_MANUFACTURER_FIELD = { manufacturer_options: {} };
 
 // Field specs shared between the list POST and doc PATCH routes.
 export const SPECS = {
@@ -197,7 +239,7 @@ export const SPECS = {
   // this game asks for a car number" once instead of on every season, and any
   // series, season or class under it can still say otherwise.
   games:   { collection: "games", parentField: null, sortField: "name",
-             fields: { name: { required: true }, logo_url: {}, description: {},
+             fields: { name: { required: true }, logo_url: { image: true }, description: {},
                        requires_steam: { bool: true, default: false },
                        requires_psn: { bool: true, default: false },
                        requires_xbox: { bool: true, default: false },
@@ -236,11 +278,11 @@ export const SPECS = {
   // it, and the most specific car list wins — the same inheritance the points
   // structure and the season's car use.
   series:  { collection: "series", parentField: "game_id", sortField: "name",
-             fields: { name: { required: true }, logo_url: {}, description: {},
+             fields: { name: { required: true }, logo_url: { image: true }, description: {},
                        race_points: {}, qual_points: {}, bonus_points: {},
                        isBangerRacing: { bool: true, default: false },
                        isBracketRacing: { bool: true, default: false },
-                       car_options: {}, manufacturer_options: {}, car_selection_note: {},
+                       car_options: {}, ...RETIRED_MANUFACTURER_FIELD, car_selection_note: {},
                        ...SIGNUP_REQUIREMENT_FIELDS } },
   // Seasons come back NEWEST FIRST, ordered by the race dates on their
   // schedules rather than by when the admin happened to type them in — so a
@@ -291,7 +333,7 @@ export const SPECS = {
              //
              // `require_car_selection` & friends are this season's car lock-in
              // settings — see SPECS.series above and lib/carSelection.js.
-             fields: { name: { required: true }, game_id: {}, logo_url: {}, status: { default: "active" },
+             fields: { name: { required: true }, game_id: {}, logo_url: { image: true }, status: { default: "active" },
                        sort_order: { nullableNumber: true },
                        isBangerRacing: { bool: true, default: false }, banger_mode: {},
                        drop_weeks: { number: true, default: 0 }, points_scale: {}, car: {},
@@ -299,7 +341,21 @@ export const SPECS = {
                        combined_championship: { bool: true, default: true },
                        per_class_schedules: { bool: true, default: false },
                        per_class_results: { bool: true, default: false },
-                       car_options: {}, manufacturer_options: {}, car_selection_note: {},
+                       // `heat_format` says THIS SEASON runs heat racing (Heats →
+                       // Consolation → Feature). It's what unlocks the two defaults
+                       // beside it: `heat_points_template_id` and
+                       // `consolation_points_template_id` are points_templates ids
+                       // every heat / every consolation of the season scores on, so a
+                       // league running heats all year picks a template once for the
+                       // season instead of once per event or once per session. An
+                       // event's own default (SPECS.races) and a class's (SPECS.classes)
+                       // both override it, and naming one turns championship points on
+                       // for that session type by default — see defaultSessionFlags and
+                       // inheritedSessionTemplate in lib/standings.js. Unset on every
+                       // season that names none, which scores exactly as before.
+                       heat_format: { bool: true, default: false },
+                       heat_points_template_id: {}, consolation_points_template_id: {},
+                       car_options: {}, ...RETIRED_MANUFACTURER_FIELD, car_selection_note: {},
                        ...SIGNUP_REQUIREMENT_FIELDS } },
   // Classes divide a season's field into separately-scored groups ("Pro" /
   // "Amateur", "GT3" / "LMP2"). A class belongs to exactly one season; a roster
@@ -342,11 +398,28 @@ export const SPECS = {
                        isBangerRacing: { bool: true, default: false },
                        isBracketRacing: { bool: true, default: false },
                        race_points: {}, qual_points: {}, bonus_points: {},
-                       car_options: {}, manufacturer_options: {}, car_selection_note: {},
+                       // `heat_format` says THIS CLASS runs heat racing, and unlocks the
+                       // same two defaults a season and a race carry: every heat / every
+                       // consolation THIS class runs scores on the named template. Unlike
+                       // the season's and the event's, a class's default sits ON TOP of the
+                       // class's own points structure — it is a statement about the class,
+                       // so a class scoring its own points still pays its heat template
+                       // (see inheritedSessionTemplate in lib/standings.js).
+                       heat_format: { bool: true, default: false },
+                       heat_points_template_id: {}, consolation_points_template_id: {},
+                       car_options: {}, ...RETIRED_MANUFACTURER_FIELD, car_selection_note: {},
                        ...SIGNUP_REQUIREMENT_FIELDS,
                        sort_order: { number: true, default: 0 } } },
-  teams:   { collection: "teams", parentField: "season_id", sortField: "name",
-             fields: { name: { required: true }, logo_url: {}, color: {} } },
+  // Global team pool — teams are persistent entities that exist independently
+  // of any season, exactly like the drivers below. Which drivers race for a
+  // team in a given season lives in `team_seasons` ({ team_id, season_id,
+  // driver_ids[] }), so a driver can move between teams from one season to the
+  // next without either team losing its history. See lib/teams.js for the
+  // identity rules and app/api/teams + app/api/team-seasons for the routes,
+  // which are hand-written rather than generated here: creating a team can also
+  // enter it in a season, and deleting one has to clear up after itself.
+  teams:   { collection: "teams", parentField: null, sortField: "name",
+             fields: { name: { required: true }, logo_url: { image: true }, color: {} } },
   // Global driver pool — identities that exist independently of any season,
   // so an admin can create a driver first and pull them into a series/season
   // (or a race's results) later. See frontend/app/roster/page.js.
@@ -390,7 +463,6 @@ export const SPECS = {
              fields: { name: { required: true }, number: { maxLen: 3 }, team_id: {}, user_id: {},
                        driver_id: {}, class_id: {}, class_ids: {},
                        selected_car: {}, selected_cars: {}, selected_car_at: {},
-                       selected_manufacturer: {},
                        points_adjustment: { number: true }, adjustment_note: {} } },
   pointsTemplates: { collection: "points_templates", parentField: null, sortField: "name",
              fields: { name: { required: true }, race_points: {}, qual_points: {}, bonus_points: {} } },
@@ -402,7 +474,7 @@ export const SPECS = {
   // frontend/lib/trackStatsServer.js.
   tracks:  { collection: "tracks", parentField: null, sortField: "name",
              fields: { name: { required: true }, location: {}, length: {}, track_type: {},
-                       logo_url: {}, notes: {} } },
+                       logo_url: { image: true }, notes: {} } },
   races:   { collection: "races", parentField: "season_id", sortField: "round_number",
              // `track_id` references a global tracks doc; `track` still stores the
              // resolved track NAME (kept in sync from the dropdown) so every place
@@ -423,7 +495,7 @@ export const SPECS = {
              // default) inherits the season's setting — see racePerClassResults
              // in lib/classFilter.js — so an admin can flip the whole season at
              // once and still override a single event.
-             fields: { name: { required: true }, track: {}, track_id: {}, track_logo_url: {}, date: { dateOnly: true },
+             fields: { name: { required: true }, track: {}, track_id: {}, track_logo_url: { image: true }, date: { dateOnly: true },
                        class_id: {}, per_class_results: { bool: true },
                        round_number: { number: true, required: true }, sessions: {},
                        // How this event's distance is measured: `length_type` is
@@ -458,8 +530,28 @@ export const SPECS = {
                        // points (see resolveSessionFlags in lib/standings.js for the defaults).
                        heat_format: {}, heats: {}, consolations: {}, feature_name: { default: "A-Main Feature" },
                        session_points: {}, session_points_by_class: {}, session_stats: {}, session_points_enabled: {},
+                       // The event's DEFAULT points template for its heats and for its
+                       // consolations (B-/C-Mains) — points_templates ids, set once on the
+                       // Race Info form instead of once per session, which is the whole
+                       // point of them on a weekend running eight heats. A session with its
+                       // own `session_points` entry still overrides its type's default, and
+                       // naming a default also turns championship points ON for that type by
+                       // default (see defaultSessionFlags in lib/standings.js). Blank on
+                       // every event that sets none, which scores exactly as before.
+                       heat_points_template_id: {}, consolation_points_template_id: {},
                        // `strength_of_field` records the average Skill Rating of the field that
                        // started this event's main race (Race, or the Feature for heat weekends).
                        // Written by the stats engine on save; null when SR wasn't exchanged.
-                       strength_of_field: { number: true } } },
+                       strength_of_field: { number: true },
+                       // CALENDAR ONLY: the session start times an admin can opt
+                       // this event into showing. `show_session_times` is the
+                       // opt-in (off = every screen renders exactly as before),
+                       // `session_timezone` the IANA zone the times were typed
+                       // in, and `session_times` the { practice, qualifying,
+                       // race } wall-clock map in that zone. The race's `date`
+                       // is untouched by all three — it stays a bare calendar
+                       // date, and no other screen reads these. See
+                       // lib/raceTimes.js.
+                       show_session_times: { bool: true }, session_timezone: {}, session_times: {} },
+             normalize: normalizeRaceSessionTimes },
 };
