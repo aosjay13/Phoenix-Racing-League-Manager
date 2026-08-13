@@ -11,6 +11,20 @@ export const dynamic = "force-dynamic";
 // kind "new_driver") and only an admin approving it creates anything. Adding a
 // driver to the league is never automated.
 
+// The caller's own driver profile, trimmed to the part they may edit. Answers
+// with driver: null rather than a 403 when there isn't one — "you haven't got a
+// profile yet" is a normal state for a new player, and the screen reading this
+// (Profile ▸ Connected Accounts) explains how to get one rather than treating
+// it as an error.
+export const GET = withUser(async (request, ctx, user) => {
+  const driver = await linkedDriver(user.uid);
+  return NextResponse.json({
+    driver: driver
+      ? { id: driver.id, name: driver.name || "Driver", aliases: normalizeAliases(driver.aliases) }
+      : null,
+  });
+});
+
 // A player edits the Aliases / Connected Accounts on THEIR OWN driver profile —
 // the platform usernames the Smart Importer matches results against, and the
 // iRacing customer ID a league needs to send them an invite. Keeping these

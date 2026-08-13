@@ -170,6 +170,15 @@ throwaway key (`openssl genrsa`) — the emulator never checks it.
    profile automatically.
 2. **Profile** — edit your display name, avatar, bio, country, and car number. Ask a league
    admin to link your roster entry to your account so your race results feed your stats.
+   - **Connected Accounts**, in its own card below, is the names you go by on Discord and on
+     each platform. Two things use them: it's how the league gets hold of you about races, and
+     it's how results imported under any of your names find their way onto your profile. A
+     series sign-up fills them in and keeps them current, so this is mainly where you *correct*
+     one that's gone out of date — before this the only way to change a Discord handle was to
+     join another series. Leave a box empty to drop that platform; add any the list doesn't
+     name with **＋ Add platform**. They're saved against your **driver profile**, not your
+     account, which is why the card says so — and why it explains how to get one rather than
+     showing a dead form if you haven't signed up for anything yet.
 3. **Drivers** — browse every registered player; open a profile for three tabs of their record:
    - **Career Stats** — the totals, per game and combined across all games (starts, wins,
      podiums, poles, average finish, titles, etc.), plus every championship won and a by-game
@@ -1098,6 +1107,16 @@ object means the account is left alone entirely. The same applies to the car num
 the account has none, never changed, and never blanked by a season that doesn't run numbers.
 Both `POST /api/signup-requests` and the approval step apply it, so a request filed before this
 existed still brings the account up to date when it's approved.
+
+**Editing it afterwards.** `GET`/`PATCH /api/users/me/driver` are the player's own door to those
+aliases — the profile is resolved from the caller's account rather than taken from the request, so
+there is no way to edit somebody else's. Aliases are the *only* field of a driver profile a player
+may write; the name, display names and notes stay admin-only, since those decide how the whole
+league sees them. `components/ConnectedAccounts.jsx` renders it on **Profile** as a card of its own
+with its own Save, beside the account form rather than inside it, because the two write to
+different records — saving one must never silently rewrite the other. It shares `<AliasEditor>`
+with the admin's Driver Edit dialog and the sign-up form, so a driver describes themselves the same
+way whoever is filling it in.
 
 **Reading it back is what makes it worth saving.** `GET /api/users/me/series` returns
 `known_aliases` and `known_name` — everything this ACCOUNT has already given, whether or not a
