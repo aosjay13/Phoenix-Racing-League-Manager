@@ -1,6 +1,6 @@
 "use client";
 
-import { INHERIT, LEVEL_LABELS, OFF, ON, parseCarOptions } from "@/lib/carSelection";
+import { INHERIT, LEVEL_LABELS, OFF, ON, parseCarEntries } from "@/lib/carSelection";
 
 // The sign-up requirement settings block, rendered identically by League Setup's
 // Games, Series, Seasons and Classes panels — one component so the four levels
@@ -71,7 +71,8 @@ function inheritedState(inherited) {
 export function CarSelectionFields({ value, onChange, level = "season", disabled = false, inherited = null }) {
   const set = patch => onChange(f => ({ ...f, ...patch }));
   const id = suffix => `${level}_car_${suffix}`;
-  const parsed = parseCarOptions(value.car_options);
+  // Each offered car with its cap. The names alone are just entries.map(e =>
+  // e.name), so this is the only parse the block needs.
   const entries = parseCarEntries(value.car_options);
   const from = inheritedState(inherited);
   const inheritedOptions = from.options;
@@ -126,8 +127,8 @@ export function CarSelectionFields({ value, onChange, level = "season", disabled
           {" "}<strong>To cap how many drivers may run a car, put the number after a pipe</strong>
           {" "}— <em>Ferrari 296 GT3 | 4</em>. Once four have it (counting anyone still waiting on
           approval) it&rsquo;s greyed out on the sign-up form and can&rsquo;t be chosen. A line with
-          no pipe has no limit. {parsed.length > 0
-            ? <>{parsed.length} car{parsed.length === 1 ? "" : "s"} offered.</>
+          no pipe has no limit. {entries.length > 0
+            ? <>{entries.length} car{entries.length === 1 ? "" : "s"} offered.</>
             : <>Leave blank to use{" "}
                 {inheritedOptions.length
                   ? <>the {LEVEL_LABELS[from.options_from] || "inherited"} list ({inheritedOptions.join(" · ")}).</>
