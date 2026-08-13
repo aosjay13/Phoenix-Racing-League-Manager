@@ -13,8 +13,7 @@
 //      so it must not be able to carry markup into somebody's inbox.
 import assert from "node:assert";
 import {
-  denialHtml, denialNotice, denialSubject, denialText, denyReason, unreadApprovals,
-  unreadDenials, welcomeNotice,
+  denialHtml, denialNotice, denialSubject, denialText, denyReason, unreadDenials,
 } from "../denialNotice.js";
 
 let n = 0;
@@ -104,44 +103,9 @@ check("nothing at all", unreadDenials(), []);
 check("once read, nothing is held back",
   unreadDenials(rows.map(r => ({ ...r, player_seen_at: "2026-05-01T00:00:00Z" }))), []);
 
-// ── The other outcome: being let in ────────────────────────────────────────
-// An approval was as quiet as a denial. The welcome banner on the Dashboard is
-// driven by the same unread-until-acknowledged rule.
-const approved = (over = {}) => ({
-  id: "a1", status: "approved", kind: "signup",
-  name: "J. May", number: "42", car: "Ferrari 296 GT3",
-  season_id: "s4", season_name: "Season 4",
-  series_id: "fp", series_name: "Formula Phoenix",
-  resolved_at: "2026-03-02T10:00:00Z",
-  ...over,
-});
-
-const w = welcomeNotice(approved());
-check("the banner knows which series to welcome them to",
-  [w.series_name, w.season_name], ["Formula Phoenix", "Season 4"]);
-check("and what they're running", [w.number, w.car], ["42", "Ferrari 296 GT3"]);
-check("a bare request still renders",
-  [welcomeNotice({}).series_name, welcomeNotice({}).season_name], ["Series", "Season"]);
-
-const approvals = [
-  approved({ id: "old", resolved_at: "2026-01-01T00:00:00Z" }),
-  approved({ id: "seen", resolved_at: "2026-04-01T00:00:00Z", player_seen_at: "2026-04-02T00:00:00Z" }),
-  approved({ id: "new", resolved_at: "2026-03-01T00:00:00Z" }),
-];
-check("only the ones they haven't been welcomed for",
-  unreadApprovals(approvals).map(a => a.id), ["new", "old"]);
-check("newest first", unreadApprovals(approvals)[0].id, "new");
-check("dismissing clears it for good",
-  unreadApprovals(approvals.map(a => ({ ...a, player_seen_at: "2026-05-01T00:00:00Z" }))), []);
-check("nothing at all", unreadApprovals(), []);
-// "Welcome to the series" to somebody who has raced it for six weeks is a
-// notification that teaches people to ignore notifications.
-check("an approved NUMBER CHANGE is not a welcome",
-  unreadApprovals([approved({ id: "moved", kind: "number_change" })]), []);
-check("but a plain sign-up is",
-  unreadApprovals([approved({ id: "joined", kind: "signup" })]).map(a => a.id), ["joined"]);
-// Rows written before `kind` existed are sign-ups.
-check("a row with no kind counts as a sign-up",
-  unreadApprovals([approved({ id: "legacy", kind: undefined })]).map(a => a.id), ["legacy"]);
+// The other outcome — being let in — is no longer this module's job. Approving
+// a sign-up posts a `signup_approved` message to the board instead, which says
+// the same thing for every admin decision rather than only for these two, and
+// which the player can answer. Covered in messages.test.mjs.
 
 console.log(`denialNotice: ${n} assertions passed`);

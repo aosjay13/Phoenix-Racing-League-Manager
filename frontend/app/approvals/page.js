@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { AdminGate } from "@/components/AdminGate";
+import { AdminMessages } from "@/components/AdminMessages";
 import { PendingSignups } from "@/components/PendingSignups";
 import { APPROVALS_MIN_LEVEL } from "@/lib/pendingSignupAlerts";
 
@@ -25,10 +26,17 @@ export default function ApprovalsPage() {
         Everything players have asked for and nobody has decided yet, across the whole league —
         <strong> sign-ups</strong> (approving puts that driver on the season&rsquo;s roster with the
         number and car they asked for) and <strong>car number changes</strong> (approving moves the
-        number on the roster entry they already have).
+        number on the roster entry they already have) — plus anything players have said back
+        about a decision you&rsquo;ve already made.
       </p>
 
       <AdminGate minLevel={APPROVALS_MIN_LEVEL}>
+        {/* The conversation half. Every decision made below lands on that
+            player's Dashboard, and what they say in reply arrives here — see
+            components/AdminMessages.jsx. Renders nothing until the league has
+            sent its first message. */}
+        <AdminMessages />
+
         <PendingSignups
           scope="league"
           empty={(

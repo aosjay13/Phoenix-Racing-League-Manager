@@ -6,6 +6,11 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { useLeague } from "@/components/LeagueProvider";
 import { useMySignups } from "@/components/MySignupsProvider";
+import { useMessages } from "@/components/MessagesProvider";
+import { useAdminMessages } from "@/lib/messageAlerts";
+import {
+  adminInboxTitle, adminThreadsNeedingReply, playerInboxTitle, unreadPlayerMessages,
+} from "@/lib/messages";
 import { additionsTitle } from "@/lib/rosterAdditions";
 import { useRosterAdditions } from "@/lib/rosterAlerts";
 import { copyCurrentLink } from "@/lib/scopeLink";
@@ -231,11 +236,25 @@ export function AppShell({ children }) {
   // Approvals — an outstanding job that falls when somebody does it — this is
   // news, so it clears by being read. See lib/rosterAlerts.js.
   const rosterAdditions = useRosterAdditions(isAdmin);
+  // The two halves of the message board. Players read theirs on the Dashboard,
+  // so that's where their badge goes; a player's reply is a job for the staff
+  // who work the queue, so it joins the Approvals count.
+  const { rows: myMessages } = useMessages();
+  const unreadMessages = unreadPlayerMessages(myMessages);
+  const { rows: leagueMessages } = useAdminMessages(roleLevel);
+  const messageReplies = adminThreadsNeedingReply(leagueMessages);
   // New signups / pending claims are handled on the Drivers page's User
   // Accounts tab, so the badge rides along with that nav item.
   const navBadges = {
+    "/": { count: unreadMessages.length, title: playerInboxTitle(unreadMessages) },
     "/drivers": { count: userAccountsAlerts.total, title: alertsTitle(userAccountsAlerts) },
-    "/approvals": { count: pendingSignups, title: pendingSignupsTitle(pendingSignups) },
+    // One badge, two kinds of waiting: undecided requests and unanswered
+    // replies. Both are people waiting on an admin, and splitting them across
+    // two numbers on one link would only make the link harder to read.
+    "/approvals": {
+      count: pendingSignups + messageReplies.length,
+      title: [pendingSignupsTitle(pendingSignups), adminInboxTitle(messageReplies)].join(" · "),
+    },
     "/signups": { count: signupBadgeCount(mySignups), title: signupBadgeTitle(mySignups) },
     "/roster": { count: rosterAdditions.length, title: additionsTitle(rosterAdditions) },
   };

@@ -10,6 +10,7 @@ import { mergeAliases, normalizeAliases } from "@/lib/aliases";
 import { userAccountUpdatesFromSignup } from "@/lib/signupRequest";
 import { denialHtml, denialSubject, denialText } from "@/lib/denialNotice";
 import { queueEmail } from "@/lib/mailer";
+import { emailForUser, postMessage } from "@/lib/messagesServer";
 
 // Admin-only: let a pending sign-up onto the roster, or turn it down.
 //
@@ -70,6 +71,13 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
       meta: { uid: req.uid || null, request_id: id, season_id: req.season_id || null },
     });
 
+    // And onto the board, where they can answer it. A number change refused is
+    // a different sentence from a sign-up refused — the driver is still racing,
+    // just not under the number they wanted.
+    await announce(req, isNumberChange(req) ? "number_denied" : "signup_denied",
+      { adminNote: reason || "", admin, emailed: !!mail_id,
+        extra: { previous_number: String(req.current_number ?? "").trim() } });
+
     return NextResponse.json({ ok: true, id, status: DENIED, reason, emailed: !!mail_id });
   }
   if (action !== "approve") {
@@ -115,6 +123,8 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
     const previous = String(entryDoc.data().number ?? "").trim();
     await entryRef.update({ number });
     await reqRef.update({ status: APPROVED, ...stamp, applied_number: number, previous_number: previous });
+    await announce(req, "number_approved",
+      { admin, extra: { number, previous_number: previous } });
     return NextResponse.json({
       ok: true, id, status: APPROVED, kind: NUMBER_CHANGE_KIND,
       driver_id: req.driver_id ?? null,
@@ -184,6 +194,7 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
   });
   if (existing) {
     await reqRef.update({ status: APPROVED, ...stamp, entry_id: existing.id, driver_id: driverId });
+    await announce(req, "signup_approved", { admin });
     return NextResponse.json({
       ok: true, id, status: APPROVED, driver_id: driverId, driver_name: driverName,
       entry_id: existing.id, created_driver,
@@ -243,6 +254,13 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
 
   await reqRef.update({ status: APPROVED, ...stamp, entry_id: entryRef.id, driver_id: driverId });
 
+  // Onto the board: this is somebody's first minute in the series, and the
+  // welcome card is what tells them where to go next. `note` carries anything
+  // that had to change on the way in (a number or car that went while they
+  // waited), so they're not left to notice it themselves.
+  await announce(req, "signup_approved",
+    { adminNote: note, admin, extra: { number, car } });
+
   // Bring the player's own account up to date with what they told us, exactly
   // as the submission does. Filing the sign-up normally does this already; this
   // covers a request filed before that existed, and an account that had no
@@ -299,4 +317,33 @@ async function carCapacityAtApproval(req, season, rosterSnap, car) {
     console.error("Car capacity check failed at approval", err);
     return null;
   }
+}
+
+// Announce a decision on the league's message board, so it reaches the player's
+// Dashboard rather than only changing a document they can't see. Never allowed
+// to fail the decision itself — see postMessage.
+async function announce(req, kind, { adminNote = "", admin, extra = {}, emailed = false } = {}) {
+  return postMessage({
+    uid: req.uid,
+    leagueId: req.league_id || null,
+    kind,
+    adminNote,
+    admin: { uid: admin?.uid || null, name: admin?.name || admin?.email || null },
+    // `emailed` says a fuller message has already gone out for this decision —
+    // the denial mail, which explains the reason properly. Two emails for one
+    // decision is how people learn to filter a league's mail into the bin.
+    email: emailed ? null : await emailForUser(req.uid),
+    context: {
+      season_id: req.season_id || "",
+      season_name: req.season_name || "Season",
+      series_id: req.series_id || "",
+      series_name: req.series_name || "Series",
+      game_id: req.game_id || "",
+      game_name: req.game_name || "",
+      number: String(req.number ?? "").trim(),
+      car: req.car || "",
+      driver_name: req.driver_name || req.name || "",
+      ...extra,
+    },
+  });
 }

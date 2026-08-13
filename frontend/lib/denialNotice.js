@@ -120,40 +120,14 @@ export function unreadDenials(rows = []) {
 
 // ── The other outcome ──────────────────────────────────────────────────────
 //
-// An approval was as quiet as a denial used to be. The request left the queue,
-// a roster entry appeared, and unless the player happened to open Sign-ups and
-// notice their series had moved from "waiting" to "racing", nothing told them
-// they were in — the moment a league most wants to feel like an arrival.
+// An approval used to be as quiet as a denial, and for a while it was answered
+// here too — an unread `approved` row put a welcome banner on the Dashboard.
 //
-// So the same machinery carries the good news: an unread `approved` row puts a
-// welcome banner on the Dashboard, dismissed by the same acknowledge call that
-// clears a denial (PATCH /api/signup-requests/[id], stamping `player_seen_at`).
-
-export function welcomeNotice(req) {
-  return {
-    id: req?.id || "",
-    season_id: req?.season_id || "",
-    season_name: req?.season_name || "Season",
-    series_id: req?.series_id || "",
-    series_name: req?.series_name || "Series",
-    game_id: req?.game_id || "",
-    name: req?.name || "",
-    number: String(req?.number ?? "").trim(),
-    car: req?.car || "",
-    approved_at: req?.resolved_at || "",
-  };
-}
-
-// Approvals this account hasn't seen yet, newest first.
+// That job has moved to the message board (lib/messages.js), which says the
+// same thing for every admin decision rather than only for the two this module
+// knows about, and which the player can answer. Approving a sign-up posts a
+// `signup_approved` message; the banner it renders is the welcome.
 //
-// Number changes are excluded for the same reason they're excluded from the
-// admin's additions panel: approving one moves a number on a roster entry that
-// already existed. "Welcome to the series" to somebody who has been racing it
-// for six weeks is a notification that teaches people to ignore notifications.
-export function unreadApprovals(rows = []) {
-  return rows
-    .filter(r => !r?.player_seen_at)
-    .filter(r => (r?.kind || "signup") !== "number_change")
-    .map(welcomeNotice)
-    .sort((a, b) => String(b.approved_at).localeCompare(String(a.approved_at)));
-}
+// The denial half stays here because it does something the board doesn't: an
+// unacknowledged denial HOLDS THAT SEASON BACK from the join list, so the
+// reason gets read before the same form is filled in again.

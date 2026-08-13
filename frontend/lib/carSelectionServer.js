@@ -11,7 +11,7 @@ import { db } from "@/lib/firebase";
 import { entryClassIds, orderClassIds } from "@/lib/classFilter";
 import { carSelectionSlots, sortRosterByNumber } from "@/lib/carSelection";
 import { scopeByLeague } from "@/lib/serverAuth";
-import { APPROVED, DENIED, PENDING, SIGNUP_KIND } from "@/lib/signupQueue";
+import { DENIED, PENDING, SIGNUP_KIND } from "@/lib/signupQueue";
 import { sortSeasons } from "@/lib/seasonOrder";
 import { attachRaceDates, fetchSeasonRaceDates } from "@/lib/seasonOrderServer";
 
@@ -56,19 +56,6 @@ export async function deniedRequestsForUser(uid, limit = 20) {
   if (!uid) return [];
   const snap = await db().collection("signup_requests")
     .where("uid", "==", uid).where("status", "==", DENIED).get();
-  return snap.docs
-    .map(d => ({ id: d.id, ...d.data() }))
-    .sort((a, b) => String(b.resolved_at || "").localeCompare(String(a.resolved_at || "")))
-    .slice(0, limit);
-}
-
-// Sign-ups of this account's that an admin APPROVED. Read so the Dashboard can
-// welcome them into the series — an approval was as quiet as a denial used to
-// be, and it's the moment a league most wants to feel like an arrival.
-export async function approvedRequestsForUser(uid, limit = 20) {
-  if (!uid) return [];
-  const snap = await db().collection("signup_requests")
-    .where("uid", "==", uid).where("status", "==", APPROVED).get();
   return snap.docs
     .map(d => ({ id: d.id, ...d.data() }))
     .sort((a, b) => String(b.resolved_at || "").localeCompare(String(a.resolved_at || "")))

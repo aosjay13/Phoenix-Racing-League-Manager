@@ -8,14 +8,14 @@ import {
 } from "@/lib/carSelection";
 import {
   entriesForDriver, leagueSeasonIndex, linkedDriver, newestFirst, pendingClaim,
-  approvedRequestsForUser, deniedRequestsForUser, pendingForSeasons, pendingRequestsForUser,
+  deniedRequestsForUser, pendingForSeasons, pendingRequestsForUser,
   rostersForSeasons,
 } from "@/lib/carSelectionServer";
 import { pendingForSeason } from "@/lib/signupQueue";
 import {
   gameRequirementFlags, knownAliasesFor, knownRacingName,
 } from "@/lib/signupRequest";
-import { unreadApprovals, unreadDenials } from "@/lib/denialNotice";
+import { unreadDenials } from "@/lib/denialNotice";
 
 export const dynamic = "force-dynamic";
 
@@ -133,9 +133,8 @@ export const GET = withUser(async (request, ctx, user) => {
   // held back from the join list until they acknowledge it — see
   // lib/denialNotice.js.
   const denied = unreadDenials(await deniedRequestsForUser(user.uid));
-  // The good half: sign-ups an admin let through that the player hasn't been
-  // welcomed for yet. Drives the banner on the Dashboard.
-  const welcome = unreadApprovals(await approvedRequestsForUser(user.uid));
+  // The good half — being let in — is announced on the message board instead
+  // (lib/messages.js), together with every other decision an admin makes.
   const deniedSeasonIds = new Set(denied.map(d => d.season_id).filter(Boolean));
 
   const open_signups = openSeasons
@@ -251,7 +250,6 @@ export const GET = withUser(async (request, ctx, user) => {
     known_aliases,
     known_name,
     denied,
-    welcome,
     pending_claim: pending ? { id: pending.id, driver_id: pending.driver_id, driver_name: pending.driver_name } : null,
     my_seasons,
     open_signups,

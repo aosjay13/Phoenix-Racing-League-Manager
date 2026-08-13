@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
+import { emailForUser, postMessage } from "@/lib/messagesServer";
 import { withAdmin } from "@/lib/serverAuth";
 import { NEW_DRIVER_KIND, requestKind } from "@/lib/signupRequest";
 import { carNumberTaken, seasonAcceptsSignups } from "@/lib/carSelection";
@@ -40,8 +41,21 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
 
   const stamp = { resolved_at: new Date().toISOString(), resolved_by: admin.uid };
 
+  // Announce whichever way it went, on the board the player actually reads.
+  const announce = async (kind, driverName, adminNote = "") => postMessage({
+    uid: req.uid,
+    leagueId: req.league_id || null,
+    kind,
+    adminNote,
+    admin: { uid: admin?.uid || null, name: admin?.name || admin?.email || null },
+    email: await emailForUser(req.uid),
+    context: { driver_name: driverName || req.driver_name || "" },
+  });
+
   if (action === "deny") {
-    await reqRef.update({ status: "denied", ...stamp });
+    const reason = String(body.reason ?? "").trim().slice(0, 300) || "";
+    await reqRef.update({ status: "denied", ...stamp, deny_reason: reason || null });
+    await announce("claim_denied", req.driver_name, reason);
     return NextResponse.json({ ok: true, id, status: "denied" });
   }
 
@@ -82,6 +96,7 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
   });
 
   await batch.commit();
+  await announce("claim_approved", req.driver_name);
   return NextResponse.json({ ok: true, id, status: "approved", driver_id: req.driver_id, uid: req.uid });
 });
 
@@ -118,6 +133,9 @@ async function approveNewDriver({ id, req, reqRef, stamp, admin, alreadyOwned })
   // The season sign-up that rode along with the request, if any.
   let entry_id = null;
   let signup_note = "";
+  // Kept for the message this approval sends: what they were actually put on,
+  // named as it was at the moment of the decision.
+  let joined = null;
   const signup = req.signup;
   if (signup?.season_id) {
     const seasonDoc = await db().collection("seasons").doc(signup.season_id).get();
@@ -164,11 +182,53 @@ async function approveNewDriver({ id, req, reqRef, stamp, admin, alreadyOwned })
         };
         const entryRef = await db().collection("entries").add(entryDoc);
         entry_id = entryRef.id;
+        joined = { season, number, car: String(signup.car ?? "").trim() };
       }
     }
   }
 
   await reqRef.update({ status: "approved", ...stamp, created_driver_id: driverRef.id });
+
+  // Say so on the board. One card, not two: when this approval also put them on
+  // a roster that's the bigger news by far — it's their first minute in the
+  // league — so it gets the welcome treatment and mentions the profile in
+  // passing. When it didn't, the profile IS the news.
+  const by = { uid: admin?.uid || null, name: admin?.name || admin?.email || null };
+  const email = await emailForUser(req.uid);
+  if (joined) {
+    const seriesDoc = joined.season.series_id
+      ? await db().collection("series").doc(joined.season.series_id).get()
+      : null;
+    await postMessage({
+      uid: req.uid,
+      leagueId: req.league_id || joined.season.league_id || null,
+      kind: "signup_approved",
+      admin: by,
+      email,
+      // The note only exists when something didn't carry over (their number was
+      // taken while they waited). That's exactly what they need to be told.
+      adminNote: signup_note,
+      context: {
+        series_name: seriesDoc?.exists ? (seriesDoc.data().name || "the series") : "the series",
+        season_name: joined.season.name || "the season",
+        season_id: joined.season.id,
+        series_id: joined.season.series_id || "",
+        number: joined.number,
+        car: joined.car,
+        driver_name: name,
+      },
+    });
+  } else {
+    await postMessage({
+      uid: req.uid,
+      leagueId: req.league_id || null,
+      kind: "claim_approved",
+      admin: by,
+      email,
+      adminNote: signup_note,
+      context: { driver_name: name },
+    });
+  }
 
   return NextResponse.json({
     ok: true, id, status: "approved",

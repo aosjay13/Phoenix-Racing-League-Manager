@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { useLeague } from "@/components/LeagueProvider";
 import { useAuth } from "@/components/AuthProvider";
 import { SeriesInfoPanel } from "@/components/SeriesInfoPanel";
-import { WelcomeToSeries } from "@/components/WelcomeToSeries";
+import { MessageBoard } from "@/components/MessageBoard";
 import { api } from "@/lib/api";
 import { formatRaceDate, isPastRaceDate, raceDateSortKey, toDateOnly } from "@/lib/raceDate";
 
@@ -117,11 +117,14 @@ export default function DashboardPage() {
 
   return (
     <section>
-      {/* Above everything, including the hero: a player an admin has just
-          approved is welcomed into their series and told where to go next.
-          Renders nothing at all until that happens, and only once — see
-          components/WelcomeToSeries.jsx. */}
-      <WelcomeToSeries />
+      {/* Above everything, including the hero: the league talking to this
+          player. Every admin decision about them lands here — approved into a
+          series (with the welcome and where to go next), turned down and why,
+          a number granted, taken off a roster — and every card can be replied
+          to, which puts the answer in the admins' Approvals queue. Renders
+          nothing at all until there's something to say. See
+          components/MessageBoard.jsx. */}
+      <MessageBoard />
 
       <div className="hero">
         <div className="page-title">

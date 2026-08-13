@@ -3504,60 +3504,276 @@ input[type="radio"]:disabled:checked {
 .signup-denial-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
 .signup-denial-actions .btn { margin-top: 0; }
 
-/* ── Welcome to the series (components/WelcomeToSeries.jsx) ────────────────
-   The banner across the top of the Dashboard the first time a player opens it
-   after their sign-up is approved. Deliberately the loudest thing on the
-   screen: being let in used to happen in complete silence, and this is the one
-   moment a league most wants to feel like an arrival. */
-.welcome-banner {
+/* ── The message board (components/MessageBoard.jsx, AdminMessages.jsx) ─────
+   The league talking to a player, on their Dashboard, and their answers coming
+   back on the admins' Approvals screen. Every admin decision lands as a card
+   here; an approved sign-up gets the loudest treatment of the lot, because
+   being let in used to happen in complete silence and it is the one moment a
+   league most wants to feel like an arrival.
+
+   Tone is carried by the left border and the wash behind the card — but never
+   by colour ALONE: every card says what happened in words, and the icon
+   repeats it. */
+.msg-board { margin-bottom: 20px; }
+
+.msg-card {
   display: flex;
   align-items: flex-start;
   gap: 16px;
-  margin-bottom: 20px;
-  padding: 20px 22px;
-  border: 1px solid var(--border-accent);
-  border-left: 4px solid var(--accent-cyan);
+  margin-bottom: 14px;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--ink-2);
   border-radius: var(--radius-card);
+  background: var(--bg-surface);
+  animation: reveal 0.5s ease;
+}
+
+/* Unread is the state that has to carry across a busy screen, so it gets the
+   glow and the gradient; a card already dealt with settles down to flat. */
+.msg-card.msg-unread.msg-good {
+  border-color: var(--border-accent);
+  border-left-color: var(--accent-cyan);
   background:
     radial-gradient(ellipse at 0% 0%, rgba(244, 162, 40, 0.16) 0%, transparent 55%),
     linear-gradient(120deg, var(--accent-cyan-dim), var(--bg-surface));
   box-shadow: var(--shadow-glow-cyan);
-  animation: reveal 0.5s ease;
 }
 
-.welcome-confetti { font-size: 2rem; line-height: 1; flex-shrink: 0; }
-.welcome-body { flex: 1; min-width: 0; }
+.msg-card.msg-unread.msg-bad {
+  border-color: rgba(230, 57, 70, 0.3);
+  border-left-color: var(--accent-red);
+  background: linear-gradient(120deg, var(--accent-red-dim), var(--bg-surface));
+  box-shadow: var(--shadow-glow-red);
+}
 
-.welcome-banner h3 {
+.msg-card.msg-unread.msg-info {
+  border-left-color: var(--accent-gold);
+  background: linear-gradient(120deg, rgba(244, 162, 40, 0.12), var(--bg-surface));
+}
+
+.msg-icon { font-size: 1.8rem; line-height: 1; flex-shrink: 0; }
+.msg-body { flex: 1; min-width: 0; }
+
+.msg-card h3 {
   margin: 0 0 4px;
-  font-size: 1.3rem;
+  font-size: 1.15rem;
   font-weight: 800;
   letter-spacing: -0.01em;
   color: var(--ink-0);
 }
 
-.welcome-sub { margin: 0 0 14px; font-size: 0.92rem; line-height: 1.55; color: var(--ink-1); }
-.welcome-sub strong { color: var(--accent-cyan); }
+.msg-card.msg-unread.msg-good h3 { font-size: 1.3rem; }
 
-.welcome-actions { display: flex; flex-wrap: wrap; gap: 10px; }
-.welcome-actions .btn { margin-top: 0; }
+.msg-sub { margin: 0 0 12px; font-size: 0.92rem; line-height: 1.55; color: var(--ink-1); }
 
-/* The Discord button keeps Discord's own colour here too, so the one action
-   that leaves the app looks like it does everywhere else in the app. */
-.welcome-discord {
-  color: #fff;
-  background: #5865f2;
-  border-color: #5865f2;
+/* The admin's own words. The part players actually want, so it is quoted
+   rather than folded into a sentence. */
+.msg-note {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border-left: 3px solid var(--accent-gold);
+  border-radius: 0 8px 8px 0;
+  background: rgba(244, 162, 40, 0.08);
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--ink-0);
 }
 
-.welcome-discord:hover { opacity: 0.92; box-shadow: 0 0 20px rgba(88, 101, 242, 0.35); }
+.msg-note-label {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-gold);
+}
 
-.welcome-foot { margin: 14px 0 0; font-size: 0.85rem; line-height: 1.55; color: var(--ink-1); }
+.msg-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.msg-actions .btn { margin-top: 0; }
 
-.welcome-dismiss { margin-top: 0; flex-shrink: 0; }
+/* Discord keeps its own colour, so the one action that leaves the app looks
+   like it does everywhere else in the app. */
+.msg-discord { color: #fff; background: #5865f2; border-color: #5865f2; }
+.msg-discord:hover { opacity: 0.92; box-shadow: 0 0 20px rgba(88, 101, 242, 0.35); }
+
+.msg-foot { margin: 14px 0 0; font-size: 0.85rem; line-height: 1.55; color: var(--ink-1); }
+
+/* ── The thread ────────────────────────────────────────────────────────────
+   Both sides of the conversation, indented under the decision that started it.
+   Who said what is spelled out in words above each one — an alignment trick
+   alone would tell a screen reader nothing. */
+.msg-thread {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.msg-reply {
+  padding: 9px 13px;
+  border-radius: 10px;
+  background: var(--card);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.msg-reply p { margin: 0; color: var(--ink-0); white-space: pre-wrap; }
+
+.msg-reply-who {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.msg-reply-admin {
+  border-left: 3px solid var(--accent-cyan);
+  background: var(--accent-cyan-dim);
+}
+
+.msg-reply-admin .msg-reply-who { color: var(--accent-cyan); }
+
+.msg-reply-player { border-left: 3px solid var(--border); }
+
+.msg-waiting {
+  margin: 12px 0 0;
+  font-size: 0.82rem;
+  color: var(--ink-1);
+}
+
+.msg-reply-form { margin-top: 14px; }
+
+.msg-reply-form textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-1);
+  color: var(--ink-0);
+  font-family: inherit;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.msg-reply-form textarea:focus {
+  outline: none;
+  border-color: var(--accent-cyan);
+  box-shadow: var(--shadow-glow-cyan);
+}
+
+.msg-reply-actions,
+.msg-card-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.msg-reply-actions .btn,
+.msg-card-actions .btn { margin-top: 0; }
+
+.msg-dismiss { margin-left: auto; }
+
+/* ── Everything already dealt with ─────────────────────────────────────────
+   Folded away rather than thrown away: the record of what was decided, and
+   what was said about it, is worth keeping. */
+.msg-earlier {
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--card);
+}
+
+.msg-earlier > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 16px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink-1);
+  list-style: none;
+  user-select: none;
+}
+
+.msg-earlier > summary::-webkit-details-marker { display: none; }
+.msg-earlier > summary:hover { color: var(--ink-0); background: var(--card-hover); border-radius: var(--radius-card); }
+
+.msg-earlier-caret { transition: transform 0.15s ease; display: inline-block; }
+.msg-earlier[open] > summary > .msg-earlier-caret { transform: rotate(90deg); }
+
+.msg-earlier-count {
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  font-size: 0.75rem;
+  color: var(--ink-1);
+}
+
+.msg-earlier-body { padding: 4px 14px 14px; }
+.msg-earlier-body .msg-card:last-child { margin-bottom: 0; }
+
+/* ── The admins' side (Approvals) ──────────────────────────────────────────
+   Compact by comparison: this is a work queue, not an announcement. */
+.admin-msgs { margin-bottom: 26px; }
+
+.admin-msgs-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 9px;
+  border-radius: 999px;
+  background: var(--accent-red);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 800;
+  vertical-align: middle;
+}
+
+.admin-msgs-intro {
+  margin: 0 0 12px;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--ink-1);
+  max-width: 760px;
+}
+
+.admin-msgs-clear { margin: 0 0 12px; font-size: 0.85rem; color: var(--ink-1); }
+
+.admin-msg {
+  margin-bottom: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--ink-2);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+}
+
+/* Waiting on an answer — the only thing on this screen that should pull an
+   eye, and it says so in words in the header above it too. */
+.admin-msg-waiting {
+  border-color: rgba(230, 57, 70, 0.3);
+  border-left-color: var(--accent-red);
+  background: linear-gradient(120deg, var(--accent-red-dim), var(--bg-surface));
+}
+
+.admin-msg-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin-bottom: 10px;
+}
+
+.admin-msg-head strong { font-size: 0.98rem; color: var(--ink-0); }
+.admin-msg-about { font-size: 0.82rem; color: var(--ink-1); }
 
 @media (max-width: 640px) {
-  .welcome-banner { flex-wrap: wrap; }
-  .welcome-actions .btn { width: 100%; justify-content: center; }
-  .welcome-dismiss { width: 100%; justify-content: center; }
+  .msg-card { flex-wrap: wrap; }
+  .msg-actions .btn { width: 100%; justify-content: center; }
+  .msg-card-actions .btn { width: 100%; justify-content: center; }
+  .msg-dismiss { margin-left: 0; }
 }

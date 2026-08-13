@@ -4,6 +4,7 @@ import { AuthProvider } from "../components/AuthProvider";
 import { VerifyGate } from "../components/VerifyGate";
 import { LeagueProvider } from "../components/LeagueProvider";
 import { MySignupsProvider } from "../components/MySignupsProvider";
+import { MessagesProvider } from "../components/MessagesProvider";
 
 export const metadata = {
   title: "Phoenix's Racing League Manager",
@@ -34,7 +35,12 @@ export default function RootLayout({ children }) {
               {/* Inside LeagueProvider: a player's series are league-scoped, so
                   this has to re-ask when the league switches. */}
               <MySignupsProvider>
-                <AppShell>{children}</AppShell>
+                {/* The player's message board — read by the board itself on the
+                    Dashboard and by the unread count on its sidebar link, so
+                    both come from one load. */}
+                <MessagesProvider>
+                  <AppShell>{children}</AppShell>
+                </MessagesProvider>
               </MySignupsProvider>
             </LeagueProvider>
           </VerifyGate>

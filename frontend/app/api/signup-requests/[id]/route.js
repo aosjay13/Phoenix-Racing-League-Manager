@@ -42,8 +42,10 @@ export const DELETE = withUser(async (request, { params }, user) => {
   return NextResponse.json({ ok: true, id: params.id, status: WITHDRAWN });
 });
 
-// A player marking a RESOLVED sign-up as read — a denial ("I've seen why, let
-// me try again") or an approval ("yes, I've read the welcome").
+// A player marking a RESOLVED sign-up as read — in practice a denial ("I've
+// seen why, let me try again"). Approvals are announced on the message board
+// now (lib/messages.js) and acknowledged there; they're still accepted here so
+// rows stamped by the older Dashboard banner keep working.
 //
 // It's an explicit action rather than something opening the screen does, and
 // the reason is the same one the roster's additions panel has: a notice that

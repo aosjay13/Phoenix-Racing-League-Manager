@@ -75,6 +75,14 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   for (creating their driver profile too, if they're new to the league) and **Deny** leaves them off.
   Admins choose per **series, season or class** what a sign-up must carry: a **car number**, a **car**
   from the league's own **Car Selection** list, or nothing at all
+- 💬 **A message board between admins and players** — every decision an admin makes about somebody
+  says so on that player's **Dashboard**: a sign-up approved (with the full welcome — schedule,
+  calendar, Discord) or denied with the reason, a car number granted or refused, a driver profile
+  linked, a removal from a season's roster. Every card can be **replied to**, and replies land in
+  the admins' **Approvals** queue with a badge, where they can be answered or marked read. Before
+  this, an admin's decision was a state change on a document and nothing else — being removed from
+  a season was completely silent, and read far more like the app losing your entry than like a
+  decision somebody made
 - 🎮 **Account requirements per game** — every sign-up in every game needs the player's **Discord
   name**, and each **Game** carries its own switches for the platform identity it actually needs:
   **Steam**, **PSN**, **Xbox Gamertag**, **iRacing Name** and **iRacing Customer ID**. The sign-up
@@ -215,12 +223,15 @@ throwaway key (`openssl genrsa`) — the emulator never checks it.
      yourself, it's left exactly as it is, and a season that doesn't run car numbers can't blank
      the one you have. So a brand-new account stops showing "jane.doe" the moment you tell the
      league you race as J. May, and nobody's chosen name is ever overwritten.
-   - **When you're let in, the Dashboard says so.** The first time you open it after an admin
-     approves your sign-up, a banner across the top welcomes you to the series by name, says which
-     season you're on and what number and car you're running, and points at the three things you
-     need next: **your series schedule**, the **league calendar**, and the **Discord**. It clears
-     on a deliberate **Got it** and never comes back — being let in used to happen in complete
-     silence, which is a poor way to greet somebody who has just joined your league.
+   - **The Dashboard is where the admins talk to you.** Everything they decide about you lands
+     there as a card you can answer: approved into a series, turned down, a number granted or
+     refused, a profile linked, or taken off a roster. Being **let in** gets the loudest of them —
+     it welcomes you to the series by name, says which season you're on and what number and car
+     you're running, and points at the three things you need next: **your series schedule**, the
+     **league calendar**, and the **Discord**. Cards clear on a deliberate **Got it** and fold
+     away into *Earlier messages* rather than vanishing. Every one of them has a **Reply** box, and
+     what you write goes to the admins' Approvals queue — so a decision starts a conversation
+     instead of ending one. All of it used to happen in complete silence.
    - **If a sign-up is turned down, you're told why.** An admin denying one types a reason, and
      that reason reaches you twice: an **email to your account's address**, and a red panel at the
      very top of Sign-ups the next time you open it. The panel quotes the admin's words, and that
@@ -844,8 +855,9 @@ frontend/
     profile/        ← Edit your own profile
     login/          ← Sign in / create account
   lib/              ← Firebase admin + client init, auth guards, standings math, shared CRUD
-  components/       ← AppShell, Auth/League providers, ImageUpload, AdminGate, SessionEditor,
-                      RosterManager + UserAccountsManager (the Drivers page's admin tabs)
+  components/       ← AppShell, Auth/League/Messages providers, ImageUpload, AdminGate,
+                      SessionEditor, RosterManager + UserAccountsManager (the Drivers page's
+                      admin tabs), MessageBoard + AdminMessages (the two ends of the board)
 firebase/           ← Firestore + Storage security rules
 backend/            ← Legacy Python backend (unused; superseded by Next.js API routes)
 scripts/            ← Ops scripts: fetch-backup.mjs, upload-to-drive.mjs (see Backups below)
@@ -1314,12 +1326,56 @@ The reason now reaches them **twice**, and both messages are built from one requ
 The reason is free text an admin typed and it lands in an HTML email body, so `denialHtml` escapes
 every human-supplied value; the plain-text half keeps it verbatim. Both are asserted.
 
-**The same machinery carries the good news.** An approval was as quiet as a denial: the request
-left the queue, a roster entry appeared, and unless the player happened to open Sign-ups and notice
-their series had moved from "waiting" to "racing", nothing told them. `unreadApprovals()` drives a
-welcome banner on the Dashboard (`components/WelcomeToSeries.jsx`), cleared by the same acknowledge
-call. Approved **number changes** are excluded — welcoming somebody to a series they have raced for
-six weeks is the kind of notification that teaches people to ignore notifications.
+The panel is kept for one thing the message board below can't do: an unacknowledged denial **holds
+that season back** from the join list. Everything else an admin decides — including approvals —
+goes to the board.
+
+### The message board: admins and players talking to each other
+
+A denial was the loudest of a whole class of silent admin actions. **Every** decision was a state
+change on a document and nothing else: the queue emptied, and the player was left to infer what had
+happened from a roster they might not think to look at. Being *removed* from a season was the worst
+of them — entirely silent, and the one most likely to be read as the app losing an entry.
+
+So there is one board, with two ends:
+
+- **The player's end is their Dashboard** (`components/MessageBoard.jsx`). Every admin decision
+  about them lands there as a card: a sign-up approved (which gets the full welcome — schedule,
+  calendar, Discord, because it's somebody's first minute in the league) or denied, a car number
+  granted or refused, a driver profile linked, a removal from a roster.
+- **The admins' end is Approvals** (`components/AdminMessages.jsx`). Requests arrive there as they
+  always did, and now so do the players' replies — so "why was I turned down?" reaches somebody
+  instead of sitting unread on a Dashboard.
+
+Every card can be replied to, both ways, so a decision starts a conversation rather than ending one.
+
+The model is **`lib/messages.js`** — pure, covered by `lib/__tests__/messages.test.mjs`, and shared
+by both ends so the two sides can't describe the same decision differently. Every kind must render
+a title and body from *any* context, including none: a message whose season was later deleted still
+has to say something, and a blank card is worse than no card.
+
+Writes go through **`lib/messagesServer.js`**. `postMessage()` never throws into its caller — an
+admin approving a sign-up has made a decision, and that decision is already recorded; failing to
+announce it must not undo it. It also queues the same message by email, except where a fuller mail
+has already gone out (the denial), because two emails for one decision is how people learn to
+filter a league's mail into the bin.
+
+**Each side has its own read stamp**, and each is moved only by that side. A player reading their
+Dashboard must never clear the admin's flag, or a question would be marked answered by the person
+who asked it. A player's reply is treated like a pending sign-up — an outstanding *job*, not a
+notification — so it stays on the Approvals badge until an admin answers it or presses **Mark
+read**, and the admins' queue runs longest-wait-first.
+
+One subtlety worth its own rule: writing a reply marks a thread read for its author. On its own
+that would drop the card into "earlier messages" the instant a player pressed Send, so
+`openPlayerMessages()` keeps a thread at the top of the Dashboard while it's still waiting on an
+answer (`awaitingAdmin`) — asking a question and watching it disappear is how people conclude it
+never went anywhere. The **badge**, by contrast, counts strictly unread, or it would never fall to
+zero on a message the player wrote themselves.
+
+Ownership is the whole of the check on the player routes: `/api/messages/[id]` gives nobody power
+over anybody else's thread, staff included, and staff answer through `/api/admin/messages/[id]`
+instead. The admin list is league-scoped, so one league's staff never read another's conversations.
 
 ### Capping how many drivers may run a car
 
