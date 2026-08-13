@@ -3177,3 +3177,110 @@ input[type="radio"]:disabled:checked {
   .join-card-go { width: 100%; }
   .join-card-btn { width: 100%; justify-content: center; }
 }
+
+/* ── Driver Roster (app/roster) ────────────────────────────────────────────
+   The admin side of "who races this season". Two things here are new furniture
+   rather than restyled tables: the scope strip, which says out loud which
+   season is being edited, and the additions panel, which announces drivers who
+   were approved onto a roster while the admin was looking elsewhere. */
+
+/* Which season this screen is reading and writing. It's stated because three
+   dropdowns at the top of the page decide it, and an admin who hasn't noticed
+   which one they're on can edit the wrong season's roster without ever being
+   told which season that was. */
+.roster-scope {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-cyan);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+}
+
+.roster-scope-icon { font-size: 1.2rem; line-height: 1; color: var(--accent-cyan); }
+.roster-scope-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.roster-scope-body strong { font-size: 0.95rem; color: var(--ink-0); }
+.roster-scope-body span { font-size: 0.8rem; color: var(--ink-1); }
+.roster-scope-body span strong { font-size: inherit; color: var(--accent-cyan); }
+
+/* "3 drivers added to 2 rosters since you last looked" — the panel behind the
+   sidebar badge. Gold, like every other surface in the app that is telling an
+   admin something they haven't dealt with yet. */
+.roster-news {
+  margin: 18px 0 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-gold);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+  animation: reveal 0.45s ease;
+}
+
+.roster-news-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.roster-news-head > div { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 200px; }
+.roster-news-head strong { font-size: 0.98rem; color: var(--ink-0); }
+.roster-news-head span { font-size: 0.82rem; line-height: 1.5; color: var(--ink-1); }
+.roster-news-icon { font-size: 1.4rem; line-height: 1; }
+.roster-news-dismiss { margin-top: 0; flex-shrink: 0; }
+
+/* One season's worth of new arrivals, with the button that steers the scope
+   menus at it. */
+.roster-news-group {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.roster-news-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.roster-news-group-head strong { font-size: 0.9rem; color: var(--ink-0); }
+.roster-news-game { font-size: 0.78rem; color: var(--ink-2); }
+.roster-news-go { margin-top: 0; padding: 6px 14px; }
+
+.roster-news-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.roster-news-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.84rem;
+}
+
+.roster-news-name { color: var(--ink-0); font-weight: 600; }
+.roster-news-detail { color: var(--ink-2); font-size: 0.78rem; }
+
+@media (max-width: 640px) {
+  /* The "Open this roster" button goes under the season name rather than being
+     squeezed against it. */
+  .roster-news-group-head { align-items: stretch; }
+  .roster-news-go { width: 100%; justify-content: center; }
+}
+
+/* The same strip in its "waiting on you" colour: cyan for a job still to do,
+   gold for news already actioned. */
+.roster-news.is-waiting {
+  border-left-color: var(--accent-cyan);
+  background: linear-gradient(120deg, var(--accent-cyan-dim), var(--bg-surface));
+}

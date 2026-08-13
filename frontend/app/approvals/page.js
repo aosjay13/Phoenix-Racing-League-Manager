@@ -7,7 +7,7 @@ import { APPROVALS_MIN_LEVEL } from "@/lib/pendingSignupAlerts";
 
 // The league-wide approvals queue — where the sidebar's red badge points.
 //
-// The same queue is on Drivers ▸ Roster & Teams, but scoped to the season being
+// The same queue is on Admin ▸ Driver Roster, but scoped to the season being
 // worked on. This page answers the question the badge asks: "somebody is
 // waiting — who, and for what?", across every series in the league at once, so
 // nobody sits in the queue merely because an admin never selected their season.
@@ -35,7 +35,7 @@ export default function ApprovalsPage() {
             <div className="empty-state">
               <span className="empty-state-icon">✅</span>
               <p>Nothing waiting — every sign-up has been dealt with.</p>
-              <Link href="/drivers?tab=roster" className="btn btn-ghost">Go to Roster &amp; Teams</Link>
+              <Link href="/roster" className="btn btn-ghost">Go to Driver Roster</Link>
             </div>
           )}
         />

@@ -10,7 +10,9 @@ import { ClassPicker } from "@/components/ClassPicker";
 import { Modal } from "@/components/Modal";
 import { RosterImportModal } from "@/components/RosterImportModal";
 import { PendingSignups } from "@/components/PendingSignups";
+import { RosterAdditions, RosterPendingElsewhere } from "@/components/RosterAdditions";
 import { ensureDriverId } from "@/lib/driverPool";
+import { rosterAdditionsChanged, useRosterAdditions } from "@/lib/rosterAlerts";
 import { entryClassIds } from "@/lib/classFilter";
 import { api } from "@/lib/api";
 
@@ -78,11 +80,17 @@ function PoolAddInline({ onAdd, onCancel }) {
   );
 }
 
-// The season/series roster + teams manager. Rendered as the "Roster & Teams"
-// tab of the Drivers page (it used to be its own /roster screen), so drivers,
-// their rosters and the accounts behind them all live under one menu.
+// The season/series roster + teams manager — the whole of Admin ▸ Driver
+// Roster (app/roster). It was a tab on the Drivers page ("Roster & Teams")
+// before that; managing who races is a job rather than a view, so it earned a
+// menu that can carry a badge and be reached from anywhere.
 export function RosterManager() {
   const league = useLeague();
+  // Drivers approved onto a roster since this admin last read the panel — the
+  // news behind the sidebar badge. Always asked for: an approval usually lands
+  // in a season OTHER than the one currently scoped, which is exactly why it
+  // needed announcing.
+  const additions = useRosterAdditions(true);
   const { gameId, seriesId, series, seriesList } = league;
   const scope = useScope(league);
 
@@ -569,9 +577,8 @@ export function RosterManager() {
   return (
     <section>
       <div className="page-title">
-        <h2>{scope.title}</h2>
-        <span style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          {roster && <span className="page-badge">{rows.length} Drivers · {roster.seasons_counted} Season{roster.seasons_counted === 1 ? "" : "s"}</span>}
+        <h2>Driver Roster</h2>
+        <span style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           {canManage && (
             <button className="btn btn-primary" style={{ marginTop: 0 }}
               title="Bulk-add every driver from this series, or clone a past season's roster — anyone already here is skipped"
@@ -582,89 +589,65 @@ export function RosterManager() {
           {canManage && (
             <button className="btn btn-primary" style={{ marginTop: 0 }}
               onClick={() => { setEditMode(m => !m); cancelRowEdit(); setSeriesPanelKey(null); }}>
-              {editMode ? "Done Editing" : "Edit Roster"}
+              {editMode ? "Done Editing" : "✎ Edit Roster"}
             </button>
           )}
         </span>
       </div>
-      <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.88rem" }}>
-        Use the Game / Series / Season menus above to change scope. Pick a specific series to see and sort by car numbers.
-        Click the # or Driver headers to toggle sorting.
-        {canManage && !editMode && " Click “Edit Roster” to add, edit, or reassign drivers directly in the table."}
+      <p className="page-intro">
+        Who races in which season — car numbers, classes, teams, and the players waiting to be let
+        in. Everything here applies to the scope named below; change it with the Game / Series /
+        Season menus at the top of the page.
       </p>
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
 
-      {/* Players waiting to be let onto this season's roster. Nothing they
+      {/* ── What just happened ───────────────────────────────────────────
+          Approving a sign-up puts a driver on ONE season's roster, which is
+          very often not the season on screen. Said first, before the jobs,
+          because it's the thing an admin had no way of learning otherwise. */}
+      {canManage && <RosterAdditions additions={additions} />}
+
+      {/* ── What needs doing ─────────────────────────────────────────────
+          Players waiting to be let onto this season's roster. Nothing they
           submitted is live until an admin approves it here — see
           components/PendingSignups.jsx. */}
+      {/* Anyone waiting in a season OTHER than the one on screen. The panel
+          below only ever shows the scoped season's queue, so without this a
+          sign-up for a season the admin isn't looking at is invisible. */}
+      {canManage && <RosterPendingElsewhere seasonId={editSeasonId} />}
+
       {canManage && (
         <PendingSignups
           seasonId={editSeasonId}
           seasonName={league.seasons.find(s => s.id === editSeasonId)?.name}
-          onApproved={() => load().catch(err => showToast("error", err.message))}
+          onApproved={() => {
+            // The approval has already put them on the roster; re-read it, and
+            // tell the badge so the new arrival is announced straight away
+            // rather than up to a poll later.
+            rosterAdditionsChanged();
+            load().catch(err => showToast("error", err.message));
+          }}
         />
       )}
 
-      <div className="form-card" style={{ maxWidth: "100%" }}>
-        <h3 style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span>Driver Pool <span style={{ fontWeight: 400, fontSize: "0.8rem", color: "var(--ink-2)" }}>({driverPool.length} global)</span></span>
-          <button className="btn btn-ghost" style={{ marginTop: 0 }} onClick={() => setPoolOpen(o => !o)}>
-            {poolOpen ? "Hide" : "Manage"}
-          </button>
-        </h3>
-        {!poolOpen ? (
-          <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--ink-1)" }}>
-            Create driver identities here without assigning them to a season or series right away —
-            they&rsquo;ll be ready to pull into any series (or race, mid-entry) later.
-          </p>
-        ) : (
-          <>
-            <form onSubmit={createPoolDriver} style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
-              <div className="field" style={{ marginBottom: 0, flex: "1 1 200px" }}>
-                <label>Driver Name</label>
-                <input required value={poolForm.name} onChange={e => setPoolForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. J. May" />
-              </div>
-              <div className="field" style={{ marginBottom: 0, flex: "1 1 200px" }}>
-                <label>Linked Player Account (optional)</label>
-                <select value={poolForm.user_id} onChange={e => setPoolForm(f => ({ ...f, user_id: e.target.value }))}>
-                  <option value="">Not linked</option>
-                  {users.map(u => <option key={u.uid} value={u.uid}>{u.display_name}</option>)}
-                </select>
-              </div>
-              <button className="btn btn-primary" type="submit" style={{ marginTop: 0 }}>+ Create Driver</button>
-            </form>
-
-            {driverPool.length > 0 && (
-              <div style={{ marginTop: 16 }}>
-                {driverPool.map(d => (
-                  <div className="driver-row" key={d.id} style={{ gap: 8 }}>
-                    <span style={{ flex: 1 }}>
-                      {d.name}
-                      {d.user_id && <span style={{ marginLeft: 8, color: "var(--ink-2)", fontSize: "0.78rem" }}>Linked</span>}
-                    </span>
-                    {canManage && (
-                      poolAdding === d.id ? (
-                        <PoolAddInline driver={d} onAdd={num => addPoolDriverToSeries(d, num)} onCancel={() => setPoolAdding(null)} />
-                      ) : (
-                        poolNotInSeries.some(p => p.id === d.id) && (
-                          <button className="btn btn-ghost" type="button" style={{ marginTop: 0, padding: "4px 10px" }}
-                            onClick={() => setPoolAdding(d.id)}>
-                            + Add to {series?.name ?? "series"}
-                          </button>
-                        )
-                      )
-                    )}
-                    <button className="btn btn-danger" style={{ marginTop: 0, padding: "4px 10px" }}
-                      onClick={() => deletePoolDriver(d.id, d.name)}>✕</button>
-                  </div>
-                ))}
-              </div>
-            )}
-            {driverPool.length === 0 && (
-              <p style={{ margin: "12px 0 0", fontSize: "0.85rem", color: "var(--ink-2)" }}>No global drivers yet — create one above.</p>
-            )}
-          </>
-        )}
+      {/* ── What you're looking at ───────────────────────────────────────
+          The scope, spelled out. Three dropdowns at the top of the page decide
+          what this screen writes to, and an admin who hasn't noticed which one
+          they're on can edit the wrong season's roster without ever being told
+          which season that was. */}
+      <div className="roster-scope">
+        <span className="roster-scope-icon" aria-hidden="true">⊞</span>
+        <div className="roster-scope-body">
+          <strong>{scope.title}</strong>
+          <span>
+            {roster
+              ? <>{rows.length} driver{rows.length === 1 ? "" : "s"} · {roster.seasons_counted} season{roster.seasons_counted === 1 ? "" : "s"} counted</>
+              : "Loading…"}
+            {canManage
+              ? <> · edits are written to <strong>{league.seasons.find(s => s.id === editSeasonId)?.name || "this season"}</strong></>
+              : " · pick a Series above to start editing"}
+          </span>
+        </div>
       </div>
 
       {!canManage && roster && seriesId && (
@@ -771,7 +754,14 @@ export function RosterManager() {
         </div>
       )}
 
-      <div className="section-header"><h3>{scope.title}</h3></div>
+      <div className="section-header">
+        <h3>Who&rsquo;s on this roster</h3>
+        {canManage && !editMode && rows.length > 0 && (
+          <span style={{ fontSize: "0.8rem", color: "var(--ink-2)" }}>
+            Click # or Driver to sort · <strong>Edit Roster</strong> to change anything
+          </span>
+        )}
+      </div>
       {loadError ? (
         <div className="empty-state" style={{ marginTop: 8 }}>
           <span className="empty-state-icon">⚠</span>
@@ -938,6 +928,72 @@ export function RosterManager() {
           </table>
         </div>
       )}
+
+      {/* The global driver pool — identities that exist independently of any
+          season. It sits BELOW the roster because it's the supporting cast:
+          the question this screen is opened to answer is "who is racing this
+          season?", and the pool used to push that table below the fold. */}
+      <div className="form-card" style={{ maxWidth: "100%" }}>
+        <h3 style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span>Driver Pool <span style={{ fontWeight: 400, fontSize: "0.8rem", color: "var(--ink-2)" }}>({driverPool.length} global)</span></span>
+          <button className="btn btn-ghost" style={{ marginTop: 0 }} onClick={() => setPoolOpen(o => !o)}>
+            {poolOpen ? "Hide" : "Manage"}
+          </button>
+        </h3>
+        {!poolOpen ? (
+          <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--ink-1)" }}>
+            Create driver identities here without assigning them to a season or series right away —
+            they&rsquo;ll be ready to pull into any series (or race, mid-entry) later.
+          </p>
+        ) : (
+          <>
+            <form onSubmit={createPoolDriver} style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+              <div className="field" style={{ marginBottom: 0, flex: "1 1 200px" }}>
+                <label>Driver Name</label>
+                <input required value={poolForm.name} onChange={e => setPoolForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. J. May" />
+              </div>
+              <div className="field" style={{ marginBottom: 0, flex: "1 1 200px" }}>
+                <label>Linked Player Account (optional)</label>
+                <select value={poolForm.user_id} onChange={e => setPoolForm(f => ({ ...f, user_id: e.target.value }))}>
+                  <option value="">Not linked</option>
+                  {users.map(u => <option key={u.uid} value={u.uid}>{u.display_name}</option>)}
+                </select>
+              </div>
+              <button className="btn btn-primary" type="submit" style={{ marginTop: 0 }}>+ Create Driver</button>
+            </form>
+
+            {driverPool.length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                {driverPool.map(d => (
+                  <div className="driver-row" key={d.id} style={{ gap: 8 }}>
+                    <span style={{ flex: 1 }}>
+                      {d.name}
+                      {d.user_id && <span style={{ marginLeft: 8, color: "var(--ink-2)", fontSize: "0.78rem" }}>Linked</span>}
+                    </span>
+                    {canManage && (
+                      poolAdding === d.id ? (
+                        <PoolAddInline driver={d} onAdd={num => addPoolDriverToSeries(d, num)} onCancel={() => setPoolAdding(null)} />
+                      ) : (
+                        poolNotInSeries.some(p => p.id === d.id) && (
+                          <button className="btn btn-ghost" type="button" style={{ marginTop: 0, padding: "4px 10px" }}
+                            onClick={() => setPoolAdding(d.id)}>
+                            + Add to {series?.name ?? "series"}
+                          </button>
+                        )
+                      )
+                    )}
+                    <button className="btn btn-danger" style={{ marginTop: 0, padding: "4px 10px" }}
+                      onClick={() => deletePoolDriver(d.id, d.name)}>✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {driverPool.length === 0 && (
+              <p style={{ margin: "12px 0 0", fontSize: "0.85rem", color: "var(--ink-2)" }}>No global drivers yet — create one above.</p>
+            )}
+          </>
+        )}
+      </div>
 
       {importing && canManage && (
         <RosterImportModal

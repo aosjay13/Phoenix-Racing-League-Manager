@@ -16,7 +16,7 @@ import { signupsChanged } from "@/lib/pendingSignupAlerts";
 //
 // It renders in two places, off the same component so the two can't drift:
 //
-//   • with a `seasonId` — at the top of Drivers ▸ Roster & Teams, showing that
+//   • with a `seasonId` — at the top of Admin ▸ Driver Roster, showing that
 //     ONE season's queue, because "who's waiting to get in" belongs next to
 //     "who's in";
 //   • with no `seasonId` (`scope="league"`) — on /approvals, the whole league's

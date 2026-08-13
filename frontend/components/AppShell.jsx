@@ -6,6 +6,8 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { useLeague } from "@/components/LeagueProvider";
 import { useMySignups } from "@/components/MySignupsProvider";
+import { additionsTitle } from "@/lib/rosterAdditions";
+import { useRosterAdditions } from "@/lib/rosterAlerts";
 import { copyCurrentLink } from "@/lib/scopeLink";
 import { signupBadgeCount, signupBadgeTitle } from "@/lib/signupFlow";
 import { useUserAccountsAlerts, alertsTitle } from "@/lib/userAccountsAlerts";
@@ -58,6 +60,12 @@ const publicNav = [
 // queue — Moderator and up (see lib/pendingSignupAlerts.js).
 const adminNav = [
   { href: "/admin",       label: "League Setup",   icon: "⚙", exact: true },
+  // Who's on which roster, and everything done to it. It was a tab on Drivers
+  // ("Roster & Teams") that you had to know was there; it's a menu of its own
+  // because it's a job rather than a view, and because it carries a badge —
+  // approving a sign-up puts a driver on a roster the admin may not be looking
+  // at, which used to happen entirely silently (see lib/rosterAdditions.js).
+  { href: "/roster",      label: "Driver Roster",  title: "Season rosters, car numbers, teams & sign-ups", icon: "⊞" },
   { href: "/approvals",   label: "Approvals",      icon: "✅", minLevel: APPROVALS_MIN_LEVEL },
 ];
 
@@ -219,12 +227,17 @@ export function AppShell({ children }) {
   // The player's own side of the same queue: series they could join, and cars
   // they still have to choose. Nothing is fetched for a signed-out visitor.
   const { data: mySignups } = useMySignups();
+  // Drivers approved onto a roster since this admin last read the panel. Unlike
+  // Approvals — an outstanding job that falls when somebody does it — this is
+  // news, so it clears by being read. See lib/rosterAlerts.js.
+  const rosterAdditions = useRosterAdditions(isAdmin);
   // New signups / pending claims are handled on the Drivers page's User
   // Accounts tab, so the badge rides along with that nav item.
   const navBadges = {
     "/drivers": { count: userAccountsAlerts.total, title: alertsTitle(userAccountsAlerts) },
     "/approvals": { count: pendingSignups, title: pendingSignupsTitle(pendingSignups) },
     "/signups": { count: signupBadgeCount(mySignups), title: signupBadgeTitle(mySignups) },
+    "/roster": { count: rosterAdditions.length, title: additionsTitle(rosterAdditions) },
   };
   // Admin entries the signed-in staff account is high enough to see.
   const adminItems = adminNav.filter(

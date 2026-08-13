@@ -122,7 +122,7 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   everywhere, with sortable columns and per-series car numbers
 - 🖼 **Custom branding** — upload game, series, season, team, and track logos
 - 👑 **Admin roles** — set `ADMIN_EMAILS`; admins get results entry from the Schedule, the
-  Roster & Teams and User Accounts tabs on Drivers, the Team Roster tab on Teams, League Setup,
+  the Driver Roster menu, the User Accounts tab on Drivers, the Team Roster tab on Teams, League Setup,
   and (Moderator and above) the Approvals queue
 - 💾 **Backup & restore** — the Owner can export the *entire* application to one JSON file and
   import it back after a crash, a corruption or a hack, with every record keeping its original ID
@@ -434,7 +434,7 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      ("Pro"/"Amateur", "GT3"/"LMP2"). Leave it empty for an ordinary single-class season —
      nothing changes. Classes created here fill the **Class** menu in the top bar, which scopes
      Standings, Stats and Records to one class at a time. Assign drivers to a class on the
-     Drivers ▸ Roster & Teams tab or from the Class column in the results grid; deleting a class
+     Admin ▸ Driver Roster or from the Class column in the results grid; deleting a class
      only unassigns
      its drivers, never their points or stats. Give a class a **Car Type** and the schedule,
      event pages and Class menu all show which car goes with which class — leave it blank to
@@ -537,7 +537,7 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      Moderator-and-above throughout — the nav item, the page and `GET
      /api/admin/signup-requests/count` behind them — so a Statistician (who clears the general
      staff gate) and every ordinary player see neither the badge nor the count.
-   - **Pending Approvals** *(admin, on Roster & Teams)* — the selected season's slice of the
+   - **Pending Approvals** *(admin, on Driver Roster)* — the selected season's slice of the
      queue above: players who submitted a sign-up from the Sign-ups menu waiting to be let in,
      plus anyone already on the roster asking for a different car number. Nothing they sent is
      live.
@@ -554,7 +554,7 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      they're seated without one rather than the approval failing outright — but a number *change*
      whose number has gone is refused instead, since granting it would either clash or silently do
      nothing, and neither is what the driver asked for.
-   - **⬆ Bulk Import Drivers** *(admin, on Roster & Teams)* — the season-rollover shortcut, for
+   - **⬆ Bulk Import Drivers** *(admin, on Driver Roster)* — the season-rollover shortcut, for
      everyone who never goes near the Sign-ups menu. Pick a source — **every driver in this
      series** (across all its seasons) or **clone one past season's roster** — and they're added in
      one shot, carrying their name, car number, driver profile and linked account. Anyone already
@@ -578,8 +578,26 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      or *Not opened yet* (verified, but hasn't returned to the app since, so its profile document
      doesn't exist yet). Roles and driver links can be set on either; they're kept and applied
      when the player next signs in.
-   - **Roster & Teams** *(admin)* — select a **Series** in the top dropdowns to manage that
-     series' roster:
+   - **Driver Roster** *(admin — its own sidebar menu, under Admin)* — select a **Series** in the
+     top dropdowns to manage that series' roster. It was a tab on Drivers ("Roster & Teams"); it
+     is a menu of its own because it's a *job* rather than a view, and a job needs somewhere it
+     can carry a badge. Its own URL, `/roster`, works again; `?tab=roster` redirects there.
+     - **A red badge, for drivers who were added while you weren't looking.** Approving a sign-up
+       is the one admin action whose result lands out of sight: the driver appears on *one*
+       season's roster, which is very often not the season you're scoped to, and the queue you
+       approved them from then empties — so nothing was left on screen to say it had happened, or
+       where. The badge counts them, and the panel at the top of the screen names each driver, the
+       roster they landed on, and their number and car, with an **Open this roster →** button that
+       steers the Game / Series / Season menus straight at it. It's *news*, not a job, so it
+       clears by being **read**: a deliberate **Got it**, never merely opening the page.
+     - **Sign-ups waiting in other seasons** get the same treatment, at the other end of the
+       process. The approve queue below is scoped to the season you're on — which is right for
+       working through it, and meant a sign-up for any *other* season was invisible until you
+       happened to steer the dropdowns at it. A strip at the top now names who's waiting where,
+       with a **Review these →** button that takes you to that season's queue.
+     - **Which season you're editing, said out loud.** Three dropdowns decide what this screen
+       writes to, so the scope strip under the header names the season edits are written to
+       rather than leaving you to infer it from the menus.
      - **Teams** — add a team to this season (creating it in the league-wide pool if it's new)
        and give it a logo. Building its driver line-up happens on **Teams ▸ Team Roster**; the ✕
        here takes a team *out of this season*, never out of the league.
@@ -764,11 +782,14 @@ frontend/
                       filtered by Game ▸ Series (lib/calendar.js holds its arithmetic)
     admin/          ← Admin: League Setup — build games/series/seasons/races, upload logos
     drivers/        ← Driver directory + public profiles (/drivers/[uid]: career stats,
-                      race history, per-track stats), plus the admin Roster & Teams and
-                      User Accounts tabs (?tab=roster / ?tab=accounts)
+                      race history, per-track stats), plus the admin User Accounts tab
+                      (?tab=accounts)
     teams/          ← Team directory + public profiles (/teams/[team]: career stats, drivers,
                       season-by-season line-ups), plus the admin Team Roster tab (?tab=roster)
     approvals/      ← League-wide pending sign-up queue (Moderator+), behind the sidebar badge
+    roster/         ← Admin ▸ Driver Roster: season rosters, car numbers, classes, teams, the
+                      driver pool, the season's sign-up queue, and the badge for drivers
+                      approved onto a roster since the admin last looked
     races/[id]/     ← Race results view; races/[id]/edit ← admin race info + results editor
     time-trials/    ← Time Trials & Placements hub; time-trials/[id] ← one session's sheet
                       (laps, Best Time / Best Average, division placement, Complete Session,
@@ -1193,6 +1214,38 @@ every reader at once, the moment a sign-up is sent or a car is locked in.
 
 Joining lives here and **only** here: `/series-info` is now My Series (the seasons you're already
 on) and links across rather than carrying a second copy of the form.
+
+### Telling an admin where an approval went
+
+Approving a sign-up is the only admin action whose *result* lands somewhere the admin isn't
+looking. It creates a roster entry in one season — very often not the season the dropdowns are
+on — and the queue it was approved from then empties, so nothing was left on screen to say it had
+happened or where. The fix is a badge and two strips on **Admin ▸ Driver Roster**, and the rules
+behind them live in **`lib/rosterAdditions.js`**, which is pure and covered by
+`lib/__tests__/rosterAdditions.test.mjs`:
+
+- **Only what's new.** `newAdditions(rows, seen)` counts approvals resolved after a "seen" stamp
+  in localStorage (`lib/rosterAlerts.js`), stamped to *now* on first ever load so a new admin
+  isn't greeted by the league's entire back catalogue.
+- **Only people who joined.** A car-number change is in the same queue and is approved the same
+  way, but nobody joined anything — announcing it as "added to a roster" sends an admin hunting
+  for a driver who was already there. `isNumberChange` filters them out of both strips.
+- **Grouped by the roster they landed on**, because that's the unit an admin acts on: one trip to
+  a season's roster settles everyone who joined it, so there's one **Open this roster →** button
+  per season rather than one per person. It calls `setGameId`/`setSeriesId`/`setSeasonId` in that
+  order — parent first, so each tier's refetch keeps a selection that's valid underneath it.
+
+**It clears by being read, not by being worked.** That's the difference from the Approvals badge
+next to it: Approvals counts an outstanding *job* and falls when somebody does it, so it must not
+be dismissible. This counts *news* — the work is already done — so it clears on a deliberate
+**Got it** and never merely by opening the page, since an admin who glanced at the screen on
+their way elsewhere hasn't read it.
+
+**The same blind spot exists at the other end**, and `pendingElsewhere()` closes it: the approve
+queue on this screen is scoped to one season (approving from a list spanning every season is how
+you approve somebody onto the wrong one), which meant a sign-up for any other season was
+invisible until the admin happened to steer the dropdowns at it. A second strip names who is
+waiting where, with a button to that season's queue.
 
 ### Where points are configured
 
