@@ -233,7 +233,13 @@ export function TeamRosterManager() {
       // — the same thing the Driver Roster does when it needs an identity.
       let driverId = option.driver_id;
       if (!driverId) {
-        driverId = await ensureDriverId({ name: option.name, user_id: option.user_id });
+        // Every option here is already on this season's roster or in the driver
+        // pool, so this backfills the identity of somebody who exists rather
+        // than deciding whether they're new — it resolves through every name
+        // they answer to (see lib/driverMatch.js) and never stops to ask.
+        driverId = await ensureDriverId({
+          name: option.name, user_id: option.user_id, pool: driverPool, confirmDuplicate: true,
+        });
         if (option.entry_id) await api(`/api/entries/${option.entry_id}`, { method: "PATCH", body: { driver_id: driverId } });
       }
       const mappingId = await ensureMapping(row);

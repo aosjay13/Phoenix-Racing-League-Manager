@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { withAdmin, getRequestLeagueId } from "@/lib/serverAuth";
-import { planRosterImport } from "@/lib/rosterImport";
+import { applyRosterPlan, planRosterImport } from "@/lib/rosterImport";
+import { loadDriverPool, loadGameNames, serializeMatches } from "@/lib/driverMatchServer";
 
 export const dynamic = "force-dynamic";
 
@@ -9,26 +10,43 @@ export const dynamic = "force-dynamic";
 //
 //   POST { season_id, source: "series" }               → every driver who has
 //         ever raced in this season's SERIES (across all its seasons)
-//   POST { season_id, source: "season", from_season_id } → clone one past
-//         season's roster
+//   POST { season_id, source: "season", from_season_id } → clone one season's
+//         roster. Any season will do, including one from another series in the
+//         league, which is how a brand-new series starts with the drivers it
+//         already has instead of thirty names typed in again.
+//   POST { …, preview: true }                          → say what a run WOULD
+//         do and change nothing
+//   POST { …, decisions: { <row key>: { action, driver_id } } }
+//                                                      → run it, with the
+//         doubtful rows settled by the admin
 //
-// Deduplication is the whole point: a driver already on the target season's
-// roster is SKIPPED, never duplicated and never an error, so the button is safe
-// to press twice (or to top up a roster that's already half-built). Identity is
-// matched the same way the rest of the app matches drivers — global driver_id
-// first, then linked account, then lowercased name — so someone pulled in under
-// a series alias still resolves to the person already on the roster.
+// Two kinds of duplicate are stopped here, and they're different problems:
 //
-// What carries over: the driver's name, car number, global driver_id and linked
+//   • the same person twice on THIS roster — a driver already on the target
+//     season is skipped, never duplicated and never an error, so the button is
+//     safe to press twice or to top up a half-built roster;
+//   • the same person twice in the APP — every imported entry comes out
+//     carrying a `driver_id`, resolved against the global driver pool through
+//     every name that driver answers to (profile name, per-game names,
+//     PSN/Xbox/Discord/iRacing usernames, former names — see
+//     lib/driverMatch.js). Anyone who genuinely isn't in the pool gets a driver
+//     profile created for them as part of the import, so a roster never again
+//     ends up full of entries attached to nobody.
+//
+// A candidate that RESEMBLES an existing driver without matching one is never
+// resolved on its own: it comes back as `check`, and the dialog makes the admin
+// say which. That is the prompt this whole thing was missing.
+//
+// What carries over: the driver's name, car number, driver_id and linked
 // account. What doesn't: team and class, which are per-season records whose ids
 // mean nothing in the new season — assign those on the roster afterwards.
 //
-// The matching rules themselves live in lib/rosterImport.js (planRosterImport)
+// The matching rules themselves live in lib/rosterImport.js + lib/driverMatch.js
 // so they can be tested without a database.
 const SOURCES = new Set(["series", "season"]);
 
 export const POST = withAdmin(async (request, ctx, user) => {
-  const { season_id, source, from_season_id } = await request.json();
+  const { season_id, source, from_season_id, preview = false, decisions = {} } = await request.json();
   if (!season_id) return NextResponse.json({ error: "season_id required" }, { status: 400 });
   if (!SOURCES.has(source)) {
     return NextResponse.json({ error: 'source must be "series" or "season"' }, { status: 400 });
@@ -54,11 +72,18 @@ export const POST = withAdmin(async (request, ctx, user) => {
     sourceSeasonIds = snap.docs.map(d => d.id).filter(id => id !== season_id);
   }
   if (!sourceSeasonIds.length) {
-    return NextResponse.json({ ok: true, imported: 0, skipped: 0, drivers: [], message: "No other seasons to import from." });
+    return NextResponse.json({
+      ok: true, imported: 0, skipped: 0, drivers: [], rows: [],
+      summary: { total: 0, linked: 0, check: 0, new: 0, on_roster: 0, unusable: 0 },
+      message: "No other seasons to import from.",
+    });
   }
 
-  const [existingSnap, ...sourceSnaps] = await Promise.all([
+  const leagueId = getRequestLeagueId(request);
+  const [existingSnap, pool, games, ...sourceSnaps] = await Promise.all([
     db().collection("entries").where("season_id", "==", season_id).get(),
+    loadDriverPool(leagueId),
+    loadGameNames(leagueId),
     ...sourceSeasonIds.map(id => db().collection("entries").where("season_id", "==", id).get()),
   ]);
 
@@ -73,10 +98,47 @@ export const POST = withAdmin(async (request, ctx, user) => {
   candidates.sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
 
   const existing = existingSnap.docs.map(d => d.data());
-  const { create, skipped } = planRosterImport(existing, candidates);
+  const plan = planRosterImport(existing, candidates, pool, { games });
 
-  const leagueId = getRequestLeagueId(request);
+  // The names behind each resolved driver_id, so the review table can say
+  // "imports under Ryan Maynard" rather than showing an id.
+  const poolNames = Object.fromEntries(pool.map(d => [d.id, d.name]));
+  const rows = plan.rows.map(r => ({
+    ...r,
+    driver_name: r.driver_id ? poolNames[r.driver_id] ?? null : null,
+    matches: serializeMatches(r.matches),
+  }));
+
+  if (preview) {
+    return NextResponse.json({ ok: true, preview: true, rows, summary: plan.summary });
+  }
+
+  const { create, skipped, needsDriver } = applyRosterPlan(plan.rows, decisions);
+
+  // Everyone who genuinely isn't in the app yet gets a driver profile, so the
+  // entries this writes are never orphaned. Done first, in one batch, and the
+  // new ids are stamped onto the entries below.
   const now = new Date().toISOString();
+  for (let i = 0; i < needsDriver.length; i += 450) {
+    const batch = db().batch();
+    for (const row of needsDriver.slice(i, i + 450)) {
+      const ref = db().collection("drivers").doc();
+      batch.set(ref, {
+        name: row.name,
+        user_id: row.user_id || "",
+        notes: "",
+        ...(leagueId ? { league_id: leagueId } : {}),
+        created_at: now,
+        created_by: user.uid,
+        // Records that this profile was made by a roster import rather than
+        // typed in, which is worth knowing when tidying a league up later.
+        created_from_import: season_id,
+      });
+      create[row.at].driver_id = ref.id;
+    }
+    await batch.commit();
+  }
+
   const toCreate = create.map(row => ({
     season_id,
     ...(leagueId ? { league_id: leagueId } : {}),
@@ -97,6 +159,12 @@ export const POST = withAdmin(async (request, ctx, user) => {
     ok: true,
     imported: toCreate.length,
     skipped,
+    // How many of those were attached to a driver the app already had, and how
+    // many needed a profile of their own — the two halves of "everyone lines
+    // up with a current driver, and if they don't, one is made".
+    linked: toCreate.length - needsDriver.length,
+    created_drivers: needsDriver.length,
     drivers: toCreate.map(d => d.name),
+    summary: plan.summary,
   });
 });

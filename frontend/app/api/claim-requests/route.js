@@ -6,6 +6,8 @@ import {
   missingRequiredAliases,
 } from "@/lib/signupRequest";
 import { seasonAcceptsSignups } from "@/lib/carSelection";
+import { matchReason } from "@/lib/driverMatch";
+import { duplicateCheck } from "@/lib/driverMatchServer";
 
 export const dynamic = "force-dynamic";
 
@@ -94,16 +96,23 @@ export const POST = withUser(async (request, ctx, user) => {
     return NextResponse.json({ error: "Enter the name you race under." }, { status: 400 });
   }
 
-  // An exact name match is almost always the same person, and a duplicate would
-  // split their history in two — point them at claiming that profile instead.
-  const pool = await db().collection("drivers").get();
-  const clash = pool.docs.find(d =>
-    String(d.data().name || "").trim().toLowerCase() === info.name.toLowerCase());
-  if (clash) {
+  // A name the league already knows is almost always the same person, and a
+  // duplicate would split their history in two — point them at claiming that
+  // profile instead. "Already knows" means any name that driver answers to, not
+  // just the one on their profile: somebody whose GT7 sign-up gives their PSN
+  // username is the driver that username is already on file for.
+  //
+  // Only a name they demonstrably go by counts here. A merely SIMILAR name is
+  // offered to an admin as a prompt (see POST /api/drivers), but this is a
+  // player filling in a form about themselves, and refusing them because their
+  // name resembles somebody else's would leave them with no way through.
+  const report = await duplicateCheck({ name: info.name, leagueId });
+  if (report && report.status !== "possible") {
+    const clash = report.matches[0];
     return NextResponse.json({
-      error: `There's already a driver called “${clash.data().name}”. If that's you, ask to claim that profile instead so your race history comes with it.`,
+      error: `There's already a driver called “${clash.name}”${clash.via?.source === "name" ? "" : ` (${matchReason(clash)})`}. If that's you, ask to claim that profile instead so your race history comes with it.`,
       code: "driver-exists",
-      driver_id: clash.id,
+      driver_id: clash.driver_id,
     }, { status: 409 });
   }
 

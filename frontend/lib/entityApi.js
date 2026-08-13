@@ -61,7 +61,14 @@ export function coerceField(opts, raw) {
 // the race dates inside them (see lib/seasonOrderServer.js). It may be async,
 // since working that out means a second read, and whatever it returns is the
 // response body, so it can decorate the docs on the way past.
-export function makeCollectionRoutes({ collection, parentField, fields, sortField = "created_at", normalize = null, orderDocs = null }) {
+//
+// `guard` is an async last look at a POST before anything is written. It's
+// handed the request body and the request, and returning a NextResponse
+// REFUSES the create with it — which is how POST /api/drivers stops a second
+// profile for somebody the league already has without the caller confirming it
+// first (see app/api/drivers/route.js). Returning nothing lets the write
+// proceed, so a collection with no guard behaves exactly as it always did.
+export function makeCollectionRoutes({ collection, parentField, fields, sortField = "created_at", normalize = null, orderDocs = null, guard = null }) {
   async function GET(request) {
     const { searchParams } = new URL(request.url);
     let query = db().collection(collection);
@@ -88,6 +95,10 @@ export function makeCollectionRoutes({ collection, parentField, fields, sortFiel
 
   const POST = withAdmin(async (request, ctx, user) => {
     const body = await request.json();
+    if (guard) {
+      const refusal = await guard(body, request);
+      if (refusal) return refusal;
+    }
     const doc = { created_at: new Date().toISOString(), created_by: user.uid };
     // Stamp the active league so new rows are partitioned like migrated ones.
     // Absent header (pre-migration) leaves it unset; a later migration run
