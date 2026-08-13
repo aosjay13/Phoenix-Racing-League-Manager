@@ -127,6 +127,7 @@ export default function TimeTrialPage() {
   const { seasons, seriesList } = useLeague();
 
   const [trial, setTrial] = useState(null);
+  const [trialSeason, setTrialSeason] = useState(null);
   const [classes, setClasses] = useState([]);
   // The series this night places into, each resolved to the season whose roster
   // it builds and that season's own classes — see the placement block below.
@@ -152,6 +153,7 @@ export default function TimeTrialPage() {
     try {
       const data = await api(`/api/time-trials/${id}`);
       setTrial(data.trial);
+      setTrialSeason(data.season || null);
       setClasses(data.classes || []);
       setTrialSeries(data.placement_series || []);
       setRows((data.entries || []).map(e => ({ ...blankRow(), ...e, stored: true })));
@@ -285,6 +287,19 @@ export default function TimeTrialPage() {
     return [...seen.values()];
   }, [showSeriesPlacement, placementSeries, placementClasses, summarized]);
   const showPlacement = !!trial && (trial.is_placement || placementClasses.length > 0 || showSeriesPlacement);
+
+  // The seasons the Complete / Export dialogs may target. `seasons` from the
+  // top bar covers only the series currently selected there — but this screen
+  // is reached by id, and a trial routinely belongs to another series (or to
+  // none). Without its own season folded in, the dialog opened on a trial from
+  // a different series showed an empty selection and could not target the very
+  // season the trial names.
+  const seasonOptions = useMemo(() => (
+    trialSeason && !seasons.some(s => s.id === trialSeason.id)
+      ? [trialSeason, ...seasons]
+      : seasons
+  ), [trialSeason, seasons]);
+
   const completed = trial?.status === "completed";
   const canEdit = isAdmin && !completed;
 
@@ -306,13 +321,19 @@ export default function TimeTrialPage() {
   }
 
   function addDriver(candidate) {
+    // A driver pulled off the roster brings the class they're already in — but
+    // only when it is one of THIS night's divisions. Otherwise it is either a
+    // class from another season entirely (a night placing into series) or an
+    // answer to the question the night exists to ask, pre-filled: the field
+    // would open fully placed, with nothing showing as unassigned.
+    const seeded = candidate.assigned_class_id || "";
     setRows(prev => [...prev, blankRow({
       name: candidate.name,
       driver_id: candidate.driver_id || "",
       user_id: candidate.user_id || "",
       entry_id: candidate.entry_id || "",
       number: candidate.number ?? "",
-      assigned_class_id: candidate.assigned_class_id || "",
+      assigned_class_id: (!trial?.is_placement && placementClasses.some(c => c.id === seeded)) ? seeded : "",
     })]);
     setDirty(true);
   }
@@ -588,7 +609,9 @@ export default function TimeTrialPage() {
                 title={`${averageLabel(trial.average_laps)}. Click to sort.`}>
                 {averageLabel(trial.average_laps)}{arrow("average")}
               </th>
-              <th>Laps</th>
+              {/* Laps that produced a time — so a row showing four entries and
+                  "2" is a row with two unreadable ones in it, not a bug. */}
+              <th title="Laps that produced a usable time. Open a driver to see every lap they submitted.">Laps</th>
               {Array.from({ length: lapCols }, (_, i) => <th key={i}>L{i + 1}</th>)}
               {canEdit && <th />}
             </tr>
@@ -738,7 +761,7 @@ export default function TimeTrialPage() {
       {completing && (
         <CompleteTimeTrialModal
           trial={trial}
-          seasons={seasons}
+          seasons={seasonOptions}
           placementSeries={placementSeries}
           onClose={() => setCompleting(false)}
           onCompleted={(updated, res) => {
@@ -756,7 +779,7 @@ export default function TimeTrialPage() {
       {settingsOpen && (
         <TimeTrialSettingsModal
           trial={trial}
-          seasons={seasons}
+          seasons={seasonOptions}
           seriesList={seriesList}
           onClose={() => setSettingsOpen(false)}
           onSaved={updated => {
@@ -773,7 +796,7 @@ export default function TimeTrialPage() {
       {exporting && (
         <ExportQualifyingModal
           trial={trial}
-          seasons={seasons}
+          seasons={seasonOptions}
           onClose={() => setExporting(false)}
           onExported={() => router.refresh()}
         />

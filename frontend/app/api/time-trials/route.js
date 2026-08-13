@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { getRequestLeagueId, scopeByLeague, withAdmin } from "@/lib/serverAuth";
-import { summarizeEntries } from "@/lib/timeTrials";
+import { summarizeEntries, trialMatchesScope } from "@/lib/timeTrials";
 import { TRIAL_COLLECTION, TRIAL_ENTRY_COLLECTION, TRIAL_STATUS_OPEN, trialFields } from "@/lib/timeTrialsServer";
 
 export const dynamic = "force-dynamic";
@@ -22,26 +22,41 @@ export async function GET(request) {
   const snap = await scopeByLeague(db().collection(TRIAL_COLLECTION), leagueId).get();
   let trials = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-  // Equality filters applied in memory: each is optional, and a trial that
-  // names nothing at that level (a free-floating placement session) is only
-  // dropped when the filter is actually asked for.
-  for (const field of ["game_id", "series_id", "season_id", "status", "track_id"]) {
-    const wanted = searchParams.get(field);
-    if (wanted) trials = trials.filter(t => (t[field] || "") === wanted);
+  // Scope filter. A trial that names nothing at a level is in scope there — a
+  // placement night usually predates the season it feeds — and a night placing
+  // into several series belongs to every one of them. See trialMatchesScope.
+  const scope = {
+    gameId: searchParams.get("game_id") || "",
+    seriesId: searchParams.get("series_id") || "",
+    seasonId: searchParams.get("season_id") || "",
+  };
+  if (scope.gameId || scope.seriesId || scope.seasonId) {
+    trials = trials.filter(t => trialMatchesScope(t, scope));
   }
+  // Exact filters, where "unset" is not a wildcard: a trial is at one venue and
+  // in one state.
+  const wantedStatus = searchParams.get("status");
+  if (wantedStatus) trials = trials.filter(t => (t.status || TRIAL_STATUS_OPEN) === wantedStatus);
+  const wantedTrack = searchParams.get("track_id");
+  if (wantedTrack) trials = trials.filter(t => (t.track_id || "") === wantedTrack);
   if (searchParams.get("is_placement") === "1") trials = trials.filter(t => !!t.is_placement);
 
   // How many drivers are on each sheet, so the hub can say so without opening
-  // every session.
-  const counts = await Promise.all(
-    trials.map(t => db().collection(TRIAL_ENTRY_COLLECTION).where("time_trial_id", "==", t.id).get())
-  );
-  trials.forEach((t, i) => {
-    const rows = counts[i].docs.map(d => d.data());
+  // every session. One read for the whole league's laps, grouped in memory —
+  // a query per trial turned opening the hub into N+1 round trips.
+  const entriesSnap = await scopeByLeague(db().collection(TRIAL_ENTRY_COLLECTION), leagueId).get();
+  const rowsByTrial = new Map();
+  for (const doc of entriesSnap.docs) {
+    const row = doc.data();
+    if (!rowsByTrial.has(row.time_trial_id)) rowsByTrial.set(row.time_trial_id, []);
+    rowsByTrial.get(row.time_trial_id).push(row);
+  }
+  for (const t of trials) {
+    const rows = rowsByTrial.get(t.id) || [];
     const summarized = summarizeEntries(rows, { averageLaps: t.average_laps });
     t.driver_count = rows.length;
     t.lap_count = summarized.reduce((n, r) => n + r.laps_timed, 0);
-  });
+  }
 
   // Newest first — a hub is a place you come back to, and the session you ran
   // last night is the one you want. Dates are bare calendar strings, so they
