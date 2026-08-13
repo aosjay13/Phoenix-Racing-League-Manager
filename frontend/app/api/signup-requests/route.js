@@ -3,8 +3,8 @@ import { db } from "@/lib/firebase";
 import { getRequestLeagueId, getRequestUser, withUser } from "@/lib/serverAuth";
 import { normalizeClassIds } from "@/lib/classFilter";
 import {
-  NUMBER_TAKEN_MESSAGE, matchCarOption, missingSignupFields, missingSignupMessage,
-  resolveSignupRules, seasonAcceptsSignups,
+  NUMBER_TAKEN_MESSAGE, carCapacity, carCounts, carFullMessage, matchCarOption, missingSignupFields,
+  missingSignupMessage, resolveSignupRules, seasonAcceptsSignups,
 } from "@/lib/carSelection";
 import {
   NUMBER_CHANGE_KIND, PENDING, SIGNUP_KIND, isOwnNumber, numberClaimed, numberRequestFor,
@@ -256,6 +256,19 @@ export const POST = withUser(async (request, ctx, user) => {
   // A number already on the roster OR already requested by someone else.
   if (number && numberClaimed(entries, pending, number)) {
     return NextResponse.json({ error: NUMBER_TAKEN_MESSAGE, code: "number-taken", number }, { status: 409 });
+  }
+
+  // A car whose cap filled up — possibly while this form sat open. Checked
+  // here as well as on the form, because the form is not the boundary, and
+  // against the roster AND the queue for the same reason the number is: two
+  // people can be holding the last seat at the same moment and only one of
+  // them can have it.
+  if (car) {
+    const cap = carCapacity(rules.car_entries, carCounts([...entries, ...pending]), car);
+    if (cap.full) {
+      return NextResponse.json(
+        { error: carFullMessage(cap), code: "car-full", car: cap.name }, { status: 409 });
+    }
   }
 
   const userDoc = await db().collection("users").doc(user.uid).get();

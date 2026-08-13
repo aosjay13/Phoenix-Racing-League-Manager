@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { DiscordCallout } from "@/components/DiscordCallout";
 import { DriverLinkGate } from "@/components/DriverLinkGate";
+import { SignupDenials } from "@/components/SignupDenials";
 import { SignupForm } from "@/components/SignupForm";
 import { useMySignups } from "@/components/MySignupsProvider";
 import {
@@ -208,6 +209,12 @@ export default function SignupsPage() {
   if (!data) return <div className="skeleton" style={{ height: 280 }} />;
 
   const o = signupOverview(data);
+  const denials = data.denied || [];
+  // A season is joinable again the moment its denial is acknowledged — until
+  // then it's held back, so the reason is read before the identical form is
+  // filled in a second time. `chosen` looks at the UNFILTERED list so pressing
+  // "let me try again" can drop them straight into that season's form.
+  const joinable = o.joinable.filter(s => !s.my_denied);
   const chosen = o.joinable.find(s => s.season_id === chosenId) || null;
 
   // Submitting files a PENDING request — nobody reaches a roster without an
@@ -260,6 +267,11 @@ export default function SignupsPage() {
       </p>
 
       <HowItWorks current={1} />
+
+      {/* Before anything else: a sign-up an admin turned down, and why. Held at
+          the top until it's acknowledged — see components/SignupDenials.jsx. */}
+      <SignupDenials denials={denials} onCleared={reload}
+        onRetry={d => setChosenId(d.season_id)} />
 
       <DiscordCallout />
 
@@ -323,7 +335,7 @@ export default function SignupsPage() {
       )}
 
       <div className="section-header" style={{ marginTop: 26 }}>
-        <h3>{o.joinable.length ? "Pick a series to join" : "Join a series"}</h3>
+        <h3>{joinable.length ? "Pick a series to join" : "Join a series"}</h3>
       </div>
 
       {/* A player with no driver profile can still sign up — the form files a
@@ -347,7 +359,7 @@ export default function SignupsPage() {
         </div>
       )}
 
-      {o.joinable.length === 0 ? (
+      {joinable.length === 0 ? (
         // An empty list has to say WHICH of the reasons applies — a sign-up
         // that's already in, seasons already joined, seasons finished, or a
         // league with nothing scheduled. nothingToJoinReason picks it; getting
@@ -362,7 +374,7 @@ export default function SignupsPage() {
         </div>
       ) : (
         <div className="join-list">
-          {o.joinable.map(s => (
+          {joinable.map(s => (
             <JoinCard key={s.season_id} season={s} onJoin={x => setChosenId(x.season_id)} />
           ))}
         </div>

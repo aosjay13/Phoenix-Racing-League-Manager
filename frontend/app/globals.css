@@ -3404,3 +3404,102 @@ input[type="radio"]:disabled:checked {
   /* The button goes under the text rather than being squeezed beside it. */
   .discord-callout-btn { width: 100%; justify-content: center; }
 }
+
+/* What League Setup's car list parsed to, each car beside its cap — so an admin
+   who typed "Ferrari 296 GT3 | 4" can see the 4 was read as a limit rather than
+   as part of the car's name. */
+.car-cap-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 2px;
+}
+
+.car-cap-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  font-size: 0.78rem;
+  color: var(--ink-0);
+}
+
+.car-cap-max { font-weight: 700; color: var(--accent-gold); }
+.car-cap-any { color: var(--ink-2); }
+
+/* A car whose cap is used up. Greyed AND labelled: colour on its own doesn't
+   tell a driver why the option won't take their click. */
+.check-row.is-full { opacity: 0.55; cursor: not-allowed; }
+.check-row.is-full > span { color: var(--ink-2); }
+
+.car-full-tag {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #1a1000;
+  background: var(--accent-gold);
+}
+
+/* ── A denied sign-up (components/SignupDenials.jsx) ───────────────────────
+   The first thing on the Sign-ups screen for anyone an admin turned down, and
+   it stays there until they acknowledge it. Red, because it's the one panel on
+   this screen reporting that something didn't go their way — but the tone of
+   the copy is "here's how to fix it", not a telling-off. */
+.signup-denials { display: flex; flex-direction: column; gap: 12px; margin: 18px 0 4px; }
+
+.signup-denial {
+  padding: 16px 18px;
+  border: 1px solid rgba(230, 57, 70, 0.4);
+  border-left: 3px solid var(--accent-red);
+  border-radius: var(--radius-card);
+  background: linear-gradient(120deg, var(--accent-red-dim), var(--bg-surface));
+  animation: reveal 0.45s ease;
+}
+
+.signup-denial-head { display: flex; align-items: flex-start; gap: 12px; }
+.signup-denial-icon { font-size: 1.4rem; line-height: 1; }
+.signup-denial-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.signup-denial-title strong { font-size: 1rem; color: var(--ink-0); }
+.signup-denial-title span { font-size: 0.8rem; color: var(--ink-2); }
+
+/* The admin's own words. Quoted rather than folded into a sentence — it's the
+   entire reason this panel exists, and a player scanning the screen has to
+   land on it. */
+.signup-denial-reason {
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  border-left: 3px solid var(--accent-gold);
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--ink-0);
+}
+
+.signup-denial-reason-label {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-gold);
+}
+
+.signup-denial-noreason {
+  margin: 12px 0 0;
+  font-size: 0.86rem;
+  line-height: 1.55;
+  color: var(--ink-1);
+}
+
+.signup-denial-foot { margin: 10px 0 0; font-size: 0.82rem; color: var(--ink-1); }
+
+.signup-denial-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.signup-denial-actions .btn { margin-top: 0; }

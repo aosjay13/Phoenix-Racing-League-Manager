@@ -11,7 +11,7 @@ import { db } from "@/lib/firebase";
 import { entryClassIds, orderClassIds } from "@/lib/classFilter";
 import { carSelectionSlots, sortRosterByNumber } from "@/lib/carSelection";
 import { scopeByLeague } from "@/lib/serverAuth";
-import { PENDING, SIGNUP_KIND } from "@/lib/signupQueue";
+import { DENIED, PENDING, SIGNUP_KIND } from "@/lib/signupQueue";
 import { sortSeasons } from "@/lib/seasonOrder";
 import { attachRaceDates, fetchSeasonRaceDates } from "@/lib/seasonOrderServer";
 
@@ -44,6 +44,22 @@ export async function pendingRequestsForUser(uid) {
   const snap = await db().collection("signup_requests")
     .where("uid", "==", uid).where("status", "==", PENDING).get();
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+// Sign-ups of this account's that an admin turned down.
+//
+// Read so the player can be told WHY, on the screen and by email — a denial
+// nobody hears about is indistinguishable from a sign-up that vanished, and
+// they re-submit the identical form. Capped because this only ever feeds a
+// notice: the whole history stays in the collection.
+export async function deniedRequestsForUser(uid, limit = 20) {
+  if (!uid) return [];
+  const snap = await db().collection("signup_requests")
+    .where("uid", "==", uid).where("status", "==", DENIED).get();
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => String(b.resolved_at || "").localeCompare(String(a.resolved_at || "")))
+    .slice(0, limit);
 }
 
 // A season plus everything the sign-up rules need to resolve against it.
@@ -108,6 +124,16 @@ export async function rostersForSeasons(seasonIds = []) {
         number: entry.number ?? null,
         name: entry.name || "Driver",
         class_ids: entryClassIds(entry),
+        // The car they hold, so the sign-up form can show what everyone is
+        // running AND count it against a capped car's limit. Without this the
+        // form counted only the sign-ups still queued, so a car filled by
+        // drivers already on the roster looked wide open — and the "· 2
+        // already" hint beside each car never had anything to show.
+        // `selected_cars` is the per-class shape a season whose classes run
+        // their own lists writes; both are carried so carCounts sees all of it.
+        car: entry.selected_car || "",
+        selected_car: entry.selected_car || "",
+        ...(entry.selected_cars ? { selected_cars: entry.selected_cars } : {}),
       };
     })),
   ]));

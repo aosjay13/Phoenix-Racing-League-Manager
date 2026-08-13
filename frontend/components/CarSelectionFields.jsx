@@ -72,6 +72,7 @@ export function CarSelectionFields({ value, onChange, level = "season", disabled
   const set = patch => onChange(f => ({ ...f, ...patch }));
   const id = suffix => `${level}_car_${suffix}`;
   const parsed = parseCarOptions(value.car_options);
+  const entries = parseCarEntries(value.car_options);
   const from = inheritedState(inherited);
   const inheritedOptions = from.options;
   const covers = COVERS[level];
@@ -102,13 +103,31 @@ export function CarSelectionFields({ value, onChange, level = "season", disabled
         <label htmlFor={id("options")}>Car Selection — one per line</label>
         <textarea id={id("options")} rows={5} disabled={disabled} value={value.car_options}
           onChange={e => set({ car_options: e.target.value })}
-          placeholder={"Porsche 911 GT3 R\nFerrari 296 GT3\nBMW M4 GT3"} />
+          placeholder={"Porsche 911 GT3 R\nFerrari 296 GT3 | 4\nBMW M4 GT3 | 2"} />
+        {/* What the box actually parsed to, each car with its cap. An admin
+            typing a limit needs to see it was understood as a limit rather
+            than as part of the car's name. */}
+        {entries.length > 0 && (
+          <div className="car-cap-preview">
+            {entries.map(e => (
+              <span className="car-cap-chip" key={e.name}>
+                {e.name}
+                <span className={e.max ? "car-cap-max" : "car-cap-any"}>
+                  {e.max ? `max ${e.max}` : "no limit"}
+                </span>
+              </span>
+            ))}
+          </div>
+        )}
         <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
           The cars a driver may choose from — whatever you type here becomes one radio button each
           on the sign-up form, and whichever they pick is shown on the roster. One per line (a
-          single comma-separated line works too), so a name with spaces in it stays one
-          car. {parsed.length > 0
-            ? <>{parsed.length} car{parsed.length === 1 ? "" : "s"} offered: {parsed.join(" · ")}.</>
+          single comma-separated line works too), so a name with spaces in it stays one car.
+          {" "}<strong>To cap how many drivers may run a car, put the number after a pipe</strong>
+          {" "}— <em>Ferrari 296 GT3 | 4</em>. Once four have it (counting anyone still waiting on
+          approval) it&rsquo;s greyed out on the sign-up form and can&rsquo;t be chosen. A line with
+          no pipe has no limit. {parsed.length > 0
+            ? <>{parsed.length} car{parsed.length === 1 ? "" : "s"} offered.</>
             : <>Leave blank to use{" "}
                 {inheritedOptions.length
                   ? <>the {LEVEL_LABELS[from.options_from] || "inherited"} list ({inheritedOptions.join(" · ")}).</>

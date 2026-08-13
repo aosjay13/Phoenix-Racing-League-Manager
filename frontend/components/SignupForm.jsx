@@ -5,7 +5,8 @@ import { AliasEditor } from "@/components/AliasEditor";
 import { api } from "@/lib/api";
 import { withDefaults } from "@/lib/aliases";
 import {
-  NUMBER_TAKEN_MESSAGE, missingSignupFields, missingSignupMessage, sortRosterByNumber,
+  NUMBER_TAKEN_MESSAGE, carAvailability, carFullMessage, missingSignupFields,
+  missingSignupMessage, sortRosterByNumber,
 } from "@/lib/carSelection";
 import { isNumberChange, numberClaimed, rosterWithPending } from "@/lib/signupQueue";
 import {
@@ -91,6 +92,12 @@ export function SignupForm({ season, driver, knownAliases, knownName, onDone, on
   // field, its validation and what gets submitted can't disagree.
   const asksNumber = !!rules.require_number;
   const carOptions = rules.car_options || [];
+  // Cars the admin capped, and how much of each cap is used. Counts everyone
+  // on the roster AND everyone still waiting on approval — five people all
+  // picking the last Ferrari because none of them had been approved yet is the
+  // pile-up the cap exists to prevent. See carAvailability in
+  // lib/carSelection.js, which the API refuses on too.
+  const carEntries = rules.car_entries || carOptions.map(name => ({ name, max: null }));
   const gameName = season.game_name || "";
   // What this sign-up must carry: the Discord name (every game, no exceptions)
   // plus whichever platform identities the parent GAME was configured to
@@ -179,6 +186,20 @@ export function SignupForm({ season, driver, knownAliases, knownName, onDone, on
     for (const r of roster) if (r.car) counts[r.car] = (counts[r.car] || 0) + 1;
     return counts;
   }, [roster]);
+  // Nobody on this form holds a car yet — they're signing up — so no car is
+  // exempt from its own cap here.
+  const capacity = useMemo(
+    () => carAvailability(carEntries, roster, ""),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [JSON.stringify(carEntries), roster]);
+  const capacityFor = name =>
+    capacity.find(c => c.name.toLowerCase() === String(name).toLowerCase()) || null;
+  // A car that filled up while this form was open must not stay selected: it
+  // would be refused on submit with the radio still showing it chosen.
+  const chosenFull = car ? capacityFor(car)?.full : false;
+  useEffect(() => {
+    if (chosenFull) setCar("");
+  }, [chosenFull]);
 
   const missing = missingSignupFields(
     { require_number: rules.require_number, require_car: rules.require_car,
@@ -291,20 +312,35 @@ export function SignupForm({ season, driver, knownAliases, knownName, onDone, on
             Car Selection {rules.require_car ? <span className="field-req">required</span> : "(optional)"}
           </span>
           <div className="option-rows" role="radiogroup" aria-labelledby="signup_car_label">
-            {carOptions.map(c => (
-              <label className="check-row check-row-center" key={c}>
-                <input type="radio" name="signup_car" value={c}
-                  checked={car === c} onChange={() => setCar(c)} />
-                <span>
-                  {c}
-                  {takenCars[c] ? (
-                    <span style={{ color: "var(--ink-2)", fontSize: "0.78rem" }}>
-                      {" "}· {takenCars[c]} already
-                    </span>
-                  ) : null}
-                </span>
-              </label>
-            ))}
+            {carOptions.map(c => {
+              const cap = capacityFor(c);
+              const full = !!cap?.full;
+              return (
+                <label className={`check-row check-row-center${full ? " is-full" : ""}`} key={c}
+                  title={full ? carFullMessage(cap) : undefined}>
+                  <input type="radio" name="signup_car" value={c} disabled={full}
+                    checked={car === c} onChange={() => setCar(c)} />
+                  <span>
+                    {c}
+                    {/* What's left of a capped car, or simply how many have it
+                        where there's no cap. A full one says so in words as
+                        well as being greyed out — colour alone isn't an
+                        explanation. */}
+                    {full ? (
+                      <span className="car-full-tag">FULL · {cap.taken} of {cap.max}</span>
+                    ) : cap?.max != null ? (
+                      <span style={{ color: "var(--ink-2)", fontSize: "0.78rem" }}>
+                        {" "}· {cap.left} of {cap.max} left
+                      </span>
+                    ) : takenCars[c] ? (
+                      <span style={{ color: "var(--ink-2)", fontSize: "0.78rem" }}>
+                        {" "}· {takenCars[c]} already
+                      </span>
+                    ) : null}
+                  </span>
+                </label>
+              );
+            })}
             {!rules.require_car && (
               <label className="check-row check-row-center">
                 <input type="radio" name="signup_car" value=""

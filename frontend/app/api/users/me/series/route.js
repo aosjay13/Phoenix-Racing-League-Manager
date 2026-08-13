@@ -8,12 +8,13 @@ import {
 } from "@/lib/carSelection";
 import {
   entriesForDriver, leagueSeasonIndex, linkedDriver, newestFirst, pendingClaim,
-  pendingForSeasons, pendingRequestsForUser, rostersForSeasons,
+  deniedRequestsForUser, pendingForSeasons, pendingRequestsForUser, rostersForSeasons,
 } from "@/lib/carSelectionServer";
 import { pendingForSeason } from "@/lib/signupQueue";
 import {
   gameRequirementFlags, knownAliasesFor, knownRacingName,
 } from "@/lib/signupRequest";
+import { unreadDenials } from "@/lib/denialNotice";
 
 export const dynamic = "force-dynamic";
 
@@ -126,6 +127,13 @@ export const GET = withUser(async (request, ctx, user) => {
     pendingForSeasons(openSeasons.map(s => s.id)),
   ]);
 
+  // Sign-ups of theirs an admin turned down and they haven't read yet. Shown at
+  // the top of the Sign-ups screen with the admin's reason, and the season is
+  // held back from the join list until they acknowledge it — see
+  // lib/denialNotice.js.
+  const denied = unreadDenials(await deniedRequestsForUser(user.uid));
+  const deniedSeasonIds = new Set(denied.map(d => d.season_id).filter(Boolean));
+
   const open_signups = openSeasons
     .map(season => {
       const series = seriesById[season.series_id];
@@ -160,6 +168,7 @@ export const GET = withUser(async (request, ctx, user) => {
           require_car: rules.require_car,
           require_number: rules.require_number,
           car_options: rules.car_options,
+          car_entries: rules.car_entries,
           note: rules.note,
         },
         // Per class, so picking one on the form can tighten what's asked for.
@@ -167,7 +176,7 @@ export const GET = withUser(async (request, ctx, user) => {
           const r = resolveSignupRules({ game, series, season, cls: c });
           return [c.id, {
             require_car: r.require_car, require_number: r.require_number,
-            car_options: r.car_options, note: r.note,
+            car_options: r.car_options, car_entries: r.car_entries, note: r.note,
           }];
         })),
         // Both kinds: a sign-up is another person waiting for a place, a
@@ -182,12 +191,20 @@ export const GET = withUser(async (request, ctx, user) => {
         // This account's own sign-up already waiting on an admin, if any.
         my_pending: pendingForSeason(pending, { uid: user.uid, driverId: driver?.id })
           ? true : false,
+        // A denial of theirs for this season that they haven't read. The screen
+        // keeps it out of the "pick a series" list while this is true, so the
+        // reason gets read before the same form is filled in again.
+        my_denied: deniedSeasonIds.has(season.id),
         // The season's public roster, in car-number order — the "which numbers
         // are gone?" list a driver reads before picking one, and the source of
         // the instant clash check on the number field.
         roster: roster.map(r => ({
           number: r.number,
           name: r.name,
+          // Carried so the form can show who runs what and count a capped car
+          // against its limit — see carAvailability in lib/carSelection.js.
+          car: r.car || "",
+          selected_cars: r.selected_cars || null,
           class_names: r.class_ids.map(id => classNameById[id]).filter(Boolean),
         })),
         taken_numbers: roster
@@ -229,6 +246,7 @@ export const GET = withUser(async (request, ctx, user) => {
     // from this, so it fills itself in for a brand-new player too.
     known_aliases,
     known_name,
+    denied,
     pending_claim: pending ? { id: pending.id, driver_id: pending.driver_id, driver_name: pending.driver_name } : null,
     my_seasons,
     open_signups,

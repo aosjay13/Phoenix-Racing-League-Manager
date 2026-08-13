@@ -95,23 +95,70 @@ export function carSelectionPatch(entry, classId, car, now = new Date()) {
 // one-per-line list can hold names that contain a comma ("Porsche 911 GT3 R, 992")
 // while a quickly-typed "A, B, C" still works.
 export function parseCarOptions(text) {
-  if (Array.isArray(text)) return dedupe(text.map(s => String(s ?? "").trim()));
-  const raw = String(text ?? "");
-  const parts = /[\r\n]/.test(raw) ? raw.split(/[\r\n]+/) : raw.split(",");
-  return dedupe(parts.map(s => s.trim()));
+  return parseCarEntries(text).map(e => e.name);
 }
 
-function dedupe(list) {
+// The same list, keeping each car's OPTIONAL cap: how many drivers in a season
+// may run it before it's closed off.
+//
+// The cap is written after the name behind a pipe — "Ferrari 296 GT3 | 4" — for
+// two reasons. A pipe appears in no car name anyone has ever typed, unlike the
+// "x4" an admin would reach for first (a real car could be "Cup Car x4"), and
+// it keeps the list a single text field, so a cap inherits down the
+// game → series → season → class chain exactly as the list itself does, with no
+// second field to resolve and no migration for the lists already saved. A line
+// with no pipe means no cap, which is what every existing list is.
+//
+// Anything after the pipe that isn't a positive whole number is ignored rather
+// than rejected: "| 0" and "| lots" both mean "no cap" rather than "nobody may
+// pick this", because silently offering a car nobody can choose is the worse
+// failure.
+export function parseCarEntries(text) {
+  const list = Array.isArray(text)
+    ? text.map(s => (s && typeof s === "object" ? s : String(s ?? "")))
+    : (() => {
+      const raw = String(text ?? "");
+      return /[\r\n]/.test(raw) ? raw.split(/[\r\n]+/) : raw.split(",");
+    })();
+
   const seen = new Set();
   const out = [];
-  for (const name of list) {
-    if (!name) continue;
-    const key = name.toLowerCase();
+  for (const item of list) {
+    // Already-structured rows (a doc written as objects) pass straight through.
+    const raw = item && typeof item === "object"
+      ? { name: String(item.name ?? "").trim(), max: item.max }
+      : splitCarLine(String(item ?? ""));
+    if (!raw.name) continue;
+    const key = raw.name.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push(name);
+    const max = Number(raw.max);
+    out.push({ name: raw.name, max: Number.isInteger(max) && max > 0 ? max : null });
   }
   return out;
+}
+
+function splitCarLine(line) {
+  const at = line.lastIndexOf("|");
+  if (at === -1) return { name: line.trim(), max: null };
+  return { name: line.slice(0, at).trim(), max: line.slice(at + 1).trim() };
+}
+
+// "Ferrari 296 GT3 | 4" — one entry back to the text an admin edits, so the
+// League Setup field can round-trip what it parsed.
+export function formatCarEntry(entry) {
+  return entry?.max ? `${entry.name} | ${entry.max}` : String(entry?.name ?? "");
+}
+
+// A saved doc's car list WITH each car's cap, whichever shape it was written in.
+// Mirrors carOptionList below, which stays the plain-names view every existing
+// caller reads.
+export function carEntryList(doc) {
+  const raw = doc?.car_options;
+  const own = Array.isArray(raw) || typeof raw === "string" ? parseCarEntries(raw) : [];
+  if (own.length) return own;
+  const legacy = doc?.manufacturer_options;
+  return Array.isArray(legacy) || typeof legacy === "string" ? parseCarEntries(legacy) : [];
 }
 
 // A saved doc's car list, whichever shape it was written in.
@@ -200,14 +247,22 @@ export function resolveCarSelection({ game = null, series = null, season = null,
   const docs = { class: cls, season, series, game };
   const present = LEVELS.filter(level => docs[level]);
   const optionLevel = present.find(level => carOptionList(docs[level]).length) ?? null;
+  // The caps ride with the list they were typed on: whichever level's list
+  // wins, its caps win with it. A season that publishes its own list therefore
+  // sets its own caps too, rather than inheriting numbers meant for a different
+  // set of cars.
+  const entries = optionLevel ? carEntryList(docs[optionLevel]) : [];
   const noteLevel = present.find(level => String(docs[level].car_selection_note || "").trim()) ?? null;
   const required = resolveRequirement(docs, "require_car_selection");
   const locked = resolveRequirement(docs, "car_selection_locked");
   return {
     required: required.on,
     locked: locked.on,
-    options: optionLevel ? carOptionList(docs[optionLevel]) : [],
+    options: entries.map(e => e.name),
     options_from: optionLevel,
+    // Every offered car, with its cap (null = unlimited). Kept as a list rather
+    // than a map so the order the admin typed survives.
+    car_entries: entries,
     note: noteLevel ? String(docs[noteLevel].car_selection_note).trim() : "",
     note_from: noteLevel,
     // Which level decided it, for "Required by the series" text.
@@ -250,6 +305,7 @@ export function resolveSignupRules({ game = null, series = null, season = null, 
     car,
     require_car: car.required,
     car_options: car.options,
+    car_entries: car.car_entries,
     require_number: number.on,
     note: car.note,
     locked: car.locked,
@@ -453,7 +509,11 @@ export function carSelectionToForm(doc = {}) {
     // carOptionList falls back to the retired manufacturer list, so the one box
     // opens showing whichever of the two an admin had filled in — and saving
     // writes it back as the car list, which is where it belongs now.
-    car_options: carOptionList(doc).join("\n"),
+    // Each car with its cap, one per line — the shape the admin types and the
+    // shape it's stored as, so a limit survives an edit that doesn't touch it.
+    // Round-tripping through the names alone silently deleted every cap the
+    // moment anything else on the level was saved.
+    car_options: carEntryList(doc).map(formatCarEntry).join("\n"),
     car_selection_note: doc.car_selection_note || "",
   };
 }
@@ -463,7 +523,8 @@ export function carSelectionToForm(doc = {}) {
 // anything still reading the raw flag sees the same thing.
 export function carSelectionFormToBody(form = {}) {
   const body = {
-    car_options: parseCarOptions(form.car_options),
+    // Stored WITH the caps, as "Ferrari 296 GT3 | 4" lines.
+    car_options: parseCarEntries(form.car_options).map(formatCarEntry),
     // The retired second list is emptied as the level is saved. The form loaded
     // it into `car_options` when that was the only list this level had (see
     // carSelectionToForm), so this moves the options rather than dropping them —
@@ -478,4 +539,82 @@ export function carSelectionFormToBody(form = {}) {
     body[field] = mode === ON;
   }
   return body;
+}
+
+// ── Car capacity ───────────────────────────────────────────────────────────
+//
+// An admin can cap how many drivers may run each car ("Ferrari 296 GT3 | 4").
+// Once a car is full it's closed: greyed out on the sign-up form, refused by
+// the API, and not offered on the lock-in screen.
+//
+// What counts against a cap is everyone who HAS that car in the season plus
+// everyone who has ASKED for it and is still waiting — a queue of five people
+// all picking the last Ferrari, each told it was free because nobody had been
+// approved yet, is exactly the pile-up the cap exists to prevent. It's the same
+// rule car numbers already use (see numberClaimed in lib/signupQueue.js).
+//
+// Matching is case-insensitive, like matchCarOption, so a pick made before the
+// admin re-cased the list still counts against the right cap.
+
+// How many drivers hold each car. Rows are anything with a `car` (a sign-up
+// request) or `selected_car`/`selected_cars` (a roster entry).
+export function carCounts(rows = []) {
+  const counts = {};
+  for (const row of rows) {
+    for (const car of carsHeldBy(row)) {
+      const key = car.trim().toLowerCase();
+      if (key) counts[key] = (counts[key] || 0) + 1;
+    }
+  }
+  return counts;
+}
+
+// Every car one row holds. A roster entry can carry one per class in a season
+// whose classes run their own lists, so all of them count.
+function carsHeldBy(row) {
+  if (!row || typeof row !== "object") return [];
+  const out = [];
+  if (row.car) out.push(String(row.car));
+  if (row.selected_car) out.push(String(row.selected_car));
+  const per = row.selected_cars;
+  if (per && typeof per === "object") {
+    for (const v of Object.values(per)) if (v) out.push(String(v));
+  }
+  return out;
+}
+
+// One car's cap and how much of it is used.
+//
+// `mine` is the car this driver already holds in the season, and it never
+// counts against them: someone re-opening the lock-in screen on the last
+// Ferrari must not be told their own car is full and be unable to save.
+export function carCapacity(entries = [], counts = {}, car, mine = "") {
+  const name = String(car ?? "").trim();
+  const entry = entries.find(e => e.name.trim().toLowerCase() === name.toLowerCase());
+  const taken = counts[name.toLowerCase()] || 0;
+  const isMine = !!name && name.toLowerCase() === String(mine ?? "").trim().toLowerCase();
+  const max = entry?.max ?? null;
+  return {
+    name: entry?.name ?? name,
+    max,
+    taken,
+    // Free seats left, floored at zero so an over-filled car (the cap was
+    // lowered after the fact) reads as full rather than as negative space.
+    left: max == null ? null : Math.max(0, max - taken),
+    full: max != null && taken >= max && !isMine,
+  };
+}
+
+// The whole list, ready to render: name, cap, how many have it, whether it's
+// closed. One call, so the form's radios and the API's refusal can't disagree.
+export function carAvailability(entries = [], rows = [], mine = "") {
+  const counts = carCounts(rows);
+  return entries.map(e => carCapacity(entries, counts, e.name, mine));
+}
+
+// "Ferrari 296 GT3 is full — 4 of 4 taken. Please choose another car."
+// Worded once, for the form's disabled label and the API's rejection alike.
+export function carFullMessage(capacity) {
+  return `${capacity.name} is full — ${capacity.taken} of ${capacity.max} taken.`
+    + " Please choose another car.";
 }

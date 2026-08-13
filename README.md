@@ -215,6 +215,14 @@ throwaway key (`openssl genrsa`) — the emulator never checks it.
      yourself, it's left exactly as it is, and a season that doesn't run car numbers can't blank
      the one you have. So a brand-new account stops showing "jane.doe" the moment you tell the
      league you race as J. May, and nobody's chosen name is ever overwritten.
+   - **If a sign-up is turned down, you're told why.** An admin denying one types a reason, and
+     that reason reaches you twice: an **email to your account's address**, and a red panel at the
+     very top of Sign-ups the next time you open it. The panel quotes the admin's words, and that
+     series is held out of the "pick a series" list until you press **Got it — let me try again**,
+     which clears it and drops you straight back into that series' form. The point is that the
+     reason is read before the identical form is filled in a second time. (A denial with no reason
+     says so plainly rather than leaving a blank.) Nothing is held against you — your details are
+     already saved, so the second attempt is a much shorter form.
    - **Nothing is red until you've had a go at it.** A required box you haven't visited yet is
      just something still to fill in, so it's left alone and what's outstanding is named calmly
      under the button. Touch one and leave it empty and *then* it's flagged, because by then it
@@ -619,6 +627,14 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      - **Which season you're editing, said out loud.** Three dropdowns decide what this screen
        writes to, so the scope strip under the header names the season edits are written to
        rather than leaving you to infer it from the menus.
+     - **Capping a car.** In **League Setup**, a car's line in the Car Selection list can carry a
+       limit after a pipe — `Ferrari 296 GT3 | 4`. Once four drivers have it the car is greyed out
+       on the sign-up form, badged **FULL · 4 of 4**, and refused by the API; the others show how
+       many seats are left. What counts toward a cap is everyone on the roster **plus** everyone
+       still waiting on approval, because five people all picking the last seat while nobody has
+       been approved yet is the pile-up a cap exists to prevent. A line with no pipe has no limit,
+       so every list saved before this works unchanged. The field shows what it parsed, car by car,
+       so a limit that was mistyped is visible immediately.
      - **Teams** — add a team to this season (creating it in the league-wide pool if it's new)
        and give it a logo. Building its driver line-up happens on **Teams ▸ Team Roster**; the ✕
        here takes a team *out of this season*, never out of the league.
@@ -1267,6 +1283,55 @@ queue on this screen is scoped to one season (approving from a list spanning eve
 you approve somebody onto the wrong one), which meant a sign-up for any other season was
 invisible until the admin happened to steer the dropdowns at it. A second strip names who is
 waiting where, with a button to that season's queue.
+
+### Telling a player their sign-up was denied
+
+Denying a sign-up used to be silent. The request went to `denied` with the admin's reason attached,
+the approvals queue emptied, and the player was told nothing — from their side indistinguishable
+from a sign-up that never arrived, so they filled in the identical form again and were denied again
+for the identical reason.
+
+The reason now reaches them **twice**, and both messages are built from one request document by
+`lib/denialNotice.js` (pure, tested) so they can't tell different stories:
+
+- **Email**, queued as a Firestore document by `lib/mailer.js` in the shape Firebase's official
+  **Trigger Email from Firestore** extension consumes (`mail` collection, `{ to, message }`). No
+  SMTP credentials, no new dependency, and the admin's click never waits on a mail server. **If
+  that extension isn't installed nothing is delivered** — the documents simply queue up as a
+  record. That's deliberate: email is the nudge, the app is the source of truth.
+- **A panel at the top of Sign-ups**, which is the half that always works. It quotes the admin's
+  words, and until the player presses **Got it — let me try again** (`PATCH
+  /api/signup-requests/[id]`, owner-checked, stamping `player_seen_at`) that season is held out of
+  their join list — so the reason is read before the same form is filled in a second time. The
+  button also drops them straight into that series' form, so "fix it and retry" is one action.
+
+The reason is free text an admin typed and it lands in an HTML email body, so `denialHtml` escapes
+every human-supplied value; the plain-text half keeps it verbatim. Both are asserted.
+
+### Capping how many drivers may run a car
+
+A car's line in the Car Selection list can carry a limit after a pipe — `Ferrari 296 GT3 | 4`.
+
+The pipe is the separator because it appears in no car name anyone has typed, unlike the `x4` an
+admin reaches for first (a real car could be `Cup Car x4`), and because it keeps the list a
+**single text field** — so a cap inherits down the game → series → season → class chain exactly as
+the list does, with no second field to resolve and no migration for lists already saved. A line
+with no pipe has no cap, which is every list that existed before this. Anything after the pipe that
+isn't a positive whole number means "no cap" rather than "nobody may pick this", because silently
+offering a car nobody can choose is the worse failure.
+
+**What counts toward a cap is the roster PLUS the queue.** Five people each picking the last
+Ferrari, every one of them told it was free because nobody had been approved yet, is precisely the
+pile-up the cap exists to prevent — the same rule car numbers already use. A driver's own current
+car never counts against them, or the person holding the last seat couldn't re-save their own
+choice.
+
+It's enforced in four places, all reading `carAvailability`/`carCapacity` in `lib/carSelection.js`
+so they cannot disagree: the sign-up form greys the option out and badges it **FULL**, `POST
+/api/signup-requests` refuses it with a `car-full` code, `POST /api/car-selection` refuses it on the
+lock-in screen, and the approval step seats a driver **without** a car (saying so in its note) when
+the one they asked for filled up while they waited — the same way it already handles a car number
+being taken. Being on the roster matters more than the car, which they can pick again.
 
 ### Where points are configured
 

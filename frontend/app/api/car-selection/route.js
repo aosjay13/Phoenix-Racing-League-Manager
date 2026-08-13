@@ -3,12 +3,12 @@ import { db } from "@/lib/firebase";
 import { getRequestUser, withUser } from "@/lib/serverAuth";
 import { fetchDriverNames } from "@/lib/driverNamesServer";
 import {
-  carSelectionPatch, findSlot, matchCarOption, resolveSignupRules, seasonAcceptsSignups,
-  selectedCarFor, slotsForEntry, sortRosterByNumber,
+  carCapacity, carCounts, carFullMessage, carSelectionPatch, findSlot, matchCarOption,
+  resolveSignupRules, seasonAcceptsSignups, selectedCarFor, slotsForEntry, sortRosterByNumber,
 } from "@/lib/carSelection";
 import { linkedDriver, pendingForSeasons, seasonContext, seasonEntries } from "@/lib/carSelectionServer";
 import { gameRequirementFlags } from "@/lib/signupRequest";
-import { numberRequestFor } from "@/lib/signupQueue";
+import { numberRequestFor, PENDING } from "@/lib/signupQueue";
 
 export const dynamic = "force-dynamic";
 
@@ -101,14 +101,14 @@ export async function GET(request) {
       const r = resolveSignupRules({ game, series, season });
       return {
         require_car: r.require_car, require_number: r.require_number,
-        car_options: r.car_options, note: r.note,
+        car_options: r.car_options, car_entries: r.car_entries, note: r.note,
       };
     })(),
     class_rules: Object.fromEntries(classes.map(c => {
       const r = resolveSignupRules({ game, series, season, cls: c });
       return [c.id, {
         require_car: r.require_car, require_number: r.require_number,
-        car_options: r.car_options, note: r.note,
+        car_options: r.car_options, car_entries: r.car_entries, note: r.note,
       }];
     })),
     // Sign-ups waiting on an admin — shown beside the roster so a number
@@ -233,6 +233,24 @@ export const POST = withUser(async (request, ctx, user) => {
         { error: `“${wantedCar}” isn't one of the cars offered for this season.` },
         { status: 400 },
       );
+    }
+
+    // The admin can cap how many drivers run each car, and a driver arriving at
+    // the lock-in screen must not be able to take a seat that has gone since
+    // the page loaded. Their OWN current car never counts against them — the
+    // last Ferrari being full must not stop the person holding it from saving.
+    // Everyone waiting on approval counts, same as on the sign-up form.
+    const pendingSnap = await db().collection("signup_requests")
+      .where("season_id", "==", seasonId).where("status", "==", PENDING).get();
+    const cap = carCapacity(
+      slot.car_entries || [],
+      carCounts([...entries, ...pendingSnap.docs.map(d => d.data())]),
+      car,
+      selectedCarFor(entry, slot.class_id),
+    );
+    if (cap.full) {
+      return NextResponse.json(
+        { error: carFullMessage(cap), code: "car-full", car: cap.name }, { status: 409 });
     }
   }
 

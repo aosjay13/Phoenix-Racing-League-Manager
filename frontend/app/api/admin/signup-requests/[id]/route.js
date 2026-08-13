@@ -2,10 +2,14 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { withAdmin } from "@/lib/serverAuth";
 import { normalizeClassIds } from "@/lib/classFilter";
-import { carNumberTaken, seasonAcceptsSignups } from "@/lib/carSelection";
+import {
+  carCapacity, carCounts, carNumberTaken, resolveSignupRules, seasonAcceptsSignups,
+} from "@/lib/carSelection";
 import { APPROVED, DENIED, NUMBER_CHANGE_KIND, PENDING, isNumberChange } from "@/lib/signupQueue";
 import { mergeAliases, normalizeAliases } from "@/lib/aliases";
 import { userAccountUpdatesFromSignup } from "@/lib/signupRequest";
+import { denialHtml, denialSubject, denialText } from "@/lib/denialNotice";
+import { queueEmail } from "@/lib/mailer";
 
 // Admin-only: let a pending sign-up onto the roster, or turn it down.
 //
@@ -37,11 +41,36 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
   const stamp = { resolved_at: new Date().toISOString(), resolved_by: admin.uid };
 
   if (action === "deny") {
+    const reason = String(body.reason ?? "").trim().slice(0, 300) || null;
     await reqRef.update({
       status: DENIED, ...stamp,
-      deny_reason: String(body.reason ?? "").trim().slice(0, 300) || null,
+      deny_reason: reason,
+      // Not read by the player yet. Until it is, the notice sits at the top of
+      // their Sign-ups screen and that season is held back from their join
+      // list — see lib/denialNotice.js.
+      player_seen_at: null,
     });
-    return NextResponse.json({ ok: true, id, status: DENIED });
+
+    // Tell them. A denial the player never hears about is the same to them as a
+    // sign-up that vanished, and they'll re-submit the identical form.
+    //
+    // Queued, not sent inline (lib/mailer.js): the admin's decision is already
+    // recorded, and it must not depend on a mail server answering. The same
+    // message is waiting in the app either way, which is what makes email the
+    // nudge rather than the mechanism.
+    const denied = { id, ...req, deny_reason: reason };
+    const to = req.user_email || null;
+    const origin = new URL(request.url).origin;
+    const mail_id = await queueEmail({
+      to,
+      subject: denialSubject(denied),
+      text: denialText(denied, { signupUrl: `${origin}/signups` }),
+      html: denialHtml(denied, { signupUrl: `${origin}/signups` }),
+      kind: "signup-denied",
+      meta: { uid: req.uid || null, request_id: id, season_id: req.season_id || null },
+    });
+
+    return NextResponse.json({ ok: true, id, status: DENIED, reason, emailed: !!mail_id });
   }
   if (action !== "approve") {
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
@@ -165,11 +194,27 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
   // Their number may have gone while the request waited. Better to seat them
   // without one — and say so — than to refuse the approval outright.
   let number = String(req.number ?? "").trim().slice(0, 3);
-  let note = "";
+  const notes = [];
   if (number && carNumberTaken(rosterSnap.docs.map(d => d.data().number), number)) {
-    note = `#${number} was taken while this sign-up was waiting, so they were added without a number.`;
+    notes.push(`#${number} was taken while this sign-up was waiting, so they were added without a number.`);
     number = "";
   }
+
+  // Same for the car they picked: an admin can cap how many drivers run each
+  // one, and the last seat can go while a request sits in the queue. Seating
+  // them without a car and SAYING so beats refusing the approval outright —
+  // they're on the roster, and the car is a question they can answer again on
+  // the season's own screen.
+  let car = req.car || "";
+  if (car) {
+    const cap = await carCapacityAtApproval(req, season, rosterSnap, car);
+    if (cap?.full) {
+      notes.push(`${cap.name} was full (${cap.taken} of ${cap.max}) by the time this was approved,`
+        + " so they were added without a car and can pick another one.");
+      car = "";
+    }
+  }
+  const note = notes.join(" ");
 
   const classSnap = await db().collection("classes").where("season_id", "==", req.season_id).get();
   const valid = new Set(classSnap.docs.map(d => d.id));
@@ -187,7 +232,7 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
     // The car they locked in at sign-up carries straight onto the entry, in the
     // same fields the lock-in screen writes — so an approved sign-up needs no
     // second trip to choose what they already chose.
-    ...(req.car ? { selected_car: req.car, selected_car_at: new Date().toISOString() } : {}),
+    ...(car ? { selected_car: car, selected_car_at: new Date().toISOString() } : {}),
     created_at: new Date().toISOString(),
     created_by: admin.uid,
     self_signup: true,
@@ -223,3 +268,35 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
     entry_id: entryRef.id, number, note,
   });
 });
+
+// Is the car this sign-up asked for full, as of right now? Resolved against the
+// season's own settings rather than anything stored on the request, because the
+// admin may have added, removed or re-capped cars while it waited.
+async function carCapacityAtApproval(req, season, rosterSnap, car) {
+  try {
+    const [seriesDoc, classSnap] = await Promise.all([
+      season.series_id ? db().collection("series").doc(season.series_id).get() : null,
+      db().collection("classes").where("season_id", "==", season.id).get(),
+    ]);
+    const series = seriesDoc?.exists ? { id: seriesDoc.id, ...seriesDoc.data() } : null;
+    const gameId = season.game_id || series?.game_id;
+    const gameDoc = gameId ? await db().collection("games").doc(gameId).get() : null;
+    const game = gameDoc?.exists ? { id: gameDoc.id, ...gameDoc.data() } : null;
+    const classes = classSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const cls = classes.find(c => (req.class_ids || []).includes(c.id)) || null;
+    const rules = resolveSignupRules({ game, series, season, cls });
+
+    // Everyone already seated, plus everyone else still queued — but NOT this
+    // request, which is the one being seated.
+    const others = (await db().collection("signup_requests")
+      .where("season_id", "==", season.id).where("status", "==", PENDING).get())
+      .docs.filter(d => d.id !== req.id).map(d => d.data());
+    return carCapacity(
+      rules.car_entries, carCounts([...rosterSnap.docs.map(d => d.data()), ...others]), car);
+  } catch (err) {
+    // Never fail an approval over the capacity check — the roster place is what
+    // matters, and a car that slipped past a cap is a thing an admin can fix.
+    console.error("Car capacity check failed at approval", err);
+    return null;
+  }
+}
