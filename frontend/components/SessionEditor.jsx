@@ -7,9 +7,10 @@ import { AddDriverToRace } from "@/components/AddDriverToRace";
 import { DriverCreateModal } from "@/components/DriverCreateModal";
 import { PointsEditorModal } from "@/components/PointsEditorModal";
 import { ImportResultsModal } from "@/components/ImportResultsModal";
+import { ImportTimeTrialModal } from "@/components/ImportTimeTrialModal";
 import { NONE_TEMPLATE, isNoPointsTemplate } from "@/lib/pointsTemplates";
 import { classIdForScope, classOfResult, entriesEligibleForRace, entriesInSessionClass, isClassScoped, resultInSessionClass } from "@/lib/classFilter";
-import { pointsFor, pointsBreakdown, classConfigs, classScoresOwnPoints, configForClass, configForTemplate, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
+import { pointsFor, pointsBreakdown, classConfigs, classScoresOwnPoints, configForClass, configForTemplate, inheritedSessionTemplate, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
 import { AUTO_FLAG_FIELDS, applyAutoFlags, detectFlagLocks, autoMostLapsLedSlot } from "@/lib/autoFlags";
 import { BANGER_BOOL_FIELDS, BANGER_RESULT_FIELDS, BANGER_STATS, bangerRates, blankBangerRow, hasBangerBonuses } from "@/lib/bangerRacing";
 import { BRACKET_SIZES, bracketGridError, bracketPositionAt, bracketPositions, bracketRoundFor, bracketRounds, bracketSizeForField, bracketSizeLabel, normalizeBracketSize, ordinal } from "@/lib/bracketRacing";
@@ -523,6 +524,10 @@ export function SessionEditor({
   const [overIndex, setOverIndex] = useState(null);
   const [pointsModal, setPointsModal] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  // "Import from Time Trial" — the qualifying tab's other way in (see
+  // ImportTimeTrialModal). Qualifying only: a time trial produces a hot lap and
+  // an order, which is a qualifying sheet and nothing else.
+  const [trialImportOpen, setTrialImportOpen] = useState(false);
   const [createFor, setCreateFor] = useState(null); // { slotId, name } while the inline-create modal is open
   // Demo Derby rates being edited from the bar above the grid, keyed by bonus
   // (e.g. { takedown: "2" }). Null while nothing is being edited.
@@ -1279,10 +1284,29 @@ export function SessionEditor({
     ? (classSessionPoints[session] || "")
     : (sessionPoints[session] || "");
   const templateFor = id => (id === NONE_TEMPLATE.id ? NONE_TEMPLATE : templates.find(t => t.id === id));
-  const template = useMemo(() => templateFor(templateId), [templates, templateId]);
-  // Was this session's template picked for THIS class, or for the event as a
-  // whole? Only a class's own assignment lives in session_points_by_class.
-  const templateIsForClass = scoped && !!classSessionPoints[session];
+  // The DEFAULT template for this session TYPE — "every heat scores on this",
+  // named by the event (Race Info), by one class, or by the season, most
+  // specific first. A session with an assignment of its own still overrides it;
+  // without one, this is what the Points column below scores on, which is what
+  // the standings score on too. `forClass` says the default came from a class,
+  // which is what puts it on top of that class's structure rather than under it
+  // (see inheritedSessionTemplate in lib/standings.js).
+  const inheritedFor = classId => inheritedSessionTemplate({ session_type: sessionType }, {
+    race,
+    cls: classId ? classes.find(c => c.id === classId) || null : null,
+    season,
+  });
+  const inherited = inheritedFor(pointsClassId || "");
+  const typeDefaultId = inherited?.id || "";
+  const typeDefault = useMemo(() => templateFor(typeDefaultId), [templates, typeDefaultId]);
+  const effectiveTemplateId = templateId || typeDefaultId;
+  const template = useMemo(() => templateFor(effectiveTemplateId), [templates, effectiveTemplateId]);
+  // Was the template in force picked for THIS class, or for the event/season as a
+  // whole? Only a class's own assignment lives in session_points_by_class — and
+  // an inherited default answers for itself.
+  const templateIsForClass = templateId
+    ? (scoped && !!classSessionPoints[session])
+    : !!inherited?.forClass;
 
   // Lay one class's chain up, putting the template at the level it was actually
   // assigned at — the same rule makeScorer scores on:
@@ -1305,6 +1329,22 @@ export function SessionEditor({
     [baseConfig, template, templateIsForClass, pointsClassId, classes, seasonConfig],
   );
 
+  // What this session scores on with NO assignment of its own — the default for
+  // its type when the event, the class or the season names one, else the plain
+  // class/season structure. It's what the dropdown's first option means and what
+  // the points editor shows behind it, so "use the default" always displays the
+  // numbers that default actually pays.
+  const defaultConfig = useMemo(
+    () => (typeDefault ? layered(pointsClassId || "", typeDefault, !!inherited?.forClass) : baseConfig),
+    [baseConfig, typeDefault, inherited?.forClass, pointsClassId, classes, seasonConfig],
+  );
+  // Names the default AND where it was set, so an admin looking at a heat that
+  // scores 20 a win can see whether that came from this event, this class or the
+  // season — the three places one can be named.
+  const defaultLabel = typeDefault
+    ? `${LABELS[sessionType] || "Session"} default · ${inherited.level} — ${typeDefault.name}`
+    : baseLabel;
+
   // What this session pays for each derby stat, resolved through the same
   // season → class → session-template chain the Points column scores on.
   //
@@ -1323,8 +1363,15 @@ export function SessionEditor({
   const derbyVaries = new Set(payingConfigs.map(c => JSON.stringify(bangerRates(c.bonuses)))).size > 1;
 
   // A row's own configs. Scoped grids are all one class; a combined grid scores
-  // each row under the class on that row.
-  const configForRow = row => (scoped ? config : layered(row.class_id || "", template, false));
+  // each row under the class on that row — including that class's own heat /
+  // consolation default, which another class on the same grid may not share.
+  const configForRow = row => {
+    if (scoped) return config;
+    const rowClassId = row.class_id || "";
+    if (templateId) return layered(rowClassId, template, false);
+    const rowInherited = inheritedFor(rowClassId);
+    return layered(rowClassId, templateFor(rowInherited?.id), !!rowInherited?.forClass);
+  };
 
   // Assign a points system to this session — for THIS class when the event runs
   // its classes separately, so switching class and picking a template doesn't
@@ -1340,7 +1387,11 @@ export function SessionEditor({
   // anyone's record. The championship-points toggle stays race-only, since
   // qualifying never awards championship points on its own.
   const isQual = sessionType === "qualifying";
-  const flagDefaults = defaultSessionFlags(sessionType);
+  // A heat/consolation points default — the event's, the class's or the
+  // season's — also flips championship points on for that type by default:
+  // naming a template for every heat says heats score. This grid's switch
+  // therefore shows the same state the standings use.
+  const flagDefaults = defaultSessionFlags(sessionType, { race, cls: scopeClass, season });
   const statsOn = session in sessionStats ? !!sessionStats[session] : flagDefaults.counts_stats;
   const pointsOn = session in sessionPointsEnabled ? !!sessionPointsEnabled[session] : flagDefaults.counts_points;
   const showStatsToggle = !!onSessionStatsChange;
@@ -1467,6 +1518,10 @@ export function SessionEditor({
           // Replaces only this class's slice of the session, leaving the other
           // classes that raced the same round untouched.
           ...(scoped ? { session_class: sessionClass } : {}),
+          // Only an assignment made FOR THIS SESSION is stamped on the results. A
+          // type default is deliberately left off, so it stays a default: change
+          // the event's heat template and every heat re-scores at once (see
+          // resolveTemplateId in lib/standings.js).
           points_template_id: templateId || null, rows: [...filled, ...provPayload],
         },
       });
@@ -1626,6 +1681,17 @@ export function SessionEditor({
           style={{ marginTop: 0, whiteSpace: "nowrap" }} onClick={() => setImportOpen(true)} disabled={!entries.length && !seasonId}>
           ⬆ Import Results
         </button>
+        {/* The other end of the Time Trials bridge. A trial's best laps ARE a
+            qualifying sheet — a hot lap and an order — so this sits on the
+            Qualifying tab alone, and fills the grid for review rather than
+            writing results behind the admin's back. */}
+        {sessionType === "qualifying" && (
+          <button className="btn btn-ghost" type="button"
+            title="Pull a completed Time Trial's best laps into this qualifying grid"
+            style={{ marginTop: 0, whiteSpace: "nowrap" }} onClick={() => setTrialImportOpen(true)}>
+            ⏱ Import from Time Trial
+          </button>
+        )}
         {/* Bracket Style Racing: this scope is flagged, so the race IS a
             bracket — the only choice here is the ladder size. Saved on the
             RACE, because a league can run an 8-car bracket one week and a 16
@@ -1653,7 +1719,7 @@ export function SessionEditor({
               <label>Points system · {scopeClass ? `${pointsClassName} · ` : ""}{session}</label>
               <select value={templateId}
                 onChange={e => Promise.resolve(assignSessionPoints(session, e.target.value, sessionType)).catch(err => showToast("error", err.message))}>
-                <option value="">{baseLabel}</option>
+                <option value="">{defaultLabel}</option>
                 <option value={NONE_TEMPLATE.id}>{NONE_TEMPLATE.name}</option>
                 {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
@@ -2034,7 +2100,7 @@ export function SessionEditor({
       {pointsModal && (
         <PointsEditorModal
           session={session} sessionType={sessionType} value={templateId}
-          templates={templates} baseConfig={baseConfig} baseLabel={baseLabel}
+          templates={templates} baseConfig={defaultConfig} baseLabel={defaultLabel}
           classLabel={scopeClass ? pointsClassName : ""} banger={isBangerRacing}
           onAssign={assignSessionPoints} onTemplatesChanged={onTemplatesChanged}
           onClose={() => setPointsModal(false)}
@@ -2047,6 +2113,15 @@ export function SessionEditor({
           seasonId={seasonId} seriesName={seriesName} defaultClassId={pinnedClassId}
           onDriverCreated={handleDriverAdded}
           onApply={applyImport} onClose={() => setImportOpen(false)}
+        />
+      )}
+
+      {trialImportOpen && (
+        <ImportTimeTrialModal
+          entries={entries}
+          gameId={season?.game_id || ""}
+          onApply={rows => { applyImport(rows); setTrialImportOpen(false); }}
+          onClose={() => setTrialImportOpen(false)}
         />
       )}
 

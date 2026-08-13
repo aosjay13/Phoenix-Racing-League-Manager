@@ -8,6 +8,8 @@ import { ImageUpload } from "@/components/ImageUpload";
 import { SessionEditor } from "@/components/SessionEditor";
 import { TrackSelect } from "@/components/TrackSelect";
 import { RaceLengthField } from "@/components/RaceLengthField";
+import { RaceNav } from "@/components/RaceNav";
+import { HeatPointsDefaultFields } from "@/components/HeatPointsDefaultFields";
 import { LENGTH_LAPS, raceLengthBody, raceLengthForm } from "@/lib/raceLength";
 import { normalizedBuiltinTemplates } from "@/lib/pointsTemplates";
 import { carForRace, racePerClassResults, sessionClassScopes } from "@/lib/classFilter";
@@ -26,6 +28,9 @@ const BLANK_INFO = {
   // of rounds. See lib/raceLength.js.
   length_type: LENGTH_LAPS, total_laps: "", race_minutes: "", total_rounds: "",
   car: "", heat_format: false, heats: "", consolations: "", feature_name: "A-Main Feature",
+  // Default points template for every heat / every consolation of this event.
+  // Blank = they score on the season's (or class's) points structure.
+  heat_points_template_id: "", consolation_points_template_id: "",
   class_id: "", per_class_results: false,
   // Calendar session times — off until an admin opts this event in. See
   // lib/raceTimes.js, and CalendarTimesField below for what they do and don't
@@ -119,7 +124,7 @@ function CalendarTimesField({ form, setForm }) {
   );
 }
 
-function RaceInfoTab({ race, season, classes = [], onSaved }) {
+function RaceInfoTab({ race, season, classes = [], templates = [], onSaved }) {
   const router = useRouter();
   const [form, setForm] = useState(BLANK_INFO);
   const [tracks, setTracks] = useState([]);
@@ -144,6 +149,8 @@ function RaceInfoTab({ race, season, classes = [], onSaved }) {
       heats: Array.isArray(race.heats) ? race.heats.join(", ") : "",
       consolations: Array.isArray(race.consolations) ? race.consolations.join(", ") : "",
       feature_name: race.feature_name || "A-Main Feature",
+      heat_points_template_id: race.heat_points_template_id || "",
+      consolation_points_template_id: race.consolation_points_template_id || "",
       class_id: race.class_id || "",
       // Unset on the race = inherit the season default.
       per_class_results: racePerClassResults(race, season),
@@ -193,6 +200,10 @@ function RaceInfoTab({ race, season, classes = [], onSaved }) {
         heats: form.heat_format ? (heats.length ? heats : ["Heat 1"]) : [],
         consolations: form.heat_format ? consolations : [],
         feature_name: form.feature_name.trim() || "A-Main Feature",
+        // Cleared with the format itself — a standard-race event has no heats or
+        // consolations for a default to apply to.
+        heat_points_template_id: form.heat_format ? form.heat_points_template_id : "",
+        consolation_points_template_id: form.heat_format ? form.consolation_points_template_id : "",
         // Only writable while the season runs per-class schedules; otherwise the
         // event stays shared by every class.
         class_id: showClass ? form.class_id : "",
@@ -294,6 +305,8 @@ function RaceInfoTab({ race, season, classes = [], onSaved }) {
               <input value={form.consolations} onChange={set("consolations")} placeholder="B-Main" /></div>
             <div className="field"><label>Feature name</label>
               <input value={form.feature_name} onChange={set("feature_name")} placeholder="A-Main Feature" /></div>
+            <HeatPointsDefaultFields idPrefix="edit_race" value={form} templates={templates}
+              onPatch={patch => setForm(f => ({ ...f, ...patch }))} />
           </>
         ) : (
           <div className="field"><label>Races in this event — comma-separated (e.g. Race 1, Race 2, Sprint)</label>
@@ -635,7 +648,11 @@ function UnifiedEditInner() {
             {race.track ? `${race.track} · ` : ""}{season?.name ?? ""}
           </p>
         </div>
-        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+          {/* Previous / next round, staying in the editor and on the tab being
+              worked in — entering a season's results shouldn't mean a trip
+              through the Schedule between every round. */}
+          <RaceNav race={race} mode="edit" tab={tab} />
           <Link href={`/races/${race.id}`} style={{ color: "var(--accent-cyan)", fontSize: "0.85rem" }}>View results →</Link>
           <Link href="/schedule" style={{ color: "var(--ink-1)", fontSize: "0.85rem" }}>Schedule</Link>
         </div>
@@ -674,7 +691,7 @@ function UnifiedEditInner() {
       </div>
 
       {tab === "info" && (
-        <RaceInfoTab race={race} season={season} classes={classes}
+        <RaceInfoTab race={race} season={season} classes={classes} templates={templates}
           onSaved={updated => setRace(r => ({ ...r, ...updated }))} />
       )}
 

@@ -38,6 +38,12 @@ export const COPIED_RACE_FIELDS = [
   "length_type", "total_laps", "race_minutes", "total_rounds", "bracket_size",
   "heat_format", "heats", "consolations", "feature_name",
   "session_points", "session_stats", "session_points_enabled",
+  // The heat/consolation default points templates travel with the event for the
+  // same reason its per-session assignments do: they describe how this weekend
+  // scores, and a copy that dropped them would score its heats differently to
+  // the round it was copied from. Both reference points_templates docs, which
+  // are league-wide rather than per season, so the ids stay valid in the copy.
+  "heat_points_template_id", "consolation_points_template_id",
   // The calendar's session times travel with the event for the same reason its
   // date does — they describe when this round runs. They are read by the
   // Calendar and nowhere else (see lib/raceTimes.js), so a copy that dropped

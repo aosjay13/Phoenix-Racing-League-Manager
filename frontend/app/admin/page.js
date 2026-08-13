@@ -9,12 +9,13 @@ import { useAuth } from "@/components/AuthProvider";
 import { ImageUpload } from "@/components/ImageUpload";
 import { TrackSelect } from "@/components/TrackSelect";
 import { RaceLengthField } from "@/components/RaceLengthField";
+import { HeatPointsDefaultFields } from "@/components/HeatPointsDefaultFields";
 import { TrackMergeModal } from "@/components/TrackMergeModal";
 import { LENGTH_LAPS, raceLengthBody, raceLengthForm } from "@/lib/raceLength";
 import { api } from "@/lib/api";
 import { ALL_BONUS_TYPES, BONUS_TYPES } from "@/lib/standings";
 import { TRACK_TYPES } from "@/lib/trackTypes";
-import { listToTableOrZero, tableToList } from "@/lib/pointsTemplates";
+import { listToTableOrZero, normalizedBuiltinTemplates, tableToList } from "@/lib/pointsTemplates";
 import { carForClass } from "@/lib/classFilter";
 import { SeasonForm } from "@/components/SeasonForm";
 import { BangerBonusFields, PointsFields } from "@/components/PointsFields";
@@ -239,12 +240,28 @@ function AdminInner() {
     name: "", track: "", track_id: "", date: "", round_number: "", track_logo_url: "", sessions: "Race", car: "",
     // Distance: a lap count, or a duration for a race run to the clock.
     length_type: LENGTH_LAPS, total_laps: "", race_minutes: "", total_rounds: "",
-    heat_format: false, heats: "", consolations: "", feature_name: "A-Main Feature",
+    // Pre-ticked for a season that runs heat racing — every round of it is a heat
+    // weekend, so the box starts where the season says it should. Untick it for
+    // the odd standard-format round.
+    heat_format: !!season?.heat_format, heats: "", consolations: "", feature_name: "A-Main Feature",
+    // The event's default points template for every heat / every consolation, so
+    // a weekend of heats needs one pick instead of one per session. Blank = those
+    // sessions score on the season's (or class's) points structure, as before.
+    heat_points_template_id: "", consolation_points_template_id: "",
     // Blank = shared by every class. Only settable while the season has
     // per-class schedules turned on.
     class_id: "",
   };
   const [raceForm, setRaceForm] = useState(blankRace);
+  // The season loads after the first render, so the heat tick above has to be
+  // applied once it arrives — but only to a blank form nobody has started
+  // filling in, and never while an existing race is being edited.
+  useEffect(() => {
+    if (editIds.race) return;
+    setRaceForm(f => (f.name || f.track || f.round_number || f.heats || f.consolations
+      ? f
+      : { ...f, heat_format: !!season?.heat_format }));
+  }, [season?.id, season?.heat_format, editIds.race]);
 
   // Classes divide the selected season's field into separately-scored groups
   // ("Pro"/"Amateur", GT3/LMP2). Empty list = a single-class season, which is
@@ -792,6 +809,33 @@ function AdminInner() {
               </div>
             )}
 
+            {/* Heat racing for this class alone, and the points defaults it
+                unlocks: a season that runs heats for one class (or runs them
+                differently per class) sets that class's heat and consolation
+                scoring here. A class's default outranks the season's, and sits
+                on top of the class's own points structure — see
+                inheritedSessionTemplate in lib/standings.js. */}
+            <div className="field check-row">
+              <input type="checkbox" id="class_heat_format" disabled={!seasonId}
+                checked={!!classForm.heat_format}
+                onChange={e => setClassForm(f => ({ ...f, heat_format: e.target.checked }))} />
+              <label htmlFor="class_heat_format" style={{ margin: 0 }}>
+                Heats and Consolation Races
+                <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
+                  On: <strong>this class</strong> runs heat racing, and you can name the points template
+                  every heat and every consolation it runs scores on — set once here instead of once per
+                  race entry. It overrides {season?.name ?? "the season"}&rsquo;s own heat defaults for this
+                  class; a single event can still override it on its Race Info tab.
+                </span>
+              </label>
+            </div>
+
+            {classForm.heat_format && (
+              <HeatPointsDefaultFields idPrefix="class" value={classForm} onPatch={patchClassForm}
+                disabled={!seasonId} scopeLabel="class"
+                templates={[...normalizedBuiltinTemplates(), ...templates]} />
+            )}
+
             {/* Car selection / lock-in for this class alone — a class that
                 sets its own list asks ITS drivers for their own pick, while
                 the rest of the season keeps picking from the season's. */}
@@ -891,6 +935,11 @@ function AdminInner() {
               heats: raceForm.heat_format ? (heats.length ? heats : ["Heat 1"]) : [],
               consolations: raceForm.heat_format ? toArray(raceForm.consolations) : [],
               feature_name: raceForm.feature_name.trim() || "A-Main Feature",
+              // Only a heat event has heats/consolations to default, so switching
+              // the format off clears them rather than leaving a template pointed
+              // at sessions the event no longer runs.
+              heat_points_template_id: raceForm.heat_format ? raceForm.heat_points_template_id : "",
+              consolation_points_template_id: raceForm.heat_format ? raceForm.consolation_points_template_id : "",
             };
             if (!editIds.race) body.season_id = seasonId;
             save("/api/races", body, editIds.race,
@@ -943,6 +992,9 @@ function AdminInner() {
                 <div className="field"><label>Feature name</label>
                   <input disabled={!seasonId} value={raceForm.feature_name} placeholder="A-Main Feature"
                     onChange={e => setRaceForm(f => ({ ...f, feature_name: e.target.value }))} /></div>
+                <HeatPointsDefaultFields idPrefix="admin_race" disabled={!seasonId} value={raceForm}
+                  templates={[...normalizedBuiltinTemplates(), ...templates]}
+                  onPatch={patch => setRaceForm(f => ({ ...f, ...patch }))} />
               </>
             ) : (
               <div className="field"><label>Races in this event — comma-separated (e.g. Race 1, Race 2, Sprint)</label>
@@ -981,6 +1033,8 @@ function AdminInner() {
                   heats: Array.isArray(r.heats) ? r.heats.join(", ") : "",
                   consolations: Array.isArray(r.consolations) ? r.consolations.join(", ") : "",
                   feature_name: r.feature_name || "A-Main Feature",
+                  heat_points_template_id: r.heat_points_template_id || "",
+                  consolation_points_template_id: r.consolation_points_template_id || "",
                   class_id: r.class_id || "",
                 });
               }}

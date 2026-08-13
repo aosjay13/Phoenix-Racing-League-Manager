@@ -49,6 +49,21 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   on. Unlike Demo Derby these are ordinary racing finishes — a bracket 3rd is a straight **3** in
   Average Finish, both 3rd-place drivers are paid identical points, and it all cascades into Wins,
   Podiums, Top 5s and the Overall and per-Game stats like any other result
+- ⏱ **Time Trials & Placements** — a hub of its own for hot-lapping, time attack and division
+  placement nights. Each session takes **as many laps per driver as you allow** (a Maximum Laps
+  limit, or unlimited) and works out **Best Time** and **Best Average Time** from them, both
+  one-click sortable; every driver's fastest lap is found from the laps themselves and shown in
+  bold, and clicking a name opens the full lap list. Tick **Placement Session** and the sheet grows
+  a division column you assign by hand or fill from the times, and **Complete Session** pushes the
+  whole field onto the official roster in those divisions — the manual entry a placement night
+  otherwise creates. **A division doesn't have to be a class**: leagues whose divisions are
+  *separate series* place drivers into **series** instead, each building the roster of the season
+  behind it, so one night can build several rosters at once — and you can use both together, sorting
+  a driver into a series *and* into a class within it. **Export to Qualifying** copies the best laps onto a scheduled race as
+  its official qualifying grid, and the race's Qualifying tab has an **Import from Time Trial**
+  button for the same trip the other way. A time trial counts toward **no** racing statistic — no
+  Wins, Top 5s, Average Finish or Championships — but its laps *are* eligible for the Global /
+  Series / Class **Track Records**
 - 📝 **Player sign-ups with admin approval** — players join a series from their Dashboard: pick the
   season from a selector listing only what's open, fill in a form the league configured, and submit.
   Nothing reaches the official roster on its own — every sign-up lands in a **Pending Sign-ups**
@@ -553,6 +568,13 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
    driver: finishing position, laps led, incidents, DNF/DNS status) and save — standings,
    stats, and every linked player's profile update immediately. Re-open and re-save a race
    any time to correct results; it overwrites cleanly.
+   **Previous / next round** buttons sit at the top of both the results editor and the public
+   results page, so a season can be worked (or read) straight through without going back to the
+   Schedule between rounds. They keep you where you are — the editor stays the editor, the viewer
+   stays the viewer — and the editor also keeps the tab you're on, so entering ten Features in a row
+   never touches Race Info. They follow the Schedule's own order (round number), and on a season
+   running per-class calendars a class-pinned round steps through that class's calendar, skipping
+   rounds it doesn't run. See `lib/raceNav.js` and `components/RaceNav.jsx`.
    The **Status** column decides how a row is counted. **DNS** ("did not start") is not
    scored at all — no position points, no qualifying points, no bonuses — and counts toward
    no stat: not a start, not a finish to average, not a pole or grid slot, not a DNF. The
@@ -581,6 +603,68 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
    re-entered. A race row with no elapsed time falls back to reconstructing one from the winner's
    time plus its stored interval; a lapped car or a DNF has no comparable time and reads as a dash.
    All of these columns are offered in the Share Graphic exporter too.
+
+### Running a Time Trial or a placement night
+
+**Time Trials & Placements** in the sidebar is a hub of its own, for the sessions that aren't races:
+hot-lapping, time attack, and the placement night that sorts a new field into divisions.
+
+1. **Create the session.** Name it, pick the **track** (pick it from the Tracks database rather than
+   typing it, so the laps set here are eligible for that venue's track records), and choose how many
+   laps a driver may submit — **Maximum Laps**, or leave it blank for an unlimited hot-lapping
+   window. **Best Average Time counts…** decides what that column means: blank averages *every* lap
+   a driver submits, while a number gives the classic best N-consecutive-lap average.
+2. **Add drivers and type their laps.** The picker offers the season's roster and the global driver
+   pool, and a name that matches nobody is still perfectly valid — a placement night is run *for*
+   drivers who aren't on a roster yet. Lap times take any clock format (`1:23.456`, `83.456`,
+   `1:02:03.004`). Each driver's fastest lap is found from the laps themselves and shown in **bold**;
+   click their name for the full list.
+3. **Sort the sheet.** **Best Time** and **Best Average Time** are one-click sortable column headers.
+   The sheet holds its order while you're typing — a lap that improves someone's best time would
+   otherwise fling their row up the table mid-entry — and re-ranks when you sort, hit **Re-sort now**,
+   or save.
+4. **Place them.** On a **Placement Session** each row carries a dropdown for each kind of division
+   you picked, and **⇅ Sort into … by time** splits the ranked field evenly across them, fastest
+   first (the remainder lands on the quicker divisions). It's a starting point: every row stays
+   editable.
+5. **Complete Session** (top right) closes the sheet and offers to **build the roster** — every
+   driver on it joins a roster in the division they were placed in. It shows exactly what it will do
+   before writing, and a driver already on a roster is *moved* into their new division rather than
+   duplicated, so re-sorting the field and pressing it again corrects rather than doubles.
+
+**Classes or series — whichever your league calls a division.** Some leagues split a season into
+classes; others run each division as its own **series**, with its own seasons, schedule and
+championship. A placement night can sort into either, and the two compose:
+
+- Tick the **series** to place into, and give each one the **season** whose roster it builds — a
+  roster belongs to a season, not to a series, so each series names one (defaulting to its newest,
+  the one being raced). Completing the session then builds *every* one of those rosters in a single
+  run, and the summary reports each separately.
+- Tick the **classes** to place into for divisions inside a season, exactly as before.
+- Use **both** and a driver is sorted into a series *and* into a class within it. The divisions a
+  row can be given then come from **that driver's own series' season** — never another season's
+  classes, which would stamp a roster entry with an id it can't resolve. Sorting into divisions
+  splits inside each series too, so the top of the Pro Series fills Pro's first division rather than
+  the whole field's fastest drivers taking every quick division everywhere.
+
+A driver sorted into a series has been placed whether or not they also drew a class — the series is
+their division. On a class-only night, a driver with no division is still left alone rather than
+guessed at. And a session that places into series needs no season of its own at all: the series
+carry their own destinations.
+
+**Getting the times onto a race weekend** works from either end. **Export to Qualifying** on the
+session screen picks a scheduled event and copies the best laps over as its official qualifying
+results — fastest lap on pole — replacing whatever qualifying that event had. Or, from the event's
+**Qualifying** tab, **⏱ Import from Time Trial** fills the grid for you to review and save, exactly
+like the CSV import beside it. Either way, anyone who isn't on that season's roster is named rather
+than silently dropped: a result can only be filed against a roster entry.
+
+**What a time trial does and doesn't count for.** It counts toward **no** racing statistic — not
+Wins, Top 5s, Average Finish, Poles, or Championships — because it isn't a race and its laps are
+never written as results. Its laps **are** eligible for the Global / Series / Class **Track
+Records**, competing with race and qualifying laps on equal terms: the venue's record card names the
+session and links back to the sheet. The one route into the official statistics is the export above,
+which an admin performs deliberately, on an event they name.
 
 ### Typical first-time flow
 
@@ -611,6 +695,9 @@ frontend/
                       season-by-season line-ups), plus the admin Team Roster tab (?tab=roster)
     approvals/      ← League-wide pending sign-up queue (Moderator+), behind the sidebar badge
     races/[id]/     ← Race results view; races/[id]/edit ← admin race info + results editor
+    time-trials/    ← Time Trials & Placements hub; time-trials/[id] ← one session's sheet
+                      (laps, Best Time / Best Average, division placement, Complete Session,
+                      Export to Qualifying)
     series-info/    ← A player's series: driver linking, series sign-up, and
                       series-info/[seasonId] ← that season's car lock-in + who's racing what
     profile/        ← Edit your own profile
@@ -1082,6 +1169,63 @@ and `entries (season_id, team_id, class_id, user_id, number)` / `teams (name, lo
 `results (race_id, season_id, entry_id, class_id, points_template_id)`. `users` holds player profiles; linking a
 roster entry to a user account is what feeds their public career stats.
 
+`time_trials (league_id, name, game_id?, series_id?, season_id?, track_id, track, date, max_laps,
+average_laps, is_placement, class_ids[], series_ids[], series_seasons{}, sort_key, status)` and
+`time_trial_entries (time_trial_id, league_id, name, driver_id?, user_id?, entry_id?, laps[],
+assigned_class_id, assigned_class_name, assigned_series_id, assigned_series_name, position)` hold
+the Time Trials & Placements sessions.
+
+**They are deliberately not `results`, and that is the whole design.** The stats engine reads
+`results`; a trial's laps are never written there, so a time trial counts toward **no** standard
+racing statistic — no Wins, Top 5s, Average Finish, Poles or Championships — and there is nothing to
+exclude and nothing that can leak in by accident as new stats are added. Every trial is optional at
+every level of the hierarchy (a placement night usually happens *before* the season it feeds exists),
+which is another thing a `results` document could never be: a result belongs to a race, and a race
+belongs to a season.
+
+Laps ride on the entry as an **array of clock strings**, exactly as they were typed — one driver
+submits many laps and how many is not known in advance, so they are the row rather than a row each.
+Everything derived from them (each driver's fastest lap, Best Time, Best Average Time, the ranked
+order, the placement split, the qualifying grid an export produces) is computed by one dependency-free
+module, `lib/timeTrials.js`, covered by `lib/__tests__/timeTrials.test.mjs`; `lib/timeTrialsServer.js`
+supplies the Firestore reads around it. That is why the bolded fastest lap in the grid, the Best Time
+column beside it, the expanded lap list and the exported qualifying time can never disagree — they
+are the same function.
+
+**Best Average Time says which laps it averages.** `average_laps` of 0 (the default) averages *every*
+lap a driver submitted — the consistency measure a placement night wants, where one scruffy lap
+counts. Set it to N and the column becomes the classic best **N-consecutive-lap** average, and a run
+may not jump a lap that wasn't completed. `max_laps` of 0 is an unlimited hot-lapping window.
+
+**Two deliberate bridges out.** Time trial laps *are* eligible for the Global / Series / Class
+**Track Records** — a lap is a lap, whatever session turned it — so `fetchTrackRecordLaps` hands each
+driver's fastest lap to `lib/trackStatsServer.js`, which folds them through the same `keepFastest`
+rules the race laps go through; a trial lap holds a venue record only by being quicker than every
+race lap, and vice versa. They reach the records and nothing else: never the venue leaderboard, never
+the past-winners list. The other bridge is **admin-driven and named**: `POST
+/api/time-trials/{id}/export-qualifying` copies the best laps onto one scheduled race as its
+Qualifying, and from that moment they are ordinary qualifying results that score qualifying points
+and set poles like any other. Nothing crosses over without an admin asking for it, on a named event.
+
+**A division is not always a class.** Some leagues run each division as its own **series**, so a
+placement night can sort into `series_ids` as well as (or instead of) `class_ids`. A roster belongs
+to a *season*, not to a series, so `series_seasons` maps each series to the season whose roster it
+builds — `targetSeasonFor()` is the single rule that decides where a row's entry is written (its
+series' season, else the trial's own), and the same rule decides which season's classes that row's
+Division cell may offer, so a class stamped on an entry always exists in the season that entry lives
+in. `groupByTargetSeason()` then splits the sheet per season and the roster run builds each one,
+which is how a single night produces several rosters. Sorting into divisions on such a night splits
+*within* each series (`autoAssignClassesWithinSeries`), so each series' own field fills its own
+divisions. A trial placing only into series needs no `season_id` at all.
+
+**Building a roster from a placement is idempotent.** `planRosterBuild` matches drivers to that
+season's roster the way the rest of the app matches them — global `driver_id`, then linked account,
+then lowercased name — and a driver already there is **updated** into their new division rather than
+duplicated. Re-sort the field and press **Complete Session** again; it corrects, it doesn't double.
+Its `requireClass` rule may be a function of the row, which is what lets a series placement stand on
+its own: being sorted into the Pro Series *is* a placement, class or no class, while on a class-only
+night an unplaced driver is still left alone.
+
 **Teams are persistent, line-ups are seasonal.** A `teams` document is the team itself — league-wide,
 with its own name, badge and colour, exactly like a driver in the global pool. Who drives for it is a
 *separate* document, `team_seasons`, holding one `driver_ids[]` per season. That's what lets Ana race
@@ -1172,7 +1316,7 @@ outright order, an overall championship across classes just adds their points to
 **Which class pays what.** Points resolve through the same shape of fallback the car does, most
 specific last:
 
-    series default → season → event-wide session template → the class's own structure → that class's own session template
+    series default → season → the season's or event's heat/consolation default, or an event-wide session template → the class's own structure → the class's own heat/consolation default → that class's own session template
 
 The **class's own structure** (`classes.race_points` / `qual_points` / `bonus_points`, all unset by
 default = inherit) therefore **overrides the season and the event's default points template alike**.
@@ -1198,6 +1342,47 @@ On an event whose classes run separate sessions, the per-session assignment is p
 re-scoring Pro's Feature leaves Amateur's alone, and clearing it hands that class back to the
 event-wide assignment rather than to nothing. A class's Qualifying is resolved the same way, so its
 qualifying points are scored under *that class's* Qualifying structure.
+
+**Heats and consolations score on a default, set once — per season, per class or per event.** A heat
+weekend is the one shape where the per-session dropdown becomes a chore: eight heats and two B-Mains
+means ten trips through it, every round of the season. So three levels carry a **Heat Races and
+Consolation Races** tick, and each one that's ticked offers the same two pickers — a default points
+template **for every Heat** (`heat_points_template_id`) and one **for every Consolation**
+(`consolation_points_template_id`):
+
+| Where | Ticked on | Covers |
+| --- | --- | --- |
+| **Season** (League Setup → Seasons, and the Schedule's *New Season* dialog — the tick sits with the other season switches, its two pickers inside **Points & Bonuses**, under Race Points and Qualifying Points) | `seasons.heat_format` | every heat/consolation of every event in the season |
+| **Class** (League Setup → Classes) | `classes.heat_format` | every heat/consolation **that class** runs |
+| **Event** (Race Info — League Setup's Races panel, the New Race dialog, the race edit screen) | `races.heat_format` | every heat/consolation of that one event |
+
+Pick a template at whichever level is true for your league and every heat (or every consolation) in
+scope scores on it, including sessions added later — nothing is copied onto the sessions themselves.
+A season with the tick on also **pre-ticks heat racing on every new race** — in League Setup's Races
+panel and the *New Race* dialog alike — since every round of a heat season is a heat weekend; untick
+it on the odd standard-format round.
+**Most specific wins:** the event's default beats the class's, which beats the season's, and a
+template assigned to ONE session from its own results tab beats all three. `inheritedSessionTemplate`
+in `lib/standings.js` holds that order.
+
+Where a default sits in the class chain depends on who named it, for the same reason a session
+assignment does. The **season's** and the **event's** are statements about the whole field, so they
+sit *under* the class layer — a class scoring on its own points structure outranks them. A **class's**
+own default sits *on top* of that class's structure, since it is a statement about that class:
+otherwise a class with its own points would ignore the very heat template it was given.
+
+The default is resolved at scoring time (`resolveTemplateId`, stamped onto each result by
+`decorateSessionFlags`, which reads the season/class docs through `sessionScopeContext`) rather than
+written onto saved results — which is what makes it a default: change the season's heat template and
+every heat under it re-scores at once, on every screen, with no re-save. Naming a default also flips
+**championship points on** for that session type, which is off by default for preliminary sessions —
+the point of picking a heat scale is that the heats pay it. Stats stay off (a heat is still a
+preliminary for Wins and Average Finish), and each session keeps its own points switch, so one heat
+can still be excluded. The results screen's points dropdown names the default and the level it came
+from ("Heat default · season — PRA Heats"), so it is always visible which of the three is scoring.
+Leave the pickers on *No default* — or leave the ticks off — and heats and consolations behave exactly
+as they always have. A copied race carries its own two defaults over with the rest of its scoring
+setup.
 
 **Qualifying scores itself.** Every session scores itself, off its own structure, at the position the
 driver took in it: Qualifying pays the qualifying scale for the grid slot won (pole being position 1

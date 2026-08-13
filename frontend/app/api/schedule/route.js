@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
-import { decorateSessionFlags } from "@/lib/standings";
+import { decorateSessionFlags, sessionScopeContext } from "@/lib/standings";
 import { summarizeRace } from "@/lib/raceSummaryServer";
 import { classIdsInSeason, fetchSeasonClasses, filterRacesByClass, carForClass, carsByClassForRace } from "@/lib/classServer";
 import { raceInClass } from "@/lib/classFilter";
@@ -73,7 +73,8 @@ async function oneSeason(seasonId, classIdParam = "", className = "") {
   // Summaries resolve results by race, so the map must cover every race the
   // results reference — build it from the unfiltered list.
   const racesById = Object.fromEntries(allRaces.map(r => [r.id, r]));
-  const results = decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById);
+  const results = decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById,
+    sessionScopeContext({ seasons: [season], classes, entriesById }));
   const classNameById = Object.fromEntries(classes.map(c => [c.id, c.name]));
 
   const viewClass = classId ? classes.find(c => c.id === classId) ?? null : null;
@@ -157,7 +158,12 @@ async function globalFeed(gameId, seriesId, leagueId) {
   const races = racesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
   const racesById = Object.fromEntries(races.map(r => [r.id, r]));
   const entriesById = Object.fromEntries(entriesSnap.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
-  const results = decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById);
+  const results = decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById,
+    sessionScopeContext({
+      seasons: Object.values(seasons),
+      classes: Object.values(classesBySeason).flat(),
+      entriesById,
+    }));
 
   const rows = [];
   for (const r of races) {
