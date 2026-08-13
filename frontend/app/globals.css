@@ -2996,28 +2996,54 @@ input[type="radio"]:disabled:checked {
   gap: 10px;
 }
 
-/* A series that can be joined: the whole card is the button. */
+/* A series that can be joined. The card carries three actions now — join, put
+   it aside, or silence it — so it can't be one big <button> any more; the
+   left-hand side is the button instead, and it fills the row so a mis-aimed tap
+   still opens the form. */
 .join-card {
   display: flex;
   align-items: center;
   gap: 14px;
   width: 100%;
   padding: 16px 18px;
-  text-align: left;
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
   background: var(--bg-surface);
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
   transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
 }
 
+.join-card-main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
 .join-card:hover,
-.join-card:focus-visible {
+.join-card:focus-within {
   transform: translateY(-2px);
   border-color: var(--accent-cyan);
   background: var(--card-hover);
+}
+
+/* Silenced: still in the list and still joinable, just quieter than the ones
+   they haven't answered — and the card says so in words as well (see the
+   "not counted on the badge" chip). */
+.join-card.is-muted { opacity: 0.82; }
+.join-card.is-muted:hover { opacity: 1; }
+
+.join-chip-muted {
+  border-color: rgba(244, 162, 40, 0.4);
+  background: rgba(244, 162, 40, 0.1);
+  color: var(--accent-gold);
 }
 
 .join-card-logo {
@@ -3053,11 +3079,88 @@ input[type="radio"]:disabled:checked {
   white-space: nowrap;
 }
 
-.join-card-go { flex-shrink: 0; }
+/* Join · Not Interested · Clear Notification, in the order a player weighs
+   them up. They wrap under each other on a narrow card rather than squeezing. */
+.join-card-go {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
 
-/* The card is the button, so the thing that looks like one is a span — it must
-   not carry .btn's stacking margin. */
-.join-card-btn { margin-top: 0; pointer-events: none; }
+.join-card-btn { margin-top: 0; white-space: nowrap; }
+
+/* ── Put aside, not thrown away ────────────────────────────────────────────
+   "Not Interested" has to be undoable, or nobody sensible would press it. The
+   series lives here, folded away, with the button that puts it back. */
+.join-aside {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--card);
+}
+
+.join-aside > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 16px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink-1);
+  list-style: none;
+  user-select: none;
+}
+
+.join-aside > summary::-webkit-details-marker { display: none; }
+.join-aside > summary:hover { color: var(--ink-0); background: var(--card-hover); border-radius: var(--radius-card); }
+
+.join-aside-caret { transition: transform 0.15s ease; display: inline-block; }
+.join-aside[open] > summary > .join-aside-caret { transform: rotate(90deg); }
+
+.join-aside-count {
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  font-size: 0.75rem;
+  color: var(--ink-1);
+}
+
+.join-aside-body { padding: 4px 14px 14px; }
+.join-aside-note { margin: 0 0 10px; font-size: 0.82rem; color: var(--ink-1); }
+
+.join-aside-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-surface);
+}
+
+.join-aside-row:last-child { margin-bottom: 0; }
+
+.join-aside-name { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.join-aside-name strong { font-size: 0.95rem; color: var(--ink-0); }
+.join-aside-name span { font-size: 0.8rem; color: var(--ink-1); }
+
+.join-aside-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.join-aside-actions .btn { margin-top: 0; }
+
+@media (max-width: 720px) {
+  .join-card { flex-wrap: wrap; }
+  .join-card-go { width: 100%; justify-content: stretch; }
+  .join-card-go .btn { flex: 1; justify-content: center; }
+  .join-aside-actions { width: 100%; }
+  .join-aside-actions .btn { flex: 1; justify-content: center; }
+}
 
 .join-back { margin-top: 14px; }
 

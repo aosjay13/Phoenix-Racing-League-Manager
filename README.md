@@ -74,7 +74,11 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   queue on the admin's roster screen, where **Approve** adds them with the number and car they asked
   for (creating their driver profile too, if they're new to the league) and **Deny** leaves them off.
   Admins choose per **series, season or class** what a sign-up must carry: a **car number**, a **car**
-  from the league's own **Car Selection** list, or nothing at all
+  from the league's own **Car Selection** list, or nothing at all.
+  Each series card also carries **Not Interested** (out of the list and off the sidebar badge, into
+  a section you can reopen and join from any time) and **Clear Notification** (keep it in the list,
+  just stop counting it) — a league running six series otherwise leaves a permanent red badge for
+  somebody who races one of them
 - 💬 **A message board between admins and players** — every decision an admin makes about somebody
   says so on that player's **Dashboard**: a sign-up approved (with the full welcome — schedule,
   calendar, Discord) or denied with the reason, a car number granted or refused, a driver profile
@@ -209,6 +213,13 @@ throwaway key (`openssl genrsa`) — the emulator never checks it.
      drivers are already in and how many are waiting, and what its form is going to ask for
      (*Car number needed*, *Choose your car*, *2 classes*) — so two series can be told apart
      without opening either. Seasons marked complete never appear, and can't be joined.
+   - **Not every series is one you want.** Beside **Join this series** each card carries
+     **Not Interested** — which takes it out of your list *and* off the red number on the
+     Sign-ups menu, into a section underneath you can reopen and join from at any time — and
+     **Clear Notification**, which keeps it in the list and only stops it counting. A league
+     running six series otherwise leaves a permanent red 6 sitting in the sidebar of somebody who
+     races one of them, and a number that never reaches zero is one you stop reading. Both are
+     undoable, and neither tells the admins anything.
    - **Know what you'll need before you start.** Above the form, **What this form asks you for**
      lists every question that's coming and why — your racing name, your Discord name, whichever
      platform IDs this game requires, a car number, a car. Nothing in the form is a surprise, and
@@ -1246,15 +1257,51 @@ to a human to spot:
   `joinableSeasons` from `awaitingSeasons`) — the commonest way a first-timer ends up in the queue
   twice;
 - the sidebar badge counts only what is waiting on the **player** — series they could join, plus
-  cars they still have to choose — so it falls when *they* act, never when an admin does;
+  cars they still have to choose — so it falls when *they* act, never when an admin does, and a
+  series they've answered with *Not Interested* or *Clear Notification* stops counting entirely
+  (see below);
 - **What this form asks you for**, printed above the form, is derived from the same two sources
   the form renders itself from, so it can't promise a different set of questions than the one
   that follows;
-- an empty list says **which** of four things happened — a sign-up already in flight, every
-  season already joined, every other season finished, or a league with nothing scheduled. This
-  one was caught in testing: a player who had just sent a sign-up was told "every other season
-  has been marked finished", which reads as though their sign-up had gone nowhere.
-  `nothingToJoinReason()` picks the reason and is asserted against all four states.
+- an empty list says **which** of five things happened — everything put aside by the player
+  themselves, a sign-up already in flight, every season already joined, every other season
+  finished, or a league with nothing scheduled. This one was caught in testing: a player who had
+  just sent a sign-up was told "every other season has been marked finished", which reads as
+  though their sign-up had gone nowhere. `nothingToJoinReason()` picks the reason and is asserted
+  against every state.
+
+#### Not Interested / Clear Notification
+
+The badge counting what's waiting on the player is the right rule, and it's also how the badge
+breaks: a league running six series means a permanent red **6** for somebody who races one of
+them, and a number that never reaches zero is a number people stop reading — at which point it no
+longer works for the sign-up they *do* want. So each series card carries two answers beside
+**Join this series**:
+
+- **Not Interested** (red) — out of the list *and* off the badge. Nothing is refused or deleted:
+  the season moves to a *"series you said you're not interested in"* section directly below,
+  which says it's still open and carries both **Put it back in my list** and **Join it after all**.
+  A choice nobody can undo is one nobody sensible would make.
+- **Clear Notification** — keep it in the list, just stop counting it, for the series they might
+  get to later. The card then says **🔕 Not counted on the badge** in words rather than leaving
+  the player to notice a missing number, and the button flips to **Notify me again** so it can be
+  undone where it was done.
+
+The rules live in **`lib/signupPrefs.js`** (pure, `lib/__tests__/signupPrefs.test.mjs`), applied by
+both the screen and the badge so they can't disagree about what's been silenced. Two properties are
+asserted hard: *only one of the two answers hides the series* (fold them together and one button
+becomes a lie), and *anything stored that isn't one of the two answers means no answer* — failing
+open is the only safe direction, since a bad value in the other direction silently removes a
+league's season from somebody's screen forever.
+
+Cars still to choose keep counting whatever a player has said: that's a season they have already
+joined and a genuinely outstanding job, not an invitation.
+
+Answers are stored per season on the player's **own account** (`users/<uid>.signup_prefs`) and
+written by `PUT /api/users/me/signup-prefs`, which takes its target from the caller's uid and
+nothing else — there is no way to silence somebody else's notifications, and a state that isn't one
+of the three is refused outright rather than stored. No admin ever sees them, and nothing about the
+sign-up itself changes.
 
 Submitting still goes through the shared `<SignupForm>` — the same component a season's own screen
 opens in a dialog — so the two ways in ask for identical things, and neither can put anybody on a

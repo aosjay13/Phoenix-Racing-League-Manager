@@ -16,6 +16,7 @@ import {
   gameRequirementFlags, knownAliasesFor, knownRacingName,
 } from "@/lib/signupRequest";
 import { unreadDenials } from "@/lib/denialNotice";
+import { normalizePrefs } from "@/lib/signupPrefs";
 
 export const dynamic = "force-dynamic";
 
@@ -250,6 +251,11 @@ export const GET = withUser(async (request, ctx, user) => {
     known_aliases,
     known_name,
     denied,
+    // What this player has said about each season they could join — "not
+    // interested", or "stop counting this one". Their own display preference,
+    // read straight off the account doc that was loaded above; the screen and
+    // the sidebar badge both apply it through lib/signupPrefs.js.
+    signup_prefs: normalizePrefs(accountDoc.exists ? accountDoc.data().signup_prefs : null),
     pending_claim: pending ? { id: pending.id, driver_id: pending.driver_id, driver_name: pending.driver_name } : null,
     my_seasons,
     open_signups,

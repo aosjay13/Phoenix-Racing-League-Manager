@@ -8,10 +8,14 @@ import { DriverLinkGate } from "@/components/DriverLinkGate";
 import { SignupDenials } from "@/components/SignupDenials";
 import { SignupForm } from "@/components/SignupForm";
 import { useMySignups } from "@/components/MySignupsProvider";
+import { api } from "@/lib/api";
 import {
   JOIN_STEPS, nothingToJoinHeadline, nothingToJoinReason, seasonChips, seasonLabel,
   seasonStatus, signupNeeds, signupOverview,
 } from "@/lib/signupFlow";
+import {
+  HIDDEN, MUTED, NORMAL, muteButtonLabel, muteButtonTitle, notInterestedTitle, seasonPref,
+} from "@/lib/signupPrefs";
 
 // ── Sign-ups ───────────────────────────────────────────────────────────────
 //
@@ -55,28 +59,101 @@ function HowItWorks({ current = 1 }) {
   );
 }
 
-// One series a driver could join, as a single big button. Everything on it
-// answers "is this the one I want?" — the game it's played on, how many people
-// are already in, and what the form is going to ask for — so nobody has to open
-// three of them to find out.
-function JoinCard({ season, onJoin }) {
+// One series a driver could join. Everything on it answers "is this the one I
+// want?" — the game it's played on, how many people are already in, and what
+// the form is going to ask for — so nobody has to open three of them to find
+// out. The whole left-hand side is one big button, so a mis-aimed tap still
+// opens the form rather than doing nothing.
+//
+// Three actions, in the order a player weighs them up:
+//
+//   Join this series    — the point of the screen.
+//   Not Interested      — take it out of the list AND off the badge. Nothing is
+//                         refused or deleted: it moves to a section below they
+//                         can reopen, and joining it later is one press away.
+//   Clear Notification  — keep it in the list, just stop counting it. The
+//                         middle answer, for a series they might get to later
+//                         and don't want a red number about in the meantime.
+//                         Flips to "Notify me again", so it can be undone where
+//                         it was done.
+function JoinCard({ season, onJoin, pref, onSetPref, busy }) {
   const chips = seasonChips(season);
+  const muted = pref === MUTED;
   return (
-    <button type="button" className="join-card" onClick={() => onJoin(season)}>
-      {season.logo_url
-        ? <img src={season.logo_url} alt="" className="join-card-logo" />
-        : <span className="join-card-logo join-card-logo-fallback" aria-hidden="true">🏁</span>}
-      <span className="join-card-body">
-        <strong>{season.series_name}</strong>
-        <span className="join-card-season">{season.season_name}</span>
-        <span className="join-card-chips">
-          {chips.map(c => <span className="join-chip" key={c}>{c}</span>)}
+    <div className={`join-card${muted ? " is-muted" : ""}`}>
+      <button type="button" className="join-card-main" onClick={() => onJoin(season)}>
+        {season.logo_url
+          ? <img src={season.logo_url} alt="" className="join-card-logo" />
+          : <span className="join-card-logo join-card-logo-fallback" aria-hidden="true">🏁</span>}
+        <span className="join-card-body">
+          <strong>{season.series_name}</strong>
+          <span className="join-card-season">{season.season_name}</span>
+          <span className="join-card-chips">
+            {chips.map(c => <span className="join-chip" key={c}>{c}</span>)}
+            {/* Said in words on the card itself, not just implied by a missing
+                number in the sidebar — otherwise a player who silenced this
+                weeks ago has no way to tell that they did. */}
+            {muted && <span className="join-chip join-chip-muted">🔕 Not counted on the badge</span>}
+          </span>
         </span>
-      </span>
-      <span className="join-card-go">
-        <span className="btn btn-primary join-card-btn">Join this series</span>
-      </span>
-    </button>
+      </button>
+
+      <div className="join-card-go">
+        <button type="button" className="btn btn-primary join-card-btn"
+          onClick={() => onJoin(season)}>
+          Join this series
+        </button>
+        <button type="button" className="btn btn-danger join-card-btn" disabled={busy}
+          title="Move this series out of your list. You can still join it later."
+          onClick={() => onSetPref(season, HIDDEN)}>
+          Not Interested
+        </button>
+        <button type="button" className="btn btn-ghost join-card-btn" disabled={busy}
+          title={muteButtonTitle({ [season.season_id]: pref }, season.season_id)}
+          onClick={() => onSetPref(season, muted ? NORMAL : MUTED)}>
+          {muteButtonLabel({ [season.season_id]: pref }, season.season_id)}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// The series they've put aside. Folded away, but never gone: the whole promise
+// of "Not Interested" is that it can be taken back, so this section says how
+// many there are and each row has the button that undoes it.
+function NotInterested({ seasons, onJoin, onSetPref, busy }) {
+  if (!seasons.length) return null;
+  return (
+    <details className="join-aside">
+      <summary>
+        <span className="join-aside-caret" aria-hidden="true">▸</span>
+        {notInterestedTitle(seasons)}
+        <span className="join-aside-count">{seasons.length}</span>
+      </summary>
+      <div className="join-aside-body">
+        <p className="join-aside-note">
+          These are still open — they&rsquo;re just out of your list and off your badge. Put one
+          back any time.
+        </p>
+        {seasons.map(s => (
+          <div className="join-aside-row" key={s.season_id}>
+            <div className="join-aside-name">
+              <strong>{s.series_name}</strong>
+              <span>{s.season_name}{s.game_name ? ` · ${s.game_name}` : ""}</span>
+            </div>
+            <div className="join-aside-actions">
+              <button type="button" className="btn btn-ghost" disabled={busy}
+                onClick={() => onSetPref(s, NORMAL)}>
+                Put it back in my list
+              </button>
+              <button type="button" className="btn btn-primary" onClick={() => onJoin(s)}>
+                Join it after all
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </details>
   );
 }
 
@@ -169,6 +246,11 @@ export default function SignupsPage() {
   const [chosenId, setChosenId] = useState("");
   const [submitted, setSubmitted] = useState(null);
   const [claiming, setClaiming] = useState(false);
+  // A preference being saved. One flag for the whole list rather than one per
+  // card: the answer changes what every card and the sidebar badge show, so
+  // they're all reloading together anyway.
+  const [savingPref, setSavingPref] = useState(false);
+  const [prefError, setPrefError] = useState(null);
 
   if (loading) return <div className="skeleton" style={{ height: 280 }} />;
 
@@ -213,9 +295,31 @@ export default function SignupsPage() {
   // A season is joinable again the moment its denial is acknowledged — until
   // then it's held back, so the reason is read before the identical form is
   // filled in a second time. `chosen` looks at the UNFILTERED list so pressing
-  // "let me try again" can drop them straight into that season's form.
+  // "let me try again" — or "join it after all" on something they'd put aside —
+  // can drop them straight into that season's form.
   const joinable = o.joinable.filter(s => !s.my_denied);
-  const chosen = o.joinable.find(s => s.season_id === chosenId) || null;
+  const notInterested = o.notInterested.filter(s => !s.my_denied);
+  const chosen = o.allJoinable.find(s => s.season_id === chosenId) || null;
+
+  // "Not Interested" / "Clear Notification", and the undo for each. Saved
+  // against the player's own account; `reload` is the shared provider's, so the
+  // sidebar badge drops the same moment the card changes rather than a poll
+  // later.
+  async function setPref(season, state) {
+    setSavingPref(true);
+    setPrefError(null);
+    try {
+      await api("/api/users/me/signup-prefs", {
+        method: "PUT",
+        body: { season_id: season.season_id, state },
+      });
+      await reload();
+    } catch (err) {
+      setPrefError(err.message);
+    } finally {
+      setSavingPref(false);
+    }
+  }
 
   // Submitting files a PENDING request — nobody reaches a roster without an
   // admin — so the confirmation says "in the queue", never "you're in".
@@ -359,26 +463,36 @@ export default function SignupsPage() {
         </div>
       )}
 
+      {prefError && <p className="field-error">{prefError}</p>}
+
       {joinable.length === 0 ? (
-        // An empty list has to say WHICH of the reasons applies — a sign-up
-        // that's already in, seasons already joined, seasons finished, or a
-        // league with nothing scheduled. nothingToJoinReason picks it; getting
-        // it wrong reads as a page that failed to load, or worse, as a sign-up
-        // that vanished.
+        // An empty list has to say WHICH of the reasons applies — everything
+        // put aside by the player themselves, a sign-up that's already in,
+        // seasons already joined, seasons finished, or a league with nothing
+        // scheduled. nothingToJoinReason picks it; getting it wrong reads as a
+        // page that failed to load, or worse, as a sign-up that vanished.
         <div className="empty-state">
           <span className="empty-state-icon">🏁</span>
-          <p>{nothingToJoinHeadline(o)}</p>
+          <p>{nothingToJoinHeadline({ ...o, notInterested })}</p>
           <p style={{ fontSize: "0.85rem", color: "var(--ink-2)", margin: 0 }}>
-            {nothingToJoinReason(o)}
+            {nothingToJoinReason({ ...o, notInterested })}
           </p>
         </div>
       ) : (
         <div className="join-list">
           {joinable.map(s => (
-            <JoinCard key={s.season_id} season={s} onJoin={x => setChosenId(x.season_id)} />
+            <JoinCard key={s.season_id} season={s} pref={seasonPref(o.prefs, s.season_id)}
+              busy={savingPref} onSetPref={setPref}
+              onJoin={x => setChosenId(x.season_id)} />
           ))}
         </div>
       )}
+
+      {/* Put aside, not thrown away — see NotInterested above. Sits directly
+          under the list it was taken out of, so getting one back is obvious
+          rather than something to be discovered. */}
+      <NotInterested seasons={notInterested} busy={savingPref} onSetPref={setPref}
+        onJoin={x => setChosenId(x.season_id)} />
 
       {/* Where they already are. Each row goes to that season's own screen —
           the car lock-in and "who's racing what" grid — so this stays a summary

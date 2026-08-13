@@ -12,6 +12,7 @@
 
 import { isNumberChange } from "@/lib/signupQueue";
 import { requiredAliases } from "@/lib/signupRequest";
+import { badgeSeasons, normalizePrefs, partitionJoinable } from "@/lib/signupPrefs";
 
 // The whole process, in three steps, in plain language. Shown at the top of the
 // screen with the current one highlighted, so nobody has to guess how much is
@@ -44,8 +45,20 @@ export function seasonLabel(season) {
 // The season rows a driver can actually join right now: open, and not already
 // waiting on an admin. `my_pending` is set by the API for a sign-up this
 // account has already sent.
+//
+// Deliberately UNFILTERED by what the player has said about each one — a season
+// they've marked "not interested" is still joinable the moment they change
+// their mind, and the screen needs to be able to find it to put it back. Which
+// of these are shown, and which still count on the badge, is decided by
+// lib/signupPrefs.js on top of this list.
 export function joinableSeasons(data) {
   return (data?.open_signups || []).filter(s => !s.my_pending);
+}
+
+// What the player has said about each season they could join. Stored on their
+// own account and returned with the payload.
+export function signupPrefs(data) {
+  return normalizePrefs(data?.signup_prefs);
 }
 
 // Sign-ups this account has sent that nobody has ruled on yet.
@@ -63,11 +76,20 @@ export function seasonsNeedingCar(data) {
 // One object holding every list the screen renders, so the page asks once and
 // never re-derives a count in two places.
 export function signupOverview(data) {
-  const joinable = joinableSeasons(data);
+  const all = joinableSeasons(data);
+  const prefs = signupPrefs(data);
+  const { shown, notInterested } = partitionJoinable(all, prefs);
   const waiting = awaitingSeasons(data);
   const carsToPick = seasonsNeedingCar(data);
   return {
-    joinable,
+    // Everything open to them, including the ones they've put aside — the
+    // screen needs the whole list to reopen one.
+    allJoinable: all,
+    // What the list on screen shows: everything except "not interested".
+    joinable: shown,
+    // Put aside, findable, joinable the moment they change their mind.
+    notInterested,
+    prefs,
     waiting,
     carsToPick,
     racing: data?.my_seasons || [],
@@ -84,15 +106,24 @@ export function signupOverview(data) {
 // Sign-ups already sent are deliberately not counted: those are waiting on an
 // admin, and a badge that never falls until somebody else acts is nagging
 // rather than useful.
+//
+// Neither is a series the player has answered. A league running six series
+// otherwise means a permanent red 6 for somebody who races one of them, and a
+// number that never reaches zero is a number people stop reading — at which
+// point the badge no longer works for the sign-up they DO want. Both "Clear
+// Notification" and "Not Interested" take a season off this count; only the
+// second also takes it off the list. Cars still to choose always count: that's
+// a season they have already joined, and a genuinely outstanding job.
 export function signupBadgeCount(data) {
   if (!data) return 0;
-  return joinableSeasons(data).length + seasonsNeedingCar(data).length;
+  return badgeSeasons(joinableSeasons(data), signupPrefs(data)).length
+    + seasonsNeedingCar(data).length;
 }
 
 // The badge's tooltip, in the same plain language as the screen.
 export function signupBadgeTitle(data) {
   if (!data) return "Sign up for a series";
-  const joinable = joinableSeasons(data).length;
+  const joinable = badgeSeasons(joinableSeasons(data), signupPrefs(data)).length;
   const cars = seasonsNeedingCar(data).length;
   const parts = [];
   if (joinable) parts.push(`${joinable} series you can join`);
@@ -210,8 +241,15 @@ export function nothingToJoinReason(overview) {
   const waiting = o.waiting?.length || 0;
   const racing = o.racing?.length || 0;
   const closed = o.closed || 0;
+  const aside = o.notInterested?.length || 0;
   const newSeason = "A new season will show up here the moment an admin opens one.";
 
+  // Checked first: a list emptied by the player's own choices must say so, or
+  // they're told the league has nothing running when it plainly does.
+  if (aside) {
+    return `${aside === 1 ? "The one season that's open is" : `All ${aside} open seasons are`} in`
+      + " your “not interested” list below — open it to join one after all. " + newSeason;
+  }
   if (waiting) {
     return racing
       ? `Your sign-up${waiting === 1 ? " above is" : "s above are"} with the admins, and you're already on every other season that's running. ${newSeason}`
@@ -229,6 +267,7 @@ export function nothingToJoinReason(overview) {
 // The headline above that reason.
 export function nothingToJoinHeadline(overview) {
   const o = overview || {};
+  if (o.notInterested?.length) return "Nothing left in your list.";
   return (o.waiting?.length || o.racing?.length)
     ? "Nothing else open to join right now."
     : "There's nothing open to join at the moment.";
