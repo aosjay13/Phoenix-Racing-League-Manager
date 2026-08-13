@@ -2020,6 +2020,18 @@ tbody tr:hover {
   color: var(--accent-red);
 }
 
+/* The same sentence as .field-error, on a form nobody has typed in yet: what's
+   left to fill in, said calmly. An untouched required box isn't a mistake, and
+   greeting a first-time player with red text (and red-outlined inputs) for
+   having done nothing wrong is the fastest way to make signing up feel like an
+   exam. Both flip to the error styling the moment the form is started. */
+.signup-todo {
+  margin: 6px 0 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--ink-1);
+}
+
 /* The public series roster folded into a sign-up card: who's racing under which
    number, in car-number order, so a driver can pick a free one without leaving
    the form. */
@@ -3049,7 +3061,15 @@ input[type="radio"]:disabled:checked {
 
 .join-needs-foot { margin: 12px 0 0; font-size: 0.78rem; color: var(--ink-2); }
 
-.join-form { margin-top: 14px; max-width: 660px; }
+/* Step 2 is ONE column: the hero, the "what you'll need" list and the form
+   share a width, so the eye runs straight down them. Without this the panels
+   above ran the full page while the form sat narrow beneath, which read as two
+   unrelated things rather than one walkthrough. */
+.join-hero,
+.join-needs,
+.join-form { max-width: 720px; }
+
+.join-form { margin-top: 14px; }
 
 /* Step 3. Confirmation gets its own full card because "did that work?" is the
    question a first-time player most often answers by signing up twice. */

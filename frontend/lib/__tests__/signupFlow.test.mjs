@@ -14,9 +14,9 @@
 //      and every platform identity the parent game insists on.
 import assert from "node:assert";
 import {
-  JOIN_STEPS, awaitingSeasons, classesAskMore, joinableSeasons, seasonChips, seasonCounts,
-  seasonLabel, seasonStatus, seasonsNeedingCar, signupBadgeCount, signupBadgeTitle, signupNeeds,
-  signupOverview,
+  JOIN_STEPS, awaitingSeasons, classesAskMore, joinableSeasons, nothingToJoinHeadline,
+  nothingToJoinReason, seasonChips, seasonCounts, seasonLabel, seasonStatus, seasonsNeedingCar,
+  signupBadgeCount, signupBadgeTitle, signupNeeds, signupOverview,
 } from "../signupFlow.js";
 
 let n = 0;
@@ -164,6 +164,41 @@ check("exactly the season needing a car is a todo",
 check("seasonsNeedingCar agrees with seasonStatus",
   seasonsNeedingCar(data).map(s => s.season_id),
   [mineNeedsCar, mineSettled].filter(s => seasonStatus(s).tone === "todo").map(s => s.season_id));
+
+// ── Why there's nothing to join ─────────────────────────────────────────────
+// Caught live: a player who had just sent a sign-up was told "every other
+// season has been marked finished", which reads as though their sign-up had
+// gone nowhere. The reason has to match what actually happened.
+const reason = o => nothingToJoinReason(o);
+ok("a sent sign-up is the reason, not the finished seasons",
+  reason({ waiting: [openB], racing: [mineSettled], closed: 1 })
+    .startsWith("Your sign-up above is with the admins"));
+ok("that reason never blames finished seasons",
+  !reason({ waiting: [openB], racing: [mineSettled], closed: 3 }).includes("finished"));
+ok("several sent sign-ups read as plural",
+  reason({ waiting: [openB, openA], racing: [], closed: 0 })
+    .startsWith("Your sign-ups above are with the admins"));
+check("already on everything running",
+  reason({ waiting: [], racing: [mineSettled], closed: 0 }),
+  "You're already signed up for everything that's running. A new season will show up here the moment an admin opens one.");
+check("the league's seasons are all finished",
+  reason({ waiting: [], racing: [], closed: 1 }),
+  "The one other season has been marked finished, so those sign-ups are closed. A new season will show up here the moment an admin opens one.");
+ok("several finished seasons read as plural",
+  reason({ waiting: [], racing: [], closed: 4 }).includes("All 4 other seasons have been marked finished"));
+check("a league with nothing scheduled at all",
+  reason({ waiting: [], racing: [], closed: 0 }),
+  "There are no seasons open at the moment. A new season will show up here the moment an admin opens one.");
+check("nothing loaded yet doesn't throw", typeof reason(null), "string");
+ok("every reason says a new season will appear",
+  [{ waiting: [openB], racing: [], closed: 0 }, { waiting: [], racing: [mineSettled], closed: 0 },
+    { waiting: [], racing: [], closed: 2 }, { waiting: [], racing: [], closed: 0 }]
+    .every(o => reason(o).includes("A new season will show up here")));
+
+check("headline when something is already in flight",
+  nothingToJoinHeadline({ waiting: [openB], racing: [] }), "Nothing else open to join right now.");
+check("headline for a player with nothing at all",
+  nothingToJoinHeadline({ waiting: [], racing: [] }), "There's nothing open to join at the moment.");
 
 // ── The walkthrough itself ──────────────────────────────────────────────────
 check("three steps, numbered in order", JOIN_STEPS.map(s => s.step), [1, 2, 3]);

@@ -145,6 +145,23 @@ npm run dev
 Create `frontend/.env.local` from the root `.env.example` and fill in your Firebase values.
 The app runs at `http://localhost:3000`.
 
+### Running against the Firebase emulators
+
+You can develop without touching a real Firebase project. Start the Auth + Firestore emulators
+(`firebase emulators:start`) and add these to `frontend/.env.local`:
+
+```
+FIRESTORE_EMULATOR_HOST=127.0.0.1:8080
+FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099
+NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099
+```
+
+The first two are read by the Admin SDK on its own; the third is the browser half, which
+`lib/firebaseClient.js` uses to point sign-in at the emulator instead of the real project. All
+three are unset in every deployed environment, and with no host configured the app connects to
+Firebase exactly as it always has. `FIREBASE_PRIVATE_KEY` still has to *parse*, so generate a
+throwaway key (`openssl genrsa`) — the emulator never checks it.
+
 ## How to Use
 
 ### For players
@@ -183,6 +200,11 @@ The app runs at `http://localhost:3000`.
      queue* and that nothing else is needed from you — which is the question a first-timer
      otherwise answers by signing up a second time. The series then sits under **Waiting on an
      admin** until one of them approves it.
+   - **Nothing is red until you've had a go at it.** A required box you haven't visited yet is
+     just something still to fill in, so it's left alone and what's outstanding is named calmly
+     under the button. Touch one and leave it empty and *then* it's flagged, because by then it
+     is genuinely undone. Opening a form to four red-outlined boxes reads as "you've done
+     something wrong" to somebody who has done nothing at all yet.
    - **The badge on the menu** counts what is waiting on **you**: series you could join, plus
      cars you still have to choose. Sign-ups already sent are deliberately not counted — those
      are waiting on somebody else, and a number that only falls when an admin acts is nagging
@@ -1078,7 +1100,12 @@ to a human to spot:
   cars they still have to choose — so it falls when *they* act, never when an admin does;
 - **What this form asks you for**, printed above the form, is derived from the same two sources
   the form renders itself from, so it can't promise a different set of questions than the one
-  that follows.
+  that follows;
+- an empty list says **which** of four things happened — a sign-up already in flight, every
+  season already joined, every other season finished, or a league with nothing scheduled. This
+  one was caught in testing: a player who had just sent a sign-up was told "every other season
+  has been marked finished", which reads as though their sign-up had gone nowhere.
+  `nothingToJoinReason()` picks the reason and is asserted against all four states.
 
 Submitting still goes through the shared `<SignupForm>` — the same component a season's own screen
 opens in a dialog — so the two ways in ask for identical things, and neither can put anybody on a

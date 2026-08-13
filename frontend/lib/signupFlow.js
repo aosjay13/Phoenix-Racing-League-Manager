@@ -197,6 +197,43 @@ export function signupNeeds(season) {
   return needs;
 }
 
+// WHY there is nothing to join, in the player's own terms.
+//
+// An empty list has to say which of four different things has happened, or it
+// reads as a page that failed to load. Getting this wrong is worse than saying
+// nothing: a driver who has just sent a sign-up and is told "every season has
+// been marked finished" will reasonably conclude their sign-up went nowhere.
+// The reasons are checked most-recent-action first, because that's the one the
+// player is asking about.
+export function nothingToJoinReason(overview) {
+  const o = overview || {};
+  const waiting = o.waiting?.length || 0;
+  const racing = o.racing?.length || 0;
+  const closed = o.closed || 0;
+  const newSeason = "A new season will show up here the moment an admin opens one.";
+
+  if (waiting) {
+    return racing
+      ? `Your sign-up${waiting === 1 ? " above is" : "s above are"} with the admins, and you're already on every other season that's running. ${newSeason}`
+      : `Your sign-up${waiting === 1 ? " above is" : "s above are"} with the admins — that's everything that was open. ${newSeason}`;
+  }
+  if (racing) {
+    return `You're already signed up for everything that's running. ${newSeason}`;
+  }
+  if (closed) {
+    return `${closed === 1 ? "The one other season has" : `All ${closed} other seasons have`} been marked finished, so those sign-ups are closed. ${newSeason}`;
+  }
+  return `There are no seasons open at the moment. ${newSeason}`;
+}
+
+// The headline above that reason.
+export function nothingToJoinHeadline(overview) {
+  const o = overview || {};
+  return (o.waiting?.length || o.racing?.length)
+    ? "Nothing else open to join right now."
+    : "There's nothing open to join at the moment.";
+}
+
 // What a driver's own season row is waiting on, in one line they can act on.
 // `tone` picks the colour the row is drawn in: "todo" is something for them to
 // do, "ok" is settled.

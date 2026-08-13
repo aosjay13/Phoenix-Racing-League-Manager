@@ -7,7 +7,8 @@ import { DriverLinkGate } from "@/components/DriverLinkGate";
 import { SignupForm } from "@/components/SignupForm";
 import { useMySignups } from "@/components/MySignupsProvider";
 import {
-  JOIN_STEPS, seasonChips, seasonLabel, seasonStatus, signupNeeds, signupOverview,
+  JOIN_STEPS, nothingToJoinHeadline, nothingToJoinReason, seasonChips, seasonLabel,
+  seasonStatus, signupNeeds, signupOverview,
 } from "@/lib/signupFlow";
 
 // ── Sign-ups ───────────────────────────────────────────────────────────────
@@ -339,19 +340,16 @@ export default function SignupsPage() {
       )}
 
       {o.joinable.length === 0 ? (
+        // An empty list has to say WHICH of the reasons applies — a sign-up
+        // that's already in, seasons already joined, seasons finished, or a
+        // league with nothing scheduled. nothingToJoinReason picks it; getting
+        // it wrong reads as a page that failed to load, or worse, as a sign-up
+        // that vanished.
         <div className="empty-state">
           <span className="empty-state-icon">🏁</span>
-          <p>
-            {o.waiting.length
-              ? "Nothing else open to join right now."
-              : "There's nothing open to join at the moment."}
-          </p>
+          <p>{nothingToJoinHeadline(o)}</p>
           <p style={{ fontSize: "0.85rem", color: "var(--ink-2)", margin: 0 }}>
-            {o.closed > 0
-              ? <>Every other season has been marked finished, so its sign-ups are closed. A new
-                  season will appear here the moment an admin opens one.</>
-              : <>You&rsquo;re already signed up for everything that&rsquo;s running. A new season
-                  will appear here the moment an admin opens one.</>}
+            {nothingToJoinReason(o)}
           </p>
         </div>
       ) : (

@@ -64,6 +64,15 @@ export function SignupForm({ season, driver, onDone, onCancel }) {
   const [games, setGames] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  // Which required boxes this person has actually been to. An empty required
+  // field is not a MISTAKE until somebody has had a go at it: opening the form
+  // and being met by four red-outlined inputs reads as "you've done something
+  // wrong" to a player who has done nothing at all yet, which is the opposite
+  // of what a first sign-up should feel like. So a field turns red only once
+  // it's been touched and left blank — everything still to fill in is listed
+  // calmly under the button instead. See `untouched` below.
+  const [touched, setTouched] = useState(() => new Set());
+  const touch = label => setTouched(prev => (prev.has(label) ? prev : new Set(prev).add(label)));
 
   useEffect(() => { api("/api/games").then(setGames).catch(() => setGames([])); }, []);
 
@@ -172,6 +181,11 @@ export function SignupForm({ season, driver, onDone, onCancel }) {
       : missingAliases.length ? missingAliasMessage(missingAliases)
         : "";
   const blocked = busy || numberTaken || !!problem;
+  // Nothing on this form has been filled in yet, so what's outstanding is a
+  // to-do list rather than a list of errors. The moment anything is typed it
+  // goes back to being flagged in red, because by then it IS something left
+  // undone rather than something not yet started.
+  const untouched = !touched.size;
 
   async function submit(e) {
     e.preventDefault();
@@ -224,7 +238,8 @@ export function SignupForm({ season, driver, onDone, onCancel }) {
       <div className="field">
         <label htmlFor="signup_name">The name you race under</label>
         <input id="signup_name" required value={name} maxLength={60}
-          onChange={e => setName(e.target.value)} placeholder="e.g. J. May" />
+          onChange={e => { touch("name"); setName(e.target.value); }}
+          onBlur={() => touch("name")} placeholder="e.g. J. May" />
       </div>
 
       {season.classes?.length > 0 && (
@@ -349,6 +364,9 @@ export function SignupForm({ season, driver, onDone, onCancel }) {
           {required.map(r => {
             const value = aliasValue(aliases, r.label);
             const blank = !value.trim();
+            // Blank AND been-to. An untouched empty box is simply not filled in
+            // yet, which is a to-do, not a mistake.
+            const wrong = blank && touched.has(r.label);
             const prefilled = !blank && fromProfile.has(r.label.toLowerCase());
             const id = `signup_alias_${r.label.replace(/[^a-z0-9]+/gi, "_").toLowerCase()}`;
             return (
@@ -362,9 +380,10 @@ export function SignupForm({ season, driver, onDone, onCancel }) {
                   )}
                 </label>
                 <input id={id} value={value} maxLength={80} disabled={busy}
-                  className={blank ? "is-invalid" : undefined}
-                  aria-invalid={blank || undefined}
-                  onChange={e => setRequiredAlias(r.label, e.target.value)}
+                  className={wrong ? "is-invalid" : undefined}
+                  aria-invalid={wrong || undefined}
+                  onChange={e => { touch(r.label); setRequiredAlias(r.label, e.target.value); }}
+                  onBlur={() => touch(r.label)}
                   placeholder={r.label} />
                 <p className="signup-required-why">{r.why}</p>
               </div>
@@ -382,7 +401,15 @@ export function SignupForm({ season, driver, onDone, onCancel }) {
           disabled={busy} required={required} suggested={suggested} showHelp={false} />
       </details>
 
-      {problem && !numberTaken && <p className="field-error" style={{ marginTop: 10 }}>{problem}</p>}
+      {/* Why Submit is still greyed out. Neutral until the form has been
+          started — on a form nobody has touched this is a list of what's
+          coming, and red text saying so reads as a telling-off for not having
+          done it yet. */}
+      {problem && !numberTaken && (
+        <p className={untouched ? "signup-todo" : "field-error"} style={{ marginTop: 10 }}>
+          {problem}
+        </p>
+      )}
       {error && <p className="field-error" style={{ marginTop: 10 }}>{error}</p>}
 
       <button className="btn btn-primary" type="submit" disabled={blocked}>
