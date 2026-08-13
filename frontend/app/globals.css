@@ -3349,3 +3349,58 @@ input[type="radio"]:disabled:checked {
   border-left-color: var(--accent-cyan);
   background: linear-gradient(120deg, var(--accent-cyan-dim), var(--bg-surface));
 }
+
+/* ── Discord callout (components/DiscordCallout.jsx) ───────────────────────
+   Being in the league's Discord is a REQUIREMENT, not a suggestion: a player
+   who misses it fills in the whole sign-up form and then never gets a role,
+   which looks to them like the sign-up failed. So it's a full-width card in
+   Discord's own blurple rather than a line of small print — the one thing on
+   this screen that isn't part of the app's own cyan/gold vocabulary, because
+   it's the one thing that sends you out of the app. */
+.discord-callout {
+  --discord: #5865f2;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: 16px 0 4px;
+  padding: 14px 16px;
+  border: 1px solid rgba(88, 101, 242, 0.45);
+  border-left: 3px solid var(--discord);
+  border-radius: var(--radius-card);
+  background: linear-gradient(120deg, rgba(88, 101, 242, 0.16), var(--bg-surface));
+}
+
+.discord-callout-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  color: #fff;
+  background: var(--discord);
+}
+
+.discord-callout-body { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 210px; }
+.discord-callout-body strong { font-size: 0.98rem; color: var(--ink-0); }
+.discord-callout-body span { font-size: 0.85rem; line-height: 1.55; color: var(--ink-1); }
+
+.discord-callout-btn {
+  margin-top: 0;
+  flex-shrink: 0;
+  color: #fff;
+  background: var(--discord);
+  border-color: var(--discord);
+}
+
+.discord-callout-btn:hover {
+  opacity: 0.92;
+  box-shadow: 0 0 20px rgba(88, 101, 242, 0.35);
+}
+
+@media (max-width: 640px) {
+  /* The button goes under the text rather than being squeezed beside it. */
+  .discord-callout-btn { width: 100%; justify-content: center; }
+}

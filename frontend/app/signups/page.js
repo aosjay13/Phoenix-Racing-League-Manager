@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
+import { DiscordCallout } from "@/components/DiscordCallout";
 import { DriverLinkGate } from "@/components/DriverLinkGate";
 import { SignupForm } from "@/components/SignupForm";
 import { useMySignups } from "@/components/MySignupsProvider";
@@ -152,6 +153,9 @@ function Submitted({ season, onJoinAnother, moreToJoin }) {
           <Link href="/schedule" className="btn btn-ghost">See the race schedule</Link>
         </div>
       </div>
+      {/* Said again here because this is the moment it's actionable: the form
+          is done, and picking your roles in Discord is what's left. */}
+      <DiscordCallout variant="next" />
     </>
   );
 }
@@ -177,6 +181,7 @@ export default function SignupsPage() {
           This is where you join a series. It takes about a minute.
         </p>
         <HowItWorks current={1} />
+        <DiscordCallout />
         <div className="empty-state">
           <span className="empty-state-icon">🏎</span>
           <p>Sign in (or create an account) to sign up for a series.</p>
@@ -255,6 +260,8 @@ export default function SignupsPage() {
       </p>
 
       <HowItWorks current={1} />
+
+      <DiscordCallout />
 
       {/* The one job that can be outstanding for somebody already on a roster.
           It's a different task from joining, so it gets its own banner at the
