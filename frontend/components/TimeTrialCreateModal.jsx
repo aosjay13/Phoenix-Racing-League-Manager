@@ -54,10 +54,11 @@ export function TimeTrialCreateModal({
           game_id: gameId,
           series_id: seriesId,
           season_id: seasonId,
-          // Classes only mean something against a season; a trial floating free
-          // of one carries none until it's attached. Series placement needs no
-          // season of its own — each series names the one it builds.
-          class_ids: seasonId ? form.class_ids : [],
+          // Every ticked division belongs to a season — this session's, or the
+          // one behind a series it places into — so the picker's list is kept
+          // as it built it. A session with no season of its own can still name
+          // divisions, inside the series it places into.
+          class_ids: form.class_ids,
         },
       });
       onCreated(trial);

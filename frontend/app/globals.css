@@ -3880,3 +3880,194 @@ input[type="radio"]:disabled:checked {
   .msg-card-actions .btn { width: 100%; justify-content: center; }
   .msg-dismiss { margin-left: 0; }
 }
+
+/* ── Placement board ───────────────────────────────────────────────────────
+   The division-sorting screen for a Time Trial / Placement night: the unplaced
+   field in the first column, one tray per division across the rest, and driver
+   cards dragged between them.
+
+   Built to be read at a glance rather than studied — the count in each column
+   head is the number an admin is actually trying to balance, and the card
+   carries the two lap times a placement decision is made on. It scrolls
+   sideways rather than wrapping, so eight divisions read as eight columns
+   instead of collapsing into a wall.
+
+   Touch and keyboard users never drag: each card carries a "move to" menu that
+   does exactly the same thing (see components/PlacementBoard.jsx). */
+
+.placement-bar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--card);
+}
+
+.placement-bar-views { display: flex; gap: 6px; }
+.placement-bar-views .tab { padding: 6px 14px; }
+
+.placement-bar-progress {
+  font-size: 0.85rem;
+  color: var(--ink-1);
+  margin-right: auto;
+}
+.placement-bar-progress strong { color: var(--ink-0); }
+.placement-bar-left { color: var(--accent-gold); }
+
+.placement-board {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-top: 14px;
+  padding-bottom: 8px;
+  overflow-x: auto;
+}
+
+.placement-column {
+  flex: 0 0 240px;
+  display: flex;
+  flex-direction: column;
+  min-height: 160px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--card);
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+/* The unplaced pool reads as the "in tray" rather than as another division. */
+.placement-column.is-pool {
+  background: transparent;
+  border-style: dashed;
+}
+
+/* Lit only while a card is genuinely in the air over this column. */
+.placement-column.is-over {
+  border-color: var(--accent-cyan);
+  background: var(--accent-cyan-dim);
+}
+
+/* A destination with no season behind it can't build a roster at the end of
+   the night, so it's marked before the night is spent filling it. */
+.placement-column.is-incomplete { border-left: 3px solid var(--accent-gold); }
+
+.placement-column-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.placement-column-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--ink-0);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.placement-column-count {
+  flex-shrink: 0;
+  min-width: 26px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--accent-cyan-dim);
+  color: var(--accent-cyan);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.placement-column-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.74rem;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
+.placement-column-warn {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.72rem;
+  color: var(--accent-gold);
+}
+
+.placement-column-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.placement-column-empty {
+  margin: 0;
+  padding: 18px 8px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  color: var(--ink-2);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.placement-card {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  cursor: grab;
+}
+
+.placement-card:active { cursor: grabbing; }
+.placement-card:hover { border-color: var(--border-accent); }
+
+/* Somebody who set no lap: they can't be auto-placed, and the card says so
+   quietly rather than looking like a driver whose time failed to load. */
+.placement-card.is-timeless { opacity: 0.75; border-style: dashed; }
+
+.placement-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  justify-content: space-between;
+}
+
+.placement-card-name {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--ink-0);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.placement-card-number { margin-left: 6px; color: var(--ink-2); font-weight: 400; }
+
+.placement-card-times { display: flex; align-items: baseline; gap: 8px; margin-top: 2px; }
+
+.placement-card-time {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--accent-gold);
+  font-variant-numeric: tabular-nums;
+}
+
+.placement-card-alt { font-size: 0.7rem; color: var(--ink-2); }
+
+.placement-card-move {
+  width: 100%;
+  margin-top: 6px;
+  padding: 3px 6px;
+  font-size: 0.76rem;
+}
+
+@media (max-width: 640px) {
+  /* No dragging on a phone, so the columns stack and every card is moved with
+     its own menu — the board still works, it just reads as a list of trays. */
+  .placement-board { flex-direction: column; overflow-x: visible; }
+  .placement-column { flex: 1 1 auto; width: 100%; }
+  .placement-bar-progress { margin-right: 0; width: 100%; }
+}

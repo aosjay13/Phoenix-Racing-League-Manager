@@ -10,11 +10,16 @@ import { TimeTrialLapsModal } from "@/components/TimeTrialLapsModal";
 import { CompleteTimeTrialModal } from "@/components/CompleteTimeTrialModal";
 import { ExportQualifyingModal } from "@/components/ExportQualifyingModal";
 import { TimeTrialSettingsModal } from "@/components/TimeTrialSettingsModal";
+import { PlacementDestinationsModal } from "@/components/PlacementDestinationsModal";
+import { PlacementBoard } from "@/components/PlacementBoard";
+import { AutoPlaceModal } from "@/components/AutoPlaceModal";
+import { AddDriverToTrial } from "@/components/AddDriverToTrial";
 import { formatRaceDate } from "@/lib/raceDate";
 import {
   autoAssignClasses, autoAssignClassesWithinSeries, autoAssignSeries, averageLabel,
   normalizeLaps, rankEntries, summarizeEntries,
 } from "@/lib/timeTrials";
+import { assignRowToBucket, buildBuckets, placementProgress } from "@/lib/placements";
 
 // One Time Trial session — the sheet.
 //
@@ -55,71 +60,6 @@ function lapColumnCount(rows, maxLaps) {
   return maxLaps ? Math.min(Math.max(wanted, 1), maxLaps) : Math.max(wanted, 1);
 }
 
-// Driver picker for adding somebody to the sheet: the global driver pool and,
-// when the trial is attached to a season, that season's roster. A placement
-// night is run for drivers who are on no roster at all, so a name typed here
-// that matches nobody is still perfectly valid — it just joins the sheet as a
-// plain name until the roster is built from it.
-function AddDriverBar({ pool, taken, onAdd, disabled }) {
-  const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
-  const inputRef = useRef(null);
-
-  const q = query.trim().toLowerCase();
-  const matches = q
-    ? pool.filter(p => p.name.toLowerCase().includes(q) && !taken.has(p.name.trim().toLowerCase())).slice(0, 8)
-    : [];
-  const exact = pool.some(p => p.name.toLowerCase() === q);
-
-  function add(candidate) {
-    onAdd(candidate);
-    setQuery("");
-    setOpen(false);
-    setTimeout(() => inputRef.current?.focus(), 0);
-  }
-
-  return (
-    <div style={{ position: "relative", maxWidth: 340, marginTop: 12 }}>
-      <input ref={inputRef} value={query} disabled={disabled}
-        placeholder="+ Add a driver to this session…"
-        title="Type a name and press Enter. Drivers who aren't in the pool yet can still be added by name."
-        onChange={e => { setQuery(e.target.value); setOpen(true); }}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
-        onKeyDown={e => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            if (!q) return;
-            add(matches[0] || { name: query.trim() });
-          } else if (e.key === "Escape") setOpen(false);
-        }} />
-      {open && q && (
-        <div style={{
-          position: "absolute", top: "100%", left: 0, right: 0, zIndex: 20,
-          background: "var(--surface-1, #14141c)", border: "1px solid var(--border)",
-          borderRadius: 8, marginTop: 4, maxHeight: 240, overflowY: "auto",
-        }}>
-          {matches.map(m => (
-            <button key={`${m.driver_id || m.entry_id || m.name}`} type="button" className="btn btn-ghost"
-              style={{ display: "block", width: "100%", textAlign: "left", marginTop: 0, borderRadius: 0 }}
-              onMouseDown={e => e.preventDefault()} onClick={() => add(m)}>
-              {m.name}
-              {m.source && <span style={{ color: "var(--ink-2)", fontSize: "0.76rem" }}> · {m.source}</span>}
-            </button>
-          ))}
-          {!exact && (
-            <button type="button" className="btn btn-ghost"
-              style={{ display: "block", width: "100%", textAlign: "left", marginTop: 0, borderRadius: 0, color: "var(--accent-cyan)" }}
-              onMouseDown={e => e.preventDefault()} onClick={() => add({ name: query.trim() })}>
-              ＋ Add &ldquo;{query.trim()}&rdquo; by name
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function TimeTrialPage() {
   const { id } = useParams();
   const router = useRouter();
@@ -134,6 +74,10 @@ export default function TimeTrialPage() {
   const [trialSeries, setTrialSeries] = useState([]);
   const [rows, setRows] = useState([]);
   const [pool, setPool] = useState([]);
+  // The global driver pool as it stands, and game_id -> name, so the add-driver
+  // box can search every name a driver answers to and say which one matched.
+  const [driverPool, setDriverPool] = useState([]);
+  const [games, setGames] = useState({});
   const [error, setError] = useState(null);
   const [toast, setToast] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -143,6 +87,14 @@ export default function TimeTrialPage() {
   const [completing, setCompleting] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // A placement night has two ways of looking at the same sheet, and both are
+  // needed: the BOARD is where drivers are sorted into divisions (columns of
+  // cards, dragged), the SHEET is where laps are typed (a grid of inputs).
+  // They edit the same rows, so switching between them mid-session loses
+  // nothing — including unsaved changes.
+  const [view, setView] = useState("sheet");
+  const [destinationsOpen, setDestinationsOpen] = useState(false);
+  const [autoPlaceOpen, setAutoPlaceOpen] = useState(false);
 
   function showToast(type, msg) {
     setToast({ type, msg });
@@ -166,6 +118,24 @@ export default function TimeTrialPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Re-read everything the session's DESTINATIONS depend on — the trial doc,
+  // its season, its classes and the series it places into (each with the
+  // classes of the season it builds, which only the server can resolve) —
+  // without touching the rows.
+  //
+  // That last part is the whole reason this exists beside `load`: laps typed
+  // into the grid aren't saved until Save, and re-reading the sheet after
+  // picking destinations would throw away a night's typing.
+  const reloadTargets = useCallback(async () => {
+    try {
+      const data = await api(`/api/time-trials/${id}`);
+      setTrial(data.trial);
+      setTrialSeason(data.season || null);
+      setClasses(data.classes || []);
+      setTrialSeries(data.placement_series || []);
+    } catch { /* leave the screen on what it already had */ }
+  }, [id]);
+
   // Who can be added to the sheet: the global driver pool always, plus the
   // attached season's roster (which carries car numbers and the roster entry a
   // qualifying export files results against). Keyed on the season alone — the
@@ -175,11 +145,14 @@ export default function TimeTrialPage() {
     if (!trial) return;
     let live = true;
     (async () => {
-      const [drivers, entries] = await Promise.all([
+      const [drivers, entries, gameList] = await Promise.all([
         api("/api/drivers").catch(() => []),
         trial.season_id ? api(`/api/entries?season_id=${trial.season_id}`).catch(() => []) : Promise.resolve([]),
+        api("/api/games").catch(() => []),
       ]);
       if (!live) return;
+      setDriverPool(drivers);
+      setGames(Object.fromEntries((gameList || []).map(g => [g.id, g.name])));
       const byName = new Map();
       for (const e of entries) {
         byName.set(String(e.name || "").trim().toLowerCase(), {
@@ -302,6 +275,62 @@ export default function TimeTrialPage() {
 
   const completed = trial?.status === "completed";
   const canEdit = isAdmin && !completed;
+
+  // ── The board ─────────────────────────────────────────────────────────────
+  //
+  // The same destinations, expressed as the trays a driver card is dropped
+  // into: one per division the admin ticked, across every series this night
+  // places into and this session's own season. See lib/placements.js.
+  const buckets = useMemo(() => buildBuckets({
+    placementSeries,
+    placementClasses,
+    classIds: trial?.class_ids || [],
+    trialSeasonId: trial?.season_id || "",
+    seasonName: trialSeason?.name || "",
+  }), [placementSeries, placementClasses, trial?.class_ids, trial?.season_id, trialSeason?.name]);
+
+  const bucketByKey = useMemo(() => Object.fromEntries(buckets.map(b => [b.key, b])), [buckets]);
+  const progress = useMemo(() => placementProgress(summarized, buckets), [summarized, buckets]);
+
+  // Once a session has somewhere to place drivers, the board is the screen it
+  // wants to open on — that IS the night's job. A plain hot-lapping session,
+  // or a placement night with no destinations picked yet, opens on the sheet.
+  const openedOnBoard = useRef(false);
+  useEffect(() => {
+    if (openedOnBoard.current || !trial) return;
+    if (trial.is_placement && buckets.length) { setView("board"); openedOnBoard.current = true; }
+  }, [trial, buckets.length]);
+
+  // Drop a driver into a division (or back into the unplaced pool). Both halves
+  // of their placement are set together, because a class belongs to a season
+  // and the series is what decides which season's roster they'll be written to.
+  function moveRow(rowId, key) {
+    const bucket = key ? bucketByKey[key] : null;
+    const patch = row => assignRowToBucket(row, bucket, {
+      classIdsFor: seriesId => (seriesById[seriesId]?.classes || []).map(c => c.id),
+    });
+    setRows(prev => prev.map(r => (r.id === rowId ? { ...r, ...patch(r) } : r)));
+    setDirty(true);
+  }
+
+  // "Auto-Place Drivers" applied: the modal decided who goes where, this puts
+  // them there. Every card stays draggable afterwards and nothing is written
+  // until Save, so it's a first pass rather than a verdict.
+  function applyAutoPlace(assignment, metric) {
+    setRows(prev => prev.map(r => {
+      const bucket = assignment[r.id] ? bucketByKey[assignment[r.id]] : null;
+      if (!bucket) return r;
+      return { ...r, ...assignRowToBucket(r, bucket, {
+        classIdsFor: seriesId => (seriesById[seriesId]?.classes || []).map(c => c.id),
+      }) };
+    }));
+    setDirty(true);
+    setAutoPlaceOpen(false);
+    setSort(s => ({ ...s, key: metric }));
+    reRank();
+    const placed = Object.keys(assignment).length;
+    showToast("success", `Placed ${placed} driver${placed === 1 ? "" : "s"} by ${metric === "average" ? "average" : "best"} lap. Drag anyone you disagree with, then Save.`);
+  }
 
   // ── Editing ───────────────────────────────────────────────────────────────
   function patchRow(rowId, patch) {
@@ -575,14 +604,17 @@ export default function TimeTrialPage() {
               )}
             </div>
           </div>
-          {canEdit && showSeriesPlacement && (
+          {/* The sheet's own per-column splits. The board has one button for
+              this ("Auto-Place Drivers", which asks which time to sort on);
+              these are the row-by-row equivalents and stay where they were. */}
+          {canEdit && view === "sheet" && showSeriesPlacement && (
             <button className="btn btn-ghost" type="button" style={{ marginTop: 0 }}
               title="Split the ranked field evenly across the series, fastest first. You can still change any row."
               onClick={autoAssignToSeries}>
               ⇅ Sort into series by time
             </button>
           )}
-          {canEdit && divisionChips.length > 0 && (
+          {canEdit && view === "sheet" && divisionChips.length > 0 && (
             <button className="btn btn-ghost" type="button" style={{ marginTop: 0 }}
               title={showSeriesPlacement
                 ? "Split each series' own drivers across that series' divisions, fastest first."
@@ -594,9 +626,59 @@ export default function TimeTrialPage() {
         </div>
       )}
 
+      {/* The placement bench. One row, three decisions: which view you're
+          working in, where these drivers are going, and whether to let the
+          times make the first pass. */}
+      {showPlacement && (
+        <div className="placement-bar">
+          <div className="placement-bar-views" role="group" aria-label="How to work this session">
+            <button type="button" className={`tab${view === "board" ? " active" : ""}`}
+              title="Sort drivers into divisions by dragging them between columns"
+              onClick={() => setView("board")}>🎽 Board</button>
+            <button type="button" className={`tab${view === "sheet" ? " active" : ""}`}
+              title="Type lap times into the grid"
+              onClick={() => setView("sheet")}>⏱ Lap sheet</button>
+          </div>
+          <span className="placement-bar-progress">
+            <strong>{progress.placed}</strong> of {progress.total} placed
+            {progress.unplaced > 0 && <span className="placement-bar-left"> · {progress.unplaced} still to sort</span>}
+          </span>
+          {canEdit && (
+            <button className="btn btn-ghost" type="button" style={{ marginTop: 0 }}
+              title="Pick the series and classes these drivers are being sorted into — each becomes a column on the board"
+              onClick={() => setDestinationsOpen(true)}>
+              🎯 Destinations{buckets.length ? ` (${buckets.length})` : ""}
+            </button>
+          )}
+          {canEdit && view === "board" && (
+            <button className="btn btn-primary" type="button" style={{ marginTop: 0 }}
+              disabled={!buckets.length}
+              title={buckets.length
+                ? "Rank the field by lap time and split it evenly across the divisions"
+                : "Pick some destinations first"}
+              onClick={() => setAutoPlaceOpen(true)}>
+              ⚡ Auto-Place Drivers
+            </button>
+          )}
+        </div>
+      )}
+
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
 
-      <div className="table-wrap">
+      {view === "board" && showPlacement && (
+        <PlacementBoard
+          rows={summarized}
+          buckets={buckets}
+          metric={sort.key === "average" ? "average" : "best"}
+          canEdit={canEdit}
+          onMove={moveRow}
+        />
+      )}
+
+      {/* Hidden rather than unmounted while the board is up: the lap grid holds
+          typed-but-unsaved laps in its inputs, and re-mounting it would throw
+          them away every time an admin glanced at the board. */}
+      <div className="table-wrap" style={{ display: view === "board" && showPlacement ? "none" : undefined }}>
         <table className="stats-table">
           <thead>
             <tr>
@@ -725,8 +807,10 @@ export default function TimeTrialPage() {
 
       {canEdit && (
         <>
-          <AddDriverBar
+          <AddDriverToTrial
             pool={pool}
+            drivers={driverPool}
+            games={games}
             taken={new Set(rows.map(r => String(r.name || "").trim().toLowerCase()).filter(Boolean))}
             onAdd={addDriver}
             disabled={busy}
@@ -799,6 +883,36 @@ export default function TimeTrialPage() {
           seasons={seasonOptions}
           onClose={() => setExporting(false)}
           onExported={() => router.refresh()}
+        />
+      )}
+
+      {destinationsOpen && (
+        <PlacementDestinationsModal
+          trial={trial}
+          seriesList={seriesList}
+          classes={classes}
+          seasonName={trialSeason?.name || ""}
+          onClose={() => setDestinationsOpen(false)}
+          onSaved={updated => {
+            setDestinationsOpen(false);
+            setTrial(t => ({ ...t, ...updated }));
+            // New destinations mean new columns, and the classes behind them are
+            // resolved server-side — so the targets are re-read. The rows are
+            // deliberately left alone: unsaved laps survive picking a division.
+            reloadTargets();
+            setView("board");
+            showToast("success", "Destinations saved — drag drivers into their divisions.");
+          }}
+        />
+      )}
+
+      {autoPlaceOpen && (
+        <AutoPlaceModal
+          rows={summarized}
+          buckets={buckets}
+          defaultMetric={sort.key}
+          onClose={() => setAutoPlaceOpen(false)}
+          onApply={applyAutoPlace}
         />
       )}
     </section>

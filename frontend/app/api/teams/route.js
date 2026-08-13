@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { coerceField, SPECS } from "@/lib/entityApi";
-import { getRequestLeagueId, withAdmin } from "@/lib/serverAuth";
+import { canUploadImages } from "@/lib/imagePermissions";
+import { getRequestLeagueId, getUserRole, withAdmin } from "@/lib/serverAuth";
 import { findMapping, findTeamByName, loadTeamIndex, TEAM_SEASONS_COLLECTION } from "@/lib/teamsServer";
 
 export const dynamic = "force-dynamic";
@@ -60,8 +61,14 @@ export const POST = withAdmin(async (request, ctx, user) => {
   const body = await request.json();
   const leagueId = getRequestLeagueId(request);
 
+  // A team logo is an image, and images are the Owner's alone to add (see
+  // lib/imagePermissions.js). Anybody else creating a team gets the team —
+  // just without a logo on it.
+  const mayUpload = canUploadImages(await getUserRole(user));
+
   const doc = {};
   for (const [name, opts] of Object.entries(SPECS.teams.fields)) {
+    if (opts.image && !mayUpload) continue;
     const value = body[name];
     if (opts.required && (value === undefined || value === null || value === "")) {
       return NextResponse.json({ error: `${name} required` }, { status: 400 });

@@ -67,9 +67,12 @@ export function TimeTrialSettingsModal({ trial, seasons = [], seriesList = [], o
           // A season pins the game and series the trial belongs to, which is
           // what scopes its laps in the record books.
           ...(season ? { game_id: season.game_id || "", series_id: season.series_id || "" } : {}),
-          // Classes only exist against a season; detaching one drops them.
-          // Series placement carries its own seasons and survives either way.
-          class_ids: form.season_id ? form.class_ids.filter(id => classes.some(c => c.id === id)) : [],
+          // A ticked division belongs to a season either way — this session's,
+          // or the one behind a series it places into — so the list is kept as
+          // the picker built it. Detaching THIS session's season drops only
+          // its own classes, which the season dropdown below does as it goes;
+          // a series' divisions are the series' business and survive.
+          class_ids: form.class_ids,
         },
       });
       onSaved(updated);
@@ -98,7 +101,15 @@ export function TimeTrialSettingsModal({ trial, seasons = [], seriesList = [], o
           <input value={form.car} onChange={set("car")} placeholder="GT3, Late Model, …" /></div>
 
         <div className="field"><label>Season</label>
-          <select value={form.season_id} onChange={e => setForm(f => ({ ...f, season_id: e.target.value, class_ids: [] }))}>
+          {/* Changing season changes which classes this sheet has of its own,
+              so the ones ticked from the old season go with it. Divisions
+              ticked inside a placement SERIES belong to that series' season and
+              are left alone. */}
+          <select value={form.season_id} onChange={e => setForm(f => ({
+            ...f,
+            season_id: e.target.value,
+            class_ids: f.class_ids.filter(id => !classes.some(c => c.id === id)),
+          }))}>
             <option value="">Not attached to a season</option>
             {seasons.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
@@ -137,6 +148,7 @@ export function TimeTrialSettingsModal({ trial, seasons = [], seriesList = [], o
             seriesList={seriesList}
             classes={classes}
             seasonId={form.season_id}
+            seasonName={seasons.find(s => s.id === form.season_id)?.name || ""}
             seriesIds={form.series_ids}
             seriesSeasons={form.series_seasons}
             classIds={form.class_ids}

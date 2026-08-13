@@ -11,6 +11,7 @@ import { TrackSelect } from "@/components/TrackSelect";
 import { RaceLengthField } from "@/components/RaceLengthField";
 import { HeatPointsDefaultFields } from "@/components/HeatPointsDefaultFields";
 import { TrackMergeModal } from "@/components/TrackMergeModal";
+import { DriverMergeTool } from "@/components/DriverMergeTool";
 import { LENGTH_LAPS, raceLengthBody, raceLengthForm } from "@/lib/raceLength";
 import { api } from "@/lib/api";
 import { ALL_BONUS_TYPES, BONUS_TYPES } from "@/lib/standings";
@@ -123,6 +124,10 @@ const SECTIONS = [
   { key: "classes",   label: "Classes",         icon: "🎽", group: "structure", hint: "Split a season's field" },
   { key: "races",     label: "Races",           icon: "🏁", group: "structure", hint: "A season's calendar" },
   { key: "tracks",    label: "Tracks",          icon: "🏟", group: "library",   hint: "Shared venue database" },
+  // The driver pool's cleanup bench. Sits in the Shared Library beside Tracks
+  // because it's the same job on the other global pool: finding the rows that
+  // are secretly one thing and folding them together.
+  { key: "drivers",   label: "Drivers",         icon: "🧑‍🔧", group: "library",  hint: "Find & merge duplicate driver profiles" },
   { key: "templates", label: "Points Templates", icon: "🔢", group: "library",  hint: "Reusable scoring structures" },
   // Recovery tools. Owner-only — the whole row is hidden for the other staff
   // roles, since only an Owner can export or import the database.
@@ -1126,6 +1131,12 @@ function AdminInner() {
               showToast("success", `Merged ${res.tracks_merged} track${res.tracks_merged === 1 ? "" : "s"} into “${res.track.name}” — ${res.races_moved} race${res.races_moved === 1 ? "" : "s"} moved across.`);
             }}
           />
+        )}
+
+        {section === "drivers" && (
+        <Panel title="Drivers" sub="Find duplicate profiles and merge them — no race, result or lap is lost">
+          <DriverMergeTool />
+        </Panel>
         )}
 
         {section === "templates" && (

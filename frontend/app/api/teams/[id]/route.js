@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { coerceField, SPECS } from "@/lib/entityApi";
-import { getRequestLeagueId, withAdmin } from "@/lib/serverAuth";
+import { getRequestLeagueId, getUserRole, withAdmin } from "@/lib/serverAuth";
+import { canUploadImages, imageFieldNames, stripImageFields } from "@/lib/imagePermissions";
 import { teamNameKey } from "@/lib/teams";
 import { clearTeamFromEntries, deleteMappingsForTeam, loadTeamIndex } from "@/lib/teamsServer";
 
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
 // AND on every legacy per-season doc that still resolves to it (a league that
 // hasn't run the migration), because those docs' shared NAME is what holds the
 // old identity together — renaming only one would split the team in two.
-export const PATCH = withAdmin(async (request, { params }) => {
+export const PATCH = withAdmin(async (request, { params }, user) => {
   const body = await request.json();
   const updates = {};
   for (const [name, opts] of Object.entries(SPECS.teams.fields)) {
@@ -22,13 +23,24 @@ export const PATCH = withAdmin(async (request, { params }) => {
     }
   }
   if (updates.name !== undefined) updates.name = String(updates.name).trim();
-  if (!Object.keys(updates).length) {
-    return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
-  }
-
   const ref = db().collection("teams").doc(params.id);
   const doc = await ref.get();
   if (!doc.exists) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // A team logo is an image, and images are the Owner's to set (see
+  // lib/imagePermissions.js). Re-posting the logo the edit form was showing
+  // isn't a change and passes through, so renaming a team never trips over it.
+  const guarded = stripImageFields(updates, {
+    fields: imageFieldNames(SPECS.teams.fields),
+    existing: doc.data(),
+    allowed: canUploadImages(await getUserRole(user)),
+  });
+  Object.keys(updates).forEach(k => { if (!(k in guarded.updates)) delete updates[k]; });
+  if (!Object.keys(updates).length) {
+    return NextResponse.json({
+      error: guarded.stripped.length ? "Only the league Owner can change images." : "No valid fields to update",
+    }, { status: guarded.stripped.length ? 403 : 400 });
+  }
 
   const index = await loadTeamIndex({ leagueId: getRequestLeagueId(request), withDrivers: false });
   const canonicalId = index.canonicalTeamId(params.id);

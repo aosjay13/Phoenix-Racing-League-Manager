@@ -53,10 +53,12 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   placement nights. Each session takes **as many laps per driver as you allow** (a Maximum Laps
   limit, or unlimited) and works out **Best Time** and **Best Average Time** from them, both
   one-click sortable; every driver's fastest lap is found from the laps themselves and shown in
-  bold, and clicking a name opens the full lap list. Tick **Placement Session** and the sheet grows
-  a division column you assign by hand or fill from the times, and **Complete Session** pushes the
-  whole field onto the official roster in those divisions — the manual entry a placement night
-  otherwise creates. **A division doesn't have to be a class**: leagues whose divisions are
+  bold, and clicking a name opens the full lap list. Tick **Placement Session** and the sheet gains a
+  **board**: pick the destinations from a checkbox list of everything the selected game runs, and
+  each becomes a column you **drag driver cards into** — or press **⚡ Auto-Place Drivers**, which
+  asks *Best Lap or Average Lap?*, shows the split it would make, and deals the ranked field evenly
+  across the columns for you to tweak. **Complete Session** then pushes the whole field onto the
+  official roster in those divisions — the manual entry a placement night otherwise creates. **A division doesn't have to be a class**: leagues whose divisions are
   *separate series* place drivers into **series** instead, each building the roster of the season
   behind it, so one night can build several rosters at once — and you can use both together, sorting
   a driver into a series *and* into a class within it. **Export to Qualifying** copies the best laps onto a scheduled race as
@@ -140,7 +142,13 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   and a **Jump to** row skips straight to any other month that does
 - 📊 **Stats & Roster filtering** — Game/Series/Season dropdowns filter Stats and Roster
   everywhere, with sortable columns and per-series car numbers
-- 🖼 **Custom branding** — upload game, series, season, team, and track logos
+- 🖼 **Custom branding** — the **Owner** uploads game, series, season, team and track logos; every
+  page renders them for everybody. Uploading is Owner-only on purpose — cloud storage is billed by
+  the byte, and it's the one league power the other staff roles don't share
+- 🧑‍🔧 **Duplicate driver cleanup** — League Setup ▸ Drivers hunts down the profiles that are
+  secretly the same person (through every name each of them answers to) and merges them, moving
+  every race, result, point and lap onto the profile you keep and remembering the old names so an
+  import can't re-create what you just cleaned up
 - 👑 **Admin roles** — set `ADMIN_EMAILS`; admins get results entry from the Schedule, the
   the Driver Roster menu, the User Accounts tab on Drivers, the Team Roster tab on Teams, League Setup,
   and (Moderator and above) the Approvals queue
@@ -560,6 +568,14 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      season's. Picks are stored on the driver's roster entry (`entries.selected_car`), so an admin
      can correct one from the roster like any other entry field.
 
+     Two more panels sit under **Shared Library**, beside the hierarchy itself:
+
+   - **Tracks** — the shared venue database every race and time trial picks from, with its own
+     merge tool for the same circuit entered twice.
+   - **🧑‍🔧 Drivers** — the driver pool's cleanup bench: it finds the profiles that are secretly the
+     same person and merges them without losing a race. See *Cleaning up the duplicates you already
+     have* below.
+
      Not part of this chain: the **platform identities** (Discord, Steam, PSN, Xbox, iRacing).
      Those belong to the **Game** alone and apply to every series, season and class under it,
      however many are made — nothing below overrides them. See the Games panel above.
@@ -821,19 +837,42 @@ hot-lapping, time attack, and the placement night that sorts a new field into di
    laps a driver may submit — **Maximum Laps**, or leave it blank for an unlimited hot-lapping
    window. **Best Average Time counts…** decides what that column means: blank averages *every* lap
    a driver submits, while a number gives the classic best N-consecutive-lap average.
-2. **Add drivers and type their laps.** The picker offers the season's roster and the global driver
-   pool, and a name that matches nobody is still perfectly valid — a placement night is run *for*
-   drivers who aren't on a roster yet. Lap times take any clock format (`1:23.456`, `83.456`,
-   `1:02:03.004`). Each driver's fastest lap is found from the laps themselves and shown in **bold**;
-   click their name for the full list.
+2. **Add drivers and type their laps.** The picker searches **every name a driver answers to** —
+   profile name, display name, their name in each game, Discord/PSN/Xbox/Steam/iRacing, and any name
+   a merge folded into them — and says which one it matched through. That matters most here, because
+   a placement sheet is typed straight off the game's own timing screen, so the name in front of you
+   is the one that *isn't* on their profile. A name that matches nobody is still perfectly valid (a
+   placement night is run *for* drivers who aren't on a roster yet), but one that resembles somebody
+   already in the app asks first, so a night's laps don't end up filed against a second copy of
+   someone. Lap times take any clock format (`1:23.456`, `83.456`, `1:02:03.004`). Each driver's
+   fastest lap is found from the laps themselves and shown in **bold**; click their name for the
+   full list.
 3. **Sort the sheet.** **Best Time** and **Best Average Time** are one-click sortable column headers.
    The sheet holds its order while you're typing — a lap that improves someone's best time would
    otherwise fling their row up the table mid-entry — and re-ranks when you sort, hit **Re-sort now**,
    or save.
-4. **Place them.** On a **Placement Session** each row carries a dropdown for each kind of division
-   you picked, and **⇅ Sort into … by time** splits the ranked field evenly across them, fastest
-   first (the remainder lands on the quicker divisions). It's a starting point: every row stays
-   editable.
+4. **Place them — on the board.** A placement session opens on the **🎽 Board**: the unplaced field
+   in the first column, one column per division across the rest, and every driver a card carrying
+   their best and average lap. Sorting the field is picking cards up and putting them down.
+
+   - **🎯 Destinations** is where the columns come from. It lists everything the **Game** in the top
+     menu runs — every series, the season each one would build, and the classes inside them — as
+     checkboxes. Tick "Pro Class" and "Amateur Class" and you have two columns; tick a series and you
+     have a column for the series itself. Ticking a class inside a series ticks the series too.
+   - **Drag a card** into a column to place that driver, drag it back to the pool to un-place them.
+     Every card also carries a **move menu**, which is the same action for a phone, a tablet or a
+     keyboard — the board has never needed a mouse.
+   - **⚡ Auto-Place Drivers** asks the one question that matters first — **Best Lap or Average
+     Lap?** — because the two genuinely disagree: one rewards a single perfect lap, the other rewards
+     repeating it. It shows the resulting split (how many land in each column, and who it can't place
+     for having set no lap) *before* applying it, then deals the ranked field evenly across the
+     columns, quickest first, with the remainder landing on the quicker end.
+   - Auto-placing is a first pass, never a verdict. Every card stays draggable afterwards, and
+     nothing is written until **Save Session**.
+
+   **⏱ Lap sheet** switches back to the grid for typing times; both views edit the same session, so
+   swapping between them mid-night loses nothing, unsaved laps included. The sheet's own per-column
+   **⇅ Sort into … by time** buttons are still there for anyone who prefers them.
 5. **Complete Session** (top right) closes the sheet and offers to **build the roster** — every
    driver on it joins a roster in the division they were placed in. It shows exactly what it will do
    before writing, and a driver already on a roster is *moved* into their new division rather than
@@ -894,7 +933,8 @@ frontend/
     schedule/       ← Season calendar (admin: ⏱ enter results, ✎ edit event, 🗑 delete)
     calendar/       ← Global month-by-month calendar of every event in the league,
                       filtered by Game ▸ Series (lib/calendar.js holds its arithmetic)
-    admin/          ← Admin: League Setup — build games/series/seasons/races, upload logos
+    admin/          ← Admin: League Setup — build games/series/seasons/races, the shared Tracks
+                      and Drivers libraries (incl. the duplicate-driver merge tool), Owner logos
     drivers/        ← Driver directory + public profiles (/drivers/[uid]: career stats,
                       race history, per-track stats), plus the admin User Accounts tab
                       (?tab=accounts)
@@ -905,9 +945,10 @@ frontend/
                       driver pool, the season's sign-up queue, and the badge for drivers
                       approved onto a roster since the admin last looked
     races/[id]/     ← Race results view; races/[id]/edit ← admin race info + results editor
-    time-trials/    ← Time Trials & Placements hub; time-trials/[id] ← one session's sheet
-                      (laps, Best Time / Best Average, division placement, Complete Session,
-                      Export to Qualifying)
+    time-trials/    ← Time Trials & Placements hub; time-trials/[id] ← one session, in two
+                      views: the placement BOARD (destinations as columns, driver cards dragged
+                      between them, Auto-Place) and the lap SHEET (Best Time / Best Average),
+                      plus Complete Session and Export to Qualifying
     signups/        ← Sign-ups: the player's three-step "join a series" walkthrough, the
                       seasons open to join, and where their sent sign-ups have got to
     series-info/    ← My Series: the seasons a player is already on, plus driver claiming, and
@@ -915,9 +956,12 @@ frontend/
     profile/        ← Edit your own profile
     login/          ← Sign in / create account
   lib/              ← Firebase admin + client init, auth guards, standings math, shared CRUD
-  components/       ← AppShell, Auth/League/Messages providers, ImageUpload, AdminGate,
-                      SessionEditor, RosterManager + UserAccountsManager (the Drivers page's
-                      admin tabs), MessageBoard + AdminMessages (the two ends of the board)
+  components/       ← AppShell, Auth/League/Messages providers, ImageUpload (the app's single
+                      door to cloud storage, Owner-gated), AdminGate, SessionEditor,
+                      RosterManager + UserAccountsManager (the Drivers page's admin tabs),
+                      DriverMergeTool (find & fold duplicate profiles), PlacementBoard +
+                      PlacementTargetFields + AutoPlaceModal (the placement night),
+                      MessageBoard + AdminMessages (the two ends of the board)
 firebase/           ← Firestore + Storage security rules
 backend/            ← Legacy Python backend (unused; superseded by Next.js API routes)
 scripts/            ← Ops scripts: fetch-backup.mjs, upload-to-drive.mjs (see Backups below)
@@ -1150,6 +1194,35 @@ comes from, so none of it is trusted at approval time.
 The collection is league-scoped and included in backups: a restore that dropped it would silently
 lose everyone who had signed up but not yet been approved.
 
+### Who may upload an image
+
+Every logo and avatar in this league lives in cloud storage, and cloud storage is billed by the byte
+for as long as the file exists. So uploading is the one league power the four staff roles do **not**
+share: it belongs to the **Owner** alone, the person whose storage it is. Admins, Moderators and
+Statisticians keep every other power they had — they create and edit games, series, seasons,
+classes, tracks, races, drivers and teams exactly as before — they just can't add a picture to one.
+
+- **In the browser**, every upload field in the app is the same component, so the rule is applied in
+  one place and covers every creation and edit form at once (and any form added later). For a
+  non-Owner the field doesn't vanish — it goes **read-only**, still showing the image that's there
+  with one line saying who can change it, so an Admin can see what a game's logo *is* without being
+  able to spend the league's storage on a new one.
+- **On the server**, `POST /api/upload` refuses the file outright for anyone who isn't an Owner —
+  before reading the body, so a rejected megabyte is never pulled off the wire. That's the part that
+  means it: Firebase Storage rules refuse every direct client write, so this route is the only door
+  into storage there is.
+- **On the entity routes**, an image field in a create or update from a non-Owner is dropped rather
+  than written. *Changing* is the operative word: an edit form posts every field it renders, so a
+  save that carries back the logo it was showing is not a new image and passes through untouched —
+  renaming a game never quietly wipes its logo, and never fails over a field the person didn't
+  touch. A write that is *only* an image change is refused with **403**.
+
+**Nothing about displaying images changed.** The Owner is still uploading them, and every `<img>`,
+avatar and logo across Drivers, Tracks, Teams, Standings and the rest renders whatever is stored,
+exactly as before.
+
+The rule is `lib/imagePermissions.js`, covered by `lib/__tests__/imagePermissions.test.mjs`.
+
 ### Who may create a driver profile
 
 Only an admin. There is no player-facing route that writes a `drivers` document: asking for one
@@ -1212,6 +1285,45 @@ profile that the league already has them, so they claim it instead of splitting 
 
 The matcher is pure and covered by `lib/__tests__/driverMatch.test.mjs`; the screens that raise the
 prompt are render-tested in `lib/__tests__/driverDedupeFlow.test.jsx`.
+
+### Cleaning up the duplicates you already have
+
+Asking before creating a driver stops *new* duplicates. It does nothing about the ones a league
+already has — made before that check existed, or waved through by an admin who didn't recognise an
+in-game name — and those are the ones that quietly break the standings, because one person's season
+is split across two profiles and neither total is right.
+
+**League Setup ▸ 🧑‍🔧 Drivers** is the bench for that.
+
+- **It finds them for you.** Every driver is checked against every other, through *every* name each
+  one answers to, and the pairs worth a look are listed with the reason each came up ("their BeamNG
+  name is “Ryanbirdman”", "used to race as “Ryan M”"). Nobody scrolls four hundred names looking for
+  the same person twice, which is exactly why nobody ever found these. Suggestions only — two people
+  with similar names is ordinary, and nothing merges until you say so.
+- **You choose which profile survives.** Pick the **duplicate** and the **primary**; ⇄ swaps them.
+  The pair with a linked player account is offered the right way round to begin with.
+- **It shows the merge before it runs it.** How many roster entries and time-trial rows move, what
+  is carried across from the duplicate, and which names are kept — all from the same code that then
+  performs it (`POST /api/admin/drivers/merge` with `dry_run: true`), so the preview can't disagree
+  with the result.
+
+**What a merge does, and why nothing is lost.** Results reference roster *entries*, not drivers, so
+re-pointing the duplicate's entries at the primary carries every race, point, win, podium,
+championship and lap record with them — none of it is copied, rewritten or recalculated. Time-trial
+rows carry a driver directly and are re-pointed the same way, so a hot lap in the record books keeps
+its holder. Per-game **Skill Ratings** are then replayed for every game the moved races touched, so
+they count them.
+
+The profile is reconciled field by field, and the direction is always the same: **the primary is the
+truth, the duplicate fills the gaps** (`lib/driverMerge.js`). The survivor's Discord handle stands;
+an Xbox gamertag only the duplicate had is carried across; a game only the duplicate raced brings
+its in-game name; a survivor with no player account inherits the duplicate's, which is the usual
+shape of this mistake. And every name the duplicate ever raced under — its profile name, its display
+name, its in-game names, the names on its entries, and any names an *earlier* merge folded into it —
+is kept on the survivor as a **former name**, so the next import listing one of them finds this
+driver instead of re-creating the duplicate that was just cleaned up.
+
+Covered by `lib/__tests__/driverMerge.test.mjs`.
 
 ### The sign-up requirement chain
 
@@ -1738,6 +1850,31 @@ in. `groupByTargetSeason()` then splits the sheet per season and the roster run 
 which is how a single night produces several rosters. Sorting into divisions on such a night splits
 *within* each series (`autoAssignClassesWithinSeries`), so each series' own field fills its own
 divisions. A trial placing only into series needs no `season_id` at all.
+
+**The board is those destinations, as trays.** `lib/placements.js` turns a trial's targets into
+**buckets** — one per division the admin ticked, whether that's a class inside a season, a class
+inside a series' season, or a series that has no divisions of its own — and answers the four
+questions the board asks: what buckets exist (`buildBuckets`), which one a driver is in
+(`bucketKeyForRow` / `groupRowsByBucket`), what changes when they're dropped somewhere
+(`assignRowToBucket`), and how to fill them from the times (`autoPlace` / `previewAutoPlace`).
+
+Three properties of that module are load-bearing:
+
+- **A series pointed at the session's own season is folded in rather than listed twice**, so one
+  division can never appear as two columns with the same driver "in" both.
+- **Dropping somebody sets both halves of their placement together.** A class belongs to one season
+  and the series decides which season's roster the entry is written to, so a division the new series
+  doesn't run is cleared rather than left as an id that roster can't resolve.
+- **Nobody vanishes.** A driver whose stored placement matches no current bucket — sorted into a
+  destination that was later untucked — returns to the unplaced pool, visible and re-placeable,
+  rather than off the screen.
+
+`autoPlace` splits on the metric the modal asked about (`best` / `average`) via the same
+`splitEvenly` the sheet's own sort buttons use, so the two can't disagree; only drivers with a
+usable lap are placed, because a blank row is not evidence of pace. It returns an assignment for the
+caller to apply — nothing is written until the admin saves. Covered by
+`lib/__tests__/placements.test.mjs`, with the screens render-tested in
+`lib/__tests__/placementBoardFlow.test.jsx`.
 
 **Building a roster from a placement is idempotent.** `planRosterBuild` matches drivers to that
 season's roster the way the rest of the app matches them — global `driver_id`, then linked account,
