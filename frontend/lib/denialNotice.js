@@ -117,3 +117,43 @@ export function unreadDenials(rows = []) {
     .map(denialNotice)
     .sort((a, b) => String(b.denied_at).localeCompare(String(a.denied_at)));
 }
+
+// ── The other outcome ──────────────────────────────────────────────────────
+//
+// An approval was as quiet as a denial used to be. The request left the queue,
+// a roster entry appeared, and unless the player happened to open Sign-ups and
+// notice their series had moved from "waiting" to "racing", nothing told them
+// they were in — the moment a league most wants to feel like an arrival.
+//
+// So the same machinery carries the good news: an unread `approved` row puts a
+// welcome banner on the Dashboard, dismissed by the same acknowledge call that
+// clears a denial (PATCH /api/signup-requests/[id], stamping `player_seen_at`).
+
+export function welcomeNotice(req) {
+  return {
+    id: req?.id || "",
+    season_id: req?.season_id || "",
+    season_name: req?.season_name || "Season",
+    series_id: req?.series_id || "",
+    series_name: req?.series_name || "Series",
+    game_id: req?.game_id || "",
+    name: req?.name || "",
+    number: String(req?.number ?? "").trim(),
+    car: req?.car || "",
+    approved_at: req?.resolved_at || "",
+  };
+}
+
+// Approvals this account hasn't seen yet, newest first.
+//
+// Number changes are excluded for the same reason they're excluded from the
+// admin's additions panel: approving one moves a number on a roster entry that
+// already existed. "Welcome to the series" to somebody who has been racing it
+// for six weeks is a notification that teaches people to ignore notifications.
+export function unreadApprovals(rows = []) {
+  return rows
+    .filter(r => !r?.player_seen_at)
+    .filter(r => (r?.kind || "signup") !== "number_change")
+    .map(welcomeNotice)
+    .sort((a, b) => String(b.approved_at).localeCompare(String(a.approved_at)));
+}

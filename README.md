@@ -215,6 +215,12 @@ throwaway key (`openssl genrsa`) — the emulator never checks it.
      yourself, it's left exactly as it is, and a season that doesn't run car numbers can't blank
      the one you have. So a brand-new account stops showing "jane.doe" the moment you tell the
      league you race as J. May, and nobody's chosen name is ever overwritten.
+   - **When you're let in, the Dashboard says so.** The first time you open it after an admin
+     approves your sign-up, a banner across the top welcomes you to the series by name, says which
+     season you're on and what number and car you're running, and points at the three things you
+     need next: **your series schedule**, the **league calendar**, and the **Discord**. It clears
+     on a deliberate **Got it** and never comes back — being let in used to happen in complete
+     silence, which is a poor way to greet somebody who has just joined your league.
    - **If a sign-up is turned down, you're told why.** An admin denying one types a reason, and
      that reason reaches you twice: an **email to your account's address**, and a red panel at the
      very top of Sign-ups the next time you open it. The panel quotes the admin's words, and that
@@ -1307,6 +1313,13 @@ The reason now reaches them **twice**, and both messages are built from one requ
 
 The reason is free text an admin typed and it lands in an HTML email body, so `denialHtml` escapes
 every human-supplied value; the plain-text half keeps it verbatim. Both are asserted.
+
+**The same machinery carries the good news.** An approval was as quiet as a denial: the request
+left the queue, a roster entry appeared, and unless the player happened to open Sign-ups and notice
+their series had moved from "waiting" to "racing", nothing told them. `unreadApprovals()` drives a
+welcome banner on the Dashboard (`components/WelcomeToSeries.jsx`), cleared by the same acknowledge
+call. Approved **number changes** are excluded — welcoming somebody to a series they have raced for
+six weeks is the kind of notification that teaches people to ignore notifications.
 
 ### Capping how many drivers may run a car
 

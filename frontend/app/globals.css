@@ -3503,3 +3503,61 @@ input[type="radio"]:disabled:checked {
 
 .signup-denial-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
 .signup-denial-actions .btn { margin-top: 0; }
+
+/* ── Welcome to the series (components/WelcomeToSeries.jsx) ────────────────
+   The banner across the top of the Dashboard the first time a player opens it
+   after their sign-up is approved. Deliberately the loudest thing on the
+   screen: being let in used to happen in complete silence, and this is the one
+   moment a league most wants to feel like an arrival. */
+.welcome-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 20px;
+  padding: 20px 22px;
+  border: 1px solid var(--border-accent);
+  border-left: 4px solid var(--accent-cyan);
+  border-radius: var(--radius-card);
+  background:
+    radial-gradient(ellipse at 0% 0%, rgba(244, 162, 40, 0.16) 0%, transparent 55%),
+    linear-gradient(120deg, var(--accent-cyan-dim), var(--bg-surface));
+  box-shadow: var(--shadow-glow-cyan);
+  animation: reveal 0.5s ease;
+}
+
+.welcome-confetti { font-size: 2rem; line-height: 1; flex-shrink: 0; }
+.welcome-body { flex: 1; min-width: 0; }
+
+.welcome-banner h3 {
+  margin: 0 0 4px;
+  font-size: 1.3rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--ink-0);
+}
+
+.welcome-sub { margin: 0 0 14px; font-size: 0.92rem; line-height: 1.55; color: var(--ink-1); }
+.welcome-sub strong { color: var(--accent-cyan); }
+
+.welcome-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.welcome-actions .btn { margin-top: 0; }
+
+/* The Discord button keeps Discord's own colour here too, so the one action
+   that leaves the app looks like it does everywhere else in the app. */
+.welcome-discord {
+  color: #fff;
+  background: #5865f2;
+  border-color: #5865f2;
+}
+
+.welcome-discord:hover { opacity: 0.92; box-shadow: 0 0 20px rgba(88, 101, 242, 0.35); }
+
+.welcome-foot { margin: 14px 0 0; font-size: 0.85rem; line-height: 1.55; color: var(--ink-1); }
+
+.welcome-dismiss { margin-top: 0; flex-shrink: 0; }
+
+@media (max-width: 640px) {
+  .welcome-banner { flex-wrap: wrap; }
+  .welcome-actions .btn { width: 100%; justify-content: center; }
+  .welcome-dismiss { width: 100%; justify-content: center; }
+}

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { withUser } from "@/lib/serverAuth";
-import { DENIED, PENDING, WITHDRAWN } from "@/lib/signupQueue";
+import { APPROVED, DENIED, PENDING, WITHDRAWN } from "@/lib/signupQueue";
 
 export const dynamic = "force-dynamic";
 
@@ -42,8 +42,8 @@ export const DELETE = withUser(async (request, { params }, user) => {
   return NextResponse.json({ ok: true, id: params.id, status: WITHDRAWN });
 });
 
-// A player marking a DENIED sign-up as read — "I've seen why, let me try
-// again".
+// A player marking a RESOLVED sign-up as read — a denial ("I've seen why, let
+// me try again") or an approval ("yes, I've read the welcome").
 //
 // It's an explicit action rather than something opening the screen does, and
 // the reason is the same one the roster's additions panel has: a notice that
@@ -64,7 +64,7 @@ export const PATCH = withUser(async (request, { params }, user) => {
   if (req.uid !== user.uid) {
     return NextResponse.json({ error: "That isn't your request." }, { status: 403 });
   }
-  if (req.status !== DENIED) {
+  if (req.status !== DENIED && req.status !== APPROVED) {
     return NextResponse.json(
       { error: "There's nothing to acknowledge on that request." },
       { status: 400 },
