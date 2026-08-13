@@ -565,6 +565,16 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      the driver profile it races as, rename it, delete it, and approve or deny **pending driver
      requests**. The red badge on the Drivers nav item counts new signups + pending requests.
 
+     The **Linked Driver Profile** cell is a searchable picker listing every driver with its
+     availability (unclaimed / linked here / linked to another account). It renders into `<body>`
+     as a *fixed* element rather than inside the table cell, and measures its room against the
+     bottom of the sticky topbar rather than the top of the window. Both matter: the table scrolls
+     inside `overflow: auto`, which clipped an absolutely positioned panel and sliced its top row
+     in half, and measuring to the window let a row low on the page open a full-height list that
+     ran up behind the league selectors. It re-measures every animation frame while open, so it
+     stays welded to its row through scrolling, a toast collapsing, or the list reloading after a
+     link — flipping above or below as the room runs out, never off-screen.
+
      Two kinds land in that queue, and this screen is the **only** place either is ever applied —
      a player-requested driver profile is never created automatically. *Claims* ("that existing
      driver is me") write the account↔driver link, and approving one auto-denies any other
