@@ -2837,3 +2837,323 @@ input[type="radio"]:disabled:checked {
   .calendar-weekday-short { display: inline; }
   .calendar-month { min-width: 0; font-size: 1rem; }
 }
+
+/* ── Sign-ups (app/signups) ────────────────────────────────────────────────
+   The player-facing "join a series" screen. It's the one part of the app aimed
+   squarely at somebody who has never used it before, so everything here is
+   bigger, plainer and more spaced out than the admin surfaces: whole cards are
+   the click target rather than a link inside them, and no state is signalled by
+   colour alone — every card that means something says so in words too. */
+
+.page-intro {
+  margin: 4px 0 0;
+  max-width: 680px;
+  font-size: 0.92rem;
+  line-height: 1.6;
+  color: var(--ink-1);
+}
+
+/* The three steps of joining, printed before anything is asked for. A numbered
+   list element so it reads as a sequence to a screen reader as well. */
+.join-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: none;
+}
+
+.join-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+}
+
+.join-step-num {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--ink-1);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+}
+
+.join-step-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.join-step-body strong { font-size: 0.9rem; color: var(--ink-1); }
+.join-step-body span { font-size: 0.78rem; line-height: 1.45; color: var(--ink-2); }
+
+/* The step being worked on. Cyan is the app's "this is live" colour. */
+.join-step.is-current {
+  border-color: var(--border-accent);
+  background: linear-gradient(120deg, var(--accent-cyan-dim), var(--bg-surface));
+}
+
+.join-step.is-current .join-step-num {
+  color: #03060a;
+  background: var(--accent-cyan);
+  border-color: var(--accent-cyan);
+}
+
+.join-step.is-current .join-step-body strong { color: var(--ink-0); }
+.join-step.is-current .join-step-body span { color: var(--ink-1); }
+
+.join-step.is-done .join-step-num { color: var(--accent-cyan); }
+
+/* Every list on the screen — series to join, sign-ups waiting, series already
+   raced — is the same single column of full-width cards. One shape to learn. */
+.join-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* A series that can be joined: the whole card is the button. */
+.join-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 16px 18px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.join-card:hover,
+.join-card:focus-visible {
+  transform: translateY(-2px);
+  border-color: var(--accent-cyan);
+  background: var(--card-hover);
+}
+
+.join-card-logo {
+  width: 46px;
+  height: 46px;
+  border-radius: 10px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.join-card-logo-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+}
+
+.join-card-body { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.join-card-body strong { font-size: 1.02rem; color: var(--ink-0); }
+.join-card-season { font-size: 0.85rem; color: var(--ink-1); }
+
+.join-card-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+
+.join-chip {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  font-size: 0.72rem;
+  color: var(--ink-1);
+  white-space: nowrap;
+}
+
+.join-card-go { flex-shrink: 0; }
+
+/* The card is the button, so the thing that looks like one is a span — it must
+   not carry .btn's stacking margin. */
+.join-card-btn { margin-top: 0; pointer-events: none; }
+
+.join-back { margin-top: 14px; }
+
+/* Step 2's header: which series is being signed up for, said once, large. */
+.join-hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 12px;
+  padding: 16px 18px;
+  border: 1px solid var(--border-accent);
+  border-radius: var(--radius-card);
+  background: linear-gradient(120deg, var(--accent-cyan-dim), var(--bg-surface));
+}
+
+.join-hero h3 { margin: 0; font-size: 1.1rem; color: var(--ink-0); }
+.join-hero p { margin: 2px 0 0; font-size: 0.86rem; color: var(--ink-1); }
+
+.join-hero-logo {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+/* "What this form asks you for", above the form itself — so somebody who
+   doesn't have their customer ID to hand finds out now, not four fields in. */
+.join-needs {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-gold);
+  border-radius: 14px;
+  background: var(--bg-elevated);
+}
+
+.join-needs > strong { font-size: 0.9rem; color: var(--ink-0); }
+
+.join-needs ul {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.join-needs li {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-left: 18px;
+  position: relative;
+}
+
+.join-needs li::before {
+  content: "•";
+  position: absolute;
+  left: 4px;
+  color: var(--accent-gold);
+}
+
+.join-needs-label { font-size: 0.88rem; color: var(--ink-0); }
+.join-needs-detail { font-size: 0.78rem; line-height: 1.45; color: var(--ink-2); }
+
+.join-needs-foot { margin: 12px 0 0; font-size: 0.78rem; color: var(--ink-2); }
+
+.join-form { margin-top: 14px; max-width: 660px; }
+
+/* Step 3. Confirmation gets its own full card because "did that work?" is the
+   question a first-time player most often answers by signing up twice. */
+.join-done {
+  margin-top: 14px;
+  padding: 28px 24px;
+  text-align: center;
+  border: 1px solid var(--border-accent);
+  border-radius: var(--radius-card);
+  background: linear-gradient(160deg, var(--accent-cyan-dim), var(--bg-surface));
+  animation: reveal 0.45s ease;
+}
+
+.join-done-icon { font-size: 2.4rem; display: block; margin-bottom: 8px; }
+.join-done h3 { margin: 0 0 10px; font-size: 1.2rem; color: var(--ink-0); }
+
+.join-done p {
+  margin: 0 auto;
+  max-width: 560px;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: var(--ink-1);
+}
+
+.join-done-sub { margin-top: 8px !important; color: var(--ink-2) !important; font-size: 0.82rem !important; }
+
+.join-done-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
+
+/* The one job that can be outstanding for a driver already on a roster:
+   choosing their car. Gold, like every other "waiting on you" surface. */
+.join-todo {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-gold);
+  border-radius: var(--radius-card);
+  background: var(--bg-elevated);
+}
+
+.join-todo-icon { font-size: 1.5rem; line-height: 1; }
+.join-todo-body { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 180px; }
+.join-todo-body strong { font-size: 0.95rem; color: var(--ink-0); }
+.join-todo-body span { font-size: 0.82rem; color: var(--ink-1); }
+
+.join-todo-links { display: flex; flex-wrap: wrap; gap: 8px; }
+.join-todo-links .btn { margin-top: 0; }
+
+/* A sign-up that's been sent, or a season already being raced. Same shape as a
+   join card so the screen reads as one list of series in different states. */
+.join-status-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--card);
+}
+
+.join-status-card.is-link { transition: transform 0.15s ease, border-color 0.15s ease; }
+.join-status-card.is-link:hover { transform: translateY(-2px); border-color: var(--accent-cyan); }
+.join-status-card.is-todo { border-left: 3px solid var(--accent-gold); }
+
+.join-status-icon { font-size: 1.4rem; line-height: 1; flex-shrink: 0; }
+.join-status-body { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.join-status-body strong { font-size: 0.95rem; color: var(--ink-0); }
+.join-status-body span { font-size: 0.82rem; line-height: 1.5; color: var(--ink-1); }
+.join-status-go { color: var(--accent-cyan); font-size: 1.1rem; flex-shrink: 0; }
+
+/* "New here?" — reassurance that nothing has to be set up first. */
+.join-newcomer {
+  margin-bottom: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--card);
+}
+
+.join-newcomer > p { margin: 0; font-size: 0.88rem; line-height: 1.6; color: var(--ink-1); }
+.join-newcomer > p strong { color: var(--ink-0); }
+.join-newcomer .btn { margin-top: 12px; }
+.join-newcomer .form-card { margin-top: 14px; max-width: 100%; }
+
+.join-foot {
+  margin-top: 26px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  font-size: 0.8rem;
+  color: var(--ink-2);
+}
+
+@media (max-width: 640px) {
+  /* On a phone the join button goes under the series name rather than being
+     squeezed to two words beside it. */
+  .join-card { flex-wrap: wrap; }
+  .join-card-go { width: 100%; }
+  .join-card-btn { width: 100%; justify-content: center; }
+}

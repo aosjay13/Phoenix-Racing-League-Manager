@@ -64,8 +64,12 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   button for the same trip the other way. A time trial counts toward **no** racing statistic — no
   Wins, Top 5s, Average Finish or Championships — but its laps *are* eligible for the Global /
   Series / Class **Track Records**
-- 📝 **Player sign-ups with admin approval** — players join a series from their Dashboard: pick the
-  season from a selector listing only what's open, fill in a form the league configured, and submit.
+- 📝 **Player sign-ups with admin approval** — **Sign-ups** is its own sidebar menu, written for
+  the least tech-savvy player in the league: a three-step walkthrough that says up front what the
+  whole process is (pick a series → fill in the short form → an admin approves you), lists every
+  series open to join as a card you click anywhere on, tells you what the form will ask for
+  *before* you start it, and finishes on a confirmation that says plainly that your sign-up is in
+  the queue and nothing else is needed from you.
   Nothing reaches the official roster on its own — every sign-up lands in a **Pending Sign-ups**
   queue on the admin's roster screen, where **Approve** adds them with the number and car they asked
   for (creating their driver profile too, if they're new to the league) and **Deny** leaves them off.
@@ -161,20 +165,36 @@ The app runs at `http://localhost:3000`.
      as its own row, because each is scored on its own.
    - **Per Track Stats** — the same career broken down by venue, each track linking to its own
      page.
-4. **Series Information** — a section on your **Dashboard** (not the sidebar) that appears only
-   when there's something for you to do **in the series you're currently viewing**: a running
-   season that wants you to lock in a car, or a season open to sign up for. It follows the
-   Game/Series menus at the top of the page like everything else, and lists **active seasons
-   only** — finished ones aren't shown there. Click through and you get:
-   - **Linking your driver.** Sign-ups and car choices are recorded against a *driver*, not an
-     account, so you need to point yours at one. If you've raced here before, find yourself in
-     the list and hit **That's me**. If you're new, ask to be added. **Either way an admin
-     approves it** — a driver profile is never created or linked automatically. Brand new
-     players don't have to do this first: signing up for a series asks for the same details and
-     files the same request, with the season attached.
-   - **Signing up.** A selector lists every season still upcoming or under way that you're not on
-     yet — pick one and its form appears underneath. Seasons marked complete never appear, and
-     can't be joined.
+4. **Sign-ups** — a menu of its own in the sidebar, and the one screen in the app written for
+   somebody who has never used it before. Joining a series is a walkthrough, and its three steps
+   are printed at the top *before* anything is asked of you: **pick a series → fill in the short
+   form → an admin approves you**. The screen shows one step at a time, so there is never more
+   than one thing on it to do.
+   - **Pick a series.** Every season still upcoming or under way that you're not on yet is a
+     full-width card you can click anywhere on. Each carries the game it's played on, how many
+     drivers are already in and how many are waiting, and what its form is going to ask for
+     (*Car number needed*, *Choose your car*, *2 classes*) — so two series can be told apart
+     without opening either. Seasons marked complete never appear, and can't be joined.
+   - **Know what you'll need before you start.** Above the form, **What this form asks you for**
+     lists every question that's coming and why — your racing name, your Discord name, whichever
+     platform IDs this game requires, a car number, a car. Nothing in the form is a surprise, and
+     anything already saved on your profile is filled in for you.
+   - **Know that it worked.** Submitting lands on a confirmation saying your sign-up is *in the
+     queue* and that nothing else is needed from you — which is the question a first-timer
+     otherwise answers by signing up a second time. The series then sits under **Waiting on an
+     admin** until one of them approves it.
+   - **The badge on the menu** counts what is waiting on **you**: series you could join, plus
+     cars you still have to choose. Sign-ups already sent are deliberately not counted — those
+     are waiting on somebody else, and a number that only falls when an admin acts is nagging
+     rather than useful.
+   - **Brand new?** Nothing has to be set up first. Pick a series, and the form asks for
+     everything the league needs; an admin approving it creates your driver profile *and* your
+     roster entry in one click. **Raced here before?** *I've raced in this league before — find
+     my name* opens the claim panel: find yourself in the driver list, hit **That's me**, and
+     your whole race history comes with you. Either way **an admin approves it** — a driver
+     profile is never created or linked automatically. Sign-ups and car choices are recorded
+     against a *driver*, not an account, which is why the two have to meet.
+   - **The form itself.**
 
      **The form renders itself from what that league asked for.** A car number box and a
      **Car Selection** question — each appears only if the series, season or class you're joining
@@ -226,11 +246,21 @@ The app runs at `http://localhost:3000`.
      admin approving it creates your driver profile *and* your roster entry in one click. The
      form says so before you send it.
    - **When a season ends.** The moment an admin marks it complete, it closes to players: nobody
-     else can sign up and nobody can change the car they locked in. It also **drops out of Series
-     Information entirely** — off the Dashboard section and off this page — because this flow is
-     about what you still have to do. A series whose seasons have all finished disappears with
-     them. Your results are on **Standings** and **Stats** as always, and the season's own page
-     still opens from a direct link, marked **Season over**. Reopening the season undoes all of it.
+     else can sign up and nobody can change the car they locked in. It also **drops out of the
+     player flow entirely** — off Sign-ups, off My Series and off the Dashboard's Series
+     Information card — because that flow is about what you still have to do. A series whose
+     seasons have all finished disappears with them. Your results are on **Standings** and
+     **Stats** as always, and the season's own page still opens from a direct link, marked
+     **Season over**. Reopening the season undoes all of it.
+   - **Where your sign-ups have got to.** The same screen lists **Waiting on an admin** (sent,
+     nothing else for you to do) and **Series you're racing in** (approved), each row saying in
+     one line what — if anything — is still wanted from you. If a series is waiting on a car,
+     that's called out in its own banner at the top, since it's the one job an approved driver
+     can still have.
+   - **My Series** (`/series-info`, reached from that list or from the Dashboard card) is the
+     other half: the seasons you're **already** on, and each season's own screen behind them.
+     Nothing is signed up for here — it links back to Sign-ups for that, so a sign-up is only
+     ever filled in in one place.
    - **The series roster.** Every season's own screen shows its roster — number, driver, class
      and locked-in car — to anyone who opens it, admin or not. It's ordered by car number rather
      than alphabetically, because "who has 24?" and "which numbers are free?" are what it's read
@@ -464,8 +494,9 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      /api/admin/signup-requests/count` behind them — so a Statistician (who clears the general
      staff gate) and every ordinary player see neither the badge nor the count.
    - **Pending Approvals** *(admin, on Roster & Teams)* — the selected season's slice of the
-     queue above: players who submitted a sign-up from their Dashboard waiting to be let in, plus
-     anyone already on the roster asking for a different car number. Nothing they sent is live.
+     queue above: players who submitted a sign-up from the Sign-ups menu waiting to be let in,
+     plus anyone already on the roster asking for a different car number. Nothing they sent is
+     live.
 
      A **sign-up** row shows the number and car they asked for and the platform
      usernames they gave; **Approve** puts them on the roster with exactly those choices — creating
@@ -480,7 +511,7 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      whose number has gone is refused instead, since granting it would either clash or silently do
      nothing, and neither is what the driver asked for.
    - **⬆ Bulk Import Drivers** *(admin, on Roster & Teams)* — the season-rollover shortcut, for
-     everyone who never goes near the Dashboard sign-up. Pick a source — **every driver in this
+     everyone who never goes near the Sign-ups menu. Pick a source — **every driver in this
      series** (across all its seasons) or **clone one past season's roster** — and they're added in
      one shot, carrying their name, car number, driver profile and linked account. Anyone already
      on the target roster is **skipped, never duplicated and never an error**, so it's safe to press
@@ -698,7 +729,9 @@ frontend/
     time-trials/    ← Time Trials & Placements hub; time-trials/[id] ← one session's sheet
                       (laps, Best Time / Best Average, division placement, Complete Session,
                       Export to Qualifying)
-    series-info/    ← A player's series: driver linking, series sign-up, and
+    signups/        ← Sign-ups: the player's three-step "join a series" walkthrough, the
+                      seasons open to join, and where their sent sign-ups have got to
+    series-info/    ← My Series: the seasons a player is already on, plus driver claiming, and
                       series-info/[seasonId] ← that season's car lock-in + who's racing what
     profile/        ← Edit your own profile
     login/          ← Sign in / create account
@@ -918,8 +951,8 @@ the entry has results, answering with how many; the roster's dialog reports that
 again before passing `?confirm=results`. Dropping somebody who signed up and never raced stays one
 click; deleting eight races of history is never one.
 
-`POST /api/signup-requests` only ever writes a `pending` row — there is no path from the Dashboard
-to the `entries` collection — and `PATCH /api/admin/signup-requests/[id]`, admin-gated, is what
+`POST /api/signup-requests` only ever writes a `pending` row — there is no path from the Sign-ups
+screen to the `entries` collection — and `PATCH /api/admin/signup-requests/[id]`, admin-gated, is what
 creates the roster entry. The car chosen at
 sign-up is written onto that entry in the same field the lock-in screen uses (`selected_car`), so
 an approved sign-up needs no second trip to choose what was already chosen — and the season's
@@ -1023,6 +1056,43 @@ that same answer, so the three can't disagree — the field, the as-you-type "th
 check, and what's submitted. A number typed before the question went away is cleared from the form
 state *and* dropped again at submit, which is what stops a value nobody was asked for riding along
 on the request — or, worse, a stale clash disabling **Submit** with nothing on screen to explain it.
+
+### The Sign-ups screen
+
+`app/signups` is the only screen in the app aimed at somebody who has never used it, and it's
+built as a **walkthrough, not a page**: it renders exactly one of three things at a time — the
+list of series, the form for the one that was chosen, or the "you're in the queue" confirmation.
+The three steps are printed above whichever one is showing, with the current one lit, so nothing
+about the process has to be inferred from a disabled button.
+
+It decides nothing itself. One call to `GET /api/users/me/series` answers which seasons are open,
+what each asks a sign-up to carry, and whether this account already has one waiting; every list,
+count and sentence on screen is then derived by **`lib/signupFlow.js`**, which is pure and covered
+by `lib/__tests__/signupFlow.test.mjs`. The rules that matter are asserted there rather than left
+to a human to spot:
+
+- a sign-up already sent never appears as something to join again (`my_pending` splits
+  `joinableSeasons` from `awaitingSeasons`) — the commonest way a first-timer ends up in the queue
+  twice;
+- the sidebar badge counts only what is waiting on the **player** — series they could join, plus
+  cars they still have to choose — so it falls when *they* act, never when an admin does;
+- **What this form asks you for**, printed above the form, is derived from the same two sources
+  the form renders itself from, so it can't promise a different set of questions than the one
+  that follows.
+
+Submitting still goes through the shared `<SignupForm>` — the same component a season's own screen
+opens in a dialog — so the two ways in ask for identical things, and neither can put anybody on a
+roster: both file a pending request (see the approval queue above).
+
+That payload is fetched **once for the whole app** by `components/MySignupsProvider.jsx`, mounted
+inside `LeagueProvider` so a league switch re-asks. The Sign-ups screen, the sidebar badge and the
+Dashboard card all read that one context — the route does a roster query and a pending-queue query
+per open season, so three independent copies of it would be three times the reads for one answer,
+and three answers that could disagree for a second after a sign-up. `mySignupsChanged()` refreshes
+every reader at once, the moment a sign-up is sent or a car is locked in.
+
+Joining lives here and **only** here: `/series-info` is now My Series (the seasons you're already
+on) and links across rather than carrying a second copy of the form.
 
 ### Where points are configured
 
@@ -1495,8 +1565,8 @@ things:
   tab left open from before the season closed still can't write to it. The season also drops out of
   the sign-up list everywhere it's offered.
 
-Series Information is about what a player still has to do, so a completed season leaves it
-altogether — the Dashboard section and `/series-info` alike. That's enforced once, in
+The player flow is about what a player still has to do, so a completed season leaves it
+altogether — `/signups`, `/series-info` and the Dashboard card alike. That's enforced once, in
 `/api/users/me/series`, which filters `my_seasons` through `seasonAcceptsSignups` before either
 screen sees it, so no screen can reinstate them. A series whose seasons are all complete therefore
 disappears from the flow on its own; there is no separate "series is over" flag, and none is

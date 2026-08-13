@@ -3,6 +3,7 @@ import { AppShell } from "../components/AppShell";
 import { AuthProvider } from "../components/AuthProvider";
 import { VerifyGate } from "../components/VerifyGate";
 import { LeagueProvider } from "../components/LeagueProvider";
+import { MySignupsProvider } from "../components/MySignupsProvider";
 
 export const metadata = {
   title: "Phoenix's Racing League Manager",
@@ -30,7 +31,11 @@ export default function RootLayout({ children }) {
         <AuthProvider>
           <VerifyGate>
             <LeagueProvider>
-              <AppShell>{children}</AppShell>
+              {/* Inside LeagueProvider: a player's series are league-scoped, so
+                  this has to re-ask when the league switches. */}
+              <MySignupsProvider>
+                <AppShell>{children}</AppShell>
+              </MySignupsProvider>
             </LeagueProvider>
           </VerifyGate>
         </AuthProvider>

@@ -5,7 +5,9 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { useLeague } from "@/components/LeagueProvider";
+import { useMySignups } from "@/components/MySignupsProvider";
 import { copyCurrentLink } from "@/lib/scopeLink";
+import { signupBadgeCount, signupBadgeTitle } from "@/lib/signupFlow";
 import { useUserAccountsAlerts, alertsTitle } from "@/lib/userAccountsAlerts";
 import {
   APPROVALS_MIN_LEVEL, pendingSignupsTitle, usePendingSignupCount,
@@ -18,6 +20,12 @@ export { USERS_SEEN_KEY, USERS_SEEN_EVENT } from "@/lib/userAccountsAlerts";
 
 const publicNav = [
   { href: "/",          label: "Dashboard", icon: "◈" },
+  // Joining a series — the one thing a brand-new player comes here to do, so it
+  // sits second, above every table they might read. It's a top-level menu of
+  // its own rather than a section of a page because somebody who has never used
+  // the app before shouldn't have to know that "sign-ups" live under anything.
+  // Its badge counts what is waiting on THEM (see lib/signupFlow.js).
+  { href: "/signups",   label: "Sign-ups",  title: "Join a series", icon: "📝" },
   { href: "/standings", label: "Standings", icon: "🏆" },
   { href: "/stats",     label: "Stats",     icon: "📊" },
   { href: "/records",   label: "Records",   icon: "🏅" },
@@ -208,11 +216,15 @@ export function AppShell({ children }) {
   // Sign-ups waiting on an approval. The hook makes no API call at all below
   // Moderator, so a player's browser never asks for a count it isn't allowed.
   const pendingSignups = usePendingSignupCount(roleLevel);
+  // The player's own side of the same queue: series they could join, and cars
+  // they still have to choose. Nothing is fetched for a signed-out visitor.
+  const { data: mySignups } = useMySignups();
   // New signups / pending claims are handled on the Drivers page's User
   // Accounts tab, so the badge rides along with that nav item.
   const navBadges = {
     "/drivers": { count: userAccountsAlerts.total, title: alertsTitle(userAccountsAlerts) },
     "/approvals": { count: pendingSignups, title: pendingSignupsTitle(pendingSignups) },
+    "/signups": { count: signupBadgeCount(mySignups), title: signupBadgeTitle(mySignups) },
   };
   // Admin entries the signed-in staff account is high enough to see.
   const adminItems = adminNav.filter(

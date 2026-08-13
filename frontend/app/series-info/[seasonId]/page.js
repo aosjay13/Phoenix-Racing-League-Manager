@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { DriverLinkGate } from "@/components/DriverLinkGate";
+import { mySignupsChanged } from "@/components/MySignupsProvider";
 import { SeriesSignupModal } from "@/components/SeriesSignupModal";
 import { api } from "@/lib/api";
 import { NUMBER_CHANGE_KIND } from "@/lib/signupQueue";
@@ -227,6 +228,8 @@ export default function SeasonCarSelectionPage() {
     try {
       await api("/api/car-selection", { method: "POST", body: { season_id: seasonId, class_id: classId, car } });
       await load();
+      // Drops the "car to choose" count on the Sign-ups badge straight away.
+      mySignupsChanged();
       showToast("success", car ? `${car} locked in.` : "Car selection cleared.");
     } catch (err) { showToast("error", err.message); }
     finally { setBusy(false); }
@@ -267,6 +270,7 @@ export default function SeasonCarSelectionPage() {
   async function afterSignup() {
     setSigningUp(false);
     await load();
+    mySignupsChanged();
     showToast("success",
       "Sign-up submitted. An admin will review it, and you'll be on the roster once they approve.");
   }
@@ -279,7 +283,7 @@ export default function SeasonCarSelectionPage() {
         <span className="empty-state-icon">⚠</span>
         <p>Couldn&rsquo;t load this season.</p>
         <p style={{ fontSize: "0.85rem", color: "var(--ink-2)", margin: "0 0 12px" }}>{error}</p>
-        <Link href="/series-info" className="btn btn-primary">Back to Series Information</Link>
+        <Link href="/series-info" className="btn btn-primary">Back to My Series</Link>
       </div>
     );
   }
@@ -318,7 +322,7 @@ export default function SeasonCarSelectionPage() {
         <span className={`page-badge${open ? "" : " is-muted"}`}>{open ? "Open" : "Season over"}</span>
       </div>
       <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.9rem" }}>
-        <Link href="/series-info" style={{ color: "var(--accent-cyan)" }}>← All my series</Link>
+        <Link href="/series-info" style={{ color: "var(--accent-cyan)" }}>← My Series</Link>
       </p>
 
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
