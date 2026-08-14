@@ -18,10 +18,11 @@
 import assert from "node:assert";
 import {
   ADMIN, MESSAGE_KINDS, PLAYER, adminInboxTitle, adminNote, adminThreadsNeedingReply,
-  awaitingAdmin, lastReply, messageActions, messageBody, messageKind, messageTitle,
-  messageTone, normalizeReply, openPlayerMessages, playerInbox, playerInboxTitle, replies,
-  unreadByAdmin, unreadByPlayer, unreadPlayerMessages,
+  awaitingAdmin, lastReply, messageActions, messageBody, messageKind, messageScope,
+  messageTitle, messageTone, normalizeReply, openPlayerMessages, playerInbox,
+  playerInboxTitle, replies, unreadByAdmin, unreadByPlayer, unreadPlayerMessages,
 } from "../messages.js";
+import { scopeHref } from "../scopeLink.js";
 
 let n = 0;
 const check = (label, got, want) => { n++; assert.deepStrictEqual(got, want, `${label}: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`); };
@@ -127,6 +128,66 @@ check("being let in is good news", messageTone(msg()), "good");
 check("being turned down isn't", messageTone(msg({ kind: "signup_denied" })), "bad");
 check("nor is being removed", messageTone(msg({ kind: "roster_removed" })), "bad");
 check("a note is neither", messageTone(msg({ kind: "note" })), "info");
+
+// ── Where a card's buttons go ──────────────────────────────────────────────
+//
+// Standings, Stats, the Schedule and the Calendar all read the Game ▸ Series ▸
+// Season ▸ Class menus at the top of the page. A button that opens one of them
+// without saying WHICH season shows the reader whatever they had selected — so
+// a card announcing the end of Season 4 of one series could open the standings
+// of Season 6 of another, which is the app contradicting the sentence directly
+// above the button.
+const completed = msg({
+  kind: "season_completed",
+  context: {
+    game_id: "g1", game_name: "iRacing",
+    series_id: "sr1", series_name: "Formula Phoenix",
+    season_id: "se1", season_name: "Season 4",
+    class_names: ["Pro"],
+  },
+});
+
+check("a card knows the season it is about",
+  messageScope(completed), { game: "g1", series: "sr1", season: "se1", class: "Pro" });
+check("and it becomes a link that opens there",
+  scopeHref("/standings", messageScope(completed)),
+  "/standings?game=g1&series=sr1&season=se1&class=Pro");
+
+// ALL THREE IDS OR NOTHING. The levels resolve top-down — a game to find the
+// series under, a series to find the season under — so a season named without
+// its game would leave the reader's own game selected and land them somewhere
+// arbitrary. Better to leave the button exactly as it was.
+check("a message with no game named claims no scope",
+  messageScope(msg({ context: { series_id: "sr1", season_id: "se1" } })), null);
+check("nor one with no series",
+  messageScope(msg({ context: { game_id: "g1", season_id: "se1" } })), null);
+check("nor one with no season",
+  messageScope(msg({ context: { game_id: "g1", series_id: "sr1" } })), null);
+check("nor a message written before any of this",
+  messageScope({ kind: "season_completed" }), null);
+check("nor no message at all", messageScope(null), null);
+
+// The class travels by NAME — its cross-season identity, and what the Class
+// menu is remembered by.
+const scopeWith = (over) => messageScope(msg({ context: { ...completed.context, ...over } }));
+check("one class opens that class's own table", scopeWith({ class_names: ["Am"] }).class, "Am");
+// A driver entered in two is shown the season-wide table, which contains both:
+// picking the first of them would be a guess, and wrong half the time.
+check("two classes open the season-wide view",
+  scopeWith({ class_names: ["Pro", "Am"] }).class, "");
+check("a single-class season likewise", scopeWith({ class_names: [] }).class, "");
+check("a context written with the singular class_name is understood",
+  messageScope(msg({ context: { game_id: "g", series_id: "s", season_id: "se", class_name: "GT3" } })).class,
+  "GT3");
+// "All Classes" is a real choice, distinct from "not specified", so it travels
+// as the same explicit sentinel the rest of the app's links use.
+check("All Classes travels explicitly rather than being left out",
+  scopeHref("/stats", scopeWith({ class_names: [] })),
+  "/stats?game=g1&series=sr1&season=se1&class=all");
+check("a link with nothing to say is just the page", scopeHref("/standings", {}), "/standings");
+check("the league is carried when the card is from another one",
+  scopeHref("/standings", { ...messageScope(completed), league: "L2" }),
+  "/standings?league=L2&game=g1&series=sr1&season=se1&class=Pro");
 
 // ── 4. The admin's own words ───────────────────────────────────────────────
 check("read off the message", adminNote(msg({ admin_note: "Wrong number." })), "Wrong number.");

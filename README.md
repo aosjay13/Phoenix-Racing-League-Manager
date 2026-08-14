@@ -1908,6 +1908,54 @@ announcements skip email for the same reason.) The board is where the player is 
 The rules are pure and covered by `lib/__tests__/seasonCompletion.test.mjs`; the Firestore reads are
 in `lib/seasonCompletionServer.js`.
 
+### A card's buttons open the season the card is about
+
+**Final standings** and **Season stats** were, at first, links to `/standings` and `/stats` — and
+both of those pages read the **Game ▸ Series ▸ Season ▸ Class** menus at the top of the screen. So a
+card announcing the end of Season 4 of one series opened the standings of whatever the reader had
+selected, which could be Season 6 of another series entirely. That isn't a link; it's the app
+contradicting the sentence directly above the button.
+
+Every card now knows the season it is about. `messageScope()` in `lib/messages.js` reads the
+game/series/season ids the message was posted with and turns them into a scope, and the button opens
+there. It applies to every scoped destination, not just the two: the welcome card's **See your series
+schedule** and **League calendar** had the identical defect. `Sign-ups` and `Your profile` are lists
+of their own and are left alone.
+
+**All three ids or nothing.** The levels resolve top-down — a game to find the series under, a series
+to find the season under — so naming a season without its game would leave the reader's own game
+selected, fail to find the series beneath it, and land them somewhere arbitrary. A message missing
+any of the three (one written before this, or whose season has since been deleted) claims no scope
+and its buttons stay the plain links they always were. The **class** travels by *name*, which is its
+cross-season identity and what the Class menu is remembered by; a card naming two classes (a driver
+entered in both) opens **All Classes**, the season-wide table that contains all of their racing —
+picking the first of the two would be a guess, and wrong half the time.
+
+**The href alone is not enough**, and this is the part worth knowing. A scope link
+(`scopeHref()` in `lib/scopeLink.js`) only opens on its scope when the page is loaded *cold* — that
+is when `LeagueProvider` reads the query string. Follow the same link from inside the app and the
+provider never remounts, never re-reads the URL, and re-stamps the address bar from the selection it
+already holds: the reader lands on the right page at the wrong season. So each button does both — the
+href carries the scope for a new tab, a copied link or a cold load, and the click calls
+`selectScope()` on the provider for the ordinary in-app navigation. Both routes set the same four
+values, so it doesn't matter which one a reader takes.
+
+`selectScope()` sets all four levels **together**, and that is what makes it land. Each tier
+re-resolves itself when its parent's list arrives, keeping its current value when the list contains
+it and falling back to the first row when it doesn't — so a season set on its own, ahead of its
+series and game, would be discarded as "not in this list" a moment later. Set together, every tier
+finds itself.
+
+One case leaves the SPA on purpose. A player's inbox is **theirs, not one league's**, so somebody
+racing in two leagues reads both leagues' decisions on one board — and a season id from the other
+league means nothing to the menus here. A card from another league renders a plain `<a>` instead:
+the page reloads, the provider mounts, and it reads the league out of the link along with the scope,
+which is the only path that switches league and drills into a season in one step.
+
+Covered by `lib/__tests__/messageLinks.test.jsx`, which mounts the button — the href is what a new
+tab, a copied link and a cold load all resolve from, and it is only ever right if the component
+actually puts the scope into it.
+
 ### Capping how many drivers may run a car
 
 A car's line in the Car Selection list can carry a limit after a pipe — `Ferrari 296 GT3 | 4`.

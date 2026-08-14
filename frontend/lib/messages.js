@@ -155,14 +155,18 @@ function seasonPath(c = {}) {
     .join(" › ") || "that season";
 }
 
-// The classes one driver was in, as they'd say them: "Pro", or "Pro & Amateur"
-// for an entry sitting in two. `class_name` (singular) is read as well, so a
-// context written by any of the other kinds renders here too.
-function classLabel(c = {}) {
-  const names = Array.isArray(c.class_names) ? c.class_names
+// The classes named on a context, cleaned up. `class_name` (singular) is read
+// as well, so a context written by any of the other kinds is understood too.
+function classNameList(c = {}) {
+  const raw = Array.isArray(c.class_names) ? c.class_names
     : c.class_names ? [c.class_names]
     : c.class_name ? [c.class_name] : [];
-  return names.map(n => String(n ?? "").trim()).filter(Boolean).join(" & ");
+  return raw.map(n => String(n ?? "").trim()).filter(Boolean);
+}
+
+// The same, as they'd be said: "Pro", or "Pro & Amateur" for an entry in two.
+function classLabel(c = {}) {
+  return classNameList(c).join(" & ");
 }
 
 export function messageKind(msg) {
@@ -187,6 +191,46 @@ export function messageTone(msg) {
 
 export function messageActions(msg) {
   return messageSpec(msg).actions;
+}
+
+// ── Where a card's buttons actually go ─────────────────────────────────────
+//
+// The game/series/season/class a message is ABOUT, in the shape a scope link
+// takes (see lib/scopeLink.js), or null when it doesn't name one.
+//
+// This is what makes "Final standings" on a season-completed card open THAT
+// season's standings rather than whichever season the menus at the top of the
+// page are set to. Every page those buttons point at — Standings, Stats,
+// Schedule, the Calendar — reads the selected scope, so a card that says
+// "Season 4 of Formula Phoenix is over" and then shows you Season 6 of another
+// series is worse than no button at all: it looks like the app disagreeing with
+// itself about which season it just told you about.
+//
+// ALL THREE IDS OR NOTHING. The levels resolve top-down — a game to load its
+// series from, a series to load its seasons from — so naming a season without
+// its game would leave the reader's own game selected, fail to find the series
+// under it, and land them somewhere arbitrary. A message missing any of the
+// three (one written before this, or whose season was deleted) returns null and
+// its buttons stay the plain links they always were.
+export function messageScope(msg) {
+  const c = msg?.context || {};
+  const game = String(c.game_id ?? "").trim();
+  const series = String(c.series_id ?? "").trim();
+  const season = String(c.season_id ?? "").trim();
+  if (!game || !series || !season) return null;
+  // The class travels by NAME — that's its cross-season identity, and what the
+  // Class menu is remembered by (see components/LeagueProvider.jsx).
+  const names = classNameList(c);
+  return {
+    game,
+    series,
+    season,
+    // One class named is that class's own table. None named, or two (a driver
+    // entered in both), is All Classes — the season-wide view, which contains
+    // all of their racing either way. Picking the first of two would be a guess,
+    // and a wrong one half the time.
+    class: names.length === 1 ? names[0] : "",
+  };
 }
 
 // The admin's own words attached to the decision — a deny reason, a note on why

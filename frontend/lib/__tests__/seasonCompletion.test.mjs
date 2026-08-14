@@ -23,7 +23,10 @@ import assert from "node:assert";
 import {
   completionContext, completionRecipients, seasonJustCompleted,
 } from "../seasonCompletion.js";
-import { messageActions, messageTitle, messageTone, unreadByPlayer } from "../messages.js";
+import {
+  messageActions, messageScope, messageTitle, messageTone, unreadByPlayer,
+} from "../messages.js";
+import { scopeHref } from "../scopeLink.js";
 
 let n = 0;
 const check = (label, got, want) => { n++; assert.deepStrictEqual(got, want, `${label}: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`); };
@@ -154,6 +157,16 @@ check("a class_name written singular renders too",
 check("a season ending is neither good news nor bad", messageTone(card), "info");
 check("it points at the two places the racing still lives",
   messageActions(card), ["standings", "stats"]);
+
+// And both of those pages read the menus at the top of the screen, so the card
+// has to carry its own scope or the buttons open THIS season's card on
+// WHATEVER season the reader had selected. The context built above is what
+// makes that work end to end.
+check("the context it posts is enough to open the right standings",
+  messageScope(card), { game: "g1", series: "sr1", season: "s1", class: "Pro" });
+check("which is a link straight to them",
+  scopeHref("/standings", messageScope(card)),
+  "/standings?game=g1&series=sr1&season=s1&class=Pro");
 
 // And it's dismissible like every other card: posted unread, so the board draws
 // it open with a "Got it" button, and read once the player presses it.
