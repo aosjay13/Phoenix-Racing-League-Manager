@@ -15,7 +15,9 @@ import {
 //
 // Everything an admin does TO somebody now says so here: a sign-up approved or
 // denied, a car number granted or refused, a driver profile linked, a removal
-// from a season's roster. Before this, an admin's decision was a state change
+// from a season's roster, a season of theirs marked complete (which otherwise
+// showed only as their Series Information row silently going away — see
+// lib/seasonCompletion.js). Before this, an admin's decision was a state change
 // on a document and nothing else — the queue emptied and the player was left to
 // infer what had happened from a roster they might not think to look at. Being
 // *removed* from a season was the worst of them: entirely silent, and the one
@@ -39,6 +41,10 @@ const ACTIONS = {
   signups: { href: "/signups", label: "📝 Go to Sign-ups" },
   myseries: { href: "/signups", label: "📝 Your series" },
   profile: { href: "/profile", label: "👤 Your profile" },
+  // Where a finished season points. It has nothing left to answer, so the two
+  // places its racing still lives are the only useful destinations.
+  standings: { href: "/standings", label: "🏆 Final standings" },
+  stats: { href: "/stats", label: "📊 Season stats" },
 };
 
 export function MessageBoard() {

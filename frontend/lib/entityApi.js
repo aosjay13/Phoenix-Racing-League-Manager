@@ -140,7 +140,19 @@ export function makeCollectionRoutes({ collection, parentField, fields, sortFiel
   return { GET, POST };
 }
 
-export function makeDocRoutes({ collection, fields, normalize = null }) {
+// `afterUpdate` is an optional last step, run once the write has landed. It's
+// handed `{ id, before, updates, user, request }` — the document as it was and
+// the fields that actually changed it, which is what lets a hook tell a
+// TRANSITION apart from a save that happened to include the same value again.
+//
+// It runs AFTER the update and never affects the response: whatever it throws
+// is logged and swallowed, because by the time it runs the admin's decision is
+// already recorded and failing to announce a decision must not undo it. That's
+// the same rule postMessage() has always followed, and it's why the one hook
+// using this — a season being marked complete telling the drivers who raced it,
+// see lib/seasonCompletionServer.js — belongs here rather than in the button
+// that happens to be the usual way to press it.
+export function makeDocRoutes({ collection, fields, normalize = null, afterUpdate = null }) {
   const PATCH = withAdmin(async (request, { params }, user) => {
     const body = await request.json();
     const updates = {};
@@ -175,6 +187,17 @@ export function makeDocRoutes({ collection, fields, normalize = null }) {
       }, { status: guarded.stripped.length ? 403 : 400 });
     }
     await ref.update(guarded.updates);
+
+    if (afterUpdate) {
+      try {
+        await afterUpdate({
+          id: params.id, before: doc.data(), updates: guarded.updates, user, request,
+        });
+      } catch (err) {
+        console.error(`After-update hook failed for ${collection}/${params.id}`, err);
+      }
+    }
+
     return NextResponse.json({ id: params.id, ...doc.data(), ...guarded.updates });
   });
 

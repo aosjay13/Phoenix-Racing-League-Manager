@@ -20,6 +20,12 @@ import { rowInScope } from "@/lib/carSelection";
 // The season's own page still opens from a direct link and still says
 // "Season over".
 //
+// The row leaving is no longer the only sign a player gets that their season
+// ended. Marking one complete now posts them a card on the message board above
+// — "Season completed — game › series › season › class", dismissible like every
+// other one — so the disappearance is explained rather than left to look like
+// the app losing their entry. See lib/seasonCompletion.js.
+//
 // So it renders for a signed-in player when, WITHIN the selected scope, either:
 //   • they're on the roster of a running season that requires a car lock-in, or
 //   • there's a season open to sign up for.

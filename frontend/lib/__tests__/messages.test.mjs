@@ -97,6 +97,16 @@ check("a refused number says what they're still running",
   "You're still running #42. You can ask for a different one any time.");
 check("a message with no names at all still names something",
   messageTitle({ kind: "roster_removed" }), "You've been taken off the roster for that season");
+// The end of a season names the whole path down to the class, because "your
+// season is over" is no use to somebody racing in three of them. The rest of
+// this kind — who gets told, and only on the transition — is in
+// seasonCompletion.test.mjs.
+check("a finished season names game › series › season › class",
+  messageTitle(msg({
+    kind: "season_completed",
+    context: { game_name: "iRacing", series_name: "Formula Phoenix", season_name: "Season 4", class_names: ["Pro"] },
+  })),
+  "Season completed — iRacing › Formula Phoenix › Season 4 › Pro");
 check("a claim approval names the driver",
   messageTitle(msg({ kind: "claim_approved", context: { driver_name: "J. May" } })),
   "Your account is now linked to J. May");
