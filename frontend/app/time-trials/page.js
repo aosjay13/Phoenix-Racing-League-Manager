@@ -35,7 +35,7 @@ function StatusBadge({ trial }) {
 function TrialRow({ trial, onDelete, isAdmin }) {
   const laps = trial.max_laps ? `${trial.max_laps} lap max` : "Unlimited laps";
   return (
-    <div className="list-row linked">
+    <div className="list-row linked actions-inline">
       <Link href={`/time-trials/${trial.id}`} className="list-row-name" style={{ textDecoration: "none" }}>
         <strong>{trial.name}</strong>
         <span>
@@ -168,7 +168,7 @@ export default function TimeTrialsHubPage() {
           </p>
         </div>
       ) : (
-        <div className="list-rows list-row-wrap wide" style={{ marginTop: 18 }}>
+        <div className="list-rows" style={{ marginTop: 18 }}>
           {rows.map(t => <TrialRow key={t.id} trial={t} isAdmin={isAdmin} onDelete={setDeleting} />)}
         </div>
       )}
