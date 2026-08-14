@@ -760,6 +760,19 @@ export function isQualifying(r) {
   return r.session_type === "qualifying";
 }
 
+// The session types that ARE the race — a standard race session and a heat
+// weekend's Feature. Everything else an event can hold (Qualifying, the heats,
+// the consolation / B-Main) is a preliminary run on the way to one of these.
+//
+// Screens that list "the races somebody ran" filter on this, so a heat night
+// reads as the one event it was rather than five rows of undercard. Results
+// with no type recorded (older data) are standard races, as everywhere else.
+const MAIN_EVENT_SESSION_TYPES = new Set(["race", "feature"]);
+
+export function isMainEvent(r) {
+  return MAIN_EVENT_SESSION_TYPES.has(r?.session_type || "race");
+}
+
 // Starting-grid info for a driver, from Qualifying sessions only — Poles and
 // Average Start never look at anything recorded on a race result.
 function startInfo(qualResults) {

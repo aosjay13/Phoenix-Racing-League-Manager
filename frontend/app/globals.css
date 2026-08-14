@@ -4,9 +4,15 @@
   --bg-1: #13131e;
   --bg-surface: #1a1a28;
   --bg-elevated: #20202f;
+  /* Three steps of text, all of them readable. The dim end of this scale used
+     to sit at #9090a8 / #5a5a72, which on a #0d0d14 page put the tertiary ink
+     at roughly 2.9:1 — under the 4.5:1 small text needs, and it is the small
+     text (labels, dates, hints, the second line of a table cell) that these
+     two carry. Brightened until every step clears AA on the elevated surfaces
+     as well as the page, with the hierarchy between them kept. */
   --ink-0: #eeeef5;
-  --ink-1: #9090a8;
-  --ink-2: #5a5a72;
+  --ink-1: #bfbfd4;
+  --ink-2: #9a9ab4;
   --accent-red: #e63946;
   --accent-red-dim: rgba(230, 57, 70, 0.15);
   --accent-cyan: #00b4d8;

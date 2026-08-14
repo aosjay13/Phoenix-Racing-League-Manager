@@ -35,9 +35,11 @@ const THEMES = {
     name: "Dark",
     pageBg: "#0b0b12",
     cardBg: "linear-gradient(160deg, #14141f 0%, #0d0d14 100%)",
+    // The same three inks the app uses (globals.css), so an exported graphic
+    // reads as crisply as the screen it was taken from.
     ink: "#eeeef5",
-    muted: "#9090a8",
-    faint: "#5a5a72",
+    muted: "#bfbfd4",
+    faint: "#9a9ab4",
     border: "rgba(255,255,255,0.09)",
     headBg: "rgba(0,180,216,0.12)",
     headInk: "#7fe3ff",

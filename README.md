@@ -222,13 +222,16 @@ throwaway key (`openssl genrsa`) — the emulator never checks it.
 3. **Drivers** — browse every registered player; open a profile for three tabs of their record:
    - **Career Stats** — the totals, per game and combined across all games (starts, wins,
      podiums, poles, average finish, titles, etc.), plus every championship won and a by-game
-     breakdown.
-   - **Race History** — *every individual race they have started*, newest first, with the start
+     breakdown. Each championship is named in full — **game › series › season › class** — so a
+     title reads as the thing that was won rather than as a bare "Season 3", and a driver who took
+     their class *and* the overall in one season sees both crowns listed, because both were won.
+   - **Race History** — *every main event they have started*, newest first, with the start
      and finish position, laps, laps led and points they scored in each. Filter it by **game** and
-     by **season**, and click any race to open that event's full results — so you can go from a
-     driver's profile straight to a specific race of theirs without knowing which season it was
-     in. An event that ran several sessions (heats, a consolation, a feature) lists each session
-     as its own row, because each is scored on its own.
+     by **season**, and click **🏁 the race** to open that event's full results — so you can go from
+     a driver's profile straight to a specific race of theirs without knowing which season it was
+     in. Only the races are listed: Qualifying, heats and the consolation/B-Main are left off, so a
+     heat night reads as the one event it was instead of five rows of undercard. Every session is
+     still there on the event's own page, and none of this touches the career totals.
    - **Per Track Stats** — the same career broken down by venue, each track linking to its own
      page.
 4. **Sign-ups** — a menu of its own in the sidebar, and the one screen in the app written for
@@ -1082,6 +1085,23 @@ to the label's first line — the shape used by every "switch + explanation" row
 `check-row-center`, for a one-line label that has nothing to align to the top of. Use those rather
 than re-inlining flex on the wrapper.
 
+### Three inks, and all of them are meant to be read
+
+Every piece of text in the app takes its colour from one of three tokens at the top of
+`app/globals.css` — `--ink-0` for the thing itself, `--ink-1` for supporting copy, `--ink-2` for the
+small print (labels, dates, hints, the second line of a table cell, a metric's caption). There is no
+fourth grey, and no screen hand-rolls one: change these three and the whole app changes with them,
+which is the point of them being tokens.
+
+The dim end used to sit at `#9090a8` / `#5a5a72`, which put `--ink-2` at about **2.9:1** on the page
+and **2.4:1** on an elevated card — well under the 4.5:1 small text needs, and small text is exactly
+what it carries. The scale now runs `#eeeef5` / `#bfbfd4` / `#9a9ab4`, which clears AA on every
+surface in the app (roughly 16.8 / 10.7 / 7.1 against the page, 13.9 / 8.9 / 5.9 against
+`--bg-elevated`) while keeping three visibly distinct steps. The share-graphic exporter mirrors the
+same three in its dark theme (`components/ShareGraphicModal.jsx`), so a graphic reads like the
+screen it was taken from. Anything new that needs a muted colour uses `--ink-1` or `--ink-2` rather
+than a one-off hex, or the next pass over contrast will miss it.
+
 ### The global calendar
 
 `/calendar` reads the **same** endpoint the Schedule's cross-season feed does — `GET /api/schedule`
@@ -1213,13 +1233,22 @@ the same pass, so the profile costs no extra reads. One row per **race session**
 started, carrying the race, its date and venue, the season/series/game it belonged to, the class
 they ran in, their start and finish positions, laps, laps led, status and points.
 
-Qualifying gets a row of its own, because it scores points of its own — leaving it out would print
-a history whose points don't add up to the career total above it. Its position is a grid slot, so it
-reports as a start with no finish. A race row still shows what it started from: the result's own
-`start_pos` where the grid recorded one, since that's what the driver actually started from after
-any penalty, else their qualifying position. Rows come back newest first (by race date, then round
-number), and each links to `/races/<id>` — the same event page the Schedule opens — so a driver's
-profile is a way *into* every race they ran.
+Qualifying gets a row of its own in the DATA, because it scores points of its own. Its position is a
+grid slot, so it reports as a start with no finish. A race row still shows what it started from: the
+result's own `start_pos` where the grid recorded one, since that's what the driver actually started
+from after any penalty, else their qualifying position. Rows come back newest first (by race date,
+then round number), and each links to `/races/<id>` — the same event page the Schedule opens — so a
+driver's profile is a way *into* every race they ran.
+
+**The profile shows the main events only.** The Race History tab narrows the array to the sessions
+that ARE the race — a standard `race` session and a heat weekend's `feature` — via `isMainEvent`
+(`lib/standings.js`); Qualifying, the heats and the consolation/B-Main are left off it. A heat night
+would otherwise put five rows of undercard on a profile for one night of racing, and the tab is read
+as "what races has this driver run?". Nothing is lost: every session is still on the event's own page,
+and career totals, points and stats are computed from the full set — this is a view filter and
+nothing else, applied once so the tab's count, its game/season menus and its table all agree. (The
+one thing it gives up is that the points column no longer sums to the career total printed above
+it, since the sessions it hides scored too. The copy above the table says so.)
 
 ### The pending request queue
 
@@ -2348,14 +2377,22 @@ profile, the stats tables and team pages alike.
 - The **overall** title is awarded on top only when the season's *Enable Overall Championship*
   toggle is on. Switched off, the combined table is explicitly unofficial and no overall champion is
   awarded, displayed or counted — the class winners are that season's only champions.
-- **Double crown**: winning a class *and* the overall in the same season is **one** championship,
-  not two, so a tally can't be inflated by a season's worth of scoring being counted twice. Both
-  crowns are still recorded, and the driver profile names them ("Season 4 — Overall + GT3").
+- **Double crown**: winning a class *and* the overall in the same season is **two** championships,
+  because two crowns were won — collapsing them to one used to make the overall title vanish from
+  the records in exactly the case where it is most often won, since the outright leader is usually a
+  class winner too. Both are recorded, and the driver profile lists each on its own line.
 
 Scope decides which crowns count: inside a class only that class's title does, while the unscoped
 view counts every crown — which is what carries class championships up to the global tally.
 Championships appear as a column on Stats, on the driver profile (with a Championships table listing
-every season won), and as a **Most Championships** record.
+every crown won), and as a **Most Championships** record.
+
+**A title is named in full.** The profile's Championships table prints
+**game › series › season › class** — "GT7 › Phoenix GT › Season 4 › GT3" — rather than the season
+name alone. A league runs a "Season 3" in every series it holds, so the season name on its own names
+a title nobody can place; the whole path says which one was won. `titles_detail` therefore carries
+the series alongside the game and season (`lib/careerStatsServer.js`), and the table draws one row
+per crown, so its row count matches the Championships figure in the stats above it.
 
 **Championship tie-breakers.** Level on points, the higher-placed competitor is decided by one
 chain, applied in order until someone is ahead:

@@ -5,8 +5,32 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { api } from "@/lib/api";
-import { formatStat } from "@/lib/standings";
+import { formatStat, isMainEvent } from "@/lib/standings";
 import { formatRaceDate } from "@/lib/raceDate";
+
+// The full name of a championship: the game it was played on, the series and
+// season it was won in, and — for a class title — the class it was won in.
+// "Season 3" on its own names a title nobody can place; this reads as one.
+function titlePath({ game_name, series_name, season_name }, className = null) {
+  return [game_name, series_name, season_name, className].filter(Boolean).join(" › ");
+}
+
+// One row per CROWN rather than per season, because that's how they're counted:
+// a driver taking their class and the overall in the same season won two
+// championships, and each is its own line with its own full path.
+function crownRows(titles) {
+  const rows = [];
+  for (const t of titles) {
+    const classNames = t.class_names || [];
+    if (t.overall) rows.push({ key: `${t.season_id}-overall`, path: titlePath(t), crown: "Overall", double: classNames.length > 0 });
+    // The class name is already the last step of the path, so the badge only
+    // has to say which KIND of crown this was.
+    for (const c of classNames) {
+      rows.push({ key: `${t.season_id}-class-${c}`, path: titlePath(t, c), crown: "Class", double: t.overall });
+    }
+  }
+  return rows;
+}
 
 const STAT_LABELS = [
   ["starts", "Starts"], ["wins", "Wins"], ["podiums", "Podiums"], ["top5", "Top 5s"],
@@ -36,9 +60,13 @@ const TRACK_COLUMNS = [
   ["avg_finish", "Avg Finish"], ["laps_led", "Laps Led"],
 ];
 
-// Their whole race history, one row per race. `Pos` links through to the event
-// itself, so a profile is a way INTO every race the driver ran rather than a
-// dead end of totals.
+// Their race history, one row per race. The race name links through to the
+// event itself, so a profile is a way INTO every race the driver ran rather
+// than a dead end of totals.
+//
+// `rows` arrives already narrowed to the main events (see isMainEvent) — the
+// undercard an event runs on the way to its Feature is not what somebody
+// scrolling a driver's record is looking for.
 function RaceHistory({ rows }) {
   const [gameFilter, setGameFilter] = useState("all");
   const [seasonFilter, setSeasonFilter] = useState("all");
@@ -93,7 +121,8 @@ function RaceHistory({ rows }) {
         </div>
       </div>
       <p style={{ marginTop: 0, marginBottom: 12, color: "var(--ink-1)", fontSize: "0.88rem" }}>
-        Every race this driver has started, newest first. Click a race to open its full results.
+        Every main event this driver has started, newest first — click 🏁 any race to open its full
+        results. Qualifying, heats and consolations are left off; open the event itself to see those.
       </p>
 
       {shown.length === 0 ? (
@@ -120,8 +149,10 @@ function RaceHistory({ rows }) {
                 // on its own — the index keeps the keys distinct.
                 <tr key={`${r.race_id}-${r.session}-${i}`}>
                   <td className="driver-name-cell sticky-col" style={{ textAlign: "left" }}>
-                    <Link href={`/races/${r.race_id}`} style={{ color: "var(--accent-cyan)", fontWeight: 600 }}>
-                      {r.race_name}
+                    {/* The checkered flag marks the way through to the event's
+                        own results — the one thing a row is clicked for. */}
+                    <Link href={`/races/${r.race_id}`} title="Open this race's full results" style={{ color: "var(--accent-cyan)", fontWeight: 600 }}>
+                      🏁 {r.race_name}
                     </Link>
                     {r.session && <span style={{ color: "var(--ink-2)" }}> · {r.session}</span>}
                     <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.76rem" }}>
@@ -213,6 +244,13 @@ export default function DriverProfilePage() {
   const { profile, all_games, by_game, by_track = [], race_history = [], titles_detail = [], linked, skill_ratings_by_game = [], aliases = [], former_names = [] } = data;
   const selectedGame = gameFilter === "all" ? null : by_game.find(g => g.game_id === gameFilter);
   const stats = gameFilter === "all" ? all_games : selectedGame?.stats ?? all_games;
+  // Race History lists the races, not everything that ran on the way to them:
+  // Qualifying, the heats and the consolation/B-Main are dropped here, once, so
+  // the count on the tab, the game/season menus and the table all agree. Every
+  // session is still on the event's own page, and career totals are untouched —
+  // this is a view filter, nothing more.
+  const mainEvents = race_history.filter(isMainEvent);
+  const crowns = crownRows(titles_detail);
   // Games where this driver is shown under a different name than their profile
   // one — the names that appear on those games' standings, results and stats.
   const gameNames = by_game.filter(g => g.driver_game_name && g.driver_game_name !== profile.display_name);
@@ -360,15 +398,15 @@ export default function DriverProfilePage() {
         <button className={`tab${view === "career" ? " active" : ""}`} onClick={() => setView("career")}>Career Stats</button>
         <button className={`tab${view === "races" ? " active" : ""}`} onClick={() => setView("races")}>
           Race History
-          {race_history.length > 0 && (
-            <span style={{ marginLeft: 6, color: "var(--ink-2)", fontWeight: 400 }}>{race_history.length}</span>
+          {mainEvents.length > 0 && (
+            <span style={{ marginLeft: 6, color: "var(--ink-2)", fontWeight: 400 }}>{mainEvents.length}</span>
           )}
         </button>
         <button className={`tab${view === "tracks" ? " active" : ""}`} onClick={() => setView("tracks")}>Per Track Stats</button>
       </div>
 
       {view === "races" ? (
-        <RaceHistory rows={race_history} />
+        <RaceHistory rows={mainEvents} />
       ) : view === "career" ? (
         <>
           <div className="section-header">
@@ -436,25 +474,24 @@ export default function DriverProfilePage() {
         </>
       )}
 
-      {view === "career" && titles_detail.length > 0 && (
+      {view === "career" && crowns.length > 0 && (
         <>
           <div className="section-header"><h3>Championships</h3></div>
           <p style={{ marginTop: 0, color: "var(--ink-1)", fontSize: "0.85rem" }}>
-            Every season title won. A class championship counts the same as any other, and taking
-            both a class and the overall in one season is two championships — both crowns were won.
+            Every title won, named in full — game › series › season › class — so it's clear exactly
+            what was won. A class championship counts the same as any other, and taking both a class
+            and the overall in one season is two championships: both crowns were won, so both are listed.
           </p>
           <div className="table-wrap">
             <table className="stats-table">
-              <thead><tr><th style={{ textAlign: "left" }}>Season</th><th style={{ textAlign: "left" }}>Game</th><th style={{ textAlign: "left" }}>Won</th></tr></thead>
+              <thead><tr><th style={{ textAlign: "left" }}>Title</th><th style={{ textAlign: "left" }}>Crown</th></tr></thead>
               <tbody>
-                {titles_detail.map(t => (
-                  <tr key={`${t.season_id}`}>
-                    <td style={{ textAlign: "left" }}>🏆 {t.season_name}</td>
-                    <td style={{ textAlign: "left", color: "var(--ink-1)" }}>{t.game_name ?? "—"}</td>
+                {crowns.map(c => (
+                  <tr key={c.key}>
+                    <td style={{ textAlign: "left", fontWeight: 600 }}>🏆 {c.path}</td>
                     <td style={{ textAlign: "left" }}>
-                      {t.overall && <span className="badge" style={{ marginRight: 6 }}>Overall</span>}
-                      {t.class_names.map(c => <span key={c} className="badge" style={{ marginRight: 6 }}>{c}</span>)}
-                      {t.overall && t.class_names.length > 0 && (
+                      <span className="badge" style={{ marginRight: 6 }}>{c.crown}</span>
+                      {c.double && (
                         <span style={{ color: "var(--ink-2)", fontSize: "0.76rem" }}>double crown — counts twice</span>
                       )}
                     </td>

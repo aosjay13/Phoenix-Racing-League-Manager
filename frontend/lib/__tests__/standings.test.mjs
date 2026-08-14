@@ -9,6 +9,7 @@ import assert from "node:assert";
 import {
   calculateStandings, decorateRaceBonuses, decorateSessionFlags,
   resolveSeasonConfig, makeScorer, pointsFor, explainPoints, sessionScopeContext,
+  isMainEvent,
 } from "../standings.js";
 
 // race P1 100 / P2 90 / P3 80 · qualifying P1 10 / P2 5
@@ -323,6 +324,30 @@ check("qualifying adjustment", pointsFor({ ...q("e1", 1), points_adjustment: -4,
     sessionScopeContext({ seasons: [heatSeason], classes: [], entriesById: { e1: {} } }));
   check("a season default reaches the result", decorated[0].points_template_id, "t-heat");
   check("a season default turns heat points on", decorated[0].counts_points, true);
+}
+
+// ── 20. Which sessions ARE the race (the driver profile's Race History) ───
+// Scoring is untouched by this — every session still scores itself, above.
+// This is the line the *listing* screens draw: the Feature and a standard race
+// are the event, the undercard is not.
+{
+  check("a standard race is a main event", isMainEvent({ session_type: "race" }), true);
+  check("a Feature is a main event", isMainEvent({ session_type: "feature" }), true);
+  check("qualifying is not", isMainEvent({ session_type: "qualifying" }), false);
+  check("a heat is not", isMainEvent({ session_type: "heat" }), false);
+  check("a consolation is not", isMainEvent({ session_type: "consolation" }), false);
+  // Older results carry no type at all; they are the races they always were.
+  check("an untyped result is a main event", isMainEvent({}), true);
+
+  const weekend = [
+    { session: "Qualifying", session_type: "qualifying" },
+    { session: "Heat 1", session_type: "heat" },
+    { session: "Heat 2", session_type: "heat" },
+    { session: "B-Main", session_type: "consolation" },
+    { session: "Feature", session_type: "feature" },
+  ];
+  check("a five-session heat night lists as one race",
+    weekend.filter(isMainEvent).map(r => r.session), ["Feature"]);
 }
 
 

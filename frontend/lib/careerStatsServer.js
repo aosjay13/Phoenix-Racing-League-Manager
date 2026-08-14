@@ -180,6 +180,11 @@ export async function buildCareerProfile({ driverId = null, userId = null }) {
       titleList.push({
         season_id: seasonId,
         season_name: season.name ?? "Season",
+        // A season name on its own ("Season 3") names no title anybody can
+        // place. The series it ran in and the game it was played on travel
+        // with it so the profile can print the whole thing.
+        series_id: season.series_id ?? null,
+        series_name: seriesById[season.series_id]?.name ?? null,
         game_id: season.game_id ?? null,
         game_name: games[season.game_id]?.name ?? null,
         overall: mineRec.overall,
@@ -243,8 +248,8 @@ export async function buildCareerProfile({ driverId = null, userId = null }) {
     // Every race this driver has started, newest first, each linking to the
     // event's own results page — the full race history behind the totals.
     race_history,
-    // Every championship won, so the profile can name them ("Season 4 —
-    // Overall + GT3") rather than just showing a count.
+    // Every championship won, so the profile can name them in full ("GT7 ›
+    // Phoenix GT › Season 4 › GT3") rather than just showing a count.
     titles_detail: titleList,
     seasons_raced: seasonIds.length,
   };
