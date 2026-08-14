@@ -90,7 +90,12 @@ export function DriverCreateModal({ seasonId, seriesName, initialName, defaultCl
         return;
       }
     }
-    saveEntry({ confirm: true });
+    // The check above read the pool this modal loaded. Unless the caller has
+    // ALREADY put the question to the admin (`confirmDuplicate`), let the API
+    // re-ask it against the pool as it stands — that's what catches a driver
+    // somebody else added while this dialog sat open. Its 409 is caught in
+    // saveEntry and raises the same prompt.
+    saveEntry({ confirm: confirmDuplicate });
   }
 
   return (

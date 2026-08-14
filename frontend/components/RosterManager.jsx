@@ -549,7 +549,12 @@ export function RosterManager() {
         return;
       }
     }
-    addDriver(e, { confirmDuplicate: true });
+    // The local check just passed — but it read the pool this page loaded, not
+    // the pool as it is now. So a TYPED name goes to the API unconfirmed and
+    // lets it re-check against live data (a 409 lands in the catch above and
+    // raises the same prompt). Somebody picked out of "Link To Existing Driver"
+    // has already been identified by hand and needs no second question.
+    addDriver(e, { confirmDuplicate: !!pullKey });
   }
 
   async function saveTeam(e) {

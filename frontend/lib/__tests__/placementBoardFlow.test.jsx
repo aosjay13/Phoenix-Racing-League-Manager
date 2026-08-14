@@ -20,6 +20,7 @@ import { PlacementDestinationsModal } from "@/components/PlacementDestinationsMo
 import { PlacementTargetFields } from "@/components/PlacementTargetFields";
 import { AddDriverToTrial } from "@/components/AddDriverToTrial";
 import { DriverMergeTool } from "@/components/DriverMergeTool";
+import { ImageUpload } from "@/components/ImageUpload";
 import { PLACEMENT_METRICS, buildBuckets, previewAutoPlace } from "@/lib/placements";
 
 let n = 0;
@@ -113,5 +114,16 @@ render("AddDriverToTrial", (
   <AddDriverToTrial pool={[]} drivers={[]} games={{}} taken={new Set()} onAdd={() => {}} />
 ));
 render("DriverMergeTool", <DriverMergeTool />);
+
+// ── Owner-only uploads ──────────────────────────────────────────────────────
+// Rendered with no AuthProvider above it, so the auth context is its default:
+// role "player". Every non-Owner must get NOTHING — no input, no drop zone, no
+// placeholder that reads as a control which might work.
+const asNonOwner = render("ImageUpload · non-Owner", (
+  <ImageUpload label="Game Logo" kind="game-logo" value="https://cdn/logo.png" onUploaded={() => {}} />
+));
+ok("a non-Owner sees no upload field at all", asNonOwner === "");
+ok("…not even the label", !asNonOwner.includes("Game Logo"));
+ok("…and no file input anywhere", !asNonOwner.includes("type=\"file\""));
 
 console.log(`placementBoardFlow: ${n} assertions passed`);

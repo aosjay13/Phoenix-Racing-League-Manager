@@ -83,7 +83,20 @@ export async function ensureDriverId({ driverId, name, user_id, pool = null, gam
   const report = await resolveDriverIdentity({ name, user_id, pool, games });
   if (report.status === "linked") return report.driver_id;
   if (report.status !== "none" && !confirmDuplicate) throw new DuplicateDriverError(report, name);
-  return (await createDriverProfile({ name, user_id, confirmDuplicate: true })).id;
+  // `confirmDuplicate` is passed STRAIGHT THROUGH, and that matters more than it
+  // looks. This used to hard-code `true`, which meant every screen in the app
+  // told the API "the question has been answered" — including the case where
+  // the only thing that had answered it was this page's own copy of the pool.
+  // A copy loaded ten minutes ago cannot know about the driver another admin
+  // added since, so the one check that CAN see them never ran, and two admins
+  // adding the same person at the same time each got their own profile.
+  //
+  // Left false, POST /api/drivers re-asks against the pool as it stands and
+  // answers 409; every caller that passes false already catches that (see
+  // isDuplicateDriverError) and shows the same prompt it would have shown
+  // locally. Callers resolving somebody who demonstrably already exists — a
+  // merge, a link, a team line-up — still pass true and are unaffected.
+  return (await createDriverProfile({ name, user_id, confirmDuplicate })).id;
 }
 
 // Create a pool driver outright, returning the new document.

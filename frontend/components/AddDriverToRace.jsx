@@ -37,7 +37,15 @@ import { DuplicateDriverPrompt } from "@/components/DuplicateDriverPrompt";
 // type-then-Enter is the whole interaction), Escape closes the list. Focus
 // stays in the box after an add and the query clears itself, so the next name
 // can be typed straight away.
-export function AddDriverToRace({ seasonId, seriesName, existingNames, defaultClassId = "", onCreated, onError }) {
+// `onNotice` is how this says WHICH of the two things just happened. The list
+// explains a match before you click it, but once the row is in the grid an
+// existing driver and a brand-new one look identical — and "did that just make
+// a second Ryan?" is the exact doubt this whole feature exists to remove. So an
+// add that landed on somebody already in the app says so, by name and by the
+// name it recognised them through.
+export function AddDriverToRace({
+  seasonId, seriesName, existingNames, defaultClassId = "", onCreated, onError, onNotice = () => {},
+}) {
   const [drivers, setDrivers] = useState([]);   // the global driver pool
   const [accounts, setAccounts] = useState([]); // player accounts with no driver profile yet
   const [games, setGames] = useState({});       // game_id -> name, to label an in-game match
@@ -171,6 +179,7 @@ export function AddDriverToRace({ seasonId, seriesName, existingNames, defaultCl
           ? await api(`/api/entries/${mine.id}`, { method: "PATCH", body: { class_ids: [...have, defaultClassId] } })
           : mine;
         onCreated(entry);
+        onNotice(`${entry.name || candidate.name} is already on this season's roster — their existing entry was used, not a new one.`);
       } else {
         const body = {
           name: candidate.name, team_id: "", season_id: seasonId, driver_id: driverId,
@@ -178,6 +187,13 @@ export function AddDriverToRace({ seasonId, seriesName, existingNames, defaultCl
         };
         if (candidate.user_id) body.user_id = candidate.user_id;
         onCreated(await api("/api/entries", { method: "POST", body }));
+        // Say where the driver came from. A row that quietly appeared is the
+        // same row whether it belongs to somebody with eight seasons of history
+        // or to a profile minted a second ago.
+        const known = candidate.driver_id ? drivers.find(d => d.id === candidate.driver_id) : null;
+        onNotice(known
+          ? `Added ${known.name} from the driver database${candidate.via ? ` — matched on their ${candidate.via.label}` : ""}. Their results all stay on that one profile.`
+          : `${candidate.name} is new to the league — a driver profile was created for them.`);
       }
       setQuery("");
       setOpen(false);

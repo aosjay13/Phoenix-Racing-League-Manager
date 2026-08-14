@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { Modal } from "@/components/Modal";
 import { PlacementTargetFields } from "@/components/PlacementTargetFields";
@@ -18,7 +18,7 @@ import { PlacementTargetFields } from "@/components/PlacementTargetFields";
 // find a separate checkbox to say so again is how a night ends up with
 // divisions assigned and no roster built at the end of it.
 export function PlacementDestinationsModal({
-  trial, seriesList = [], classes = [], seasonName = "", onClose, onSaved,
+  trial, seriesList = [], placementSeries = [], classes = [], seasonName = "", onClose, onSaved,
 }) {
   const [form, setForm] = useState({
     class_ids: trial.class_ids || [],
@@ -27,6 +27,21 @@ export function PlacementDestinationsModal({
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+
+  // What's on offer is the selected GAME's series, as asked. But a session is
+  // opened by id and routinely belongs to another game than the one the top bar
+  // happens to be on — and a series this night ALREADY places into would then
+  // be missing from the list, leaving a ticked destination the admin can see on
+  // the board and cannot untick. So any series the trial already names is
+  // folded in (the same trick the Complete dialog uses for its own season),
+  // and every destination stays reachable whatever the top bar is showing.
+  const offered = useMemo(() => {
+    const known = new Set(seriesList.map(s => s.id));
+    const extra = placementSeries
+      .filter(s => s.series_id && !known.has(s.series_id))
+      .map(s => ({ id: s.series_id, name: s.series_name || "Series" }));
+    return [...seriesList, ...extra];
+  }, [seriesList, placementSeries]);
 
   const nothingPicked = !form.class_ids.length && !form.series_ids.length;
 
@@ -54,7 +69,7 @@ export function PlacementDestinationsModal({
 
       <PlacementTargetFields
         idPrefix="tt_dest"
-        seriesList={seriesList}
+        seriesList={offered}
         classes={classes}
         seasonId={trial.season_id || ""}
         seasonName={seasonName}

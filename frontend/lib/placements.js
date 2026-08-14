@@ -25,7 +25,7 @@
 // of those, or a class within one of those, and the rest of the app already
 // understands both (see lib/timeTrials.js).
 
-import { placedOrder, rankEntries, splitEvenly } from "@/lib/timeTrials";
+import { rankEntries, splitEvenly } from "@/lib/timeTrials";
 
 // A bucket's identity: the (series, class) pair a driver placed there carries.
 // Both halves are optional — a series with no divisions inside it is a bucket,
@@ -36,6 +36,24 @@ export function bucketKey(seriesId = "", classId = "") {
 
 export function bucketKeyForRow(row = {}) {
   return bucketKey(row.assigned_series_id, row.assigned_class_id);
+}
+
+// Which of a season's own classes this session places into.
+//
+// "Nothing ticked" and "nothing of MINE ticked" are different answers, and
+// conflating them is how phantom columns got onto the board. Destinations can
+// name classes inside ANOTHER series' season, so a night placing only into
+// those carries a `class_ids` full of ids this season doesn't own — read as
+// "none picked", that fell back to offering every class it does own, and the
+// admin got columns they had explicitly not asked for.
+//
+// So: an EMPTY list means "never chosen" and still offers them all (which is
+// what every session created before destinations existed relies on); a
+// non-empty list is honoured exactly, even when none of it is from here.
+export function pickedClasses(classes = [], classIds = []) {
+  if (!classIds.length) return classes;
+  const picked = new Set(classIds.map(String));
+  return classes.filter(c => picked.has(String(c.id)));
 }
 
 // The trays on the board, in the order they're drawn — which is the order the
@@ -204,11 +222,14 @@ export function previewAutoPlace(rows = [], buckets = [], { key = "best" } = {})
     ...b,
     count: Object.values(assignment).filter(k => k === b.key).length,
   }));
-  const ranked = placedOrder(rows, { key });
   return {
     assignment,
     counts,
-    placing: ranked.length,
+    // How many drivers this will ACTUALLY move — not how many have a time.
+    // Those differ whenever there is nowhere to put them (no destinations
+    // ticked yet), and reporting the latter had the modal offering to "Place 12
+    // Drivers" while its own column counts all read zero.
+    placing: Object.keys(assignment).length,
     // Everyone the split leaves alone, by name, so "why is Dave still in the
     // pool?" is answered on the screen that caused it.
     noTime: rows.filter(r => !assignment[r.id]).map(r => r.name || "Unnamed"),

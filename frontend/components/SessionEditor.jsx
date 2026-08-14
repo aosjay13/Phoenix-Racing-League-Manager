@@ -2095,7 +2095,8 @@ export function SessionEditor({
       )}
 
       <AddDriverToRace seasonId={seasonId} seriesName={seriesName} existingNames={existingNames}
-        defaultClassId={pinnedClassId} onCreated={handleDriverAdded} onError={msg => showToast("error", msg)} />
+        defaultClassId={pinnedClassId} onCreated={handleDriverAdded}
+        onNotice={msg => showToast("success", msg)} onError={msg => showToast("error", msg)} />
 
       {pointsModal && (
         <PointsEditorModal

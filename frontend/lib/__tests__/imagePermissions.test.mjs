@@ -11,6 +11,7 @@
 // So this pins both: who may upload, and the difference between SENDING an
 // image and CHANGING one.
 import assert from "node:assert";
+import { readFileSync } from "node:fs";
 import {
   IMAGE_UPLOAD_ROLE, canUploadImages, imageFieldNames, stripImageFields,
 } from "../imagePermissions.js";
@@ -95,5 +96,30 @@ check("untouched when no image field is sent",
 const original = { name: "GT7", logo_url: "https://cdn/new.png" };
 stripImageFields(original, { fields, existing: stored });
 check("input is not mutated", original, { name: "GT7", logo_url: "https://cdn/new.png" });
+
+// ── Nothing gets past the gate by being forgotten ───────────────────────────
+//
+// The rule is enforced field by field, off the `image: true` marker in the
+// field spec — so an image field declared WITHOUT that marker is a silent hole:
+// the UI hides its upload button and the API cheerfully writes whatever any
+// Admin posts to it. That's not a mistake anyone would notice, so it's checked
+// here instead.
+//
+// Source-level on purpose: lib/entityApi.js imports next/server and the
+// Firebase Admin SDK, neither of which loads outside a request. What matters is
+// the declaration, and the declaration is what's read.
+const entityApi = readFileSync(new URL("../entityApi.js", import.meta.url), "utf8");
+const IMAGEY = /\b(\w*(?:logo|photo|image|avatar|banner)\w*)\s*:\s*(\{[^{}]*\})/gi;
+const declared = [...entityApi.matchAll(IMAGEY)];
+n++;
+assert.ok(declared.length >= 6, `expected the known image fields to be found, saw ${declared.length}`);
+for (const [, field, spec] of declared) {
+  check(`${field} is marked as an image`, /image\s*:\s*true/.test(spec), true);
+}
+// And the fields we know about are all still there — so a rename that quietly
+// drops one out of the scan is caught too.
+for (const field of ["logo_url", "track_logo_url"]) {
+  check(`${field} is still declared`, declared.some(([, name]) => name === field), true);
+}
 
 console.log(`imagePermissions: ${n} assertions passed`);

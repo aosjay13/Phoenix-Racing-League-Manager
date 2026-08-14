@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { driverAnswersTo, duplicateReport, searchDrivers } from "@/lib/driverMatch";
+import { driverAnswersTo, duplicateReport, matchReason, searchDrivers } from "@/lib/driverMatch";
 import { DuplicateDriverPrompt } from "@/components/DuplicateDriverPrompt";
 
 // Adding somebody to a time trial / placement sheet.
@@ -26,7 +26,9 @@ import { DuplicateDriverPrompt } from "@/components/DuplicateDriverPrompt";
 // resembles somebody already in the app, it asks first — one click to attach
 // the row to the driver it's really about, and their laps count toward the
 // person rather than a name.
-export function AddDriverToTrial({ pool = [], drivers = [], games = {}, taken, onAdd, disabled }) {
+export function AddDriverToTrial({
+  pool = [], drivers = [], games = {}, taken, onAdd, disabled, onNotice = () => {},
+}) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -101,7 +103,10 @@ export function AddDriverToTrial({ pool = [], drivers = [], games = {}, taken, o
 
   // "Add by name" asks the global pool first. `linked` means one driver
   // demonstrably answers to this name — that isn't a question, so the row is
-  // attached to them and the admin is spared a dialog.
+  // attached to them and the admin is spared a dialog. It is NOT spared the
+  // news, though: silently filing a night's laps under a profile whose name
+  // isn't the one that was typed is the sort of helpfulness that reads as a bug
+  // when somebody notices it later.
   function addByName(name) {
     const typed = String(name || "").trim();
     if (!typed) return;
@@ -109,7 +114,9 @@ export function AddDriverToTrial({ pool = [], drivers = [], games = {}, taken, o
     if (report.status === "none") return add({ name: typed });
     if (report.status === "linked") {
       const m = report.match;
-      return add({ name: m.name, driver_id: m.driver_id, user_id: m.user_id || "" });
+      add({ name: m.name, driver_id: m.driver_id, user_id: m.user_id || "" });
+      onNotice(`“${typed}” is ${m.name}, already in the app (${matchReason(m)}) — their laps go on that profile.`);
+      return;
     }
     setDupe({ name: typed, report });
   }
@@ -173,6 +180,15 @@ export function AddDriverToTrial({ pool = [], drivers = [], games = {}, taken, o
               ) : <>＋ Add &ldquo;{q}&rdquo; by name</>}
             </button>
           ))}
+          {/* Typing the name of somebody already on the sheet leaves nothing to
+              offer — they're filtered out of the matches, and "add by name"
+              would be a second row for the same person. Say so, rather than
+              dropping an empty box under the cursor. */}
+          {options.length === 0 && (
+            <div style={{ padding: 8, fontSize: "0.8rem", color: "var(--ink-2)" }}>
+              {exactExists ? "Already on this sheet." : "No matches."}
+            </div>
+          )}
         </div>
       )}
 

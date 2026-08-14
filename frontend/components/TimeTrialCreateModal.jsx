@@ -55,10 +55,19 @@ export function TimeTrialCreateModal({
           series_id: seriesId,
           season_id: seasonId,
           // Every ticked division belongs to a season — this session's, or the
-          // one behind a series it places into — so the picker's list is kept
-          // as it built it. A session with no season of its own can still name
-          // divisions, inside the series it places into.
-          class_ids: form.class_ids,
+          // one behind a series it places into — so a session with no season of
+          // its own can still name divisions, inside the series it places into.
+          //
+          // With no season selected, though, `classes` is what the top bar
+          // hands down at Game/Series scope: rows collapsed BY NAME across
+          // seasons, carrying a representative id from one of them (see
+          // /api/classes). Those ids belong to a season this trial isn't
+          // attached to, so they're dropped rather than stored as destinations
+          // this sheet can't resolve. Divisions ticked inside a placement
+          // series name a real season and survive either way.
+          class_ids: seasonId
+            ? form.class_ids
+            : form.class_ids.filter(id => !classes.some(c => c.id === id)),
         },
       });
       onCreated(trial);

@@ -15,7 +15,7 @@
 import assert from "node:assert";
 import {
   assignRowToBucket, autoPlace, bucketKey, bucketKeyForRow, buildBuckets,
-  groupRowsByBucket, placementProgress, previewAutoPlace,
+  groupRowsByBucket, pickedClasses, placementProgress, previewAutoPlace,
 } from "../placements.js";
 
 let n = 0;
@@ -143,5 +143,34 @@ check("an odd field fills the quicker division first", uneven.counts.map(c => c.
 check("the preview says how many it will place", uneven.placing, 3);
 check("…and who it won't", previewAutoPlace(rows, ownBuckets).noTime, ["Eve"]);
 check("no buckets means nothing is placed", autoPlace(rows, []), {});
+
+// ── Regressions ─────────────────────────────────────────────────────────────
+
+// Phantom columns. A night that places only into another series' season still
+// carries class ids — just not THIS season's — and reading that as "nothing
+// picked" put every class of this season on the board uninvited.
+const ownClasses = [{ id: "c-pro", name: "Pro" }, { id: "c-am", name: "Amateur" }];
+check("nothing ticked offers them all", pickedClasses(ownClasses, []), ownClasses);
+check("a ticked subset is honoured", pickedClasses(ownClasses, ["c-am"]), [ownClasses[1]]);
+check("ticks that all belong elsewhere offer NONE of this season's",
+  pickedClasses(ownClasses, ["c-gt3", "c-gt4"]), []);
+// The same, end to end: only the ticked division becomes a column.
+check("…so the board shows only what was ticked",
+  buildBuckets({
+    placementSeries: [gtSeries],
+    placementClasses: pickedClasses(ownClasses, ["c-gt3"]),
+    classIds: ["c-gt3"],
+    trialSeasonId: "sea-1",
+  }).map(b => b.label),
+  ["GT3"]);
+
+// Auto-Place must report what it will actually MOVE. Counting drivers who have
+// a time instead had the modal offering to "Place 4 Drivers" with nowhere to
+// put them and every column count reading zero.
+const nowhere = previewAutoPlace(rows, [], { key: "best" });
+check("nothing to place when there are no destinations", nowhere.placing, 0);
+check("…and the assignment is empty to match", nowhere.assignment, {});
+check("placing equals what the assignment actually holds",
+  previewAutoPlace(rows, ownBuckets, { key: "best" }).placing, 4);
 
 console.log(`placements: ${n} assertions passed`);

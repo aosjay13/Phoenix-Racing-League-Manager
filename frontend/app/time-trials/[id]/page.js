@@ -19,7 +19,7 @@ import {
   autoAssignClasses, autoAssignClassesWithinSeries, autoAssignSeries, averageLabel,
   normalizeLaps, rankEntries, summarizeEntries,
 } from "@/lib/timeTrials";
-import { assignRowToBucket, buildBuckets, placementProgress } from "@/lib/placements";
+import { assignRowToBucket, buildBuckets, pickedClasses, placementProgress } from "@/lib/placements";
 
 // One Time Trial session — the sheet.
 //
@@ -225,10 +225,10 @@ export default function TimeTrialPage() {
   );
   // The divisions this session places into, inside its OWN season: the ones
   // picked when it was created, falling back to every class the season runs.
-  const placementClasses = useMemo(() => {
-    const picked = (trial?.class_ids || []).map(cid => classes.find(c => c.id === cid)).filter(Boolean);
-    return picked.length ? picked : classes;
-  }, [trial?.class_ids, classes]);
+  const placementClasses = useMemo(
+    () => pickedClasses(classes, trial?.class_ids || []),
+    [trial?.class_ids, classes]
+  );
 
   // The classes a given row may be placed into — those of the season its roster
   // entry will actually be written to. A driver sorted into the Pro Series is
@@ -443,7 +443,9 @@ export default function TimeTrialPage() {
     showToast("success", `Sorted ${Object.keys(assignment).length} drivers into divisions by ${byTime()} time. Review, then Save.`);
   }
 
-  async function save() {
+  // Write the sheet. Returns whether it got there, so the callers below can
+  // decide whether to carry on.
+  async function save({ quiet = false } = {}) {
     setBusy(true);
     try {
       const payload = rows.map(r => ({
@@ -459,12 +461,30 @@ export default function TimeTrialPage() {
       // Saving is the natural moment to re-rank: the sheet settles into the
       // order the newly-entered laps actually put it in.
       reRank();
-      showToast("success", "Session saved.");
+      if (!quiet) showToast("success", "Session saved.");
+      return true;
     } catch (err) {
       showToast("error", err.message);
+      return false;
     } finally {
       setBusy(false);
     }
+  }
+
+  // Complete Session and Export to Qualifying both work from the sheet AS
+  // STORED — the roster run reads the trial's entries out of the database, it
+  // can't see this page's state. So an admin who spent a night dragging cards
+  // into divisions and pressed Complete without saving first built the roster
+  // from the placements as they were BEFORE any of it, and the dialog's
+  // preview looked plausible the whole way through.
+  //
+  // Nothing about that is the admin's mistake to make: the work is on screen,
+  // so it goes to the database before either dialog opens. If the write fails
+  // the error is shown and the dialog stays shut, rather than quietly
+  // proceeding on stale placements.
+  async function openAfterSaving(open) {
+    if (dirty && !(await save({ quiet: true }))) return;
+    open(true);
   }
 
   async function reopen() {
@@ -510,7 +530,7 @@ export default function TimeTrialPage() {
           {isAdmin && (
             <button className="btn btn-ghost" type="button" style={{ marginTop: 0 }}
               title="Copy these best laps onto a scheduled race as its official Qualifying results"
-              onClick={() => setExporting(true)}>
+              onClick={() => openAfterSaving(setExporting)} disabled={busy}>
               ⇥ Export to Qualifying
             </button>
           )}
@@ -521,7 +541,7 @@ export default function TimeTrialPage() {
           ) : (
             <button className="btn btn-primary" type="button" style={{ marginTop: 0 }}
               title="Close this session and, if you want, build the official roster from it"
-              onClick={() => setCompleting(true)}>
+              onClick={() => openAfterSaving(setCompleting)} disabled={busy}>
               ✓ Complete Session
             </button>
           ))}
@@ -813,10 +833,11 @@ export default function TimeTrialPage() {
             games={games}
             taken={new Set(rows.map(r => String(r.name || "").trim().toLowerCase()).filter(Boolean))}
             onAdd={addDriver}
+            onNotice={msg => showToast("success", msg)}
             disabled={busy}
           />
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 14, flexWrap: "wrap" }}>
-            <button className="btn btn-primary" type="button" style={{ marginTop: 0 }} disabled={busy} onClick={save}>
+            <button className="btn btn-primary" type="button" style={{ marginTop: 0 }} disabled={busy} onClick={() => save()}>
               {busy ? "Saving…" : "Save Session"}
             </button>
             <button className="btn btn-ghost" type="button" style={{ marginTop: 0 }} onClick={reRank}
@@ -870,8 +891,12 @@ export default function TimeTrialPage() {
             setSettingsOpen(false);
             setTrial(t => ({ ...t, ...updated }));
             // A season change brings a different set of divisions with it, so
-            // the sheet is re-read rather than patched.
-            load();
+            // the targets are re-read — but NOT the rows. Re-reading those threw
+            // away whatever had been typed or dragged since the last save, for
+            // a dialog that changed none of it. A placement that no longer
+            // matches any division comes back to the unplaced pool on its own
+            // (see groupRowsByBucket), which is the honest outcome anyway.
+            reloadTargets();
             showToast("success", "Session settings saved.");
           }}
         />
@@ -890,6 +915,7 @@ export default function TimeTrialPage() {
         <PlacementDestinationsModal
           trial={trial}
           seriesList={seriesList}
+          placementSeries={placementSeries}
           classes={classes}
           seasonName={trialSeason?.name || ""}
           onClose={() => setDestinationsOpen(false)}

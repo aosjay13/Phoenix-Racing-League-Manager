@@ -33,12 +33,9 @@ export function canUploadImages(role) {
   return normalizeRole(role) === IMAGE_UPLOAD_ROLE;
 }
 
-// What the app says when it won't take a file. Written for the person reading
+// What the API says when it won't take a file. Written for the person reading
 // it — an Admin who has every other power and is about to wonder whether
-// something is broken — so it names the reason and the way out.
-export const UPLOAD_DENIED_MESSAGE =
-  "Only the league Owner can upload images — ask them if this needs changing.";
-
+// something is broken — so it names the reason rather than just refusing.
 export const UPLOAD_DENIED_ERROR =
   "Owner access required to upload or change images.";
 

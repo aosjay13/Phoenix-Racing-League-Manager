@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { uploadImage } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
-import { UPLOAD_DENIED_MESSAGE, canUploadImages } from "@/lib/imagePermissions";
+import { canUploadImages } from "@/lib/imagePermissions";
 
 // Longest edge (px) any stored image is shrunk to. Keeps storage cheap and
 // downloads fast — avatars/logos never display much larger than this.
@@ -50,31 +50,20 @@ async function shrinkImage(file) {
 // races, drivers and teams at once, and a form added tomorrow is covered the
 // moment it renders this.
 //
-// For everyone else the field doesn't disappear — it goes read-only. The image
-// the Owner already set still shows (this is the same picture the public pages
-// render), with one line saying who can change it, so an Admin can see what a
-// game's logo IS without being able to spend the league's storage on a new one.
+// For everyone else the field is not rendered AT ALL — no input, no drop zone,
+// no placeholder, nothing to mistake for a control that might work. An Admin
+// editing a game sees the game's fields and no logo row, and the value already
+// stored travels back untouched on save (the API only refuses a CHANGE), so
+// their edit lands with the Owner's logo intact.
+//
+// Deliberately not a disabled input or a read-only preview: a field that looks
+// like a field invites a support question every time somebody meets it.
 export function ImageUpload({ label, kind = "logo", value, onUploaded }) {
   const { role } = useAuth();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
-  if (!canUploadImages(role)) {
-    return (
-      <div className="field">
-        <label>{label}</label>
-        <div className="upload-row">
-          {value
-            ? <img src={value} alt="" className="upload-preview" />
-            : <span className="upload-preview upload-placeholder">🖼</span>}
-          <span style={{ fontSize: "0.8rem", color: "var(--ink-1)" }}>
-            {value ? "Set by the league Owner" : "No image set"}
-          </span>
-        </div>
-        <span style={{ fontSize: "0.75rem", color: "var(--ink-2)" }}>{UPLOAD_DENIED_MESSAGE}</span>
-      </div>
-    );
-  }
+  if (!canUploadImages(role)) return null;
 
   async function handleChange(e) {
     const file = e.target.files?.[0];

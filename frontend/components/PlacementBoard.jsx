@@ -81,10 +81,17 @@ function BucketColumn({ bucket, rows, metric, buckets, onMove, onDrag, dragging,
   const isPool = !bucket;
   const key = isPool ? "" : bucket.key;
 
+  // `preventDefault` on dragover is what makes a column a drop target at all,
+  // so it must NOT wait on `dragging` — that's React state set in onDragStart,
+  // and the first dragover can fire before it has been flushed. A drag begun
+  // and finished in one quick movement then landed nowhere and the card
+  // silently sprang back to where it came from. The dropped id is read off the
+  // dataTransfer, with the state kept only as a fallback for the browsers that
+  // hand back an empty one.
   return (
     <div
       className={`placement-column${isPool ? " is-pool" : ""}${over && canEdit ? " is-over" : ""}${bucket?.incomplete ? " is-incomplete" : ""}`}
-      onDragOver={e => { if (canEdit && dragging) { e.preventDefault(); setOver(true); } }}
+      onDragOver={e => { if (canEdit) { e.preventDefault(); setOver(true); } }}
       onDragLeave={() => setOver(false)}
       onDrop={e => {
         setOver(false);

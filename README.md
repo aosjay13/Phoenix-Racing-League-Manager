@@ -873,6 +873,12 @@ hot-lapping, time attack, and the placement night that sorts a new field into di
    **⏱ Lap sheet** switches back to the grid for typing times; both views edit the same session, so
    swapping between them mid-night loses nothing, unsaved laps included. The sheet's own per-column
    **⇅ Sort into … by time** buttons are still there for anyone who prefers them.
+
+   **Complete Session** and **Export to Qualifying** both save the sheet first if there's anything
+   unsaved. Both work from the session as *stored* — the roster run reads the trial's entries out of
+   the database, it can't see the screen — so an admin who spent a night dragging cards and pressed
+   Complete without saving would have built the roster from the placements as they were before any
+   of it, with the dialog's preview looking plausible the whole way through.
 5. **Complete Session** (top right) closes the sheet and offers to **build the roster** — every
    driver on it joins a roster in the division they were placed in. It shows exactly what it will do
    before writing, and a driver already on a roster is *moved* into their new division rather than
@@ -1204,9 +1210,9 @@ classes, tracks, races, drivers and teams exactly as before — they just can't 
 
 - **In the browser**, every upload field in the app is the same component, so the rule is applied in
   one place and covers every creation and edit form at once (and any form added later). For a
-  non-Owner the field doesn't vanish — it goes **read-only**, still showing the image that's there
-  with one line saying who can change it, so an Admin can see what a game's logo *is* without being
-  able to spend the league's storage on a new one.
+  non-Owner the field is not rendered **at all** — no input, no drop zone, no placeholder that reads
+  as a control which might work. An Admin editing a game sees the game's fields and no logo row, and
+  the logo already stored travels back untouched when they save.
 - **On the server**, `POST /api/upload` refuses the file outright for anyone who isn't an Owner —
   before reading the body, so a rejected megabyte is never pulled off the wire. That's the part that
   means it: Firebase Storage rules refuse every direct client write, so this route is the only door
@@ -1215,7 +1221,9 @@ classes, tracks, races, drivers and teams exactly as before — they just can't 
   than written. *Changing* is the operative word: an edit form posts every field it renders, so a
   save that carries back the logo it was showing is not a new image and passes through untouched —
   renaming a game never quietly wipes its logo, and never fails over a field the person didn't
-  touch. A write that is *only* an image change is refused with **403**.
+  touch. A write that is *only* an image change is refused with **403**. Which fields those are is
+  read off the `image: true` marker in the field spec, and a test scans the specs for any
+  image-shaped field that's missing it — an unmarked one would be a hole nobody would notice.
 
 **Nothing about displaying images changed.** The Owner is still uploading them, and every `<img>`,
 avatar and logo across Drivers, Tracks, Teams, Standings and the rest renders whatever is stored,
