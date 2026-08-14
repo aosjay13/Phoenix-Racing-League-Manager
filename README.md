@@ -189,7 +189,8 @@ The app runs at `http://localhost:3000`.
 ### Running against the Firebase emulators
 
 You can develop without touching a real Firebase project. Start the Auth + Firestore emulators
-(`firebase emulators:start`) and add these to `frontend/.env.local`:
+(`firebase emulators:start`, configured by `firebase.json` in the repo root) and add these to
+`frontend/.env.local`:
 
 ```
 FIRESTORE_EMULATOR_HOST=127.0.0.1:8080
@@ -1893,7 +1894,10 @@ Three things this had to get right:
   add-them-once-per-class workaround), and two identical cards read as a bug, so the two fold into
   one naming both classes. A hand-typed roster row with no login behind it has nobody to tell and
   drops out. The account is resolved through the driver profile where the entry only names one, each
-  profile read once however many entries point at it.
+  profile read once however many entries point at it. Those classes are gathered as **ids** and only
+  turned into names at the end, through the season's own order: merging the names entry by entry
+  ordered them by whichever roster row Firestore happened to return first, which is not an order at
+  all and read "Amateur & Pro" on a season that lists Pro above Amateur on every other screen.
 - **The announcement can never undo the decision.** It hangs off a new `afterUpdate` hook on the
   shared doc routes (`lib/entityApi.js`), which runs after the write has landed and whose errors are
   logged and swallowed — the same rule `postMessage()` has always followed. It's on the **route**
@@ -1931,30 +1935,39 @@ cross-season identity and what the Class menu is remembered by; a card naming tw
 entered in both) opens **All Classes**, the season-wide table that contains all of their racing —
 picking the first of the two would be a guess, and wrong half the time.
 
-**The href alone is not enough**, and this is the part worth knowing. A scope link
-(`scopeHref()` in `lib/scopeLink.js`) only opens on its scope when the page is loaded *cold* — that
-is when `LeagueProvider` reads the query string. Follow the same link from inside the app and the
-provider never remounts, never re-reads the URL, and re-stamps the address bar from the selection it
-already holds: the reader lands on the right page at the wrong season. So each button does both — the
-href carries the scope for a new tab, a copied link or a cold load, and the click calls
-`selectScope()` on the provider for the ordinary in-app navigation. Both routes set the same four
-values, so it doesn't matter which one a reader takes.
+**A scope link has to work from inside the app too**, and this is the part worth knowing. Reading
+the URL used to happen once, at mount, so `scopeHref()` (`lib/scopeLink.js`) only landed on its
+scope when the page was loaded *cold* — a pasted link, a new tab. Followed from inside the app it
+did nothing: `LeagueProvider` stays mounted, nothing re-read the query string, and the effect that
+mirrors the selection into the address bar wiped the link's own params a moment after arriving. So
+the provider now **re-reads the scope params on every navigation**, which makes one link behave the
+same way however it was opened.
 
-`selectScope()` sets all four levels **together**, and that is what makes it land. Each tier
-re-resolves itself when its parent's list arrives, keeping its current value when the list contains
-it and falling back to the first row when it doesn't — so a season set on its own, ahead of its
-series and game, would be discarded as "not in this list" a moment later. Set together, every tier
-finds itself.
+The obvious alternative — have the button's `onClick` set the scope directly — was tried first and
+is worse in a way that only shows up in a browser: the state change re-runs that URL-stamping effect
+while the router's navigation is still in flight, and the `replaceState` it does **cancels the
+navigation**. The button appears to do nothing at all except rewrite the query string of the page
+you were already on. One mechanism, in the link.
+
+Only params actually *present* are applied, so an ordinary sidebar link — which carries none —
+changes nothing and the selection survives the move exactly as it always has. The read effect is
+declared **above** the write effect deliberately: both run in the same commit, effects run in order,
+and the read has to take the incoming params before the write replaces them with the outgoing
+selection.
 
 One case leaves the SPA on purpose. A player's inbox is **theirs, not one league's**, so somebody
 racing in two leagues reads both leagues' decisions on one board — and a season id from the other
-league means nothing to the menus here. A card from another league renders a plain `<a>` instead:
-the page reloads, the provider mounts, and it reads the league out of the link along with the scope,
-which is the only path that switches league and drills into a season in one step.
+league means nothing to the menus here. Switching league drops the whole drill-down and refetches,
+which a soft navigation has no way to sequence, so a card from another league renders a plain `<a>`
+instead: the page reloads, the provider mounts, and it reads the league out of the link along with
+the scope.
 
-Covered by `lib/__tests__/messageLinks.test.jsx`, which mounts the button — the href is what a new
-tab, a copied link and a cold load all resolve from, and it is only ever right if the component
-actually puts the scope into it.
+Covered by `lib/__tests__/messageLinks.test.jsx`, which mounts the button — the href is what every
+route resolves from, and it is only ever right if the component actually puts the scope into it. The
+rest of it is browser-shaped and was verified by running the app against the Firebase emulators (see
+*Running against the Firebase emulators* above): sitting on Season 5, clicking **Final standings** on
+a card about Season 4, and reading the menus afterwards. That run is what caught the cancelled
+navigation above — every unit test passed while the button did nothing.
 
 ### Capping how many drivers may run a car
 

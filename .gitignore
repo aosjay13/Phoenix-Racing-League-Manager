@@ -22,3 +22,8 @@ out/
 
 # Claude Code local settings
 .claude/
+
+# Firebase emulator logs (see "Running against the Firebase emulators" in README.md)
+firebase-debug.log
+firestore-debug.log
+ui-debug.log

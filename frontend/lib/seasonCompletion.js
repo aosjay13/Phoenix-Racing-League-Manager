@@ -13,7 +13,7 @@
 // gets told, and what their card says, is testable without a database.
 
 import { seasonIsCompleted } from "@/lib/carSelection";
-import { classNamesFor } from "@/lib/classFilter";
+import { classNamesFor, entryClassIds } from "@/lib/classFilter";
 
 // Did THIS save finish the season?
 //
@@ -41,27 +41,36 @@ export function seasonJustCompleted(before, after) {
 // (through the driver profile where the entry only names one — see
 // lib/seasonCompletionServer.js). `classes` are the season's, in display order,
 // so a driver in two of them reads them the same way round as everywhere else.
+//
+// The classes are gathered as IDS and only turned into names at the end, once,
+// through the season's own order. Merging the NAMES entry by entry would have
+// ordered them by whichever roster row Firestore happened to return first —
+// which is not an order at all, and read as "Amateur & Pro" for a driver whose
+// season lists Pro above Amateur everywhere else in the app.
 export function completionRecipients(entries = [], classes = []) {
   const byUid = new Map();
   for (const entry of entries) {
     const uid = String(entry?.user_id ?? "").trim();
     if (!uid) continue;
-    const names = classNamesFor(entry, classes);
+    const ids = entryClassIds(entry);
     const already = byUid.get(uid);
     if (already) {
-      already.class_names = [...new Set([...already.class_names, ...names])];
+      already.class_ids = [...new Set([...already.class_ids, ...ids])];
       already.driver_name ||= String(entry?.name ?? "").trim();
       already.number ||= String(entry?.number ?? "").trim();
       continue;
     }
     byUid.set(uid, {
       uid,
-      class_names: names,
+      class_ids: ids,
       driver_name: String(entry?.name ?? "").trim(),
       number: String(entry?.number ?? "").trim(),
     });
   }
-  return [...byUid.values()];
+  return [...byUid.values()].map(({ class_ids, ...rest }) => ({
+    ...rest,
+    class_names: classNamesFor({ class_ids }, classes),
+  }));
 }
 
 // The context one recipient's card is built from — the names AS THEY WERE when
