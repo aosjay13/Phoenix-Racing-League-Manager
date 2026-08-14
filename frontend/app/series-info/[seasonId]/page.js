@@ -355,8 +355,18 @@ export default function SeasonCarSelectionPage() {
           {open ? (
             data.my_pending ? (
               <p style={{ fontSize: "0.85rem", color: "var(--ink-2)", margin: 0 }}>
-                Your sign-up is with the admins. You&rsquo;ll be on the roster as soon as one of
-                them approves it.
+                {data.my_awaiting_placement ? (
+                  <>
+                    You&rsquo;re registered for placements in this series. An admin has your
+                    registration &mdash; the next step is a Time Trial session, and you&rsquo;ll be
+                    placed into a class from your times.
+                  </>
+                ) : (
+                  <>
+                    Your sign-up is with the admins. You&rsquo;ll be on the roster as soon as one of
+                    them approves it.
+                  </>
+                )}
               </p>
             ) : (
             <>

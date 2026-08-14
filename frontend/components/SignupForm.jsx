@@ -435,7 +435,11 @@ export function SignupForm({ season, driver, knownAliases, knownName, onDone, on
                 )}
                 <span className="roster-peek-name">
                   {r.name}
-                  {r.pending && <span className="roster-peek-pending">pending</span>}
+                  {r.pending && (
+                    <span className="roster-peek-pending">
+                      {r.awaiting_placement ? "placing" : "pending"}
+                    </span>
+                  )}
                 </span>
                 {r.car && <span className="roster-peek-class">{r.car}</span>}
                 {r.class_names?.length > 0 && (

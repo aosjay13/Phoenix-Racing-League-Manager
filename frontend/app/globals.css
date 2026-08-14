@@ -2400,6 +2400,21 @@ tbody tr:hover {
   border: 1px solid rgba(230, 57, 70, 0.4);
 }
 
+/* Registrations approved into a placement session — acknowledged, out of the
+   queue, and on no roster (components/AwaitingPlacements.jsx). Drawn in the
+   warning red rather than the queue's gold because the panel's whole job is to
+   say that these people are NOT racing yet. */
+.awaiting-placements {
+  border-color: rgba(230, 57, 70, 0.4);
+}
+
+.awaiting-placements-link {
+  color: var(--accent-cyan);
+  font-weight: 600;
+}
+
+.awaiting-placements-link:hover { text-decoration: underline; }
+
 .pending-placement-hint {
   display: block;
   margin-top: 4px;

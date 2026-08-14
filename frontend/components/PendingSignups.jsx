@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { AWAITING_PLACEMENT_BADGE, AWAITING_PLACEMENT_HINT } from "@/lib/carSelection";
-import { awaitingPlacement, isNumberChange, requestSummary } from "@/lib/signupQueue";
+import { signupIsPlacementGated, isNumberChange, requestSummary } from "@/lib/signupQueue";
 import { normalizeAliases } from "@/lib/aliases";
 import { signupsChanged } from "@/lib/pendingSignupAlerts";
 
@@ -26,13 +26,16 @@ import { signupsChanged } from "@/lib/pendingSignupAlerts";
 //     row then names the series and season it's for.
 //
 // A row for a PLACEMENT-GATED series carries an extra flag — "Awaiting
-// Placement". That series is one an admin marked as earned rather than joined
-// (a Gold Series, a Pro class), so the driver submitted a request to be placed,
-// not a request for a specific spot. Approving it still works exactly as it
-// does for anyone else; the flag is there because approving it BEFORE running
-// them through Time Trials is the mistake the setting exists to prevent, and
-// nothing else on the row would tell an admin that. The API resolves the gate
-// live, so it's true of a series switched on after these people signed up.
+// Placement" — and approving it does something different. That series is one an
+// admin marked as earned rather than joined (a Gold Series, a Pro class), so
+// the driver submitted a request to be PLACED, not a request for a specific
+// spot: approving creates no roster entry, moves the row to
+// `approved_for_placements`, and hands them to the Awaiting Placement list on
+// /approvals until a session sorts them. The toast below says so rather than
+// the usual "they're on the roster", which would be untrue.
+//
+// The API resolves the gate live, so it holds for a series switched on after
+// these people signed up.
 //
 // `empty` is what to render when nothing is waiting. The roster panel passes
 // nothing and disappears; the Approvals page says so out loud.
@@ -79,6 +82,15 @@ export function PendingSignups({ seasonId = null, seasonName, scope = "season", 
         showToast("success",
           `${res.driver_name || req.name} now runs ${res.number ? `#${res.number}` : "no number"}.`);
         onApproved?.();
+      } else if (action === "approve" && res.awaiting_placement) {
+        // NOT on the roster, and the toast must not imply otherwise — this is
+        // the one approval that seats nobody. Drawn as a warning rather than a
+        // success for the same reason: something is still owed.
+        showToast("error",
+          `${res.driver_name || req.name} is registered for placements — not on the roster yet.`
+          + (res.created_driver ? " Their driver profile was created." : "")
+          + " Place them from Time Trials & Placements to put them on a grid.");
+        onApproved?.();
       } else if (action === "approve") {
         showToast(res.note ? "error" : "success",
           `${res.driver_name || req.name} is on the roster.`
@@ -118,7 +130,10 @@ export function PendingSignups({ seasonId = null, seasonName, scope = "season", 
         Dashboard. Nothing they sent is live yet. A <strong>sign-up</strong> is approved onto the
         roster with the number and car they asked for (creating their driver profile, for anyone
         new to the league); a <strong>number change</strong> is approved onto the roster entry they
-        already have. <strong>Deny</strong> leaves things as they are.
+        already have. <strong>Deny</strong> leaves things as they are. A row flagged{" "}
+        <strong>⏱ Awaiting Placement</strong> is the exception — that series is placement-graded,
+        so approving it registers them for a session and puts them on{" "}
+        <strong>no roster</strong>.
       </p>
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
 
@@ -134,7 +149,7 @@ export function PendingSignups({ seasonId = null, seasonName, scope = "season", 
           // One reading of the gate, shared with the API (lib/signupQueue.js) —
           // a number change is somebody already on the roster, so there's
           // nothing to place.
-          const placement = awaitingPlacement(req);
+          const placement = signupIsPlacementGated(req);
           return (
             <div key={req.id} className="pending-signup-row">
               {req.user_photo

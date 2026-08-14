@@ -168,14 +168,15 @@ export function CarSelectionFields({ value, onChange, level = "season", disabled
         inheritedOn={from.placements.on} inheritedFrom={from.placements.from}
         help={<>
           Required: nobody joins {covers} straight off their Dashboard. The sign-up form warns them
-          that this is a placement-gated tier and its button becomes{" "}
-          <strong>Register for Placements</strong>, and their row arrives in{" "}
-          <strong>Pending Approvals</strong> flagged <strong>Awaiting Placement</strong> — your
-          reminder to run them through <strong>Time Trials &amp; Placements</strong> before you
-          finalise their class and roster spot. Nothing is blocked: the sign-up still queues
-          normally and you can still approve it in one press. Use it on the tier that has to be
-          earned — a Gold Series, a Pro class — and leave the feeder tiers on{" "}
-          <em>Inherit</em> so people can still just join those.
+          that this is a placement-graded tier and its button becomes{" "}
+          <strong>Register for Placements</strong>; their row arrives in{" "}
+          <strong>Pending Approvals</strong> flagged <strong>Awaiting Placement</strong>; and{" "}
+          <strong>approving it puts them on no roster</strong> — it acknowledges the registration
+          and moves them to the <strong>Awaiting Placement</strong> list until you run them
+          through <strong>Time Trials &amp; Placements</strong>. Completing that session and
+          building the roster from it is what puts them on a grid, in the class their times
+          earned. Use it on the tier that has to be earned — a Gold Series, a Pro class — and
+          leave the feeder tiers on <em>Inherit</em> so people can still just join those.
         </>}
       />
 

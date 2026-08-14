@@ -22,6 +22,7 @@
 
 import assert from "node:assert/strict";
 import { renderToStaticMarkup } from "react-dom/server";
+import { AwaitingPlacements } from "@/components/AwaitingPlacements";
 import { CarSelectionFields } from "@/components/CarSelectionFields";
 import { SignupForm } from "@/components/SignupForm";
 import {
@@ -35,7 +36,11 @@ import { BLANK_SERIES_FORM, seriesFormToBody, seriesToForm } from "@/lib/seriesF
 import { BLANK_CLASS_FORM, classFormToBody, classToForm } from "@/lib/classForm";
 import { SPECS } from "@/lib/entityApi";
 import { placementsRequiredFor } from "@/lib/carSelectionServer";
-import { awaitingPlacement } from "@/lib/signupQueue";
+import {
+  APPROVED, APPROVED_FOR_PLACEMENTS, OPEN_STATUSES, signupIsPlacementGated, isAwaitingPlacement,
+  numberClaimed, pendingForSeason, rosterWithPending, signupApprovalPlan,
+} from "@/lib/signupQueue";
+import { messageBody, messageKind, messageTitle, messageTone } from "@/lib/messages";
 import { classesAskMore, seasonChips, seasonHasPlacements } from "@/lib/signupFlow";
 
 let n = 0;
@@ -252,15 +257,15 @@ check("the gated class's own rules gate",
 
 // ── 6. The admin queue flags it, and only where there's someone to place ───
 ok("a gated sign-up is awaiting placement",
-  awaitingPlacement({ kind: "signup", placements_required: true }));
+  signupIsPlacementGated({ kind: "signup", placements_required: true }));
 ok("a row written before the gate existed is not",
-  !awaitingPlacement({ kind: "signup" }));
-ok("an ungated sign-up is not", !awaitingPlacement({ kind: "signup", placements_required: false }));
+  !signupIsPlacementGated({ kind: "signup" }));
+ok("an ungated sign-up is not", !signupIsPlacementGated({ kind: "signup", placements_required: false }));
 // A number change is a driver already racing — there is nothing to place them
 // into, so the flag must never appear on one however the series is set.
 ok("a number change is never awaiting placement",
-  !awaitingPlacement({ kind: "number_change", placements_required: true }));
-ok("a missing row doesn't throw", !awaitingPlacement(undefined));
+  !signupIsPlacementGated({ kind: "number_change", placements_required: true }));
+ok("a missing row doesn't throw", !signupIsPlacementGated(undefined));
 ok("the badge is worded once, for both sides", AWAITING_PLACEMENT_BADGE === "Awaiting Placement");
 
 // ── 6b. …and the queue resolves the gate LIVE, not off the stamp ───────────
@@ -346,6 +351,109 @@ const thrown = await placementsRequiredFor(
 console.error = wasError;
 check("a failed lookup falls back to the stamp", [thrown.boom, thrown.quiet], [true, false]);
 check("an empty queue is fine", await placementsRequiredFor([]), {});
+
+// …but the APPROVAL asks strictly, and gets a throw instead of a guess. The
+// fallback is only safe for a screen: at approval it would seat a driver whose
+// series was gated after they signed up (stamped false, gated now), which is
+// exactly the case live resolution exists for.
+let refused = false;
+try {
+  await placementsRequiredFor(
+    [{ id: "boom", season_id: "bad", class_ids: [], placements_required: false }],
+    { strict: true, loadContext: async () => { throw new Error("firestore said no"); } });
+} catch {
+  refused = true;
+}
+ok("a strict lookup refuses rather than guessing", refused);
+
+// ── 6c. Approving one puts NOBODY on a roster ──────────────────────────────
+//
+// The point of the whole feature. A tier marked "Placements Required" is earned
+// in a session, so approving its sign-up acknowledges the registration and
+// creates nothing: the row moves to `approved_for_placements`, which takes it
+// out of the queue and off the badge, and the driver joins a grid only when an
+// admin places them and builds the roster from that session.
+check("a gated approval creates no roster entry",
+  signupApprovalPlan({ placementsRequired: true }),
+  { status: APPROVED_FOR_PLACEMENTS, creates_entry: false });
+check("an ordinary approval still seats them, exactly as before",
+  signupApprovalPlan({ placementsRequired: false }),
+  { status: APPROVED, creates_entry: true });
+check("and an unspecified gate is the ordinary path",
+  signupApprovalPlan(), { status: APPROVED, creates_entry: true });
+// Stated as an invariant rather than as two examples: there is no input for
+// which a gated approval reaches the roster.
+ok("no gated approval ever creates an entry",
+  [true, 1, "on"].every(v => !signupApprovalPlan({ placementsRequired: !!v }).creates_entry));
+ok("the two outcomes are different statuses", APPROVED_FOR_PLACEMENTS !== APPROVED);
+ok("a row in that state is recognised", isAwaitingPlacement({ status: APPROVED_FOR_PLACEMENTS }));
+ok("an ordinary approval is not", !isAwaitingPlacement({ status: APPROVED }));
+ok("nor is a pending row", !isAwaitingPlacement({ status: "pending" }));
+
+// The screen the acknowledgement lands on has to MOUNT — it is the only place
+// an approved-for-placements driver appears at all, so a missing import there
+// loses them silently rather than loudly.
+check("the Awaiting Placement panel mounts, and says nothing before it loads",
+  render("the Awaiting Placement panel", <AwaitingPlacements />), "");
+
+// ── 6d. …but they are still IN FLIGHT ──────────────────────────────────────
+//
+// Out of the admin's queue is not the same as finished. Two things must stay
+// true of somebody waiting on a session, or the state that clears the badge
+// quietly breaks the sign-up flow around it.
+check("the in-flight statuses are pending and awaiting-placement",
+  [...OPEN_STATUSES].sort(), ["approved_for_placements", "pending"]);
+ok("a finished approval is not in flight", !OPEN_STATUSES.includes(APPROVED));
+ok("nor a denial", !OPEN_STATUSES.includes("denied"));
+ok("nor a withdrawal", !OPEN_STATUSES.includes("withdrawn"));
+
+const awaiting = {
+  id: "q1", kind: "signup", status: APPROVED_FOR_PLACEMENTS,
+  uid: "u1", driver_id: "d1", name: "Ana", number: "24",
+};
+// (1) They can't file a second sign-up. A player whose registration looks like
+// it vanished submits another one — which is exactly what would happen if the
+// badge clearing also dropped them out of "already asked".
+ok("an awaiting-placement registration still blocks a second sign-up",
+  !!pendingForSeason([awaiting], { uid: "u1", driverId: "d1" }));
+ok("and blocks it by driver profile too",
+  !!pendingForSeason([awaiting], { uid: "other", driverId: "d1" }));
+ok("somebody else is still free to sign up",
+  !pendingForSeason([awaiting], { uid: "u2", driverId: "d2" }));
+
+// (2) Their car number is still spoken for. Handing #24 to the next player
+// while its owner waits for a placement night is a clash the admin gets to
+// resolve later, by hand.
+ok("an awaiting-placement number is still claimed", numberClaimed([], [awaiting], "24"));
+ok("a free number is still free", !numberClaimed([], [awaiting], "25"));
+
+// And they read as "placing" rather than "pending" on the roster peek — the
+// number is gone either way, but they're waiting on different things.
+const peek = rosterWithPending([{ number: "7", name: "Bo" }], [awaiting]);
+check("the peek lists them", peek.map(r => r.name), ["Bo", "Ana"]);
+ok("marked as awaiting a placement", peek.find(r => r.name === "Ana").awaiting_placement);
+ok("an ordinary pending row is not",
+  !rosterWithPending([], [{ id: "p", kind: "signup", status: "pending", name: "Cy" }])[0]
+    .awaiting_placement);
+
+// ── 6e. The player is told the truth about what happened ───────────────────
+//
+// "You're on the roster" is the one thing this approval must never say. A
+// player who reads that turns up to a race expecting a grid slot they haven't
+// earned yet.
+const placed = { kind: "signup_placements", context: { series_name: "Gold", season_name: "S4" } };
+ok("the placement card is its own kind", messageKind(placed) === "signup_placements");
+ok("it names the series", messageTitle(placed).includes("Gold"));
+ok("it says placements", /placement/i.test(messageTitle(placed) + messageBody(placed)));
+ok("it says they are NOT on the roster yet",
+  /not on the roster/i.test(messageBody(placed)));
+ok("it never claims a roster place",
+  !/you're on the roster|you are on the roster/i.test(messageBody(placed)));
+ok("it isn't drawn as a refusal", messageTone(placed) === "info");
+// The ordinary welcome is untouched — the case that must not regress.
+const welcomed = { kind: "signup_approved", context: { series_name: "Rookie", season_name: "S1" } };
+ok("an ordinary approval still welcomes them", /Welcome/i.test(messageTitle(welcomed)));
+ok("and still says they're on the roster", /on the roster/i.test(messageBody(welcomed)));
 
 // ── 7. The Sign-ups screen says so on the card ─────────────────────────────
 //

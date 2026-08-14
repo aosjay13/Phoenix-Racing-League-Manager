@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { AdminGate } from "@/components/AdminGate";
 import { AdminMessages } from "@/components/AdminMessages";
+import { AwaitingPlacements } from "@/components/AwaitingPlacements";
 import { PendingSignups } from "@/components/PendingSignups";
 import { APPROVALS_MIN_LEVEL } from "@/lib/pendingSignupAlerts";
 
@@ -27,7 +28,10 @@ export default function ApprovalsPage() {
         <strong> sign-ups</strong> (approving puts that driver on the season&rsquo;s roster with the
         number and car they asked for) and <strong>car number changes</strong> (approving moves the
         number on the roster entry they already have) — plus anything players have said back
-        about a decision you&rsquo;ve already made.
+        about a decision you&rsquo;ve already made. A sign-up flagged{" "}
+        <strong>⏱ Awaiting Placement</strong> is the exception: that series is placement-graded, so
+        approving it acknowledges the registration and puts them on <em>no</em> roster — they move
+        to the list at the bottom of this page until a session places them.
       </p>
 
       <AdminGate minLevel={APPROVALS_MIN_LEVEL}>
@@ -47,6 +51,13 @@ export default function ApprovalsPage() {
             </div>
           )}
         />
+
+        {/* Where an approved placement registration goes. It has left the queue
+            above — that's what clears the badge — but nobody on this list is on
+            a roster yet, and this is the only screen that says so. Renders
+            nothing for a league that gates nothing. See
+            components/AwaitingPlacements.jsx. */}
+        <AwaitingPlacements />
       </AdminGate>
     </section>
   );

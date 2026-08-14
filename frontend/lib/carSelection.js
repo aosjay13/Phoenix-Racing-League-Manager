@@ -365,21 +365,25 @@ export function missingSignupMessage(missing = []) {
 // A league that sorts its field by pace — a Gold Series, a Pro class — needs
 // one thing to be true: nobody walks into the fast tier off the Dashboard.
 // Ticking "Placements Required" on a series, season or class is what makes
-// that true, and it changes THREE things and nothing else:
+// that true, and it changes FOUR things:
 //
 //   1. the sign-up form warns, up front, that this series is placement-gated;
 //   2. its button stops saying "Submit Sign Up" and says what pressing it
 //      actually does — register for placements;
-//   3. the row it files is flagged in the admin queue as AWAITING PLACEMENT,
-//      so whoever approves it knows to run the driver through the Time Trials
-//      hub before finalising their spot.
+//   3. the row it files is flagged in the admin queue as AWAITING PLACEMENT;
+//   4. and approving that row CREATES NO ROSTER ENTRY. It moves to
+//      `approved_for_placements` — acknowledged, out of the queue, off the
+//      badge, on no grid — and the driver joins one only when an admin places
+//      them in a session and builds the roster from it.
 //
-// What it deliberately does NOT do is block anything. The sign-up still files
-// exactly the same pending row, the admin can still approve it with one press,
-// and nothing about a series that doesn't require placements changes. The gate
-// is a piece of INFORMATION carried from the admin who set it, through the
-// player who reads it, to the admin who resolves it — which is the only shape
-// that can't strand a driver whose league runs placements informally.
+// The fourth is what makes the first three a gate rather than a note. Without
+// it the whole feature rests on an admin reading a badge and choosing not to
+// press the obvious button, which is not a rule, it's a hope.
+//
+// Nothing about a series that does NOT require placements changes: same form,
+// same button, same approval, same roster entry. See signupApprovalPlan in
+// lib/signupQueue.js for the decision itself, and OPEN_STATUSES there for why
+// an acknowledged registration still holds its car number.
 //
 // The wording lives here, once, so the form a player reads and the badge an
 // admin reads can never describe the same flag differently.
@@ -399,8 +403,9 @@ export const PLACEMENTS_SUBMIT_LABEL = "Register for Placements";
 // The flag on the admin's queue row, and what it's there to remind them of.
 export const AWAITING_PLACEMENT_BADGE = "Awaiting Placement";
 export const AWAITING_PLACEMENT_HINT =
-  "This series requires placements — route this driver through a Time Trial "
-  + "session before finalising their class and roster spot.";
+  "This series is placement-graded. Approving registers this driver for a session "
+  + "and puts them on NO roster — route them through a Time Trial, then build the "
+  + "roster from that session to place them.";
 
 // Does this class carry car-selection settings of its OWN, rather than just
 // inheriting the season's? That's what makes it a separate lock-in slot below:

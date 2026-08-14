@@ -18,16 +18,26 @@ const { transformSync } = require("next/dist/build/swc");
 // one. Components are .jsx and libs are .js, so try both rather than assuming.
 const EXTENSIONS = [".js", ".jsx"];
 
-// The same problem for the Next subpaths an API route imports — plain files
-// with no "exports" map, found by a bundler's extension guessing and not by
-// bare `node`. Kept in step with alias-hooks.mjs, which explains why it matters.
-const NODE_MODULES = path.join(appRoot, "node_modules");
-const EXTENSIONLESS_PACKAGE_SUBPATHS = ["next/server"];
+// The same problem for Next's own subpaths — "next/link", "next/server" — plain
+// files with no "exports" map, found by a bundler's extension guessing and not
+// by bare `node`. Kept in step with alias-hooks.mjs, which explains why it
+// matters.
+const NEXT_ROOT = path.join(appRoot, "node_modules", "next");
+
+function nextSubpathFile(specifier) {
+  if (!specifier.startsWith("next/") || path.extname(specifier)) return null;
+  const file = path.join(NEXT_ROOT, `${specifier.slice("next/".length)}.js`);
+  try {
+    readFileSync(file);
+    return file;
+  } catch {
+    return null;
+  }
+}
 
 export function resolve(specifier, context, next) {
-  if (EXTENSIONLESS_PACKAGE_SUBPATHS.includes(specifier)) {
-    return next(pathToFileURL(path.join(NODE_MODULES, `${specifier}.js`)).href, context);
-  }
+  const nextFile = nextSubpathFile(specifier);
+  if (nextFile) return next(pathToFileURL(nextFile).href, context);
   if (!specifier.startsWith("@/")) return next(specifier, context);
   const target = path.join(appRoot, specifier.slice(2));
   if (path.extname(target)) return next(pathToFileURL(target).href, context);

@@ -5,7 +5,11 @@ import { normalizeClassIds } from "@/lib/classFilter";
 import {
   carCapacity, carCounts, carNumberTaken, resolveSignupRules, seasonAcceptsSignups,
 } from "@/lib/carSelection";
-import { APPROVED, DENIED, NUMBER_CHANGE_KIND, PENDING, isNumberChange } from "@/lib/signupQueue";
+import {
+  APPROVED, DENIED, NUMBER_CHANGE_KIND, OPEN_STATUSES,
+  isAwaitingPlacement, isNumberChange, signupApprovalPlan,
+} from "@/lib/signupQueue";
+import { openRequestsForSeason, placementsRequiredFor } from "@/lib/carSelectionServer";
 import { mergeAliases, normalizeAliases } from "@/lib/aliases";
 import { userAccountUpdatesFromSignup } from "@/lib/signupRequest";
 import { denialHtml, denialSubject, denialText } from "@/lib/denialNotice";
@@ -23,6 +27,27 @@ import { emailForUser, postMessage } from "@/lib/messagesServer";
 //   body.action = "deny"    → marks it denied. `reason` is kept so the player
 //                             can be told why.
 //
+// ── The exception: a tier that requires PLACEMENTS ──────────────────────────
+//
+// Approving a sign-up into a series, season or class marked "Placements
+// Required" does NOT create a roster entry. That tier is earned in a placement
+// session, so approving it means "registration acknowledged, now go and race
+// for it" — the row moves to `approved_for_placements`, which takes it out of
+// the queue and off the badge while leaving the driver on no grid at all. They
+// join one when an admin places them in the Time Trials hub and builds the
+// roster from that session.
+//
+// The driver PROFILE is still created and linked, exactly as it is for any
+// other approval. That isn't the roster — it's the person — and without it the
+// placement night has no profile to search for them by, and the entry the
+// roster build eventually creates would carry no `driver_id` or `user_id`,
+// leaving them racing a season their own Dashboard couldn't see (see
+// planRosterBuild in lib/timeTrials.js, which copies both off the trial row).
+//
+// The gate is resolved LIVE, not read off the request: an admin who ticked the
+// switch after these people signed up needs approval to respect it, and one who
+// has since untucked it needs approval to seat them normally.
+//
 // Approval re-checks everything that could have changed while the request sat
 // in the queue — the season closing, the driver being added by hand, the number
 // being taken — because a queue is exactly where stale data comes from.
@@ -35,8 +60,19 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
   const reqDoc = await reqRef.get();
   if (!reqDoc.exists) return NextResponse.json({ error: "Request not found" }, { status: 404 });
   const req = { id: reqDoc.id, ...reqDoc.data() };
-  if (req.status !== PENDING) {
+  // A registration approved for placements is NOT finished: nobody is on a
+  // roster, and a driver who never turns up to a session would otherwise sit in
+  // that state for ever with no way out. Denying is therefore still open to an
+  // admin; approving is not, since it has already been approved.
+  if (!OPEN_STATUSES.includes(req.status)) {
     return NextResponse.json({ error: "This sign-up has already been resolved." }, { status: 400 });
+  }
+  if (isAwaitingPlacement(req) && action !== "deny") {
+    return NextResponse.json({
+      error: "This registration is already approved and waiting on a placement session."
+        + " Place the driver from Time Trials & Placements to put them on a roster.",
+      code: "awaiting-placement",
+    }, { status: 400 });
   }
 
   const stamp = { resolved_at: new Date().toISOString(), resolved_by: admin.uid };
@@ -202,6 +238,53 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
     });
   }
 
+  // ── The placements gate ──────────────────────────────────────────────────
+  //
+  // Checked HERE — after the driver profile exists, before any entry is made —
+  // because those are exactly the two halves this outcome splits: the person is
+  // acknowledged, the grid place is not given. Somebody already on the roster
+  // was handled above and is unaffected: they're racing, so there is nothing
+  // left to place them into.
+  //
+  // Resolved live against the series/season/class as they stand now. A failure
+  // here would seat somebody the gate exists to keep off a grid, so it is the
+  // one lookup in this route that is NOT allowed to fail quietly — if the gate
+  // can't be read, the approval is refused and the admin is told to try again.
+  let gated;
+  try {
+    const resolved = await placementsRequiredFor([{ ...req, id }], { strict: true });
+    gated = !!resolved[id];
+  } catch (err) {
+    console.error("Placements gate check failed at approval", err);
+    return NextResponse.json({
+      error: "Couldn't check whether this series requires placements, so nothing was changed."
+        + " Try again in a moment.",
+      code: "gate-unreadable",
+    }, { status: 503 });
+  }
+
+  // The rule itself lives in lib/signupQueue.js, named and tested, rather than
+  // as a bare `if` here — see signupApprovalPlan.
+  const plan = signupApprovalPlan({ placementsRequired: gated });
+  if (!plan.creates_entry) {
+    await reqRef.update({
+      status: plan.status, ...stamp,
+      driver_id: driverId,
+      // Explicitly null rather than absent: this approval created no entry, and
+      // a reader that finds a stale id here would think it had.
+      entry_id: null,
+    });
+    await announce(req, "signup_placements", { admin });
+    return NextResponse.json({
+      ok: true, id, status: plan.status,
+      awaiting_placement: true,
+      driver_id: driverId, driver_name: driverName, created_driver,
+      entry_id: null,
+      note: `${driverName || req.name || "They"} are registered for placements — not on the roster.`
+        + " Place them from Time Trials & Placements and build the roster from that session.",
+    });
+  }
+
   // Their number may have gone while the request waited. Better to seat them
   // without one — and say so — than to refuse the approval outright.
   let number = String(req.number ?? "").trim().slice(0, 3);
@@ -306,9 +389,7 @@ async function carCapacityAtApproval(req, season, rosterSnap, car) {
 
     // Everyone already seated, plus everyone else still queued — but NOT this
     // request, which is the one being seated.
-    const others = (await db().collection("signup_requests")
-      .where("season_id", "==", season.id).where("status", "==", PENDING).get())
-      .docs.filter(d => d.id !== req.id).map(d => d.data());
+    const others = (await openRequestsForSeason(season.id)).filter(r => r.id !== req.id);
     return carCapacity(
       rules.car_entries, carCounts([...rosterSnap.docs.map(d => d.data()), ...others]), car);
   } catch (err) {

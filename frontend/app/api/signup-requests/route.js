@@ -7,10 +7,12 @@ import {
   missingSignupMessage, resolveSignupRules, seasonAcceptsSignups,
 } from "@/lib/carSelection";
 import {
-  NUMBER_CHANGE_KIND, PENDING, SIGNUP_KIND, isOwnNumber, numberClaimed, numberRequestFor,
-  pendingForSeason, requestKind,
+  NUMBER_CHANGE_KIND, PENDING, SIGNUP_KIND, isOwnNumber, numberClaimed,
+  numberRequestFor, pendingForSeason, requestKind,
 } from "@/lib/signupQueue";
-import { linkedDriver, seasonContext, seasonEntries } from "@/lib/carSelectionServer";
+import {
+  linkedDriver, openRequestsForSeason, seasonContext, seasonEntries,
+} from "@/lib/carSelectionServer";
 import {
   missingAliasMessage, missingRequiredAliases, userAccountUpdatesFromSignup,
 } from "@/lib/signupRequest";
@@ -27,15 +29,11 @@ export async function GET(request) {
   const seasonId = searchParams.get("season_id");
   if (!seasonId) return NextResponse.json({ error: "season_id required" }, { status: 400 });
 
-  const snap = await db().collection("signup_requests")
-    .where("season_id", "==", seasonId)
-    .where("status", "==", PENDING)
-    .get();
+  const open = await openRequestsForSeason(seasonId);
   const user = await getRequestUser(request);
-  const rows = snap.docs.map(d => {
-    const r = d.data();
+  const rows = open.map(r => {
     return {
-      id: d.id,
+      id: r.id,
       kind: r.kind || SIGNUP_KIND,
       entry_id: r.entry_id ?? null,
       name: r.name || r.driver_name || "Driver",
@@ -67,12 +65,10 @@ async function numberChangeRequest({ request, user, driver, season, series, game
     );
   }
 
-  const [entries, pendingSnap] = await Promise.all([
+  const [entries, pending] = await Promise.all([
     seasonEntries(season.id, []),
-    db().collection("signup_requests")
-      .where("season_id", "==", season.id).where("status", "==", PENDING).get(),
+    openRequestsForSeason(season.id),
   ]);
-  const pending = pendingSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
   // Their own roster entry — resolved from THEIR driver profile and account, so
   // a request can't name somebody else's row.
@@ -233,12 +229,10 @@ export const POST = withUser(async (request, ctx, user) => {
   }
 
   // Already racing, or already waiting.
-  const [entries, pendingSnap] = await Promise.all([
+  const [entries, pending] = await Promise.all([
     seasonEntries(seasonId, classes),
-    db().collection("signup_requests")
-      .where("season_id", "==", seasonId).where("status", "==", PENDING).get(),
+    openRequestsForSeason(seasonId),
   ]);
-  const pending = pendingSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
   if (entries.some(e => (driver && e.driver_id === driver.id) || (e.user_id && e.user_id === user.uid))) {
     return NextResponse.json(

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { getRequestLeagueId, scopeByLeague, withAdmin } from "@/lib/serverAuth";
-import { APPROVED, PENDING, isNumberChange } from "@/lib/signupQueue";
+import { APPROVED, APPROVED_FOR_PLACEMENTS, PENDING, isNumberChange } from "@/lib/signupQueue";
 import { placementsRequiredFor } from "@/lib/carSelectionServer";
 
 export const dynamic = "force-dynamic";
@@ -22,10 +22,21 @@ const RECENT_LIMIT = 100;
 //                         lists. An approval is otherwise invisible: it creates
 //                         a roster entry on a screen the admin may not be
 //                         looking at, in a season they may not be scoped to.
+//   ?status=approved_for_placements
+//                       → registrations acknowledged into a placement session
+//                         and on no roster, oldest first. This list is not
+//                         optional: approving a placement-gated sign-up takes
+//                         it out of the queue by design, and without somewhere
+//                         to see it afterwards the driver would simply vanish —
+//                         off the queue, off the badge, off every roster, with
+//                         nothing anywhere saying a session is owed them.
+const LISTABLE_STATUSES = [APPROVED, APPROVED_FOR_PLACEMENTS];
+
 export const GET = withAdmin(async (request) => {
   const { searchParams } = new URL(request.url);
   const seasonId = searchParams.get("season_id");
-  const status = searchParams.get("status") === APPROVED ? APPROVED : PENDING;
+  const asked = searchParams.get("status");
+  const status = LISTABLE_STATUSES.includes(asked) ? asked : PENDING;
 
   let query = db().collection("signup_requests").where("status", "==", status);
   if (seasonId) query = query.where("season_id", "==", seasonId);
@@ -40,6 +51,16 @@ export const GET = withAdmin(async (request) => {
     // is small enough that ordering it in memory costs nothing.
     rows.sort((a, b) => String(b.resolved_at || "").localeCompare(String(a.resolved_at || "")));
     return NextResponse.json(rows.slice(0, RECENT_LIMIT));
+  }
+
+  if (status === APPROVED_FOR_PLACEMENTS) {
+    // Oldest first, and uncapped: this is a to-do list, not a feed. Whoever has
+    // been waiting longest for a session is the one to put in the next one, and
+    // silently truncating it would hide exactly the people it exists to
+    // remember. `placements_required` is implied by the status itself, so no
+    // season needs re-reading to say so.
+    rows.sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
+    return NextResponse.json(rows.map(r => ({ ...r, placements_required: true })));
   }
 
   // Oldest first: whoever has been waiting longest is dealt with first.

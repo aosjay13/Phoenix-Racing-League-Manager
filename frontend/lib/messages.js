@@ -35,6 +35,20 @@ export const MESSAGE_KINDS = {
     body: c => `You're on the roster for ${c.season_name || "the season"}`
       + (detailOf(c) ? ` — ${detailOf(c)}` : "") + ".",
   },
+  // Approved into a PLACEMENT, not onto a roster. Deliberately its own card
+  // rather than a variant of the welcome above: "you're on the roster" would be
+  // untrue, and a player who reads it that way turns up expecting a grid slot
+  // and finds none. Tone is "info" for the same reason — nothing was refused,
+  // but nothing is finished either.
+  signup_placements: {
+    tone: "info",
+    actions: ["signups", "discord"],
+    title: c => `You're registered for placements in ${c.series_name || "the league"}`,
+    body: c => `An admin has your registration for ${c.season_name || "the season"}.`
+      + " You're not on the roster yet — this series is placement-graded, so the next step is a"
+      + " Time Trial session. An admin will be in touch with when it runs, and you'll be placed"
+      + " into a class from your times. Nothing else is needed from you in the meantime.",
+  },
   signup_denied: {
     tone: "bad",
     actions: ["signups"],

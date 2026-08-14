@@ -11,7 +11,7 @@ import {
   deniedRequestsForUser, pendingForSeasons, pendingRequestsForUser,
   rostersForSeasons,
 } from "@/lib/carSelectionServer";
-import { pendingForSeason } from "@/lib/signupQueue";
+import { isAwaitingPlacement, pendingForSeason } from "@/lib/signupQueue";
 import {
   gameRequirementFlags, knownAliasesFor, knownRacingName,
 } from "@/lib/signupRequest";
@@ -193,12 +193,23 @@ export const GET = withUser(async (request, ctx, user) => {
         // spoken for — see rosterWithPending in lib/signupQueue.js.
         pending: pending.map(p => ({
           kind: p.kind, entry_id: p.entry_id,
+          // Waiting on a decision, or waiting on a placement session — the
+          // roster peek labels the two differently, and both hold a number.
+          status: p.status,
           name: p.name, number: p.number, car: p.car,
           class_names: p.class_names,
         })),
-        // This account's own sign-up already waiting on an admin, if any.
+        // This account's own sign-up that hasn't finished, if any — waiting on
+        // an admin, OR approved into a placement session and waiting on that.
+        // Both keep the season out of their "join" list: a player whose
+        // registration appears to have vanished files a second one.
         my_pending: pendingForSeason(pending, { uid: user.uid, driverId: driver?.id })
           ? true : false,
+        // …and which of the two it is, so the screen can say "an admin will run
+        // you through a session" rather than "an admin will review it" to
+        // somebody who has already been reviewed.
+        my_awaiting_placement: isAwaitingPlacement(
+          pendingForSeason(pending, { uid: user.uid, driverId: driver?.id })),
         // A denial of theirs for this season that they haven't read. The screen
         // keeps it out of the "pick a series" list while this is true, so the
         // reason gets read before the same form is filled in again.

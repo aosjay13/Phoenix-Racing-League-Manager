@@ -6,9 +6,11 @@ import {
   carCapacity, carCounts, carFullMessage, carSelectionPatch, findSlot, matchCarOption,
   resolveSignupRules, seasonAcceptsSignups, selectedCarFor, slotsForEntry, sortRosterByNumber,
 } from "@/lib/carSelection";
-import { linkedDriver, pendingForSeasons, seasonContext, seasonEntries } from "@/lib/carSelectionServer";
+import {
+  linkedDriver, openRequestsForSeason, pendingForSeasons, seasonContext, seasonEntries,
+} from "@/lib/carSelectionServer";
 import { gameRequirementFlags } from "@/lib/signupRequest";
-import { numberRequestFor, PENDING } from "@/lib/signupQueue";
+import { isAwaitingPlacement, numberRequestFor } from "@/lib/signupQueue";
 
 export const dynamic = "force-dynamic";
 
@@ -117,11 +119,20 @@ export async function GET(request) {
     // somebody has already asked for isn't offered as free.
     pending: pending.map(p => ({
       kind: p.kind, entry_id: p.entry_id,
+      status: p.status,
       name: p.name, number: p.number, car: p.car,
       class_names: p.class_names,
     })),
+    // In flight for this caller — waiting on a decision, or already approved
+    // into a placement session. Either way there is no "Sign up" button to
+    // offer them.
     my_pending: !!(driver && pending.some(p => p.driver_id === driver.id))
       || !!(user && pending.some(p => p.uid === user.uid)),
+    // …and which of the two, so the screen doesn't tell somebody who has been
+    // approved that their sign-up is still with the admins.
+    my_awaiting_placement: pending.some(p =>
+      isAwaitingPlacement(p)
+      && ((driver && p.driver_id === driver.id) || (user && p.uid === user.uid))),
     classes: classes.map(c => ({ id: c.id, name: c.name, car: c.car || "" })),
     slots,
     roster: sortedRows,
@@ -242,11 +253,10 @@ export const POST = withUser(async (request, ctx, user) => {
     // the page loaded. Their OWN current car never counts against them — the
     // last Ferrari being full must not stop the person holding it from saving.
     // Everyone waiting on approval counts, same as on the sign-up form.
-    const pendingSnap = await db().collection("signup_requests")
-      .where("season_id", "==", seasonId).where("status", "==", PENDING).get();
+    const open = await openRequestsForSeason(seasonId);
     const cap = carCapacity(
       slot.car_entries || [],
-      carCounts([...entries, ...pendingSnap.docs.map(d => d.data())]),
+      carCounts([...entries, ...open]),
       car,
       selectedCarFor(entry, slot.class_id),
     );

@@ -11,7 +11,7 @@ import { db } from "@/lib/firebase";
 import { entryClassIds, orderClassIds } from "@/lib/classFilter";
 import { carSelectionSlots, resolveSignupRules, sortRosterByNumber } from "@/lib/carSelection";
 import { scopeByLeague } from "@/lib/serverAuth";
-import { DENIED, PENDING, SIGNUP_KIND } from "@/lib/signupQueue";
+import { DENIED, OPEN_STATUSES, PENDING, SIGNUP_KIND } from "@/lib/signupQueue";
 import { sortSeasons } from "@/lib/seasonOrder";
 import { attachRaceDates, fetchSeasonRaceDates } from "@/lib/seasonOrderServer";
 
@@ -33,6 +33,36 @@ export async function pendingClaim(uid) {
   return { id: snap.docs[0].id, ...snap.docs[0].data() };
 }
 
+// ── Reading the in-flight queue ────────────────────────────────────────────
+//
+// Every "who is still in flight?" read goes through these two, and both fetch
+// one status at a time and merge, rather than asking for `status in [...]` in a
+// single query.
+//
+// That is deliberate, and it is about not breaking a running league. The single
+// `in` form is one query instead of two and almost certainly works — but
+// "almost certainly" is doing real work in that sentence: an `in` filter beside
+// an equality filter is the shape Firestore is most likely to answer with
+// FAILED_PRECONDITION and a link to create a composite index, and there is no
+// way to find that out except in production. These paths are the sign-up form's
+// roster peek, its number check and the whole of /api/users/me/series, so
+// getting it wrong doesn't degrade a feature, it takes sign-ups down for
+// everybody. Two queries of a shape this app has always run cost one extra
+// round trip on a path that already makes several, and cannot fail that way.
+async function requestsByStatus(field, value, statuses = OPEN_STATUSES) {
+  const snaps = await Promise.all(statuses.map(status =>
+    db().collection("signup_requests")
+      .where(field, "==", value).where("status", "==", status).get()));
+  return snaps.flatMap(snap => snap.docs.map(d => ({ id: d.id, ...d.data() })));
+}
+
+// One season's in-flight requests — pending decisions AND registrations
+// approved into a placement session. Both still spend a car number and both
+// still stop their owner filing a second sign-up.
+export function openRequestsForSeason(seasonId) {
+  return requestsByStatus("season_id", seasonId);
+}
+
 // Every sign-up this ACCOUNT has waiting on an admin, across every season.
 //
 // Read for the platform usernames they carry: until an approval creates the
@@ -41,9 +71,7 @@ export async function pendingClaim(uid) {
 // twice in one sitting. See knownAliasesFor in lib/signupRequest.js.
 export async function pendingRequestsForUser(uid) {
   if (!uid) return [];
-  const snap = await db().collection("signup_requests")
-    .where("uid", "==", uid).where("status", "==", PENDING).get();
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return requestsByStatus("uid", uid);
 }
 
 // Sign-ups of this account's that an admin turned down.
@@ -110,15 +138,30 @@ export async function seasonContext(seasonId) {
 // `loadContext` is the season lookup, injected so the decision above it can be
 // tested without a database — the same seam `assignRowToBucket` uses for its
 // class lookup in lib/placements.js. Callers pass nothing.
-export async function placementsRequiredFor(rows = [], { loadContext = seasonContext } = {}) {
+//
+// `strict` changes what a FAILED lookup means, and the two callers genuinely
+// want opposite things:
+//
+//   the queue (default)  never fail a screen over this. The rows still have to
+//                        render, so a season that won't load falls back to what
+//                        its row was stamped with, and the worst case is a badge
+//                        that's out of date.
+//   the approval (strict) refuse rather than guess. Falling back to the stamp
+//                        there would seat a driver whose series was gated AFTER
+//                        they signed up — stamped `false`, gated now — which is
+//                        precisely the case the live resolution exists for, and
+//                        putting somebody on a grid they haven't raced for is
+//                        not a failure mode worth trading for one retry.
+export async function placementsRequiredFor(
+  rows = [], { loadContext = seasonContext, strict = false } = {},
+) {
   const seasonIds = [...new Set(rows.map(r => r?.season_id).filter(Boolean))];
   const contexts = new Map();
   await Promise.all(seasonIds.map(async id => {
     try {
       contexts.set(id, await loadContext(id));
     } catch (err) {
-      // Never fail the queue over the lookup — the rows still have to render,
-      // and each one falls back to what it was stamped with.
+      if (strict) throw err;
       console.error("Placements gate lookup failed", id, err);
       contexts.set(id, null);
     }
@@ -194,28 +237,32 @@ export async function rostersForSeasons(seasonIds = []) {
   ]));
 }
 
-// The pending requests of several seasons at once, keyed by season id. Carries
+// The IN-FLIGHT requests of several seasons at once, keyed by season id. Carries
 // BOTH kinds — sign-ups and car-number changes — because both spend a number:
 // whether somebody is asking to join on #24 or asking to move to #24, offering
 // it to the next player as free just makes work for the admin resolving them.
 // `kind` is what tells them apart downstream (see lib/signupQueue.js).
+//
+// "In flight" is wider than "in the admin's queue": a registration approved for
+// placements has been acknowledged but seats nobody, so its number is still
+// spoken for and its owner still can't file a second sign-up. `status` rides
+// along so a caller can tell "waiting on a decision" from "waiting on a
+// session" — see OPEN_STATUSES in lib/signupQueue.js.
 export async function pendingForSeasons(seasonIds = []) {
   const ids = [...new Set(seasonIds.filter(Boolean))];
   if (!ids.length) return {};
-  const snaps = await Promise.all(ids.map(id =>
-    db().collection("signup_requests")
-      .where("season_id", "==", id).where("status", "==", "pending").get()));
+  const perSeason = await Promise.all(ids.map(openRequestsForSeason));
   return Object.fromEntries(ids.map((id, i) => [
     id,
-    snaps[i].docs.map(d => {
-      const r = d.data();
+    perSeason[i].map(r => {
       return {
-        id: d.id,
+        id: r.id,
         // Which kind of request this is — a sign-up ("let me in") or a number
         // change ("move my number"). Everything downstream branches on it: the
         // roster peek must not render a number change as another person waiting
         // to join, but its number IS spoken for. See lib/signupQueue.js.
         kind: r.kind || SIGNUP_KIND,
+        status: r.status || PENDING,
         uid: r.uid,
         driver_id: r.driver_id ?? null,
         entry_id: r.entry_id ?? null,

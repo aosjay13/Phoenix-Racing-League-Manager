@@ -116,9 +116,11 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
 - ⏱ **Placements-gated tiers** — mark a **series, season or class** as **Placements Required** and
   nobody joins it straight off their Dashboard. The sign-up form warns that this tier has to be
   qualified for and its button becomes **Register for Placements**; the request lands in the
-  approvals queue flagged **Awaiting Placement**, linking to the Time Trials hub, so the admin
-  routes that driver through a placement session before finalising their class and roster spot.
-  Nothing is blocked and nothing changes for the series that don't ask for it
+  approvals queue flagged **Awaiting Placement**; and approving it **puts them on no roster** —
+  it acknowledges the registration, clears the badge, and moves them to an Awaiting Placement
+  list until a Time Trial session sorts them into a class. They join a grid the ordinary way,
+  by being placed on the board and having the roster built from that session. Nothing changes
+  for the series that don't ask for it
 - 🖼 **Social graphic exporter** — on Standings, Stats, Race Results, Skill Ratings, Records and the
   Schedule (a season's calendar, or the cross-season Upcoming / Recent Results feeds). League name
   + logo branding, a
@@ -552,18 +554,28 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
        qualify"* — and its button stops saying *Submit Sign Up* and says **Register for
        Placements**, because that is what pressing it actually does;
      - the row still lands in **Pending Approvals** exactly as any other sign-up does, flagged
-       **⏱ Awaiting Placement** with a link straight to the **Time Trials & Placements** hub —
-       your reminder to run that driver through a session before you finalise their class and
-       roster spot;
+       **⏱ Awaiting Placement** with a link straight to the **Time Trials & Placements** hub;
+     - **approving it puts them on no roster.** This is what makes the gate a gate rather than a
+       note. Approving a placement-graded sign-up acknowledges the registration and creates
+       *nothing*: the row moves to `approved_for_placements`, which clears it out of the queue
+       and off the red badge, and the driver moves to an **⏱ Awaiting Placement** list at the
+       bottom of the Approvals page. Their driver **profile** is still created and linked — that
+       isn't a roster, and without it the placement sheet has no profile to find them by and the
+       entry they eventually get wouldn't be attached to their account;
+     - they join a grid the ordinary way: place them on the board, press **Complete Session**,
+       and the roster build seats them in the class their times earned;
      - the season's card on the **Sign-ups** screen carries a *⏱ Placements required* chip, so a
-       player can tell the earned tier from the open one without opening either.
+       player can tell the earned tier from the open one without opening either — and once
+       they're registered, their own Sign-ups screen says they're waiting on a *session* rather
+       than on a decision.
 
-     It **blocks nothing**. The sign-up queues normally, you can still approve it in one press,
-     and a series left on *Inherit* behaves exactly as it always has. The setting carries one fact
-     — *this tier is earned* — from the admin who set it, through the player who reads it, to the
-     admin who resolves it, which is the only shape that can't strand a driver whose league runs
-     its placement nights informally. It follows the same inheritance rule as everything else
-     here, so a gated series can still exempt its Rookie class with **Not required**.
+     A registration on that list is still **in flight**: the car number they asked for stays
+     spoken for, they can't file a second sign-up for the same season, and they can withdraw it
+     themselves. **Withdraw** on the list is the way back out for somebody who never turns up.
+
+     A series left on *Inherit* behaves exactly as it always has — same form, same button, same
+     approval, same roster entry. It follows the same inheritance rule as everything else here,
+     so a gated series can still exempt its Rookie class with **Not required**.
 
      There is **one** car list. A separate *Require Car Manufacturer / Model Selection* switch with
      a second list used to sit here, and on the sign-up form it read as the same prompt asked
@@ -863,8 +875,14 @@ hot-lapping, time attack, and the placement night that sorts a new field into di
 **Getting people INTO one.** A league whose fast tier has to be earned marks that series, season or
 class **Placements Required** in League Setup (see *League Setup ▸ Placements Required* above).
 Drivers then sign up for it as normal, are told plainly that they're registering to qualify rather
-than claiming a grid slot, and arrive in **Pending Approvals** flagged **⏱ Awaiting Placement** —
-which is your cue to add them to a session here before you approve them onto the roster.
+than claiming a grid slot, and arrive in **Pending Approvals** flagged **⏱ Awaiting Placement**.
+
+Approving one of those **puts nobody on a roster** — that's the whole point of the flag. It
+acknowledges the registration and moves them to the **⏱ Awaiting Placement** list at the bottom of
+the Approvals page, which is your list of drivers owed a session. Add them here, place them on the
+board, and **Complete Session** builds the roster: that is the step that actually puts them on a
+grid, in the class their times earned. Their driver profile already exists (approval creates it),
+so the picker finds them by name and the entry they get is attached to their account.
 
 1. **Create the session.** Name it, pick the **track** (pick it from the Tracks database rather than
    typing it, so the laps set here are eligible for that venue's track records), and choose how many
@@ -1201,16 +1219,50 @@ move to #24, offering it to the next player as free would only make work for who
 change is not another person, though, so it never adds a row to a roster view — it hangs off the
 row that driver already has, as "→ #24".
 
-A sign-up for a tier marked **Placements Required** is flagged **⏱ Awaiting Placement** on its
-queue row, with a link to the Time Trials hub. It is an ordinary pending sign-up in every other
-respect — approve, deny and the badge count all treat it identically — because the flag exists to
-answer one question the row could not otherwise answer: *has this driver actually been placed yet?*
-See **The sign-up requirement chain** below for how the gate resolves and why the queue re-resolves
-it live.
+### Statuses, and the one that isn't finished
 
-A player can **withdraw** their own pending request (`DELETE /api/signup-requests/[id]`, owner-only,
-never staff): the row is marked `withdrawn` rather than deleted, so "asked and changed their mind"
-stays readable, and the number it was holding is free immediately.
+| `status` | Means | On a roster? |
+|---|---|---|
+| `pending` | waiting on an admin | no |
+| `approved` | approved onto the roster; the entry exists | **yes** |
+| `approved_for_placements` | registration into a **placement-graded** tier, acknowledged | **no** — waiting on a session |
+| `denied` | turned down, with a reason the player is shown | no |
+| `withdrawn` | the player took it back | no |
+
+`approved_for_placements` is the outcome of approving a sign-up for a tier marked **Placements
+Required**, and it is deliberately a third status rather than "approved with a flag": the
+difference between *on the roster* and *cleared to try out for it* is the whole difference the gate
+exists to express, and a boolean beside `approved` would be one
+`where("status","==","approved")` away from seating somebody who hasn't raced for it.
+`signupApprovalPlan()` in `lib/signupQueue.js` is the one place that decision is made — named and
+tested, rather than an `if` halfway down the approval route.
+
+**Out of the queue is not the same as finished.** A registration in that state has left the
+Approvals list and the red badge — which is the point, it acknowledges the request — but the driver
+is mid-flight: no roster entry, waiting on a session. So `OPEN_STATUSES` (`pending` +
+`approved_for_placements`) is what every *"who is still in flight for this season?"* read uses, and
+two things stay true of them exactly as they were while pending:
+
+- the **car number** they asked for is still spoken for, so it isn't handed to somebody else while
+  they wait for a placement night, and
+- they **can't file a second sign-up** for the same season — which is precisely what a player does
+  the moment their first one appears to have vanished.
+
+Only the two queries that mean *"what is waiting on an ADMIN?"* — the queue itself and its badge
+count — read `pending` alone. Those reads go through `openRequestsForSeason` /
+`pendingRequestsForUser` in `lib/carSelectionServer.js`, which fetch one status at a time and merge
+rather than using a single `status in [...]` filter: an `in` beside an equality filter is the shape
+most likely to want a composite index, and these are the sign-up form's roster peek, its number
+check and the whole of `/api/users/me/series` — getting it wrong wouldn't degrade a feature, it
+would take sign-ups down.
+
+A player can **withdraw** their own in-flight request (`DELETE /api/signup-requests/[id]`,
+owner-only, never staff) — including one approved for placements, since "I can't make the session
+after all" is exactly that case, and leaving it un-withdrawable would hold their number for a
+driver who has said they aren't coming. The row is marked `withdrawn` rather than deleted, so
+"asked and changed their mind" stays readable, and the number it was holding is free immediately.
+An admin's way back out is **Withdraw** on the Awaiting Placement list, which denies the row with a
+reason.
 
 **A car number is unique within its season, on every path that can set one.** The sign-up form
 checks as you type, the queue re-checks before granting a change (the number may have gone while
@@ -1406,25 +1458,31 @@ it is the one switch that adds **no field** to the form: it changes what *submit
 means. `resolveSignupRules().asksAnything` therefore deliberately ignores it — a series that only
 requires placements still asks a player for nothing beyond their name.
 
-Three things read it, and the wording for all three lives once in `lib/carSelection.js`
+Four things read it, and the wording for all of them lives once in `lib/carSelection.js`
 (`PLACEMENTS_REQUIRED_MESSAGE`, `PLACEMENTS_SUBMIT_LABEL`, `AWAITING_PLACEMENT_BADGE`):
 
 | Reader | What it does |
 |---|---|
 | `components/SignupForm.jsx` | warns before anything is typed, and renames the button to **Register for Placements**. Reads the class-resolved rules, so picking a gated class inside an ungated season turns the warning on the moment it's chosen |
 | `POST /api/signup-requests` | stamps `placements_required` on the request, so the record shows what the player was **told** |
-| `GET /api/admin/signup-requests` | re-resolves the gate **live** (`placementsRequiredFor` in `lib/carSelectionServer.js`), one season context per distinct season, and the queue row renders **⏱ Awaiting Placement** from `awaitingPlacement()` in `lib/signupQueue.js` |
+| `GET /api/admin/signup-requests` | re-resolves the gate **live** (`placementsRequiredFor` in `lib/carSelectionServer.js`), one season context per distinct season, and the queue row renders **⏱ Awaiting Placement** from `signupIsPlacementGated()` in `lib/signupQueue.js` |
+| `PATCH /api/admin/signup-requests/[id]` | the one that matters: re-resolves the gate live and, when it's on, **creates no roster entry** — the row goes to `approved_for_placements` instead |
 
-The queue resolves live rather than trusting the stamp for the same reason approval re-checks the
-number and the car: a queue is exactly where stale data comes from. An admin who ticks *Placements
-Required* this morning needs the people who signed up last week flagged too — those are precisely
-the rows that would otherwise be approved straight past the gate. The stamped value stays as the
-fallback for a season that has since been deleted. A **number change** is never flagged: that driver
-is already racing, so there is nothing to place them into.
+Two similarly-named predicates sit in `lib/signupQueue.js` and read like each other, so:
+`signupIsPlacementGated()` is a row still in the **queue** whose series requires placements (the
+badge); `isAwaitingPlacement()` is a row already **approved** into a session, on no roster.
 
-Nothing about the gate blocks a write. `PATCH /api/admin/signup-requests/[id]` approves a gated
-sign-up exactly as it approves any other, because a league that runs its placement nights informally
-must not end up with drivers stuck in a queue no code path can clear.
+The queue and the approval both resolve live rather than trusting the stamp, for the same reason
+approval re-checks the number and the car: a queue is exactly where stale data comes from. An admin
+who ticks *Placements Required* this morning needs the people who signed up last week flagged
+**and** kept off the roster when approved — those are precisely the rows that would otherwise go
+straight past the gate. The stamped value stays as the fallback for a season that has since been
+deleted. A **number change** is never flagged: that driver is already racing, so there is nothing
+to place them into.
+
+The one lookup in the approval route that is **not** allowed to fail quietly is this one: if the
+gate can't be read, approval is refused with a 503 rather than guessed at, because guessing wrong
+seats somebody the gate exists to keep off a grid.
 
 `lib/__tests__/placementsGate.test.jsx` covers it end to end, and leads with the case that would
 matter most if it broke: **a fully-configured league that never heard of placements gates nothing.**

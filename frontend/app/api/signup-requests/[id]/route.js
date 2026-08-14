@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { withUser } from "@/lib/serverAuth";
-import { APPROVED, DENIED, PENDING, WITHDRAWN } from "@/lib/signupQueue";
+import { APPROVED, DENIED, OPEN_STATUSES, WITHDRAWN } from "@/lib/signupQueue";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +27,12 @@ export const DELETE = withUser(async (request, { params }, user) => {
   if (req.uid !== user.uid) {
     return NextResponse.json({ error: "That isn't your request." }, { status: 403 });
   }
-  if (req.status !== PENDING) {
+  // Anything still in flight can be taken back — including a registration
+  // approved for placements. That one has been acknowledged but seats nobody,
+  // and "I can't make the session after all" is exactly the case this exists
+  // for; leaving it un-withdrawable would hold their car number indefinitely
+  // for a driver who has said they aren't coming.
+  if (!OPEN_STATUSES.includes(req.status)) {
     return NextResponse.json(
       { error: "That request has already been resolved." },
       { status: 400 },

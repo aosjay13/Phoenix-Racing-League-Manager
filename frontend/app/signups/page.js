@@ -422,14 +422,34 @@ export default function SignupsPage() {
                 </div>
               </div>
             )}
+            {/* Two different waits, and saying the wrong one is worse than
+                saying nothing. A registration already approved for placements
+                has been reviewed — telling that player "an admin will review
+                it" reads as though nothing has happened yet, and what they're
+                actually waiting for (a session, on a date somebody has to tell
+                them) never gets mentioned. */}
             {o.waiting.map(s => (
               <div className="join-status-card" key={s.season_id}>
-                <span className="join-status-icon" aria-hidden="true">⏳</span>
+                <span className="join-status-icon" aria-hidden="true">
+                  {s.my_awaiting_placement ? "⏱" : "⏳"}
+                </span>
                 <div className="join-status-body">
                   <strong>{seasonLabel(s)}</strong>
                   <span>
-                    Your sign-up has been sent. You&rsquo;ll be on the roster as soon as an admin
-                    approves it — there&rsquo;s nothing else to do.
+                    {s.my_awaiting_placement ? (
+                      <>
+                        <strong>Registered for placements.</strong> An admin has your registration.
+                        You&rsquo;re not on the roster yet — this series is placement-graded, so
+                        the next step is a Time Trial session, and you&rsquo;ll be placed into a
+                        class from your times. An admin will be in touch about when it runs;
+                        there&rsquo;s nothing else to do.
+                      </>
+                    ) : (
+                      <>
+                        Your sign-up has been sent. You&rsquo;ll be on the roster as soon as an
+                        admin approves it — there&rsquo;s nothing else to do.
+                      </>
+                    )}
                   </span>
                 </div>
               </div>
