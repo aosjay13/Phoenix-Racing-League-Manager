@@ -71,8 +71,10 @@ for (const level of LEVELS) {
   const html = render(`the ${level} panel's requirement block`,
     <CarSelectionFields value={{ ...BLANK_CAR_SELECTION_FORM }} onChange={() => {}} level={level} />);
   ok(`the ${level} panel renders its car list box`, html.includes("Car Selection"));
-  ok(`the ${level} panel renders all three requirement switches`,
-    (html.match(/<select/g) || []).length === 3);
+  // Car selection, car number, the lock, and the placements gate.
+  ok(`the ${level} panel renders all four requirement switches`,
+    (html.match(/<select/g) || []).length === 4);
+  ok(`the ${level} panel offers the placements gate`, html.includes("Placements Required"));
 }
 
 // With a list typed in, including a capped car — the exact path that threw,

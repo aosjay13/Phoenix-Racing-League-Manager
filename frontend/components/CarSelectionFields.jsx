@@ -63,6 +63,9 @@ function inheritedState(inherited) {
     car: { on: !!inherited?.require_car, from: inherited?.require_car_from },
     number: { on: !!inherited?.require_number, from: inherited?.require_number_from },
     locked: { on: !!inherited?.locked, from: inherited?.car?.locked_from },
+    placements: {
+      on: !!inherited?.require_placements, from: inherited?.require_placements_from,
+    },
     options: inherited?.car_options ?? [],
     options_from: inherited?.car?.options_from,
   };
@@ -152,6 +155,27 @@ export function CarSelectionFields({ value, onChange, level = "season", disabled
         help={<>
           Required: nobody in {covers} can submit a sign-up without a car number. Numbers are
           unique per season either way — a driver can&rsquo;t take one somebody already has.
+        </>}
+      />
+
+      {/* The placements gate. Not another thing to fill in on the form — it
+          changes what SUBMITTING the form means, which is why it's worded as
+          "must qualify" rather than as a field. See lib/carSelection.js. */}
+      <RequirementSelect
+        id={id("require_placements")} label="Placements Required"
+        value={value.require_placements_mode} disabled={disabled}
+        onChange={v => set({ require_placements_mode: v })}
+        inheritedOn={from.placements.on} inheritedFrom={from.placements.from}
+        help={<>
+          Required: nobody joins {covers} straight off their Dashboard. The sign-up form warns them
+          that this is a placement-gated tier and its button becomes{" "}
+          <strong>Register for Placements</strong>, and their row arrives in{" "}
+          <strong>Pending Approvals</strong> flagged <strong>Awaiting Placement</strong> — your
+          reminder to run them through <strong>Time Trials &amp; Placements</strong> before you
+          finalise their class and roster spot. Nothing is blocked: the sign-up still queues
+          normally and you can still approve it in one press. Use it on the tier that has to be
+          earned — a Gold Series, a Pro class — and leave the feeder tiers on{" "}
+          <em>Inherit</em> so people can still just join those.
         </>}
       />
 

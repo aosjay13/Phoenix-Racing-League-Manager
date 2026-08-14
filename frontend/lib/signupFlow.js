@@ -150,7 +150,16 @@ export function classesAskMore(season) {
   return Object.values(season?.class_rules || {}).some(r =>
     (r.require_number && !base.require_number)
     || (r.require_car && !base.require_car)
+    || (r.require_placements && !base.require_placements)
     || ((r.car_options || []).length && !(base.car_options || []).length));
+}
+
+// Is any part of this season placement-gated — the season itself, or one of its
+// classes? A season where only the Pro class is earned still has to say so on
+// its card, or the gate is a surprise sprung halfway through the form.
+export function seasonHasPlacements(season) {
+  return !!season?.rules?.require_placements
+    || Object.values(season?.class_rules || {}).some(r => r?.require_placements);
 }
 
 // The short badges under a season's name on its join card — enough to tell two
@@ -164,6 +173,10 @@ export function seasonChips(season) {
   // invitation, so it says so.
   chips.push(racing ? `${racing} racing` : "Be the first to join");
   if (waiting) chips.push(`${waiting} waiting to get in`);
+  // Said on the card, before anyone opens the form: this one is raced for
+  // rather than joined, and that's the single biggest difference between two
+  // series otherwise described identically.
+  if (seasonHasPlacements(season)) chips.push("⏱ Placements required");
   if (rules.require_number) chips.push("Car number needed");
   if ((rules.car_options || []).length) {
     chips.push(rules.require_car ? "Choose your car" : "Car choice optional");

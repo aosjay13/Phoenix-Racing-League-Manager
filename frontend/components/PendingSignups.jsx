@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { isNumberChange, requestSummary } from "@/lib/signupQueue";
+import { AWAITING_PLACEMENT_BADGE, AWAITING_PLACEMENT_HINT } from "@/lib/carSelection";
+import { awaitingPlacement, isNumberChange, requestSummary } from "@/lib/signupQueue";
 import { normalizeAliases } from "@/lib/aliases";
 import { signupsChanged } from "@/lib/pendingSignupAlerts";
 
@@ -22,6 +24,15 @@ import { signupsChanged } from "@/lib/pendingSignupAlerts";
 //   • with no `seasonId` (`scope="league"`) — on /approvals, the whole league's
 //     queue in one list, which is where the sidebar's red badge points. Each
 //     row then names the series and season it's for.
+//
+// A row for a PLACEMENT-GATED series carries an extra flag — "Awaiting
+// Placement". That series is one an admin marked as earned rather than joined
+// (a Gold Series, a Pro class), so the driver submitted a request to be placed,
+// not a request for a specific spot. Approving it still works exactly as it
+// does for anyone else; the flag is there because approving it BEFORE running
+// them through Time Trials is the mistake the setting exists to prevent, and
+// nothing else on the row would tell an admin that. The API resolves the gate
+// live, so it's true of a series switched on after these people signed up.
 //
 // `empty` is what to render when nothing is waiting. The roster panel passes
 // nothing and disappears; the Approvals page says so out loud.
@@ -120,6 +131,10 @@ export function PendingSignups({ seasonId = null, seasonName, scope = "season", 
           // repeat them under every row.
           const aliases = numberChange ? [] : normalizeAliases(req.aliases).filter(a => a.value);
           const summary = requestSummary(req);
+          // One reading of the gate, shared with the API (lib/signupQueue.js) —
+          // a number change is somebody already on the roster, so there's
+          // nothing to place.
+          const placement = awaitingPlacement(req);
           return (
             <div key={req.id} className="pending-signup-row">
               {req.user_photo
@@ -132,6 +147,11 @@ export function PendingSignups({ seasonId = null, seasonName, scope = "season", 
                 )}
                 {!numberChange && req.new_driver && (
                   <span className="pending-new-badge" title="No driver profile yet — approving creates one">new driver</span>
+                )}
+                {placement && (
+                  <span className="pending-placement-badge" title={AWAITING_PLACEMENT_HINT}>
+                    ⏱ {AWAITING_PLACEMENT_BADGE}
+                  </span>
                 )}
                 {req.user_email && (
                   <span style={{ color: "var(--ink-2)", fontSize: "0.78rem" }}> · {req.user_email}</span>
@@ -158,6 +178,16 @@ export function PendingSignups({ seasonId = null, seasonName, scope = "season", 
                 {aliases.length > 0 && (
                   <span style={{ display: "block", marginTop: 2, fontSize: "0.76rem", color: "var(--ink-2)" }}>
                     {aliases.map(a => `${a.label}: ${a.value}`).join(" · ")}
+                  </span>
+                )}
+                {/* What the flag means and where to act on it. A badge on its
+                    own tells an admin something is different about this row
+                    without telling them what to do about it, and the hub they
+                    need is two screens away. */}
+                {placement && (
+                  <span className="pending-placement-hint">
+                    {AWAITING_PLACEMENT_HINT}{" "}
+                    <Link href="/time-trials">Time Trials &amp; Placements →</Link>
                   </span>
                 )}
               </span>

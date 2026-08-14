@@ -298,6 +298,13 @@ export const POST = withUser(async (request, ctx, user) => {
     car,
     class_ids: classIds,
     class_names: classIds.map(id => validClasses.get(id)?.name).filter(Boolean),
+    // Was this tier placement-gated when they pressed the button? Stamped so
+    // the record says what the player was TOLD — the form warned them they'd
+    // be racing for a place rather than taking one, and an admin reading the
+    // row months later can see that. The queue's badge resolves the gate live
+    // on top of this, since an admin may have switched it on (or off) while
+    // the request waited; see /api/admin/signup-requests.
+    placements_required: rules.require_placements,
     aliases,
     created_at: new Date().toISOString(),
     resolved_at: null,

@@ -101,6 +101,7 @@ export async function GET(request) {
       const r = resolveSignupRules({ game, series, season });
       return {
         require_car: r.require_car, require_number: r.require_number,
+        require_placements: r.require_placements,
         car_options: r.car_options, car_entries: r.car_entries, note: r.note,
       };
     })(),
@@ -108,6 +109,7 @@ export async function GET(request) {
       const r = resolveSignupRules({ game, series, season, cls: c });
       return [c.id, {
         require_car: r.require_car, require_number: r.require_number,
+        require_placements: r.require_placements,
         car_options: r.car_options, car_entries: r.car_entries, note: r.note,
       }];
     })),

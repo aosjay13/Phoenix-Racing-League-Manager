@@ -5,7 +5,8 @@ import { AliasEditor } from "@/components/AliasEditor";
 import { api } from "@/lib/api";
 import { withDefaults } from "@/lib/aliases";
 import {
-  NUMBER_TAKEN_MESSAGE, carAvailability, carFullMessage, missingSignupFields,
+  NUMBER_TAKEN_MESSAGE, PLACEMENTS_REQUIRED_MESSAGE, PLACEMENTS_REQUIRED_TITLE,
+  PLACEMENTS_SUBMIT_LABEL, carAvailability, carFullMessage, missingSignupFields,
   missingSignupMessage, sortRosterByNumber,
 } from "@/lib/carSelection";
 import { isNumberChange, numberClaimed, rosterWithPending } from "@/lib/signupQueue";
@@ -53,6 +54,15 @@ const GAME_SCOPED_LABELS = new Set([IRACING_NAME_LABEL.toLowerCase(), IRACING_ID
 // pending request for an admin (POST /api/signup-requests). The form says so
 // before it's sent, so an approval isn't a surprise.
 //
+// On a tier the admin marked PLACEMENTS REQUIRED it says more than that. A Gold
+// Series or a Pro class is meant to be earned in a placement session, and a
+// form that quietly took the sign-up and said "you're in the queue" would have
+// a driver believing they'd joined it. So the gate is announced at the top of
+// the form and the button is renamed to what pressing it really does —
+// "Register for Placements". Resolved down the same game → series → season →
+// class chain as everything else here, so picking a gated class inside an
+// ungated season turns the warning on the moment it's chosen.
+//
 // Used inline under the season selector on /series-info, and inside a dialog
 // from a season's own screen — one component, so the two can't drift.
 // `knownAliases` is everything this ACCOUNT has already told the league it goes
@@ -91,6 +101,12 @@ export function SignupForm({ season, driver, knownAliases, knownName, onDone, on
   // at all. Everything below reads it rather than `rules.require_number`, so the
   // field, its validation and what gets submitted can't disagree.
   const asksNumber = !!rules.require_number;
+  // Is this a placement-gated tier? Read off the SAME resolved rules as
+  // everything else, so picking a class that's gated inside a season that
+  // isn't turns the warning on the moment it's chosen — and picking an
+  // ungated class inside a gated season turns it off again. See
+  // lib/carSelection.js.
+  const needsPlacements = !!rules.require_placements;
   const carOptions = rules.car_options || [];
   // Cars the admin capped, and how much of each cap is used. Counts everyone
   // on the roster AND everyone still waiting on approval — five people all
@@ -256,10 +272,27 @@ export function SignupForm({ season, driver, knownAliases, knownName, onDone, on
         {season.game_name ? ` · ${season.game_name}` : ""}
       </p>
 
+      {/* Placement-gated tier. Said FIRST and loudest, because it's the one
+          thing on this form that changes what pressing the button gets you:
+          everywhere else submitting asks for a roster place, here it asks for
+          a shot at earning one. A player who reads nothing else on the form
+          still can't miss it. */}
+      {needsPlacements && (
+        <div className="signup-placement-note" role="note">
+          <span className="signup-placement-icon" aria-hidden="true">⏱</span>
+          <span>
+            <strong>{PLACEMENTS_REQUIRED_TITLE}:</strong> {PLACEMENTS_REQUIRED_MESSAGE}
+          </span>
+        </div>
+      )}
+
       {/* Every sign-up waits on an admin — say so before it's sent. */}
       <div className="signup-approval-note">
         <strong>Sign-ups are reviewed by a league admin.</strong> Submitting puts you in the pending
-        queue with the choices below; you&rsquo;ll be on the official roster once an admin approves it.
+        queue with the choices below;{" "}
+        {needsPlacements
+          ? "an admin will place you from your session results, and you're on the official roster once they do."
+          : "you'll be on the official roster once an admin approves it."}
         {isNewDriver && " You're not in the league's driver list yet, so approving this creates your driver profile too."}
       </div>
 
@@ -479,8 +512,11 @@ export function SignupForm({ season, driver, knownAliases, knownName, onDone, on
       )}
       {error && <p className="field-error" style={{ marginTop: 10 }}>{error}</p>}
 
+      {/* The button says what pressing it actually does. On a placement-gated
+          tier "Submit Sign Up" would be promising a roster place this form
+          can't hand out. */}
       <button className="btn btn-primary" type="submit" disabled={blocked}>
-        {busy ? "Submitting…" : "Submit Sign Up"}
+        {busy ? "Submitting…" : needsPlacements ? PLACEMENTS_SUBMIT_LABEL : "Submit Sign Up"}
       </button>
       {onCancel && (
         <button className="btn btn-ghost" type="button" style={{ marginLeft: 8 }}

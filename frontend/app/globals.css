@@ -2204,6 +2204,38 @@ tbody tr:hover {
 
 .signup-approval-note strong { color: var(--ink-0); }
 
+/* "Placements Required": this series is EARNED, not joined, so submitting the
+   form registers an intent to qualify rather than claiming a grid slot. Drawn
+   in the warning red rather than the gold every other note on this form uses —
+   it's the one thing here that changes what pressing the button gets you, and
+   it has to survive a player skim-reading everything above it. */
+.signup-placement-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid rgba(230, 57, 70, 0.4);
+  border-left: 3px solid var(--accent-red);
+  border-radius: 10px;
+  background: var(--accent-red-dim);
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--ink-0);
+}
+
+.signup-placement-note strong {
+  color: var(--accent-red);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 0.8rem;
+}
+
+.signup-placement-icon {
+  font-size: 1.1rem;
+  line-height: 1.4;
+}
+
 /* Why a particular game insists on a field — an iRacing customer ID, so the
    organiser can send a league invite. */
 .signup-required-note {
@@ -2349,6 +2381,40 @@ tbody tr:hover {
   background: var(--accent-cyan-dim);
   border: 1px solid var(--border-accent);
 }
+
+/* Marks a queue row as one that has to go through a placement session before
+   its class and roster spot are final — the reminder that approving it on the
+   spot is the mistake "Placements Required" exists to prevent. */
+.pending-placement-badge {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  color: var(--accent-red);
+  background: var(--accent-red-dim);
+  border: 1px solid rgba(230, 57, 70, 0.4);
+}
+
+.pending-placement-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: var(--ink-1);
+}
+
+.pending-placement-hint a {
+  color: var(--accent-cyan);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pending-placement-hint a:hover { text-decoration: underline; }
 
 .roster-peek-pending {
   margin-left: 6px;

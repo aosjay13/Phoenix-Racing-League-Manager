@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { getRequestLeagueId, scopeByLeague, withAdmin } from "@/lib/serverAuth";
-import { APPROVED, PENDING } from "@/lib/signupQueue";
+import { APPROVED, PENDING, isNumberChange } from "@/lib/signupQueue";
+import { placementsRequiredFor } from "@/lib/carSelectionServer";
 
 export const dynamic = "force-dynamic";
 
@@ -43,5 +44,16 @@ export const GET = withAdmin(async (request) => {
 
   // Oldest first: whoever has been waiting longest is dealt with first.
   rows.sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
-  return NextResponse.json(rows);
+
+  // Which of them are waiting on a PLACEMENT rather than just on a decision.
+  // Resolved live (see placementsRequiredFor) so a series switched to
+  // "Placements Required" this morning flags the people who signed up for it
+  // last week — they're the ones who'd otherwise be approved straight onto the
+  // roster the gate exists to keep them off. Number changes are a driver
+  // already racing, so nothing is being placed.
+  const joins = rows.filter(r => !isNumberChange(r));
+  const gated = await placementsRequiredFor(joins);
+  return NextResponse.json(rows.map(r => ({
+    ...r, placements_required: !isNumberChange(r) && !!gated[r.id],
+  })));
 });

@@ -128,6 +128,21 @@ export function isOwnNumber(currentNumber, value) {
   return !!wanted && wanted === normalizeCarNumber(currentNumber);
 }
 
+// Is this queue row waiting on a PLACEMENT rather than only on a decision?
+//
+// True for a sign-up into a tier an admin marked "Placements Required" — the
+// driver asked to be placed, and approving them before they've run a session
+// puts them on the roster the gate exists to keep them off. The flag itself is
+// resolved server-side against the series/season/class as it stands right now
+// (see placementsRequiredFor in lib/carSelectionServer.js); this is just the
+// one reading of it, so the queue's badge and the API can't disagree.
+//
+// Never a number change: that driver is already racing, so there is nothing to
+// place them into.
+export function awaitingPlacement(req) {
+  return !isNumberChange(req) && !!req?.placements_required;
+}
+
 // A one-line summary of what a pending player asked for, for the admin queue.
 export function requestSummary(req) {
   if (isNumberChange(req)) {

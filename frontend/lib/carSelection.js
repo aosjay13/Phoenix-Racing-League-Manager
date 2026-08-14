@@ -1,6 +1,7 @@
 // Car selection & lock-in — "this game/series/season/class makes its drivers
 // pick a car, from this list, before it runs" — and the other things a sign-up
-// can be made to carry.
+// can be made to carry, including whether it has to go through PLACEMENTS
+// first (see "Placements required" below).
 //
 // ── THE ONE INHERITANCE RULE ────────────────────────────────────────────────
 //
@@ -197,6 +198,7 @@ export const REQUIREMENT_FIELDS = [
   "require_car_selection",
   "require_car_number",
   "car_selection_locked",
+  "require_placements",
 ];
 
 export const LEVEL_LABELS = {
@@ -273,7 +275,7 @@ export function resolveCarSelection({ game = null, series = null, season = null,
 
 // ── What a sign-up must carry ──────────────────────────────────────────────
 //
-// TWO separate things an admin can insist on, each resolved down the same
+// THREE separate things an admin can insist on, each resolved down the same
 // game → series → season → class chain as the car lock-in above (most specific
 // opinion wins; most specific list wins):
 //
@@ -281,6 +283,11 @@ export function resolveCarSelection({ game = null, series = null, season = null,
 //                              Answered on the season's own screen, and also
 //                              asked up front on the sign-up form.
 //   require_car_number       — a sign-up must name a car number.
+//   require_placements       — nobody joins this tier straight off the
+//                              Dashboard: a sign-up here is a request to be
+//                              PLACED, and an admin runs them through a Time
+//                              Trial & placement session before their roster
+//                              spot is final. See "Placements required" below.
 //
 // There is ONE car question, not two. A "manufacturer / model" requirement used
 // to sit beside the car one with its own list, and the two read as the same
@@ -299,6 +306,7 @@ export function resolveSignupRules({ game = null, series = null, season = null, 
   const docs = { class: cls, season, series, game };
   const car = resolveCarSelection({ game, series, season, cls });
   const number = resolveRequirement(docs, "require_car_number");
+  const placements = resolveRequirement(docs, "require_placements");
   return {
     // The car lock-in, unchanged — kept whole so callers can pass it straight
     // to the lock-in screen.
@@ -307,13 +315,20 @@ export function resolveSignupRules({ game = null, series = null, season = null, 
     car_options: car.options,
     car_entries: car.car_entries,
     require_number: number.on,
+    // The placements gate. Not a FIELD on the form — it changes what submitting
+    // the form MEANS, so the form says so and renames its button, and the admin
+    // queue flags the row. See PLACEMENTS_* below.
+    require_placements: placements.on,
     note: car.note,
     locked: car.locked,
     // Which level decided each one, so a screen can say "required by the
     // season" rather than leaving an admin to guess where it came from.
     require_car_from: car.required_from,
     require_number_from: number.on ? number.from : null,
+    require_placements_from: placements.on ? placements.from : null,
     // Does this scope ask a player for ANYTHING beyond their name at sign-up?
+    // Placements are deliberately not counted: they add no question to the
+    // form, they change what answering it leads to.
     get asksAnything() {
       return car.required || number.on;
     },
@@ -345,6 +360,48 @@ export function missingSignupMessage(missing = []) {
   return `This series needs ${list} before you can sign up.`;
 }
 
+// ── Placements required ────────────────────────────────────────────────────
+//
+// A league that sorts its field by pace — a Gold Series, a Pro class — needs
+// one thing to be true: nobody walks into the fast tier off the Dashboard.
+// Ticking "Placements Required" on a series, season or class is what makes
+// that true, and it changes THREE things and nothing else:
+//
+//   1. the sign-up form warns, up front, that this series is placement-gated;
+//   2. its button stops saying "Submit Sign Up" and says what pressing it
+//      actually does — register for placements;
+//   3. the row it files is flagged in the admin queue as AWAITING PLACEMENT,
+//      so whoever approves it knows to run the driver through the Time Trials
+//      hub before finalising their spot.
+//
+// What it deliberately does NOT do is block anything. The sign-up still files
+// exactly the same pending row, the admin can still approve it with one press,
+// and nothing about a series that doesn't require placements changes. The gate
+// is a piece of INFORMATION carried from the admin who set it, through the
+// player who reads it, to the admin who resolves it — which is the only shape
+// that can't strand a driver whose league runs placements informally.
+//
+// The wording lives here, once, so the form a player reads and the badge an
+// admin reads can never describe the same flag differently.
+
+export const PLACEMENTS_REQUIRED_TITLE = "Placements Required";
+
+export const PLACEMENTS_REQUIRED_MESSAGE =
+  "You must qualify via a placement session to race in this series. "
+  + "Submitting this form registers your intent to qualify — it doesn't put you on the grid. "
+  + "A league admin will run you through a Time Trial and place you in the right class "
+  + "before your roster spot is final.";
+
+// What the submit button says where the gate is on. A button that still said
+// "Submit Sign Up" would be promising a roster place this form can't give.
+export const PLACEMENTS_SUBMIT_LABEL = "Register for Placements";
+
+// The flag on the admin's queue row, and what it's there to remind them of.
+export const AWAITING_PLACEMENT_BADGE = "Awaiting Placement";
+export const AWAITING_PLACEMENT_HINT =
+  "This series requires placements — route this driver through a Time Trial "
+  + "session before finalising their class and roster spot.";
+
 // Does this class carry car-selection settings of its OWN, rather than just
 // inheriting the season's? That's what makes it a separate lock-in slot below:
 // a class with its own machinery asks its drivers for their own pick.
@@ -359,7 +416,8 @@ export function classDefinesCarSelection(cls) {
 // decide whether picking a class on the form changes what's being asked for.
 export function classDefinesSignupRules(cls) {
   return classDefinesCarSelection(cls)
-    || levelOpinion(cls, "require_car_number") !== null;
+    || levelOpinion(cls, "require_car_number") !== null
+    || levelOpinion(cls, "require_placements") !== null;
 }
 
 // ── Slots ──────────────────────────────────────────────────────────────────
@@ -490,6 +548,7 @@ export const BLANK_CAR_SELECTION_FORM = {
   require_car_selection_mode: INHERIT,
   require_car_number_mode: INHERIT,
   car_selection_locked_mode: INHERIT,
+  require_placements_mode: INHERIT,
   car_options: "",
   car_selection_note: "",
 };
@@ -506,6 +565,7 @@ export function carSelectionToForm(doc = {}) {
     require_car_selection_mode: mode("require_car_selection"),
     require_car_number_mode: mode("require_car_number"),
     car_selection_locked_mode: mode("car_selection_locked"),
+    require_placements_mode: mode("require_placements"),
     // carOptionList falls back to the retired manufacturer list, so the one box
     // opens showing whichever of the two an admin had filled in — and saving
     // writes it back as the car list, which is where it belongs now.

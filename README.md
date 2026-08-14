@@ -113,6 +113,12 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   that's upcoming or under way (completed seasons are closed to both), claiming their driver
   profile — or adding themselves as a new driver — as part of the flow. Admins can freeze every
   pick with one **Lock the selections** switch when the entry list is final
+- ⏱ **Placements-gated tiers** — mark a **series, season or class** as **Placements Required** and
+  nobody joins it straight off their Dashboard. The sign-up form warns that this tier has to be
+  qualified for and its button becomes **Register for Placements**; the request lands in the
+  approvals queue flagged **Awaiting Placement**, linking to the Time Trials hub, so the admin
+  routes that driver through a placement session before finalising their class and roster spot.
+  Nothing is blocked and nothing changes for the series that don't ask for it
 - 🖼 **Social graphic exporter** — on Standings, Stats, Race Results, Skill Ratings, Records and the
   Schedule (a season's calendar, or the cross-season Upcoming / Recent Results feeds). League name
   + logo branding, a
@@ -532,10 +538,32 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      car for the upcoming season") shows above their dropdown. **Lock the selections** freezes
      every pick when the entry list is final — set it back to reopen.
 
-     One more switch sits beside it, independent of it: **Require Car Number Selection** (no
-     sign-up without a number) — a league can demand numbers without caring what anyone drives.
-     Whatever you switch on is what the player's sign-up form renders and refuses to submit
-     without.
+     Two more switches sit beside it, independent of it and of each other:
+     **Require Car Number Selection** (no sign-up without a number) — a league can demand numbers
+     without caring what anyone drives — and **Placements Required**, below. Whatever you switch
+     on is what the player's sign-up form renders and refuses to submit without.
+
+   - **Placements Required** — for the tier that is *raced for* rather than joined. Set it to
+     **Required** on a Gold Series, a Pro class, or a whole season, and nobody walks into it off
+     their Dashboard:
+
+     - the sign-up form opens with a **Placements Required** warning — *"You must qualify via a
+       placement session to race in this series. Submitting this form registers your intent to
+       qualify"* — and its button stops saying *Submit Sign Up* and says **Register for
+       Placements**, because that is what pressing it actually does;
+     - the row still lands in **Pending Approvals** exactly as any other sign-up does, flagged
+       **⏱ Awaiting Placement** with a link straight to the **Time Trials & Placements** hub —
+       your reminder to run that driver through a session before you finalise their class and
+       roster spot;
+     - the season's card on the **Sign-ups** screen carries a *⏱ Placements required* chip, so a
+       player can tell the earned tier from the open one without opening either.
+
+     It **blocks nothing**. The sign-up queues normally, you can still approve it in one press,
+     and a series left on *Inherit* behaves exactly as it always has. The setting carries one fact
+     — *this tier is earned* — from the admin who set it, through the player who reads it, to the
+     admin who resolves it, which is the only shape that can't strand a driver whose league runs
+     its placement nights informally. It follows the same inheritance rule as everything else
+     here, so a gated series can still exempt its Rookie class with **Not required**.
 
      There is **one** car list. A separate *Require Car Manufacturer / Model Selection* switch with
      a second list used to sit here, and on the sign-up form it read as the same prompt asked
@@ -832,6 +860,12 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
 **Time Trials & Placements** in the sidebar is a hub of its own, for the sessions that aren't races:
 hot-lapping, time attack, and the placement night that sorts a new field into divisions.
 
+**Getting people INTO one.** A league whose fast tier has to be earned marks that series, season or
+class **Placements Required** in League Setup (see *League Setup ▸ Placements Required* above).
+Drivers then sign up for it as normal, are told plainly that they're registering to qualify rather
+than claiming a grid slot, and arrive in **Pending Approvals** flagged **⏱ Awaiting Placement** —
+which is your cue to add them to a session here before you approve them onto the roster.
+
 1. **Create the session.** Name it, pick the **track** (pick it from the Tracks database rather than
    typing it, so the laps set here are eligible for that venue's track records), and choose how many
    laps a driver may submit — **Maximum Laps**, or leave it blank for an unlimited hot-lapping
@@ -1121,7 +1155,7 @@ A car lock-in is stored on the driver's **roster entry** — the only document t
 `entries.class_id` mirrors `class_ids[0]`, so anything reading a single field still resolves.
 
 The settings behind it (`require_car_selection`, `car_options`, `car_selection_note`,
-`car_selection_locked`) sit on `series`, `seasons` *and* `classes` and resolve down the same
+`car_selection_locked`, `require_placements`) sit on `series`, `seasons` *and* `classes` and resolve down the same
 chain the points structure uses — the rules live once in `lib/carSelection.js` and are shared by
 the API routes and the screens. Players write their own pick through `POST /api/car-selection`,
 which resolves the entry from the driver profile linked to the **caller's** account rather than
@@ -1164,6 +1198,13 @@ move to #24, offering it to the next player as free would only make work for who
 `claimedNumbers` in `lib/signupQueue.js` reads the roster and the whole queue together. A number
 change is not another person, though, so it never adds a row to a roster view — it hangs off the
 row that driver already has, as "→ #24".
+
+A sign-up for a tier marked **Placements Required** is flagged **⏱ Awaiting Placement** on its
+queue row, with a link to the Time Trials hub. It is an ordinary pending sign-up in every other
+respect — approve, deny and the badge count all treat it identically — because the flag exists to
+answer one question the row could not otherwise answer: *has this driver actually been placed yet?*
+See **The sign-up requirement chain** below for how the gate resolves and why the queue re-resolves
+it live.
 
 A player can **withdraw** their own pending request (`DELETE /api/signup-requests/[id]`, owner-only,
 never staff): the row is marked `withdrawn` rather than deleted, so "asked and changed their mind"
@@ -1335,8 +1376,9 @@ Covered by `lib/__tests__/driverMerge.test.mjs`.
 
 ### The sign-up requirement chain
 
-Everything a sign-up can be made to carry — a car lock-in, a car number, and the
-lock itself — is set on any of **four** levels and resolved in `lib/carSelection.js` by one rule:
+Everything a sign-up can be made to carry — a car lock-in, a car number, the
+lock itself, and whether the tier has to be **placed into** — is set on any of **four** levels
+and resolved in `lib/carSelection.js` by one rule:
 
     game  →  series  →  season  →  class        the most specific level with an OPINION wins
 
@@ -1352,10 +1394,40 @@ requiring them under seasons that store a bare `false`, while an admin now has a
 one season off.
 
 `resolveSignupRules({ game, series, season, cls })` returns the resolved answers plus
-`require_number_from` / `require_car_from`, naming the level that
+`require_number_from` / `require_car_from` / `require_placements_from`, naming the level that
 decided — which is what lets League Setup label a switch *"Inherit — required by the series"*
 instead of leaving an admin to guess. `seasonContext` loads the game alongside the series, so no
 caller can accidentally resolve a season without the top of its chain.
+
+**The placements gate** (`require_placements`) rides the same chain and is stored the same way, but
+it is the one switch that adds **no field** to the form: it changes what *submitting* the form
+means. `resolveSignupRules().asksAnything` therefore deliberately ignores it — a series that only
+requires placements still asks a player for nothing beyond their name.
+
+Three things read it, and the wording for all three lives once in `lib/carSelection.js`
+(`PLACEMENTS_REQUIRED_MESSAGE`, `PLACEMENTS_SUBMIT_LABEL`, `AWAITING_PLACEMENT_BADGE`):
+
+| Reader | What it does |
+|---|---|
+| `components/SignupForm.jsx` | warns before anything is typed, and renames the button to **Register for Placements**. Reads the class-resolved rules, so picking a gated class inside an ungated season turns the warning on the moment it's chosen |
+| `POST /api/signup-requests` | stamps `placements_required` on the request, so the record shows what the player was **told** |
+| `GET /api/admin/signup-requests` | re-resolves the gate **live** (`placementsRequiredFor` in `lib/carSelectionServer.js`), one season context per distinct season, and the queue row renders **⏱ Awaiting Placement** from `awaitingPlacement()` in `lib/signupQueue.js` |
+
+The queue resolves live rather than trusting the stamp for the same reason approval re-checks the
+number and the car: a queue is exactly where stale data comes from. An admin who ticks *Placements
+Required* this morning needs the people who signed up last week flagged too — those are precisely
+the rows that would otherwise be approved straight past the gate. The stamped value stays as the
+fallback for a season that has since been deleted. A **number change** is never flagged: that driver
+is already racing, so there is nothing to place them into.
+
+Nothing about the gate blocks a write. `PATCH /api/admin/signup-requests/[id]` approves a gated
+sign-up exactly as it approves any other, because a league that runs its placement nights informally
+must not end up with drivers stuck in a queue no code path can clear.
+
+`lib/__tests__/placementsGate.test.jsx` covers it end to end, and leads with the case that would
+matter most if it broke: **a fully-configured league that never heard of placements gates nothing.**
+A bare stored `false` is "never configured", not "off", exactly as it is for the other three
+switches — which is what stops this change flipping any existing league's setup.
 
 **Required contact & platform information.** Two rules decide what a sign-up has to carry, both in
 `lib/signupRequest.js` so the form, the API and the approval step apply exactly one set:

@@ -171,6 +171,9 @@ export const GET = withUser(async (request, ctx, user) => {
         rules: {
           require_car: rules.require_car,
           require_number: rules.require_number,
+          // The placements gate, so the form can warn before anything is typed
+          // rather than after it's submitted — see lib/carSelection.js.
+          require_placements: rules.require_placements,
           car_options: rules.car_options,
           car_entries: rules.car_entries,
           note: rules.note,
@@ -180,6 +183,7 @@ export const GET = withUser(async (request, ctx, user) => {
           const r = resolveSignupRules({ game, series, season, cls: c });
           return [c.id, {
             require_car: r.require_car, require_number: r.require_number,
+            require_placements: r.require_placements,
             car_options: r.car_options, car_entries: r.car_entries, note: r.note,
           }];
         })),

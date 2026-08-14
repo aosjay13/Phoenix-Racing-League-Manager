@@ -9,7 +9,7 @@
 
 import { db } from "@/lib/firebase";
 import { entryClassIds, orderClassIds } from "@/lib/classFilter";
-import { carSelectionSlots, sortRosterByNumber } from "@/lib/carSelection";
+import { carSelectionSlots, resolveSignupRules, sortRosterByNumber } from "@/lib/carSelection";
 import { scopeByLeague } from "@/lib/serverAuth";
 import { DENIED, PENDING, SIGNUP_KIND } from "@/lib/signupQueue";
 import { sortSeasons } from "@/lib/seasonOrder";
@@ -90,6 +90,51 @@ export async function seasonContext(seasonId) {
     .sort((a, b) => (Number(a.sort_order || 0) - Number(b.sort_order || 0)) ||
       String(a.name || "").localeCompare(String(b.name || "")));
   return { season, series, game, classes, slots: carSelectionSlots({ game, series, season, classes }) };
+}
+
+// Which of these queued requests sit behind a PLACEMENTS gate, as of right now
+// — `{ [requestId]: true|false }`, for the "Awaiting Placement" flag on the
+// admin queue.
+//
+// Resolved live rather than read off the stored `placements_required`, for the
+// same reason approval re-checks the number and the car: a queue is exactly
+// where stale data comes from. An admin who ticks "Placements Required" on a
+// series today needs the drivers already waiting in it flagged too — those rows
+// were stamped before the tick, and they're precisely the ones most likely to
+// be let through by mistake. The stamped value is kept as the fallback, so a
+// season that has since been deleted still reports what the player was told.
+//
+// One context load per DISTINCT season, not per row: a league-wide queue is
+// mostly several people waiting on the same handful of seasons.
+export async function placementsRequiredFor(rows = []) {
+  const seasonIds = [...new Set(rows.map(r => r?.season_id).filter(Boolean))];
+  const contexts = new Map();
+  await Promise.all(seasonIds.map(async id => {
+    try {
+      contexts.set(id, await seasonContext(id));
+    } catch (err) {
+      // Never fail the queue over the lookup — the rows still have to render,
+      // and each one falls back to what it was stamped with.
+      console.error("Placements gate lookup failed", id, err);
+      contexts.set(id, null);
+    }
+  }));
+
+  const out = {};
+  for (const row of rows) {
+    const context = contexts.get(row?.season_id) || null;
+    if (!context) {
+      out[row.id] = !!row?.placements_required;
+      continue;
+    }
+    const { season, series, game, classes } = context;
+    // Against the class they asked for, so a gated Pro class inside an ungated
+    // season flags — and an ungated class inside a gated season doesn't. The
+    // first class answers for the row, exactly as it does at submission.
+    const cls = classes.find(c => (row?.class_ids || []).includes(c.id)) || null;
+    out[row.id] = resolveSignupRules({ game, series, season, cls }).require_placements;
+  }
+  return out;
 }
 
 // Every roster entry in a season, with each driver's classes put into the
