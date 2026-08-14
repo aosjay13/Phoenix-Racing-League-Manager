@@ -55,6 +55,31 @@ export function writeScopeParams(scope) {
   }
 }
 
+// A link to a page AT A NAMED SCOPE, in exactly the shape readScopeParams()
+// reads back — so the same encoding builds the link and resolves it.
+//
+// Used where a link has to carry its own scope instead of inheriting whatever
+// the menus happen to be set to: a message about one season pointing at THAT
+// season's standings. Levels left undefined are omitted, so the link only
+// speaks about what it knows and everything else falls back to the reader's own
+// selection; `""` still travels as an explicit All-….
+//
+// The href is only half of it. On a hard load the provider reads these params
+// and opens on them, but a client-side navigation keeps the provider mounted —
+// it never re-reads the URL, and re-stamps the address bar from the selection
+// it already holds. So a link built here is paired with selectScope() from
+// LeagueProvider on the click; see components/MessageBoard.jsx.
+export function scopeHref(path, scope = {}) {
+  const params = new URLSearchParams();
+  for (const key of SCOPE_KEYS) {
+    const v = scope[key];
+    if (v == null) continue;
+    params.set(key, v === "" ? ALL : v);
+  }
+  const qs = params.toString();
+  return qs ? `${path}?${qs}` : path;
+}
+
 // Read/write for a single page-owned param (the Drivers/Teams tab on Standings,
 // the session on a race page) so those choices survive a copied link too.
 export function readParam(key) {

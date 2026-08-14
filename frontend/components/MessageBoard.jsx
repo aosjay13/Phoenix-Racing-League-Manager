@@ -7,9 +7,10 @@ import { DISCORD_INVITE_URL } from "@/components/DiscordCallout";
 import { messagesChanged, useMessages } from "@/components/MessagesProvider";
 import { api } from "@/lib/api";
 import {
-  adminNote, awaitingAdmin, messageActions, messageBody, messageKind, messageTitle,
-  messageTone, openPlayerMessages, playerInbox, replies, unreadByPlayer,
+  adminNote, awaitingAdmin, messageActions, messageBody, messageKind, messageScope,
+  messageTitle, messageTone, openPlayerMessages, playerInbox, replies, unreadByPlayer,
 } from "@/lib/messages";
+import { scopeHref } from "@/lib/scopeLink";
 
 // The player's message board, across the top of the Dashboard.
 //
@@ -35,16 +36,29 @@ import {
 // Where each kind of message points. A decision that doesn't tell you what to
 // do next is only half of one — an approval should land you on the schedule, a
 // denial back on the form.
+//
+// `scoped` marks a destination that reads the Game ▸ Series ▸ Season ▸ Class
+// menus at the top of the page, and so has to be TOLD which season the card is
+// about. Without it the button opens the right page at whatever the reader
+// happens to have selected: a card announcing the end of Season 4 of one series
+// showing the standings of Season 6 of another. That isn't a link, it's the app
+// contradicting the sentence directly above it. See messageScope in
+// lib/messages.js for what a card knows, and selectScope in
+// components/LeagueProvider.jsx for why the click has to do work the href can't.
+//
+// The unscoped ones are lists of their own — Sign-ups shows every season open to
+// this player, a profile is a profile — and are left alone.
 const ACTIONS = {
-  schedule: { href: "/schedule", label: "📅 See your series schedule" },
-  calendar: { href: "/calendar", label: "🗓️ League calendar" },
+  schedule: { href: "/schedule", label: "📅 See your series schedule", scoped: true },
+  calendar: { href: "/calendar", label: "🗓️ League calendar", scoped: true },
   signups: { href: "/signups", label: "📝 Go to Sign-ups" },
   myseries: { href: "/signups", label: "📝 Your series" },
   profile: { href: "/profile", label: "👤 Your profile" },
   // Where a finished season points. It has nothing left to answer, so the two
-  // places its racing still lives are the only useful destinations.
-  standings: { href: "/standings", label: "🏆 Final standings" },
-  stats: { href: "/stats", label: "📊 Season stats" },
+  // places its racing still lives are the only useful destinations — and both
+  // are worthless pointed at the wrong season, which is what `scoped` fixes.
+  standings: { href: "/standings", label: "🏆 Final standings", scoped: true },
+  stats: { href: "/stats", label: "📊 Season stats", scoped: true },
 };
 
 export function MessageBoard() {
@@ -98,6 +112,9 @@ function MessageCard({ msg, reload, unread = false, waiting = false }) {
   const actions = messageActions(msg);
   const isWelcome = kind === "signup_approved";
   const leagueName = league?.league?.name || "the league";
+  // The season this card is about, for the buttons that open a scoped page.
+  // Null when it names no season, in which case those buttons stay plain links.
+  const scope = messageScope(msg);
 
   async function markRead() {
     setBusy(true);
@@ -161,9 +178,8 @@ function MessageCard({ msg, reload, unread = false, waiting = false }) {
                 Join the Discord ↗<span className="sr-only"> (opens in a new tab)</span>
               </a>
             ) : ACTIONS[a] ? (
-              <Link key={a} href={ACTIONS[a].href} className="btn btn-primary">
-                {ACTIONS[a].label}
-              </Link>
+              <MessageAction key={a} action={ACTIONS[a]} scope={scope}
+                leagueId={String(msg.league_id ?? "")} league={league} />
             ) : null))}
           </div>
         )}
@@ -230,5 +246,49 @@ function MessageCard({ msg, reload, unread = false, waiting = false }) {
         )}
       </div>
     </section>
+  );
+}
+
+// One button on a card.
+//
+// A scoped destination is reached TWO ways at once, because neither works
+// alone:
+//
+//   • the href carries the scope as query params (lib/scopeLink.js), which is
+//     what a cold load, a middle-click into a new tab and a copied link all
+//     resolve from — the provider reads those params when it mounts;
+//   • the click sets the same scope on the provider, because an ordinary
+//     in-app navigation does NOT remount it. It never re-reads the query
+//     string, and it re-stamps the address bar from the selection it already
+//     holds — so the href alone would be overwritten on arrival and the reader
+//     would land on the right page at whatever season they were already on.
+//
+// Both routes set the same four values, so it doesn't matter which one a
+// reader takes. An unscoped action, or a card that names no season, is the
+// plain <Link> it always was.
+//
+// The exception is a card from ANOTHER LEAGUE. A player's inbox is theirs, not
+// one league's, so somebody racing in two of them reads both leagues' decisions
+// on one board — and a season id from the other league means nothing to the
+// menus here. That one navigates the hard way, as a plain <a>: the page reloads,
+// the provider mounts, and it reads the league out of the link along with the
+// scope, which is the only path that switches league and drills into a season in
+// one step.
+export function MessageAction({ action, scope, leagueId, league }) {
+  if (!action.scoped || !scope) {
+    return <Link href={action.href} className="btn btn-primary">{action.label}</Link>;
+  }
+
+  const elsewhere = !!leagueId && !!league?.leagueId && leagueId !== league.leagueId;
+  const href = scopeHref(action.href, { ...scope, ...(leagueId ? { league: leagueId } : {}) });
+
+  if (elsewhere) {
+    return <a href={href} className="btn btn-primary">{action.label}</a>;
+  }
+  return (
+    <Link href={href} className="btn btn-primary"
+      onClick={() => league?.selectScope?.({ ...scope, className: scope.class })}>
+      {action.label}
+    </Link>
   );
 }

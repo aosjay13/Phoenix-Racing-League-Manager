@@ -123,6 +123,33 @@ export function LeagueProvider({ children }) {
     setVersion(v => v + 1);
   }, []);
 
+  // Move the menus to a named game/series/season/class in one go.
+  //
+  // A scope link (lib/scopeLink.js) only opens on its scope when the page is
+  // loaded cold — that's when the provider reads the URL. Follow the same link
+  // from inside the app and the provider never remounts, never re-reads the
+  // query string, and re-stamps the address bar from the selection it already
+  // holds, so the reader lands on the right PAGE at the wrong SEASON. This is
+  // the other half: the click sets the scope, the href carries it for a new tab
+  // or a copied link, and both routes end up in the same place.
+  //
+  // Setting all four together is what makes it land. Each tier re-resolves
+  // itself when its parent's list arrives, keeping the current value when the
+  // list contains it and falling back to the first row when it doesn't — so a
+  // season set on its own, before its series and game, would be thrown away as
+  // "not in this list" a moment later. Set together, every tier finds itself.
+  //
+  // The class is set by NAME for the same reason it's remembered by name: a
+  // class doc belongs to one season, so the id means nothing until that
+  // season's classes have loaded. Its id is cleared and the classes effect
+  // below re-resolves it in the new scope.
+  const selectScope = useCallback(({ game, series, season, className: cls } = {}) => {
+    if (game !== undefined) setGameId(game || "");
+    if (series !== undefined) setSeriesId(series || "");
+    if (season !== undefined) setSeasonId(season || "");
+    if (cls !== undefined) { setClassName(cls || ""); setClassId(""); }
+  }, []);
+
   useEffect(() => {
     if (leagueId === null) return;          // wait until the active league is known
     const saved = loadSaved();
@@ -270,7 +297,7 @@ export function LeagueProvider({ children }) {
     switchLeague, reloadLeagues,
     games, seriesList, seasons, classes,
     gameId: gameId ?? "", seriesId: seriesId ?? "", seasonId: seasonId ?? "", classId: classId ?? "",
-    setGameId, setSeriesId, setSeasonId,
+    setGameId, setSeriesId, setSeasonId, selectScope,
     // Picking a class records its name too, so the selection survives a change
     // of scope (where the same class is a different doc).
     setClassId: id => {
