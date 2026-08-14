@@ -123,33 +123,6 @@ export function LeagueProvider({ children }) {
     setVersion(v => v + 1);
   }, []);
 
-  // Move the menus to a named game/series/season/class in one go.
-  //
-  // A scope link (lib/scopeLink.js) only opens on its scope when the page is
-  // loaded cold — that's when the provider reads the URL. Follow the same link
-  // from inside the app and the provider never remounts, never re-reads the
-  // query string, and re-stamps the address bar from the selection it already
-  // holds, so the reader lands on the right PAGE at the wrong SEASON. This is
-  // the other half: the click sets the scope, the href carries it for a new tab
-  // or a copied link, and both routes end up in the same place.
-  //
-  // Setting all four together is what makes it land. Each tier re-resolves
-  // itself when its parent's list arrives, keeping the current value when the
-  // list contains it and falling back to the first row when it doesn't — so a
-  // season set on its own, before its series and game, would be thrown away as
-  // "not in this list" a moment later. Set together, every tier finds itself.
-  //
-  // The class is set by NAME for the same reason it's remembered by name: a
-  // class doc belongs to one season, so the id means nothing until that
-  // season's classes have loaded. Its id is cleared and the classes effect
-  // below re-resolves it in the new scope.
-  const selectScope = useCallback(({ game, series, season, className: cls } = {}) => {
-    if (game !== undefined) setGameId(game || "");
-    if (series !== undefined) setSeriesId(series || "");
-    if (season !== undefined) setSeasonId(season || "");
-    if (cls !== undefined) { setClassName(cls || ""); setClassId(""); }
-  }, []);
-
   useEffect(() => {
     if (leagueId === null) return;          // wait until the active league is known
     const saved = loadSaved();
@@ -272,6 +245,41 @@ export function LeagueProvider({ children }) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ gameId, seriesId, seasonId, classId, className }));
   }, [gameId, seriesId, seasonId, classId, className]);
 
+  // A LINK THAT NAMES A SCOPE OPENS ON IT, however it was followed.
+  //
+  // Reading the URL used to happen once, at mount (loadSaved), which meant a
+  // scope link only worked on a COLD load. Followed from inside the app it did
+  // nothing: the provider stays mounted, nothing re-read the query string, and
+  // the effect below re-stamped the address bar from the selection already
+  // held — so the reader landed on the right page at whatever season they were
+  // already on, and the link's own params were wiped a moment after arriving.
+  //
+  // The obvious alternative — have the link's onClick set the scope directly —
+  // is worse, and quietly: the state change re-runs the effect below while the
+  // router's navigation is still in flight, and the replaceState it does
+  // CANCELS that navigation. The button then appears to do nothing at all
+  // except rewrite the query string of the page you were already on.
+  //
+  // So the URL stays the one source of truth and is re-read on every
+  // navigation. Declared ABOVE the write effect deliberately: both run in the
+  // same commit, effects run in order, and this one has to read the incoming
+  // params before the other overwrites them with the outgoing selection.
+  //
+  // Only params actually PRESENT are applied, so an ordinary nav link — which
+  // carries none — changes nothing and the selection survives the move exactly
+  // as it always has.
+  useEffect(() => {
+    const wanted = urlSelection();
+    if (!Object.keys(wanted).length) return;
+    if (wanted.gameId !== undefined) setGameId(wanted.gameId);
+    if (wanted.seriesId !== undefined) setSeriesId(wanted.seriesId);
+    if (wanted.seasonId !== undefined) setSeasonId(wanted.seasonId);
+    // By NAME, for the same reason the selection is remembered by name: a class
+    // doc belongs to one season, so its id means nothing until that season's
+    // classes have loaded. The classes effect above re-resolves the id.
+    if (wanted.className !== undefined) { setClassName(wanted.className); setClassId(""); }
+  }, [pathname]);
+
   // Mirror the resolved selection into the address bar, so the URL of any page
   // is already the shareable link to what's on screen — no extra step, and
   // nothing about the page itself changes. Held back until every level has
@@ -297,7 +305,7 @@ export function LeagueProvider({ children }) {
     switchLeague, reloadLeagues,
     games, seriesList, seasons, classes,
     gameId: gameId ?? "", seriesId: seriesId ?? "", seasonId: seasonId ?? "", classId: classId ?? "",
-    setGameId, setSeriesId, setSeasonId, selectScope,
+    setGameId, setSeriesId, setSeasonId,
     // Picking a class records its name too, so the selection survives a change
     // of scope (where the same class is a different doc).
     setClassId: id => {

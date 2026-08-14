@@ -43,8 +43,8 @@ import { scopeHref } from "@/lib/scopeLink";
 // happens to have selected: a card announcing the end of Season 4 of one series
 // showing the standings of Season 6 of another. That isn't a link, it's the app
 // contradicting the sentence directly above it. See messageScope in
-// lib/messages.js for what a card knows, and selectScope in
-// components/LeagueProvider.jsx for why the click has to do work the href can't.
+// lib/messages.js for what a card knows, and the URL-reading effect in
+// components/LeagueProvider.jsx for how the link's params reach the menus.
 //
 // The unscoped ones are lists of their own — Sign-ups shows every season open to
 // this player, a profile is a profile — and are left alone.
@@ -251,29 +251,27 @@ function MessageCard({ msg, reload, unread = false, waiting = false }) {
 
 // One button on a card.
 //
-// A scoped destination is reached TWO ways at once, because neither works
-// alone:
+// A scoped destination carries its scope in the HREF and nothing else does the
+// work — LeagueProvider re-reads those params on every navigation, so the same
+// link lands the same way whether it was clicked here, opened in a new tab or
+// pasted into an address bar days later.
 //
-//   • the href carries the scope as query params (lib/scopeLink.js), which is
-//     what a cold load, a middle-click into a new tab and a copied link all
-//     resolve from — the provider reads those params when it mounts;
-//   • the click sets the same scope on the provider, because an ordinary
-//     in-app navigation does NOT remount it. It never re-reads the query
-//     string, and it re-stamps the address bar from the selection it already
-//     holds — so the href alone would be overwritten on arrival and the reader
-//     would land on the right page at whatever season they were already on.
+// Setting the scope in an onClick instead was tried and is actively worse: the
+// state change re-runs the provider's URL-stamping effect while the router's
+// navigation is still in flight, and the replaceState it does CANCELS that
+// navigation — the button appears to do nothing but rewrite the query string of
+// the page you were already on. One mechanism, in the link.
 //
-// Both routes set the same four values, so it doesn't matter which one a
-// reader takes. An unscoped action, or a card that names no season, is the
-// plain <Link> it always was.
+// An unscoped action, or a card that names no season, is the plain link it
+// always was.
 //
 // The exception is a card from ANOTHER LEAGUE. A player's inbox is theirs, not
 // one league's, so somebody racing in two of them reads both leagues' decisions
 // on one board — and a season id from the other league means nothing to the
-// menus here. That one navigates the hard way, as a plain <a>: the page reloads,
-// the provider mounts, and it reads the league out of the link along with the
-// scope, which is the only path that switches league and drills into a season in
-// one step.
+// menus here. Switching league drops the whole drill-down and refetches, which
+// a soft navigation has no way to sequence, so that one goes the hard way as a
+// plain <a>: the page reloads, the provider mounts, and it reads the league out
+// of the link along with the scope.
 export function MessageAction({ action, scope, leagueId, league }) {
   if (!action.scoped || !scope) {
     return <Link href={action.href} className="btn btn-primary">{action.label}</Link>;
@@ -282,13 +280,7 @@ export function MessageAction({ action, scope, leagueId, league }) {
   const elsewhere = !!leagueId && !!league?.leagueId && leagueId !== league.leagueId;
   const href = scopeHref(action.href, { ...scope, ...(leagueId ? { league: leagueId } : {}) });
 
-  if (elsewhere) {
-    return <a href={href} className="btn btn-primary">{action.label}</a>;
-  }
-  return (
-    <Link href={href} className="btn btn-primary"
-      onClick={() => league?.selectScope?.({ ...scope, className: scope.class })}>
-      {action.label}
-    </Link>
-  );
+  return elsewhere
+    ? <a href={href} className="btn btn-primary">{action.label}</a>
+    : <Link href={href} className="btn btn-primary">{action.label}</Link>;
 }

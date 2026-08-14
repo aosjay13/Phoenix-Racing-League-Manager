@@ -96,6 +96,17 @@ check("the second entry fills in what the first left blank",
 check("classes read in the season's order, not the order they were ticked",
   completionRecipients([{ user_id: "u1", class_ids: ["am", "pro"] }], classes)[0].class_names,
   ["Pro", "Amateur"]);
+// …and not the order the ROSTER ROWS came back in either, which is the one an
+// end-to-end run caught: a roster is read straight out of Firestore, so which
+// of a driver's two entries arrives first is not an order at all. Merging the
+// names row by row read "Amateur & Pro" on a season that lists Pro above
+// Amateur on every other screen.
+check("nor the order the entries happened to be stored in",
+  completionRecipients([
+    { user_id: "u1", class_ids: ["am"] },
+    { user_id: "u1", class_ids: ["pro"] },
+  ], classes)[0].class_names,
+  ["Pro", "Amateur"]);
 check("an entry from before multi-class carries a single class_id",
   completionRecipients([{ user_id: "u1", class_id: "am" }], classes)[0].class_names, ["Amateur"]);
 check("a single-class season names no class at all",
