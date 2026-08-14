@@ -464,6 +464,49 @@ a {
   font-size: 0.8rem;
 }
 
+/* Rows that build their own layout — the Time Trials hub, the merge
+   suggestions — keep their buttons outside the row's link already, so the action
+   group can stay in the flex flow instead of being overlaid. That matters twice
+   over: flexbox reserves the space, so a wide group (a Placement badge, a status
+   badge, Open and Delete) can never land on top of the meta cells, and the group
+   is positioned by its own row rather than by a `.list-row-wrap` those rows
+   don't have — without one it would anchor to the page instead. */
+.list-row.actions-inline .list-row-actions {
+  position: static;
+  transform: none;
+  flex: 0 0 auto;
+  align-items: center;
+  margin-left: auto;
+}
+
+/* Reserve a steady width for the group so the meta cells still line up down the
+   list whatever buttons a row happens to carry — the Placement badge and the
+   Delete button only show on some of them. This number is cosmetic, unlike the
+   reserved padding an overlaid group depends on: a group that outgrows it
+   pushes its own row's meta along instead of covering it. */
+@media (min-width: 901px) {
+  .list-row.actions-inline .list-row-actions {
+    min-width: 330px;
+    justify-content: flex-end;
+  }
+}
+
+/* Above the mobile breakpoint the meta cells are still on show, and a name,
+   four cells and a full button group don't fit one line on a tablet. Give the
+   name its own line there so nothing has to be squeezed to nothing, and let the
+   group itself wrap so a phone too narrow for four buttons stacks them rather
+   than running off the row. */
+@media (max-width: 900px) {
+  .list-row.actions-inline { flex-wrap: wrap; }
+  .list-row.actions-inline .list-row-name { flex: 1 0 100%; }
+
+  .list-row.actions-inline .list-row-actions {
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
+
 /* Collapsible sub-section header for grouped directories (Tracks by type). */
 .list-group-header {
   display: flex;

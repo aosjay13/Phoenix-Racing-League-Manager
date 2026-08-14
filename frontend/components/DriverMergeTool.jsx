@@ -198,7 +198,7 @@ export function DriverMergeTool() {
           </p>
           <div className="list-rows" style={{ marginTop: 10 }}>
             {shown.map(pair => (
-              <div key={pair.key} className="list-row">
+              <div key={pair.key} className="list-row actions-inline">
                 <div className="list-row-name">
                   <strong>{pair.primary.name} ← {pair.duplicate.name}</strong>
                   <span>
