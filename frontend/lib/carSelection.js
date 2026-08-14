@@ -601,6 +601,36 @@ export function carSelectionFormToBody(form = {}) {
   return body;
 }
 
+// The same switches as FIELD SPECS for the CRUD factory that stores them —
+// what lib/entityApi.js hands to games, series, seasons and classes alike.
+//
+// It lives here, beside the form and the body it has to agree with, because the
+// factory writes only the fields its spec names: a switch this file knows about
+// and that file doesn't is silently dropped on save, with nothing thrown, no
+// test of this library failing, and League Setup cheerfully reporting success.
+// One list, three projections (form, body, storage spec), so a new switch
+// reaches all three or none.
+//
+// `bool: true` stores a real boolean, so an explicit `false` survives rather
+// than reading back as "unset"; the mode defaults to "" — inherit — which is
+// what a level nobody configured has always meant.
+export function signupRequirementFieldSpecs() {
+  return Object.fromEntries(REQUIREMENT_FIELDS.flatMap(field => [
+    [field, { bool: true, default: false }],
+    [`${field}_mode`, { default: INHERIT }],
+  ]));
+}
+
+// Everything carSelectionFormToBody writes that ISN'T one of the switches — the
+// car list, the retired manufacturer list it empties, and the instructions note.
+// Named here so the storage layer and the round-trip test agree on the whole
+// set rather than on the half that happens to be generated.
+export const CAR_SELECTION_TEXT_FIELDS = [
+  "car_options",
+  "manufacturer_options",
+  "car_selection_note",
+];
+
 // ── Car capacity ───────────────────────────────────────────────────────────
 //
 // An admin can cap how many drivers may run each car ("Ferrari 296 GT3 | 4").

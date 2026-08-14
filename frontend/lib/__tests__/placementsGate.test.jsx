@@ -25,13 +25,16 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { CarSelectionFields } from "@/components/CarSelectionFields";
 import { SignupForm } from "@/components/SignupForm";
 import {
-  AWAITING_PLACEMENT_BADGE, BLANK_CAR_SELECTION_FORM, PLACEMENTS_SUBMIT_LABEL,
-  carSelectionFormToBody, carSelectionToForm, classDefinesSignupRules,
-  missingSignupFields, resolveSignupRules,
+  AWAITING_PLACEMENT_BADGE, BLANK_CAR_SELECTION_FORM, CAR_SELECTION_TEXT_FIELDS,
+  PLACEMENTS_SUBMIT_LABEL, carSelectionFormToBody, carSelectionToForm,
+  classDefinesSignupRules, missingSignupFields, resolveSignupRules,
+  signupRequirementFieldSpecs,
 } from "@/lib/carSelection";
 import { BLANK_SEASON_FORM, seasonFormToBody, seasonToForm } from "@/lib/seasonForm";
 import { BLANK_SERIES_FORM, seriesFormToBody, seriesToForm } from "@/lib/seriesForm";
 import { BLANK_CLASS_FORM, classFormToBody, classToForm } from "@/lib/classForm";
+import { SPECS } from "@/lib/entityApi";
+import { placementsRequiredFor } from "@/lib/carSelectionServer";
 import { awaitingPlacement } from "@/lib/signupQueue";
 import { classesAskMore, seasonChips, seasonHasPlacements } from "@/lib/signupFlow";
 
@@ -152,6 +155,46 @@ check("it reopens as an override, not as inherit", classToForm(exempt).require_p
 check("and it still overrides its gated series",
   gate({ series: seriesDoc, season: {}, cls: exempt }), false);
 
+// ── 3b. …and the storage layer actually accepts it ─────────────────────────
+//
+// The bug this section exists to stop coming back, which shipped and broke the
+// whole feature: lib/entityApi.js writes ONLY the fields its spec names, and it
+// kept its own copy of the switch list. `require_placements` wasn't on that
+// copy, so League Setup saved a tick that was thrown away in transit — control
+// rendered, form round-tripped, resolver correct, build clean, nothing thrown,
+// and the setting simply never persisted.
+//
+// So: every key the League Setup body writes must be one the REAL spec accepts
+// — `SPECS` imported from lib/entityApi.js itself, not a restatement of it. The
+// four levels are checked separately, because the bug was a missing entry in a
+// list that three of them happened to share.
+const body = carSelectionFormToBody(BLANK_CAR_SELECTION_FORM);
+for (const level of ["games", "series", "seasons", "classes"]) {
+  const accepted = SPECS[level].fields;
+  const dropped = Object.keys(body).filter(key => !(key in accepted));
+  check(`every field League Setup submits is one ${level} will store`, dropped, []);
+  ok(`${level} stores the gate`, "require_placements" in accepted);
+  ok(`${level} stores the gate's mode`, "require_placements_mode" in accepted);
+  // The two halves need the right coercion, or "off" reads back as "never
+  // configured" and a class can't be exempted from its series.
+  check(`${level} keeps the gate a real boolean, so an explicit false survives`,
+    accepted.require_placements.bool, true);
+  check(`${level} defaults an unconfigured gate to inherit`,
+    accepted.require_placements_mode.default, "");
+}
+
+// And the spec the storage layer is built from is the one this library owns —
+// the copy that drifted is gone, so a fifth switch can't repeat the failure.
+const specs = signupRequirementFieldSpecs();
+check("the storage spec covers every switch, both halves",
+  Object.keys(specs).sort(),
+  ["car_selection_locked", "car_selection_locked_mode",
+    "require_car_number", "require_car_number_mode",
+    "require_car_selection", "require_car_selection_mode",
+    "require_placements", "require_placements_mode"].sort());
+check("and nothing the body writes falls outside it",
+  Object.keys(body).filter(k => !(k in specs) && !CAR_SELECTION_TEXT_FIELDS.includes(k)), []);
+
 // A level nobody touched saves as "inherit" and gates nothing.
 check("an untouched season saves no opinion",
   seasonFormToBody({ ...BLANK_SEASON_FORM, name: "Season 5" }).require_placements_mode, "");
@@ -219,6 +262,90 @@ ok("a number change is never awaiting placement",
   !awaitingPlacement({ kind: "number_change", placements_required: true }));
 ok("a missing row doesn't throw", !awaitingPlacement(undefined));
 ok("the badge is worded once, for both sides", AWAITING_PLACEMENT_BADGE === "Awaiting Placement");
+
+// ── 6b. …and the queue resolves the gate LIVE, not off the stamp ───────────
+//
+// The reason the admin queue re-resolves instead of trusting what the request
+// was stamped with: an admin who ticks the switch this morning needs the people
+// who signed up for that series last week flagged too, and those rows carry a
+// stamped `false`. They are precisely the ones that would otherwise be approved
+// straight past the gate.
+const ctx = (over = {}) => ({ season: {}, series: {}, game: null, classes: [], ...over });
+const loads = [];
+const loader = map => async id => { loads.push(id); return map[id] ?? null; };
+
+const live = await placementsRequiredFor(
+  [
+    // Signed up before the gate existed — stamped false, gated now.
+    { id: "old", season_id: "gold", class_ids: [], placements_required: false },
+    // Signed up after — agrees either way.
+    { id: "new", season_id: "gold", class_ids: [], placements_required: true },
+    // A different, ungated series.
+    { id: "rookie", season_id: "feeder", class_ids: [], placements_required: false },
+  ],
+  { loadContext: loader({
+    gold: ctx({ series: { require_placements_mode: "on" } }),
+    feeder: ctx(),
+  }) });
+check("a row stamped before the gate was switched on is flagged now", live.old, true);
+check("a row stamped after it agrees", live.new, true);
+check("a row in an ungated series is not flagged", live.rookie, false);
+// The mirror case: a gate switched OFF must stop flagging rows stamped true,
+// or the queue nags an admin about a session they've decided not to run.
+const relaxed = await placementsRequiredFor(
+  [{ id: "stale", season_id: "gold", class_ids: [], placements_required: true }],
+  { loadContext: loader({ gold: ctx() }) });
+check("a gate switched off stops flagging", relaxed.stale, false);
+
+// One read per DISTINCT season — a league-wide queue is mostly several people
+// waiting on the same handful of seasons, and this runs on every queue load.
+loads.length = 0;
+await placementsRequiredFor(
+  [
+    { id: "a", season_id: "gold", class_ids: [] },
+    { id: "b", season_id: "gold", class_ids: [] },
+    { id: "c", season_id: "feeder", class_ids: [] },
+  ],
+  { loadContext: loader({ gold: ctx(), feeder: ctx() }) });
+check("one season load per distinct season, not per row", loads.sort(), ["feeder", "gold"]);
+
+// The row is resolved against the class it asked for — the FIRST one, which is
+// what the submission resolved against when it stamped the row.
+const classes = [
+  { id: "pro", name: "Pro", require_placements_mode: "on" },
+  { id: "rookie", name: "Rookie" },
+];
+const perClass = await placementsRequiredFor(
+  [
+    { id: "p", season_id: "s", class_ids: ["pro"] },
+    { id: "r", season_id: "s", class_ids: ["rookie"] },
+    { id: "none", season_id: "s", class_ids: [] },
+  ],
+  { loadContext: loader({ s: ctx({ classes }) }) });
+check("the gated class flags", perClass.p, true);
+check("its ungated sibling doesn't", perClass.r, false);
+check("and neither does an undecided sign-up", perClass.none, false);
+
+// A season deleted while somebody waited, and a lookup that simply fails, both
+// fall back to what the row was stamped with rather than losing the flag or
+// taking the queue down with them.
+const missing = await placementsRequiredFor(
+  [{ id: "orphan", season_id: "gone", class_ids: [], placements_required: true }],
+  { loadContext: async () => null });
+check("a deleted season falls back to the stamp", missing.orphan, true);
+// The failure is logged on purpose; muted here so a real error in this suite
+// still stands out rather than being lost in expected noise.
+const wasError = console.error;
+console.error = () => {};
+const thrown = await placementsRequiredFor(
+  [
+    { id: "boom", season_id: "bad", class_ids: [], placements_required: true },
+    { id: "quiet", season_id: "bad", class_ids: [], placements_required: false },
+  ],
+  { loadContext: async () => { throw new Error("firestore said no"); } });
+console.error = wasError;
+check("a failed lookup falls back to the stamp", [thrown.boom, thrown.quiet], [true, false]);
+check("an empty queue is fine", await placementsRequiredFor([]), {});
 
 // ── 7. The Sign-ups screen says so on the card ─────────────────────────────
 //

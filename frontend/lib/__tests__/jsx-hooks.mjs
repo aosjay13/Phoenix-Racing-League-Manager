@@ -18,7 +18,16 @@ const { transformSync } = require("next/dist/build/swc");
 // one. Components are .jsx and libs are .js, so try both rather than assuming.
 const EXTENSIONS = [".js", ".jsx"];
 
+// The same problem for the Next subpaths an API route imports — plain files
+// with no "exports" map, found by a bundler's extension guessing and not by
+// bare `node`. Kept in step with alias-hooks.mjs, which explains why it matters.
+const NODE_MODULES = path.join(appRoot, "node_modules");
+const EXTENSIONLESS_PACKAGE_SUBPATHS = ["next/server"];
+
 export function resolve(specifier, context, next) {
+  if (EXTENSIONLESS_PACKAGE_SUBPATHS.includes(specifier)) {
+    return next(pathToFileURL(path.join(NODE_MODULES, `${specifier}.js`)).href, context);
+  }
   if (!specifier.startsWith("@/")) return next(specifier, context);
   const target = path.join(appRoot, specifier.slice(2));
   if (path.extname(target)) return next(pathToFileURL(target).href, context);

@@ -6,6 +6,7 @@ import { toDateOnly } from "@/lib/raceDate";
 import { normalizeClassIds } from "@/lib/classFilter";
 import { normalizeRaceSessionTimes } from "@/lib/raceTimes";
 import { orderSeasons } from "@/lib/seasonOrderServer";
+import { CAR_SELECTION_TEXT_FIELDS, signupRequirementFieldSpecs } from "@/lib/carSelection";
 
 // A roster entry's classes are stored twice on purpose: `class_ids` is the real
 // list (a driver can race several classes in one season) and `class_id` mirrors
@@ -185,9 +186,11 @@ export function makeDocRoutes({ collection, fields, normalize = null }) {
   return { PATCH, DELETE };
 }
 
-// The sign-up requirement switches, carried IDENTICALLY by a game, a series, a
-// season and a class — the four levels of the chain in lib/carSelection.js, so
-// each one can set or override what a sign-up must carry.
+// Everything <CarSelectionFields> can write, carried IDENTICALLY by a game, a
+// series, a season and a class — the four levels of the chain in
+// lib/carSelection.js, so each one can set or override what a sign-up must
+// carry. The requirement switches, plus the car list, the instructions note and
+// `manufacturer_options`.
 //
 // Each switch is stored twice, and both halves matter:
 //
@@ -201,21 +204,31 @@ export function makeDocRoutes({ collection, fields, normalize = null }) {
 // its boolean: `true` means "on", `false` means "never configured". That is
 // precisely what those values meant when they were written, so no existing
 // league's setup changes.
-const SIGNUP_REQUIREMENT_FIELDS = Object.fromEntries([
-  "require_car_selection",
-  "require_car_number",
-  "car_selection_locked",
-].flatMap(field => [
-  [field, { bool: true, default: false }],
-  [`${field}_mode`, { default: "" }],
-]));
-
-// The old second car list. There is one car question now, not a car one and a
-// manufacturer one asked side by side, so nothing writes an option into this
-// field any more — it stays writable only so saving a level can EMPTY it, which
-// is how the options move into `car_options` for good (see
-// carSelectionFormToBody and carOptionList in lib/carSelection.js).
-const RETIRED_MANUFACTURER_FIELD = { manufacturer_options: {} };
+//
+// `manufacturer_options` is the old second car list. There is one car question
+// now, not a car one and a manufacturer one asked side by side, so nothing
+// writes an option into that field any more; it stays writable only so saving a
+// level can EMPTY it, which is how the options move into `car_options` for good
+// (see carSelectionFormToBody and carOptionList in lib/carSelection.js).
+//
+// ONE constant, built from the list lib/carSelection.js owns, rather than a copy
+// of it retyped into each of the four levels. Both halves of that mattered, and
+// both had already gone wrong: a copy of an ALLOWLIST fails silently, because
+// the loops above write only the fields they've been told about. Adding a switch
+// to carSelection.js gave a working League Setup control, a working resolver and
+// working forms — and then the write dropped it, so the admin ticked the box,
+// pressed Save, was told it saved, and nothing was stored. Nothing throws, no
+// test of the library fails, the build is clean. The per-level copies failed the
+// same way in the other direction: the game level ended up with the switches but
+// not the car list or the note, so a league-wide car list typed into a box
+// League Setup drew, posted by gameFormToBody and looked for by
+// resolveCarSelection, vanished on save. One list now, and
+// lib/__tests__/placementsGate.test.jsx checks the whole body against every
+// level of it.
+const CAR_SELECTION_FIELDS = {
+  ...signupRequirementFieldSpecs(),
+  ...Object.fromEntries(CAR_SELECTION_TEXT_FIELDS.map(field => [field, {}])),
+};
 
 // Field specs shared between the list POST and doc PATCH routes.
 export const SPECS = {
@@ -245,7 +258,10 @@ export const SPECS = {
                        requires_xbox: { bool: true, default: false },
                        requires_iracing_name: { bool: true, default: false },
                        requires_iracing_id: { bool: true, default: false },
-                       ...SIGNUP_REQUIREMENT_FIELDS } },
+                       // A game is the TOP of the chain, so it carries the car
+                       // list and the note as well as the switches —
+                       // resolveCarSelection already walks it looking for both.
+                       ...CAR_SELECTION_FIELDS } },
   // `isBangerRacing` flags the series as Demo Derby / Banger Racing. It turns on
   // the mode-specific stats (Takedowns, Survival Bonus, Most Lethal Bonus — see
   // lib/bangerRacing.js): the results grids of its events grow inputs for them,
@@ -282,8 +298,7 @@ export const SPECS = {
                        race_points: {}, qual_points: {}, bonus_points: {},
                        isBangerRacing: { bool: true, default: false },
                        isBracketRacing: { bool: true, default: false },
-                       car_options: {}, ...RETIRED_MANUFACTURER_FIELD, car_selection_note: {},
-                       ...SIGNUP_REQUIREMENT_FIELDS } },
+                       ...CAR_SELECTION_FIELDS } },
   // Seasons come back NEWEST FIRST, ordered by the race dates on their
   // schedules rather than by when the admin happened to type them in — so a
   // Season 5 entered before 2, 3 and 4 still sits above them in every dropdown.
@@ -355,8 +370,7 @@ export const SPECS = {
                        // season that names none, which scores exactly as before.
                        heat_format: { bool: true, default: false },
                        heat_points_template_id: {}, consolation_points_template_id: {},
-                       car_options: {}, ...RETIRED_MANUFACTURER_FIELD, car_selection_note: {},
-                       ...SIGNUP_REQUIREMENT_FIELDS } },
+                       ...CAR_SELECTION_FIELDS } },
   // Classes divide a season's field into separately-scored groups ("Pro" /
   // "Amateur", "GT3" / "LMP2"). A class belongs to exactly one season; a roster
   // entry points at one with `class_id`, and each saved result carries the class
@@ -407,8 +421,7 @@ export const SPECS = {
                        // (see inheritedSessionTemplate in lib/standings.js).
                        heat_format: { bool: true, default: false },
                        heat_points_template_id: {}, consolation_points_template_id: {},
-                       car_options: {}, ...RETIRED_MANUFACTURER_FIELD, car_selection_note: {},
-                       ...SIGNUP_REQUIREMENT_FIELDS,
+                       ...CAR_SELECTION_FIELDS,
                        sort_order: { number: true, default: 0 } } },
   // Global team pool — teams are persistent entities that exist independently
   // of any season, exactly like the drivers below. Which drivers race for a

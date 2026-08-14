@@ -1155,7 +1155,9 @@ A car lock-in is stored on the driver's **roster entry** — the only document t
 `entries.class_id` mirrors `class_ids[0]`, so anything reading a single field still resolves.
 
 The settings behind it (`require_car_selection`, `car_options`, `car_selection_note`,
-`car_selection_locked`, `require_placements`) sit on `series`, `seasons` *and* `classes` and resolve down the same
+`car_selection_locked`, `require_placements`) sit on `games`, `series`, `seasons` *and* `classes` — one field
+spec shared by all four in `lib/entityApi.js`, so a level can't be offered a control League Setup
+is unable to save — and resolve down the same
 chain the points structure uses — the rules live once in `lib/carSelection.js` and are shared by
 the API routes and the screens. Players write their own pick through `POST /api/car-selection`,
 which resolves the entry from the driver profile linked to the **caller's** account rather than

@@ -106,12 +106,16 @@ export async function seasonContext(seasonId) {
 //
 // One context load per DISTINCT season, not per row: a league-wide queue is
 // mostly several people waiting on the same handful of seasons.
-export async function placementsRequiredFor(rows = []) {
+//
+// `loadContext` is the season lookup, injected so the decision above it can be
+// tested without a database — the same seam `assignRowToBucket` uses for its
+// class lookup in lib/placements.js. Callers pass nothing.
+export async function placementsRequiredFor(rows = [], { loadContext = seasonContext } = {}) {
   const seasonIds = [...new Set(rows.map(r => r?.season_id).filter(Boolean))];
   const contexts = new Map();
   await Promise.all(seasonIds.map(async id => {
     try {
-      contexts.set(id, await seasonContext(id));
+      contexts.set(id, await loadContext(id));
     } catch (err) {
       // Never fail the queue over the lookup — the rows still have to render,
       // and each one falls back to what it was stamped with.
@@ -129,9 +133,15 @@ export async function placementsRequiredFor(rows = []) {
     }
     const { season, series, game, classes } = context;
     // Against the class they asked for, so a gated Pro class inside an ungated
-    // season flags — and an ungated class inside a gated season doesn't. The
-    // first class answers for the row, exactly as it does at submission.
-    const cls = classes.find(c => (row?.class_ids || []).includes(c.id)) || null;
+    // season flags — and an ungated class inside a gated season doesn't.
+    //
+    // The FIRST class on the request answers for it, which is what POST
+    // /api/signup-requests resolved against when it stamped the row. Matching on
+    // "whichever of the season's classes this row mentions" instead would walk
+    // them in the season's display order, so a driver in two classes could be
+    // flagged against a different one than they were told about.
+    const firstClassId = String((row?.class_ids || [])[0] ?? "");
+    const cls = classes.find(c => c.id === firstClassId) || null;
     out[row.id] = resolveSignupRules({ game, series, season, cls }).require_placements;
   }
   return out;
