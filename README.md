@@ -225,7 +225,7 @@ throwaway key (`openssl genrsa`) — the emulator never checks it.
      breakdown. Each championship is named in full — **game › series › season › class** — so a
      title reads as the thing that was won rather than as a bare "Season 3", and a driver who took
      their class *and* the overall in one season sees both crowns listed, because both were won.
-   - **Race History** — *every main event they have started*, newest first, with the start
+   - **Race History** — *every main event they have started*, newest first, with the date, the start
      and finish position, laps, laps led and points they scored in each. Filter it by **game** and
      by **season**, and click **🏁 the race** to open that event's full results — so you can go from
      a driver's profile straight to a specific race of theirs without knowing which season it was
@@ -234,6 +234,12 @@ throwaway key (`openssl genrsa`) — the emulator never checks it.
      still there on the event's own page, and none of this touches the career totals.
    - **Per Track Stats** — the same career broken down by venue, each track linking to its own
      page.
+   - **Every column of all three tables sorts.** Click a heading on the Race History, the Per Track
+     table or the by-game breakdown to order by it — best finishes first, the tracks with the most
+     wins, the game with the most starts — and click again to flip it. Each opens on the sort it
+     is usually read in (the history by date, newest first; venues by wins; games by starts), and
+     the columns where a *smaller* number is the better result — a grid slot, a finishing position,
+     an average start or finish — open on P1 rather than on last place.
 4. **Sign-ups** — a menu of its own in the sidebar, and the one screen in the app written for
    somebody who has never used it before. Joining a series is a walkthrough, and its three steps
    are printed at the top *before* anything is asked of you: **pick a series → fill in the short
@@ -1043,7 +1049,8 @@ frontend/
   components/       ← AppShell, Auth/League/Messages providers, ImageUpload (the app's single
                       door to cloud storage, Owner-gated), AdminGate, SessionEditor,
                       RosterManager + UserAccountsManager (the Drivers page's admin tabs),
-                      DriverMergeTool (find & fold duplicate profiles), PlacementBoard +
+                      DriverMergeTool (find & fold duplicate profiles), DriverRecord (the three
+                      sortable tables on a driver's profile), PlacementBoard +
                       PlacementTargetFields + AutoPlaceModal (the placement night),
                       MessageBoard + AdminMessages (the two ends of the board)
 firebase/           ← Firestore + Storage security rules
@@ -1249,6 +1256,22 @@ and career totals, points and stats are computed from the full set — this is a
 nothing else, applied once so the tab's count, its game/season menus and its table all agree. (The
 one thing it gives up is that the points column no longer sums to the career total printed above
 it, since the sessions it hides scored too. The copy above the table says so.)
+
+**Sorting a profile's tables.** All three — Race History, Per Track Stats and the by-game
+breakdown — live in `components/DriverRecord.jsx` and sort through the same `useSortable` hook the
+Stats and Skill Ratings leaderboards use, so a column behaves identically wherever it is met: first
+click best-first, second click flips, empty values last either way. They are components rather than
+markup inside the page for the reason every mountable piece of this app is one — the page returns
+early while the profile loads, and a hook has to run on every render.
+
+Two things the hook needs from the rows, both prepared in that file. A column can only sort on a
+field the row actually carries, so a race row gains `date_key` (its date as a sortable number, with
+undated races on a sentinel that keeps them at the top of a newest-first list — `Infinity` would
+make the comparator return `NaN` and scramble the sort) and `season_label` (the series · season text
+the column draws); the per-track and by-game rows have their nested `stats` lifted onto the row
+itself. And a column is told which way "best" runs: `avg_start`, `avg_finish`, a grid slot and a
+finishing position are won by being SMALL, so they open on P1 rather than on last place. Ties in any
+column fall back to newest-first, so a tied block still reads chronologically.
 
 ### The pending request queue
 

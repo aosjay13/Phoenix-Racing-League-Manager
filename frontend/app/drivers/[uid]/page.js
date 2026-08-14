@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
+import { ByGame, PerTrackStats, RaceHistory } from "@/components/DriverRecord";
 import { api } from "@/lib/api";
 import { formatStat, isMainEvent } from "@/lib/standings";
-import { formatRaceDate } from "@/lib/raceDate";
 
 // The full name of a championship: the game it was played on, the series and
 // season it was won in, and — for a class title — the class it was won in.
@@ -50,143 +50,6 @@ function SrTrend({ delta }) {
     <span style={{ fontSize: "0.72rem", fontWeight: 700, color: up ? "var(--positive, #34d399)" : "var(--negative, #f87171)" }}>
       {up ? "▲" : "▼"} {up ? "+" : ""}{delta}
     </span>
-  );
-}
-
-// Per-track table columns — the venue-specific slice of a driver's career.
-const TRACK_COLUMNS = [
-  ["starts", "Starts"], ["wins", "Wins"], ["podiums", "Podiums"], ["top5", "Top 5s"],
-  ["poles", "Poles"], ["best_laps", "Fastest Laps"], ["avg_start", "Avg Start"],
-  ["avg_finish", "Avg Finish"], ["laps_led", "Laps Led"],
-];
-
-// Their race history, one row per race. The race name links through to the
-// event itself, so a profile is a way INTO every race the driver ran rather
-// than a dead end of totals.
-//
-// `rows` arrives already narrowed to the main events (see isMainEvent) — the
-// undercard an event runs on the way to its Feature is not what somebody
-// scrolling a driver's record is looking for.
-function RaceHistory({ rows }) {
-  const [gameFilter, setGameFilter] = useState("all");
-  const [seasonFilter, setSeasonFilter] = useState("all");
-
-  // The games and seasons this driver actually raced, in the order the history
-  // is already in (newest first), so the menus only ever offer real answers.
-  const games = useMemo(() => {
-    const seen = new Map();
-    for (const r of rows) if (r.game_id && !seen.has(r.game_id)) seen.set(r.game_id, r.game_name || "Unknown Game");
-    return [...seen].map(([id, name]) => ({ id, name }));
-  }, [rows]);
-
-  const seasons = useMemo(() => {
-    const seen = new Map();
-    for (const r of rows) {
-      if (gameFilter !== "all" && r.game_id !== gameFilter) continue;
-      if (r.season_id && !seen.has(r.season_id)) {
-        seen.set(r.season_id, [r.series_name, r.season_name].filter(Boolean).join(" · "));
-      }
-    }
-    return [...seen].map(([id, name]) => ({ id, name }));
-  }, [rows, gameFilter]);
-
-  // A season picked under one game can't survive switching to another.
-  useEffect(() => {
-    if (seasonFilter !== "all" && !seasons.some(s => s.id === seasonFilter)) setSeasonFilter("all");
-  }, [seasons, seasonFilter]);
-
-  const shown = rows.filter(r =>
-    (gameFilter === "all" || r.game_id === gameFilter) &&
-    (seasonFilter === "all" || r.season_id === seasonFilter));
-
-  return (
-    <>
-      <div className="section-header">
-        <h3>Race History</h3>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <div className="context-select">
-            <select value={gameFilter} onChange={e => setGameFilter(e.target.value)}>
-              <option value="all">All Games</option>
-              {games.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-            </select>
-          </div>
-          {seasons.length > 1 && (
-            <div className="context-select">
-              <select value={seasonFilter} onChange={e => setSeasonFilter(e.target.value)}>
-                <option value="all">All Seasons</option>
-                {seasons.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            </div>
-          )}
-        </div>
-      </div>
-      <p style={{ marginTop: 0, marginBottom: 12, color: "var(--ink-1)", fontSize: "0.88rem" }}>
-        Every main event this driver has started, newest first — click 🏁 any race to open its full
-        results. Qualifying, heats and consolations are left off; open the event itself to see those.
-      </p>
-
-      {shown.length === 0 ? (
-        <div className="empty-state"><span className="empty-state-icon">🏁</span><p>No races recorded yet.</p></div>
-      ) : (
-        <div className="table-wrap">
-          <table className="stats-table">
-            <thead>
-              <tr>
-                <th className="sticky-col" style={{ textAlign: "left" }}>Race</th>
-                <th style={{ textAlign: "left" }}>Season</th>
-                <th style={{ textAlign: "left" }}>Track</th>
-                <th title="Grid position">Start</th>
-                <th title="Finishing position">Finish</th>
-                <th>Laps</th>
-                <th title="Laps led">Led</th>
-                <th>Points</th>
-              </tr>
-            </thead>
-            <tbody>
-              {shown.map((r, i) => (
-                // A driver can hold more than one entry in a season (the old
-                // one-entry-per-class workaround), so race+session isn't unique
-                // on its own — the index keeps the keys distinct.
-                <tr key={`${r.race_id}-${r.session}-${i}`}>
-                  <td className="driver-name-cell sticky-col" style={{ textAlign: "left" }}>
-                    {/* The checkered flag marks the way through to the event's
-                        own results — the one thing a row is clicked for. */}
-                    <Link href={`/races/${r.race_id}`} title="Open this race's full results" style={{ color: "var(--accent-cyan)", fontWeight: 600 }}>
-                      🏁 {r.race_name}
-                    </Link>
-                    {r.session && <span style={{ color: "var(--ink-2)" }}> · {r.session}</span>}
-                    <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.76rem" }}>
-                      {formatRaceDate(r.date, "short", "Date TBA")}
-                      {r.class_name ? ` · ${r.class_name}` : ""}
-                      {r.status && r.status !== "finished" ? ` · ${String(r.status).toUpperCase()}` : ""}
-                    </span>
-                  </td>
-                  <td style={{ textAlign: "left", color: "var(--ink-1)" }}>
-                    {[r.series_name, r.season_name].filter(Boolean).join(" · ") || "—"}
-                    {r.game_name && (
-                      <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.76rem" }}>{r.game_name}</span>
-                    )}
-                  </td>
-                  <td style={{ textAlign: "left" }}>
-                    {r.track_id
-                      ? <Link href={`/tracks/${r.track_id}`} style={{ color: "var(--accent-cyan)" }}>{r.track_name}</Link>
-                      : (r.track_name || "—")}
-                  </td>
-                  <td>{r.start_pos ?? "—"}</td>
-                  <td style={{ fontWeight: 700, color: r.finish_pos === 1 ? "var(--accent-gold)" : undefined }}>
-                    {r.finish_pos ?? "—"}
-                    {r.fastest_lap && <span title="Fastest lap" style={{ marginLeft: 4 }}>⚡</span>}
-                  </td>
-                  <td>{r.laps || "—"}</td>
-                  <td>{r.laps_led || "—"}</td>
-                  <td className="points-cell">{r.points}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </>
   );
 }
 
@@ -439,39 +302,7 @@ export default function DriverProfilePage() {
           )}
         </>
       ) : (
-        <>
-          <div className="section-header"><h3>Per Track Stats</h3></div>
-          <p style={{ marginTop: 0, marginBottom: 12, color: "var(--ink-1)", fontSize: "0.88rem" }}>
-            Every venue this driver has raced at, with their accumulated results there.
-          </p>
-          {by_track.length === 0 ? (
-            <div className="empty-state"><span className="empty-state-icon">🏁</span><p>No track results recorded yet.</p></div>
-          ) : (
-            <div className="table-wrap">
-              <table className="stats-table">
-                <thead>
-                  <tr>
-                    <th className="sticky-col" style={{ textAlign: "left" }}>Track</th>
-                    {TRACK_COLUMNS.map(([key, label]) => <th key={key}>{label}</th>)}
-                  </tr>
-                </thead>
-                <tbody>
-                  {by_track.map(t => (
-                    <tr key={t.track_id || t.track_name}>
-                      <td className="driver-name-cell sticky-col" style={{ textAlign: "left" }}>
-                        {t.track_id
-                          ? <Link href={`/tracks/${t.track_id}`} style={{ color: "var(--accent-cyan)" }}>{t.track_name}</Link>
-                          : t.track_name}
-                        {t.track_location && <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.76rem" }}>{t.track_location}</span>}
-                      </td>
-                      {TRACK_COLUMNS.map(([key]) => <td key={key}>{formatStat(key, t.stats[key])}</td>)}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </>
+        <PerTrackStats rows={by_track} />
       )}
 
       {view === "career" && crowns.length > 0 && (
@@ -503,34 +334,7 @@ export default function DriverProfilePage() {
         </>
       )}
 
-      {view === "career" && by_game.length > 0 && (
-        <>
-          <div className="section-header"><h3>By Game</h3></div>
-          <div className="table-wrap">
-            <table>
-              <thead><tr><th>Game</th><th>Starts</th><th>Wins</th><th>Podiums</th><th>Top 5s</th><th>Poles</th><th title="Season championships won — class titles included">Championships</th><th>Points</th><th>Avg Finish</th></tr></thead>
-              <tbody>
-                {by_game.map(g => (
-                  <tr key={g.game_id}>
-                    <td className="driver-name-cell" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      {g.game_logo_url && <img src={g.game_logo_url} alt="" className="avatar avatar-sm" style={{ borderRadius: 6 }} />}
-                      {g.game_name}
-                    </td>
-                    <td>{g.stats.starts}</td>
-                    <td>{g.stats.wins}</td>
-                    <td>{g.stats.podiums}</td>
-                    <td>{g.stats.top5}</td>
-                    <td>{g.stats.poles}</td>
-                    <td>{g.stats.titles}</td>
-                    <td className="points-cell">{g.stats.points}</td>
-                    <td>{formatStat("avg_finish", g.stats.avg_finish)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
+      {view === "career" && by_game.length > 0 && <ByGame rows={by_game} />}
     </section>
   );
 }

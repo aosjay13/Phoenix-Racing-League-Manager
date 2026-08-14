@@ -1433,13 +1433,15 @@ tbody tr:hover {
   text-align: left;
 }
 
-.stats-table th.sortable {
+/* A sortable heading is the same affordance in any table, not just a
+   `.stats-table` one — the driver profile's By Game breakdown sorts too. */
+th.sortable {
   cursor: pointer;
   user-select: none;
   transition: color 120ms ease;
 }
 
-.stats-table th.sortable:hover {
+th.sortable:hover {
   color: var(--accent-cyan);
 }
 
