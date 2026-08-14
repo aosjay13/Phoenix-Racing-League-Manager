@@ -5,7 +5,8 @@
 //
 //   • the PLAYER'S is their Dashboard. Every admin decision about them lands
 //     there — a sign-up approved or denied, a car number granted or refused,
-//     a driver profile claimed, a removal from a season's roster.
+//     a driver profile claimed, a removal from a season's roster, a season of
+//     theirs marked complete.
 //   • the ADMIN'S is Approvals. Requests arrive there as they always did, and
 //     now so do the players' replies, so a question asked in answer to a
 //     decision reaches somebody rather than sitting unread on a Dashboard.
@@ -85,6 +86,27 @@ export const MESSAGE_KINDS = {
     body: () => "You're no longer entered in this season. If you think that's a mistake, reply"
       + " here — an admin will see it.",
   },
+  // A season an admin has marked complete, said to everyone who raced in it.
+  //
+  // This one exists because the Dashboard's Series Information section DROPS a
+  // finished season the moment it's marked — correctly, there's nothing left to
+  // answer for it — so the row that told a player which series, season and class
+  // they were in simply stopped being there. A card disappearing was the only
+  // sign anybody got. This is that row turned into a message: it names the whole
+  // path down to the class they raced, and folds away when they press Got it,
+  // exactly like every other card on the board.
+  //
+  // Tone is "info": a season ending is neither a grant nor a refusal, and
+  // colouring it "bad" would make the end of every league year look like a
+  // problem.
+  season_completed: {
+    tone: "info",
+    actions: ["standings", "stats"],
+    title: c => `Season completed — ${seasonPath(c)}`,
+    body: () => "That's this one done. There's nothing left to answer for it — no car to lock in"
+      + " and no sign-up open — so it's dropped off your Series Information. Your results and the"
+      + " final standings stay on Standings and Stats.",
+  },
   claim_approved: {
     tone: "good",
     actions: ["profile"],
@@ -114,6 +136,33 @@ function label(c = {}) {
 // "#42 · Ferrari 296 GT3" — only the parts that season actually uses.
 function detailOf(c = {}) {
   return [c.number ? `#${c.number}` : "", c.car].filter(Boolean).join(" · ");
+}
+
+// "iRacing › Formula Phoenix › Season 4 › Pro" — the full path down to the class
+// this driver actually raced in, and only the parts that exist: a single-class
+// season stops at the season, and a message whose game was never stamped starts
+// at the series. Never empty, because a card headed "Season completed — " is
+// exactly the blank the whole board exists to avoid.
+//
+// Same shape and same separator as a championship on a driver's profile
+// (titlePath in app/drivers/[uid]/page.js), because it's the same sentence: a
+// "Season 4" on its own names a season nobody can place, and a league running a
+// Season 4 in every series it holds is the normal case rather than the odd one.
+function seasonPath(c = {}) {
+  return [c.game_name, c.series_name, c.season_name, classLabel(c)]
+    .map(part => String(part ?? "").trim())
+    .filter(Boolean)
+    .join(" › ") || "that season";
+}
+
+// The classes one driver was in, as they'd say them: "Pro", or "Pro & Amateur"
+// for an entry sitting in two. `class_name` (singular) is read as well, so a
+// context written by any of the other kinds renders here too.
+function classLabel(c = {}) {
+  const names = Array.isArray(c.class_names) ? c.class_names
+    : c.class_names ? [c.class_names]
+    : c.class_name ? [c.class_name] : [];
+  return names.map(n => String(n ?? "").trim()).filter(Boolean).join(" & ");
 }
 
 export function messageKind(msg) {

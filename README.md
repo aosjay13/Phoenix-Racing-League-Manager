@@ -84,7 +84,8 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
 - 💬 **A message board between admins and players** — every decision an admin makes about somebody
   says so on that player's **Dashboard**: a sign-up approved (with the full welcome — schedule,
   calendar, Discord) or denied with the reason, a car number granted or refused, a driver profile
-  linked, a removal from a season's roster. Every card can be **replied to**, and replies land in
+  linked, a removal from a season's roster, a **season of theirs marked complete** (named in full —
+  game › series › season › class). Every card can be **replied to**, and replies land in
   the admins' **Approvals** queue with a badge, where they can be answered or marked read. Before
   this, an admin's decision was a state change on a document and nothing else — being removed from
   a season was completely silent, and read far more like the app losing your entry than like a
@@ -273,8 +274,9 @@ throwaway key (`openssl genrsa`) — the emulator never checks it.
      league you race as J. May, and nobody's chosen name is ever overwritten.
    - **The Dashboard is where the admins talk to you.** Everything they decide about you lands
      there as a card you can answer: approved into a series, turned down, a number granted or
-     refused, a profile linked, or taken off a roster. Being **let in** gets the loudest of them —
-     it welcomes you to the series by name, says which season you're on and what number and car
+     refused, a profile linked, taken off a roster, or a season of yours finishing. Being **let
+     in** gets the loudest of them — it welcomes you to the series by name, says which season
+     you're on and what number and car
      you're running, and points at the three things you need next: **your series schedule**, the
      **league calendar**, and the **Discord**. Cards clear on a deliberate **Got it** and fold
      away into *Earlier messages* rather than vanishing. Every one of them has a **Reply** box, and
@@ -1856,6 +1858,55 @@ zero on a message the player wrote themselves.
 Ownership is the whole of the check on the player routes: `/api/messages/[id]` gives nobody power
 over anybody else's thread, staff included, and staff answer through `/api/admin/messages/[id]`
 instead. The admin list is league-scoped, so one league's staff never read another's conversations.
+
+### Telling the drivers their season is over
+
+**Mark Completed** was the last of the silent decisions, and it was silent in an unusually
+misleading way. The Dashboard's Series Information section drops a finished season the moment it's
+marked — correctly, there is nothing left to answer for it — so the *only* consequence a player saw
+was the row that said which series, season and class they were in **disappearing**. A card vanishing
+with no explanation reads far more like the app losing an entry than like a season ending.
+
+So that row now turns into a message. Marking a season complete posts every driver who raced in it a
+card on the board:
+
+> **Season completed — iRacing › Formula Phoenix › Season 4 › Pro**
+
+It names the **whole path** — game › series › season › class — because "your season is over" is no
+use to somebody racing in three of them, and the class is the part that says *which of your entries*
+this was. Every part is optional and the path never renders empty: a single-class season stops at
+the season, a season whose game was never stamped starts at the series, and a card left with nothing
+to name still says "that season". It carries **Final standings** and **Season stats** (the two
+places that racing still lives), can be replied to, and clears on **Got it** exactly like every
+other card.
+
+Three things this had to get right:
+
+- **It fires on the TRANSITION, not the status.** `seasonJustCompleted(before, after)` in
+  `lib/seasonCompletion.js` is true only for active → completed. "Mark Completed" is a toggle an
+  admin can press twice, and every later edit to a finished season — a rename, a points tweak, a
+  logo — is a PATCH carrying `status: "completed"` again. Announcing off the stored value would
+  re-post to the whole roster on every save. Un-completing announces nothing either: the card
+  already sent is the record of what was decided at the time.
+- **One card per person, and nobody posted into the void.** `completionRecipients()` keys by
+  **account**, not by roster entry — a driver can still hold two entries in one season (the old
+  add-them-once-per-class workaround), and two identical cards read as a bug, so the two fold into
+  one naming both classes. A hand-typed roster row with no login behind it has nobody to tell and
+  drops out. The account is resolved through the driver profile where the entry only names one, each
+  profile read once however many entries point at it.
+- **The announcement can never undo the decision.** It hangs off a new `afterUpdate` hook on the
+  shared doc routes (`lib/entityApi.js`), which runs after the write has landed and whose errors are
+  logged and swallowed — the same rule `postMessage()` has always followed. It's on the **route**
+  rather than on League Setup's button because the status is an ordinary field on an ordinary PATCH,
+  and a rule that lives in one button is a rule with a hole in it.
+
+**No email**, deliberately: one press of one button announces to a whole field at once, and a league
+that mails its entire roster every time a season ends is a league whose mail gets filtered into the
+bin — which would cost the decisions that *do* need to arrive that way. (The placement
+announcements skip email for the same reason.) The board is where the player is already reading.
+
+The rules are pure and covered by `lib/__tests__/seasonCompletion.test.mjs`; the Firestore reads are
+in `lib/seasonCompletionServer.js`.
 
 ### Capping how many drivers may run a car
 

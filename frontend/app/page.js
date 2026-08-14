@@ -120,10 +120,10 @@ export default function DashboardPage() {
       {/* Above everything, including the hero: the league talking to this
           player. Every admin decision about them lands here — approved into a
           series (with the welcome and where to go next), turned down and why,
-          a number granted, taken off a roster — and every card can be replied
-          to, which puts the answer in the admins' Approvals queue. Renders
-          nothing at all until there's something to say. See
-          components/MessageBoard.jsx. */}
+          a number granted, taken off a roster, a season of theirs finished —
+          and every card can be replied to, which puts the answer in the admins'
+          Approvals queue. Renders nothing at all until there's something to
+          say. See components/MessageBoard.jsx. */}
       <MessageBoard />
 
       <div className="hero">
