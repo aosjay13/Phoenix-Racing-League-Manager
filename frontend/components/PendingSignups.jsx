@@ -30,7 +30,7 @@ import { signupsChanged } from "@/lib/pendingSignupAlerts";
 // admin marked as earned rather than joined (a Gold Series, a Pro class), so
 // the driver submitted a request to be PLACED, not a request for a specific
 // spot: approving creates no roster entry, moves the row to
-// `approved_for_placements`, and hands them to the Awaiting Placement list on
+// `approved_for_placements`, and hands them to the Placement Roster tab on
 // /approvals until a session sorts them. The toast below says so rather than
 // the usual "they're on the roster", which would be untrue.
 //
@@ -89,7 +89,7 @@ export function PendingSignups({ seasonId = null, seasonName, scope = "season", 
         showToast("error",
           `${res.driver_name || req.name} is registered for placements — not on the roster yet.`
           + (res.created_driver ? " Their driver profile was created." : "")
-          + " Place them from Time Trials & Placements to put them on a grid.");
+          + " They're on the Placement Roster until a session places them.");
         onApproved?.();
       } else if (action === "approve") {
         showToast(res.note ? "error" : "success",

@@ -178,6 +178,12 @@ check("a new driver joins in the division they were placed in",
   plan.create.map(c => [c.name, c.class_id]), [["Ben", "am"]]);
 check("an unplaced driver is left alone on a placement night",
   plan.skipped.map(s => s.name), ["Cal"]);
+// Who now has a roster spot, which is the question the Placements Queue asks
+// when it decides who to stop waiting for — not "who was written".
+check("everyone the run puts on a roster is reported",
+  plan.placed.map(r => r.name), ["Ana", "Ben"]);
+check("and the driver it left alone is not",
+  plan.placed.some(r => r.name === "Cal"), false);
 
 check("re-running writes nothing the second time",
   planRosterBuild(placed, [
@@ -188,7 +194,10 @@ check("re-running writes nothing the second time",
     { name: "Ana", reason: "already in that class" },
     { name: "Ben", reason: "already in that class" },
     { name: "Cal", reason: "no class assigned" },
-  ] });
+  // Writing nothing is not the same as placing nobody: Ana and Ben end this run
+  // on the roster, in the division the trial put them in, and that is what the
+  // Placements Queue clears against (see lib/placementQueue.js).
+  ], placed: [placed[0], placed[1]] });
 
 check("an ordinary trial can still push its field on unclassified",
   planRosterBuild([{ id: "3", name: "Cal" }], []).create.map(c => [c.name, c.class_id]),

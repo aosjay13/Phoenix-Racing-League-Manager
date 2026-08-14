@@ -117,10 +117,14 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   nobody joins it straight off their Dashboard. The sign-up form warns that this tier has to be
   qualified for and its button becomes **Register for Placements**; the request lands in the
   approvals queue flagged **Awaiting Placement**; and approving it **puts them on no roster** —
-  it acknowledges the registration, clears the badge, and moves them to an Awaiting Placement
-  list until a Time Trial session sorts them into a class. They join a grid the ordinary way,
-  by being placed on the board and having the roster built from that session. Nothing changes
-  for the series that don't ask for it
+  it acknowledges the registration, clears the badge, and moves them to the **⏱ Placement
+  Roster** tab on Approvals until a Time Trial session sorts them into a class. That roster
+  reads like any other — driver, series, season, class, what they asked to run, how long
+  they've been waiting — with **Game ▸ Series ▸ Season** filters, so "who is waiting for the
+  season I'm about to run?" is one dropdown away. Setting that session up, **Import from
+  Placements Queue** pulls the whole waiting field for the divisions it's sorting into onto one
+  sheet in a press; completing the session and building the roster is what puts them on a grid
+  **and** takes them off the list. Nothing changes for the series that don't ask for it
 - 🖼 **Social graphic exporter** — on Standings, Stats, Race Results, Skill Ratings, Records and the
   Schedule (a season's calendar, or the cross-season Upcoming / Recent Results feeds). League name
   + logo branding, a
@@ -558,8 +562,8 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      - **approving it puts them on no roster.** This is what makes the gate a gate rather than a
        note. Approving a placement-graded sign-up acknowledges the registration and creates
        *nothing*: the row moves to `approved_for_placements`, which clears it out of the queue
-       and off the red badge, and the driver moves to an **⏱ Awaiting Placement** list at the
-       bottom of the Approvals page. Their driver **profile** is still created and linked — that
+       and off the red badge, and the driver moves to the **⏱ Placement Roster** tab on the
+       Approvals page. Their driver **profile** is still created and linked — that
        isn't a roster, and without it the placement sheet has no profile to find them by and the
        entry they eventually get wouldn't be attached to their account;
      - they join a grid the ordinary way: place them on the board, press **Complete Session**,
@@ -878,11 +882,30 @@ Drivers then sign up for it as normal, are told plainly that they're registering
 than claiming a grid slot, and arrive in **Pending Approvals** flagged **⏱ Awaiting Placement**.
 
 Approving one of those **puts nobody on a roster** — that's the whole point of the flag. It
-acknowledges the registration and moves them to the **⏱ Awaiting Placement** list at the bottom of
-the Approvals page, which is your list of drivers owed a session. Add them here, place them on the
-board, and **Complete Session** builds the roster: that is the step that actually puts them on a
-grid, in the class their times earned. Their driver profile already exists (approval creates it),
-so the picker finds them by name and the entry they get is attached to their account.
+acknowledges the registration and moves them to the **⏱ Placement Roster** tab on the Approvals
+page, which is your list of drivers owed a session: a roster table of who is waiting, which
+**series, season and class** each of them signed up for, what they asked to run and how long
+they've been waiting, with **Game ▸ Series ▸ Season** dropdowns to narrow it to the season you're
+about to run. Place them on the board and **Complete Session** builds the roster: that is the step
+that actually puts them on a grid, in the class their times earned. Their driver profile already
+exists (approval creates it), so the picker finds them by name and the entry they get is attached
+to their account.
+
+You don't have to type that list in twice. On the session, **🎯 Destinations** says which divisions
+it's sorting into, and **⇩ Import from Placements Queue** beside it pulls in *every* driver waiting
+on any of them — the Gold Series hopefuls and the Silver Series hopefuls in one pool, which is what
+lets a placement night rank the whole field against itself before splitting it. They arrive
+unplaced and **unsaved**, exactly like a driver added by hand, so you can review the sheet (and
+keep any laps already typed) before pressing **Save Session**. Pressing it again after approving a
+few more registrations adds only the new people; nobody is imported twice. A session with no
+destinations picked yet imports nobody and opens the Destinations dialog instead — "everything
+ticked" would otherwise mean "the whole league".
+
+And when the night is over, the list cleans itself up: building the roster from the session moves
+everyone it **placed** to the ordinary approved state, stamped with the session that earned it, and
+each of them gets a message on their Dashboard saying they're on the roster now — the sentence that
+was deliberately withheld when their sign-up was approved. Anyone the night *didn't* place stays on
+the Placement Roster, because they're still owed a session.
 
 1. **Create the session.** Name it, pick the **track** (pick it from the Tracks database rather than
    typing it, so the laps set here are eligible for that venue's track records), and choose how many
@@ -1261,7 +1284,7 @@ owner-only, never staff) — including one approved for placements, since "I can
 after all" is exactly that case, and leaving it un-withdrawable would hold their number for a
 driver who has said they aren't coming. The row is marked `withdrawn` rather than deleted, so
 "asked and changed their mind" stays readable, and the number it was holding is free immediately.
-An admin's way back out is **Withdraw** on the Awaiting Placement list, which denies the row with a
+An admin's way back out is **Withdraw** on the Placement Roster, which denies the row with a
 reason.
 
 **A car number is unique within its season, on every path that can set one.** The sign-up form
@@ -1467,6 +1490,16 @@ Four things read it, and the wording for all of them lives once in `lib/carSelec
 | `POST /api/signup-requests` | stamps `placements_required` on the request, so the record shows what the player was **told** |
 | `GET /api/admin/signup-requests` | re-resolves the gate **live** (`placementsRequiredFor` in `lib/carSelectionServer.js`), one season context per distinct season, and the queue row renders **⏱ Awaiting Placement** from `signupIsPlacementGated()` in `lib/signupQueue.js` |
 | `PATCH /api/admin/signup-requests/[id]` | the one that matters: re-resolves the gate live and, when it's on, **creates no roster entry** — the row goes to `approved_for_placements` instead |
+
+Three more read the state it leaves behind — the **Placements Queue**, which is nothing but
+`signup_requests` in `approved_for_placements` (the rules live once in `lib/placementQueue.js`,
+the Firestore side in `lib/placementQueueServer.js`):
+
+| Reader | What it does |
+|---|---|
+| `GET /api/admin/signup-requests?status=approved_for_placements` | the **Placement Roster** on Approvals — league-wide, oldest first, uncapped, filtered in the browser by Game ▸ Series ▸ Season (`queueFilterOptions` / `applyQueueFilters`) |
+| `GET /api/time-trials/[id]/placements-queue` | **Import from Placements Queue**: everyone waiting on any of that session's own destinations (`trialDestinations` → `matchingQueueRows`). The destinations come off the trial, never off the request, and a session with **none** matches **nobody** rather than everybody. It writes nothing — the rows go onto the sheet unsaved, so a night's typed laps survive the button |
+| `POST /api/time-trials/[id]/roster` | clears them afterwards. `planRosterBuild` now also reports **`placed`** — who ends the run with a roster spot, which is not the same list as `create + update` (a driver already in the right division is "skipped" and is still racing) — and `queueRowsPlacedBy` clears exactly those, matched on the **person** so a hand-typed driver counts. Anyone the night didn't place stays queued. Wrapped in a `try` on purpose: by then the entries are written, and a completed night must not be reported as a failure over its tidying-up |
 
 Two similarly-named predicates sit in `lib/signupQueue.js` and read like each other, so:
 `signupIsPlacementGated()` is a row still in the **queue** whose series requires placements (the

@@ -3,6 +3,7 @@ import { db } from "@/lib/firebase";
 import { getRequestLeagueId, withAdmin } from "@/lib/serverAuth";
 import { groupByTargetSeason, planRosterBuild } from "@/lib/timeTrials";
 import { TRIAL_COLLECTION, TRIAL_STATUS_COMPLETED, fetchTrial, fetchTrialEntries } from "@/lib/timeTrialsServer";
+import { clearPlacementQueue } from "@/lib/placementQueueServer";
 
 export const dynamic = "force-dynamic";
 
@@ -130,6 +131,37 @@ export const POST = withAdmin(async (request, { params }, user) => {
     await batch.commit();
   }
 
+  // ── The Placements Queue is now answered ─────────────────────────────────
+  //
+  // These drivers were approved into a placement session and left on no roster
+  // — that is what put them in the queue. The rosters above are the answer, so
+  // the registrations stop waiting: they move to `approved`, stamped with the
+  // session that earned it (see lib/placementQueueServer.js).
+  //
+  // Cleared against who ACTUALLY got a roster spot, not against who was on the
+  // sheet: a driver left unplaced tonight is still owed a session, and dropping
+  // them off the list would lose them exactly as the queue exists to prevent.
+  //
+  // Never allowed to fail the run. The entries are written and the drivers are
+  // racing; a queue row that survives is a to-do an admin can clear by hand,
+  // while a throw here would report a completed night as a failure.
+  let placements = { cleared: [] };
+  try {
+    placements = await clearPlacementQueue({
+      trial,
+      trialId: params.id,
+      placedRows: plans.flatMap(plan => plan.placed.map(row => ({
+        ...row,
+        target_season_id: plan.season_id,
+        target_season_name: plan.season_name,
+      }))),
+      leagueId,
+      admin: user,
+    });
+  } catch (err) {
+    console.error("Clearing the placements queue failed after a roster build", err);
+  }
+
   // Completing the session is what closes it for entry and makes it available
   // to the "Import from Time Trial" picker on a race's Qualifying tab.
   const patch = {};
@@ -151,6 +183,9 @@ export const POST = withAdmin(async (request, { params }, user) => {
       created: p.create.length, updated: p.update.length,
     })),
     ...totals,
+    // Who has stopped waiting on a placement session, so the admin is told that
+    // half happened too — it is a change to a screen they are not looking at.
+    placements_cleared: placements.cleared.length,
     trial: { ...trial, ...patch },
   });
 });

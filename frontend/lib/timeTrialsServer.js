@@ -225,6 +225,11 @@ export function trialEntryDoc(row, {
     // drivers who are on no roster at all yet — that is what a placement night
     // is for.
     entry_id: String(row.entry_id ?? "").trim(),
+    // The registration that put this row on the sheet, when it was pooled from
+    // the Placements Queue ("Import from Placements Queue"). A trace, never an
+    // identity: the queue is cleared by matching the PERSON, so a driver typed
+    // onto the sheet by hand is placed exactly as one imported is.
+    signup_request_id: String(row.signup_request_id ?? "").trim(),
     laps: normalizeLaps(row.laps, maxLaps),
     assigned_class_id: assignedClassId,
     // Denormalized so a lap can be filed under its class in the record books

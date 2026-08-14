@@ -20,6 +20,7 @@ import {
   normalizeLaps, rankEntries, summarizeEntries,
 } from "@/lib/timeTrials";
 import { assignRowToBucket, buildBuckets, pickedClasses, placementProgress } from "@/lib/placements";
+import { importFromQueuePlan } from "@/lib/placementQueue";
 
 // One Time Trial session — the sheet.
 //
@@ -45,7 +46,7 @@ function blankRow(seed = {}) {
   return {
     id: `new-${++tempSeq}`,
     stored: false,
-    name: "", number: "", driver_id: "", user_id: "", entry_id: "",
+    name: "", number: "", driver_id: "", user_id: "", entry_id: "", signup_request_id: "",
     laps: [], assigned_class_id: "", assigned_series_id: "", notes: "",
     ...seed,
   };
@@ -95,6 +96,9 @@ export default function TimeTrialPage() {
   const [view, setView] = useState("sheet");
   const [destinationsOpen, setDestinationsOpen] = useState(false);
   const [autoPlaceOpen, setAutoPlaceOpen] = useState(false);
+  // Pulling the waiting drivers in from the Placements Queue — see
+  // importFromQueue below.
+  const [importing, setImporting] = useState(false);
 
   function showToast(type, msg) {
     setToast({ type, msg });
@@ -372,6 +376,55 @@ export default function TimeTrialPage() {
     setDirty(true);
   }
 
+  // "Import from Placements Queue" — the whole field, in one press.
+  //
+  // Every driver approved for a placement in any of the divisions this session
+  // is sorting into (see /api/time-trials/[id]/placements-queue, which decides
+  // that from the trial's own destinations) arrives on the sheet as a row with
+  // no laps and no division. That pools people who signed up for the Gold
+  // Series and people who signed up for the Silver Series into ONE session, so
+  // the field can be ranked against itself and distributed — which is what a
+  // placement night is.
+  //
+  // The rows are UNSAVED, exactly like a driver added by hand: nothing is
+  // written until Save, so the import can be reviewed, added to, or undone by
+  // removing rows, and a night's typed laps survive pressing the button.
+  async function importFromQueue() {
+    setImporting(true);
+    try {
+      const res = await api(`/api/time-trials/${id}/placements-queue`);
+      // No destinations picked yet. That isn't an error to shrug at — it's the
+      // decision this button depends on — so it opens the dialog that fixes it.
+      if (res.code === "no-destinations") {
+        showToast("error", res.error);
+        setDestinationsOpen(true);
+        return;
+      }
+      const plan = importFromQueuePlan(res.rows || [], rows, res.destinations);
+      if (!plan.add.length) {
+        // Two different "nothing happened"s, and the difference matters: an
+        // empty queue for these divisions is a different problem from a queue
+        // whose drivers are already on this sheet.
+        return showToast(plan.already.length ? "success" : "error", plan.already.length
+          ? `Everybody waiting for these divisions is already on this sheet (${plan.already.length}).`
+          : res.total
+            ? `Nobody in the placements queue signed up for these divisions. ${res.total} ${res.total === 1 ? "driver is" : "drivers are"} waiting on other series — check Destinations.`
+            : "Nobody is waiting on a placement session. Approve a placement-graded sign-up and they'll appear here.");
+      }
+      setRows(prev => [...prev, ...plan.add.map(seed => blankRow(seed))]);
+      setDirty(true);
+      reRank();
+      showToast("success",
+        `Imported ${plan.add.length} driver${plan.add.length === 1 ? "" : "s"} from the placements queue`
+        + (plan.already.length ? ` (${plan.already.length} already on the sheet)` : "")
+        + ". Nothing is saved yet — press Save Session.");
+    } catch (err) {
+      showToast("error", err.message);
+    } finally {
+      setImporting(false);
+    }
+  }
+
   // Moving a driver to another series moves which season's roster they'll join,
   // and a class belongs to a season — so a division that doesn't exist in the
   // new series is cleared rather than left as an id that roster can't resolve.
@@ -452,6 +505,7 @@ export default function TimeTrialPage() {
         // A row that has never been stored sends no id, so the server mints one.
         ...(r.stored ? { id: r.id } : {}),
         name: r.name, number: r.number, driver_id: r.driver_id, user_id: r.user_id, entry_id: r.entry_id,
+        signup_request_id: r.signup_request_id,
         laps: r.laps, notes: r.notes,
         assigned_class_id: r.assigned_class_id, assigned_series_id: r.assigned_series_id,
       }));
@@ -670,6 +724,18 @@ export default function TimeTrialPage() {
               🎯 Destinations{buckets.length ? ` (${buckets.length})` : ""}
             </button>
           )}
+          {/* The field this night is FOR. Everybody approved for a placement in
+              any of the divisions above is waiting on a session somewhere; this
+              is what pools them into this one instead of typing forty names off
+              another screen. */}
+          {canEdit && (
+            <button className="btn btn-ghost" type="button" style={{ marginTop: 0 }}
+              disabled={importing}
+              title="Add every driver waiting on a placement for these divisions. They arrive unplaced and unsaved — review them, then Save."
+              onClick={importFromQueue}>
+              {importing ? "Importing…" : "⇩ Import from Placements Queue"}
+            </button>
+          )}
           {canEdit && view === "board" && (
             <button className="btn btn-primary" type="button" style={{ marginTop: 0 }}
               disabled={!buckets.length}
@@ -722,7 +788,13 @@ export default function TimeTrialPage() {
             {sorted.length === 0 && (
               <tr>
                 <td colSpan={5 + lapCols + (showPlacement ? 1 : 0) + (showSeriesPlacement ? 1 : 0)} style={{ color: "var(--ink-2)" }}>
-                  No drivers on this sheet yet.{canEdit ? " Add one below." : ""}
+                  No drivers on this sheet yet.
+                  {canEdit && (showPlacement
+                    // On a placement night the field is usually already in the
+                    // app, waiting on exactly this session — say so, rather
+                    // than leaving an admin to type it in.
+                    ? " Press Import from Placements Queue to pull in everyone waiting on these divisions, or add one below."
+                    : " Add one below.")}
                 </td>
               </tr>
             )}
@@ -876,6 +948,9 @@ export default function TimeTrialPage() {
             // has nothing to report and closes itself.
             showToast("success", res
               ? `Roster${res.seasons?.length > 1 ? "s" : ""} updated — ${res.created} added, ${res.updated} re-classed.`
+                + (res.placements_cleared
+                  ? ` ${res.placements_cleared} off the placement roster.`
+                  : "")
               : "Session completed.");
           }}
         />
@@ -927,7 +1002,9 @@ export default function TimeTrialPage() {
             // deliberately left alone: unsaved laps survive picking a division.
             reloadTargets();
             setView("board");
-            showToast("success", "Destinations saved — drag drivers into their divisions.");
+            showToast("success", rows.length
+              ? "Destinations saved — drag drivers into their divisions."
+              : "Destinations saved — press Import from Placements Queue to pull in everyone waiting on them.");
           }}
         />
       )}

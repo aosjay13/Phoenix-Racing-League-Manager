@@ -91,6 +91,18 @@ export function CompleteTimeTrialModal({ trial, seasons = [], placementSeries = 
             {done.skipped.length > 12 && <li>…and {done.skipped.length - 12} more</li>}
           </ul>
         )}
+        {/* The other half of the run, on a screen the admin isn't looking at:
+            these drivers were in the Placements Roster waiting on a session, and
+            this is the session. Said out loud so the list emptying is a reported
+            outcome rather than something noticed later. */}
+        {done.placements_cleared > 0 && (
+          <p style={{ marginTop: 10, fontSize: "0.85rem", color: "var(--ink-1)" }}>
+            <strong>{done.placements_cleared}</strong>{" "}
+            {done.placements_cleared === 1 ? "driver has" : "drivers have"} left the{" "}
+            <strong>Placement Roster</strong> — they&rsquo;re on a roster now, and each has been told
+            on their Dashboard.
+          </p>
+        )}
         <button className="btn btn-primary" type="button" onClick={onClose}>Done</button>
       </Modal>
     );

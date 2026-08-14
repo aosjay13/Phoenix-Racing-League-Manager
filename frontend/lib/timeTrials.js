@@ -369,10 +369,17 @@ export function groupByAssignedClass(rows = [], { key = "best" } = {}) {
 // rather than one answer for the sheet, which is what a night placing into
 // SERIES needs: a driver sorted into the Pro Series has been placed — the
 // series is their division — whether or not they also drew a class inside it.
-// Returns { create, update, skipped }:
+// Returns { create, update, skipped, placed }:
 //   create  — payload fields for a new roster entry
 //   update  — { id, class_id, class_ids } patches for entries already there
 //   skipped — everyone the run deliberately leaves untouched, and why
+//   placed  — the source ROWS that end this run with a roster spot, which is
+//             not the same list as create + update. A driver already in the
+//             division the trial placed them in is "skipped" (there is nothing
+//             to write) and is still on the roster; so is the second row of a
+//             duplicated pair. The Placements Queue clears against this, and
+//             "we didn't write anything for them" is the wrong reason to leave
+//             somebody queued for a session they have already raced.
 export function identityKeys(row) {
   const keys = [];
   if (row.driver_id) keys.push(`d:${row.driver_id}`);
@@ -416,17 +423,26 @@ export function planRosterBuild(rows = [], existing = [], { requireClass = false
   const create = [];
   const update = [];
   const skipped = [];
+  const placed = [];
   const claimed = new Set();
 
   for (const row of rows) {
     const keys = identityKeys(row);
     if (!keys.length) { skipped.push({ name: row.name || "", reason: "no name" }); continue; }
     // Two rows for the same person in one trial (a duplicate entry) resolve to
-    // one roster change, not two.
-    if (keys.some(k => claimed.has(k))) { skipped.push({ name: row.name || "", reason: "duplicate" }); continue; }
+    // one roster change, not two. The person is still placed — the row that
+    // claimed those keys is the one that landed.
+    if (keys.some(k => claimed.has(k))) {
+      skipped.push({ name: row.name || "", reason: "duplicate" });
+      placed.push(row);
+      continue;
+    }
     const classId = row.assigned_class_id || "";
     if (!classId && needsClass(row)) { skipped.push({ name: row.name || "", reason: "no class assigned" }); continue; }
     for (const k of keys) claimed.add(k);
+    // Past both refusals: this row gets a roster spot, whether that takes a
+    // create, an update, or nothing at all because it is already right.
+    placed.push(row);
 
     const found = keys.map(k => byKey.get(k)).find(Boolean);
     if (found) {
@@ -452,7 +468,7 @@ export function planRosterBuild(rows = [], existing = [], { requireClass = false
     });
   }
 
-  return { create, update, skipped };
+  return { create, update, skipped, placed };
 }
 
 // ── Export to Qualifying ────────────────────────────────────────────────────

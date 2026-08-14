@@ -66,6 +66,10 @@ export function PlacementDestinationsModal({
         board, ready to have drivers dropped into it — and when you complete the session, each one
         builds the roster of the season behind it.
       </p>
+      <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.82rem", lineHeight: 1.5 }}>
+        They also decide who <strong>Import from Placements Queue</strong> pulls in: every driver
+        waiting on a placement for any division ticked here, pooled onto this one sheet.
+      </p>
 
       <PlacementTargetFields
         idPrefix="tt_dest"
