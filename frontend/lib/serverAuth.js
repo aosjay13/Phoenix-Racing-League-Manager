@@ -272,6 +272,29 @@ export function withGlobalOwner(handler) {
   };
 }
 
+// Wraps a handler for a signed-in account that has NOT necessarily verified its
+// email yet — the one door in the app that is open before the emailed link is
+// clicked, and deliberately the narrowest.
+//
+// It exists because of an ordering problem in sign-up. An account's standing in
+// a league is a row in Firestore (see lib/leagueRoles.js), and until this
+// existed the only thing that wrote that row was withUser — which refuses an
+// unverified account. So a player who signed up on a league's own page could
+// not be recorded as one of its players until they had gone to their inbox,
+// clicked a link, and come back: in the meantime the league's own admins had no
+// way to see them, and no way to tell which league they had joined from.
+//
+// Everything the app can actually DO still sits behind verification. Use this
+// only for a route that records who somebody is, never for one that reads or
+// changes a league's data.
+export function withSignedIn(handler) {
+  return async (request, ctx) => {
+    const user = await getRequestUser(request);
+    if (!user) return unauthorized();
+    return handler(request, ctx, user, getRequestLeagueId(request));
+  };
+}
+
 // Wraps a handler that requires any authenticated (and email-verified) user.
 // Player-facing routes are the app's hot path, so this deliberately does NOT
 // resolve a role (that would cost a document read nothing here uses) — the

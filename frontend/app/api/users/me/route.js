@@ -65,6 +65,8 @@ export const GET = withUser(async (request, ctx, user, leagueId) => {
     // membership is what makes it visible to that league's admins — an account
     // with no entry for a league is unaffiliated with it and is left off its
     // roster — so a new signup being manageable at all depends on it.
+    // Reached when an account verified without ever passing through the sign-up
+    // form's join call — an older signup, or one made before this existed.
     const seedRole = envAdmin ? "owner" : "player";
     const profile = {
       display_name: user.name || user.email?.split("@")[0] || "Driver",
@@ -85,6 +87,13 @@ export const GET = withUser(async (request, ctx, user, leagueId) => {
   const updates = {};
   // Keep permanent env-var owners' stored role in sync so listings agree.
   if (envAdmin && data.role !== "owner") updates.role = "owner";
+
+  // This IS the first verified visit — withUser has already refused everything
+  // that isn't one. So the "signed up, hasn't been through the door yet" flag
+  // that POST /api/users/join set is no longer true, and the admin roster stops
+  // showing them as pending. (Accounts that predate the flag never carry it, so
+  // nothing changes for them.)
+  if (data.signup_pending) updates.signup_pending = false;
 
   // Register the account in this league if it has no standing here yet. This is
   // the "membership" the admin roster keys off, and it is deliberately the

@@ -65,6 +65,9 @@ export default function MyProfilePage() {
       <div className="page-title">
         <h2>My Profile</h2>
         <Link href={`/drivers/${user.uid}`} className="page-badge">View public profile →</Link>
+        {/* Password and league membership live on My Account — this page is
+            about how the league sees you, that one is about the account. */}
+        <Link href="/account" className="page-badge">Account &amp; password →</Link>
       </div>
 
       <div className="form-card">

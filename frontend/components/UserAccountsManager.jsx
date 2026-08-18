@@ -288,6 +288,9 @@ function DriverLinkSelect({ drivers, valueId, valueName, disabled, onChange }) {
 // own /admin/users screen).
 export function UserAccountsManager() {
   const { user: me, role: myRole, roleLevel: myLevel } = useAuth();
+  // Owner OF THIS LEAGUE. Only they may send a password reset — see the button
+  // in the Manage column below, and the route that enforces the same rule.
+  const isOwner = myRole === "owner";
   // Roles and driver links are per-league, so this whole screen is about ONE
   // league — the active one. Switching leagues re-asks for everything rather
   // than re-labelling what's on screen: the roster, the roles in it and the
@@ -302,6 +305,7 @@ export function UserAccountsManager() {
   const [error, setError] = useState(null);
   const [toast, setToast] = useState(null);
   const [deletingUser, setDeletingUser] = useState(null);   // account pending deletion
+  const [resettingUser, setResettingUser] = useState(null); // account pending a password-reset email
   const [editingName, setEditingName] = useState(null);     // uid whose name is being edited
   const [nameDraft, setNameDraft] = useState("");
   // Timestamp of the admin's previous visit, captured before the effect below
@@ -409,6 +413,22 @@ export function UserAccountsManager() {
   function joinLeague(u, newRole) {
     patchUser(u.uid, { role: newRole },
       `${u.display_name || u.email || "Account"} joined ${leagueName} as ${ROLE_LABELS[newRole] || newRole}.`);
+  }
+
+  // Email a player a link to set a new password. Owner-only, both here and in
+  // the route behind it — a reset link is a way into somebody's account, which
+  // is a different kind of power from editing league data. Thrown errors are
+  // deliberately left to the ConfirmDialog, which keeps itself open and shows
+  // them inline; the same shape deleteAccount uses.
+  async function sendPasswordReset(u) {
+    const res = await api(`/api/admin/users/${u.uid}/password-reset`, { method: "POST" });
+    const who = u.display_name || u.email || "that account";
+    // A queued email is not a delivered one: a league that hasn't set up the
+    // mail extension collects the documents and sends nothing (see lib/mailer.js).
+    // Say which happened rather than promising an inbox.
+    showToast(res?.queued ? "success" : "error", res?.queued
+      ? `Password reset link sent to ${res.email}. ${who} can use it to set a new password.`
+      : `Couldn't queue the email for ${res?.email || who}. Check the league's email setup.`);
   }
 
   function startEditName(u) { setEditingName(u.uid); setNameDraft(u.display_name || ""); }
@@ -562,7 +582,7 @@ export function UserAccountsManager() {
                     <th style={{ textAlign: "center" }}>Status</th>
                     <th style={{ textAlign: "left", minWidth: 240 }}>Linked Driver Profile</th>
                     <th style={{ textAlign: "center", minWidth: 150 }}>Role</th>
-                    <th style={{ textAlign: "center" }}>Manage</th>
+                    <th style={{ textAlign: "center", minWidth: isOwner ? 260 : 110 }}>Manage</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -635,26 +655,45 @@ export function UserAccountsManager() {
                           )}
                         </td>
                         <td style={{ textAlign: "center" }}>
-                          {u.env_admin || isMe || !canManage(myRole, u.role) ? (
-                            <span style={{ color: "var(--ink-2)", fontSize: "0.78rem" }} title={
-                              isMe ? "You can't delete your own account"
-                                : u.env_admin ? "Permanent Owner — can't be deleted"
-                                : `${ROLE_LABELS[u.role]} ranks at or above your role — you can't delete it`
-                            }>—</span>
-                          ) : (
-                            <button
-                              type="button"
-                              className="btn btn-danger"
-                              style={{ marginTop: 0, padding: "6px 14px" }}
-                              disabled={isBusy}
-                              onClick={() => setDeletingUser(u)}
-                              title={u.league_count > 1
-                                ? `Takes them off ${leagueName} only — they belong to other leagues`
-                                : "Deletes the account outright — this is their only league"}
-                            >
-                              {u.league_count > 1 ? "Remove" : "Delete"}
-                            </button>
-                          )}
+                          <span style={{ display: "inline-flex", gap: 6, alignItems: "center", justifyContent: "center", flexWrap: "wrap" }}>
+                            {/* Owner-only, and only where there's an address to
+                                send to. A reset link is a way into somebody's
+                                account, which is a different kind of power from
+                                editing league data — so it doesn't come with the
+                                other staff roles. Enforced by the route too. */}
+                            {isOwner && !isMe && u.email && (
+                              <button
+                                type="button"
+                                className="btn btn-ghost"
+                                style={{ marginTop: 0, padding: "6px 10px" }}
+                                disabled={isBusy}
+                                onClick={() => setResettingUser(u)}
+                                title={`Email ${u.email} a link to set a new password`}
+                              >
+                                🔑 Reset password
+                              </button>
+                            )}
+                            {u.env_admin || isMe || !canManage(myRole, u.role) ? (
+                              <span style={{ color: "var(--ink-2)", fontSize: "0.78rem" }} title={
+                                isMe ? "You can't delete your own account"
+                                  : u.env_admin ? "Permanent Owner — can't be deleted"
+                                  : `${ROLE_LABELS[u.role]} ranks at or above your role — you can't delete it`
+                              }>—</span>
+                            ) : (
+                              <button
+                                type="button"
+                                className="btn btn-danger"
+                                style={{ marginTop: 0, padding: "6px 14px" }}
+                                disabled={isBusy}
+                                onClick={() => setDeletingUser(u)}
+                                title={u.league_count > 1
+                                  ? `Takes them off ${leagueName} only — they belong to other leagues`
+                                  : "Deletes the account outright — this is their only league"}
+                              >
+                                {u.league_count > 1 ? "Remove" : "Delete"}
+                              </button>
+                            )}
+                          </span>
                         </td>
                       </tr>
                     );
@@ -726,6 +765,18 @@ export function UserAccountsManager() {
             </table>
           </div>
         </div>
+      )}
+
+      {resettingUser && (
+        <ConfirmDialog
+          title="Send Password Reset"
+          message={`Email ${resettingUser.email} a link to set a new password for ${resettingUser.display_name || "this account"}? Their current password keeps working until they use the link, and nothing about their league standing changes.`}
+          confirmLabel="Send Reset Email"
+          busyLabel="Sending…"
+          tone="primary"
+          onConfirm={() => sendPasswordReset(resettingUser)}
+          onClose={() => setResettingUser(null)}
+        />
       )}
 
       {deletingUser && (deletingUser.league_count > 1 ? (
