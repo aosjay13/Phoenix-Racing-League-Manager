@@ -89,8 +89,12 @@ function CountsTable({ counts, removed }) {
 }
 
 export function BackupRestore() {
-  const { role } = useAuth();
-  const isOwner = role === "owner";
+  // A backup holds EVERY league's data, so this screen belongs to the
+  // application Owner rather than to the owner of whichever league is on screen
+  // — the owner of a league spun up this morning must not be able to restore
+  // over the top of everybody else's. See isGlobalOwner in lib/serverAuth.js,
+  // which is the same rule the API enforces.
+  const { isGlobalOwner: isOwner } = useAuth();
   const { league: active, leagueId, reloadLeagues, refresh } = useLeague() || {};
 
   const [scope, setScope] = useState("all");
@@ -127,7 +131,8 @@ export function BackupRestore() {
         </h3>
         <div className="form-card" style={{ maxWidth: "100%" }}>
           <p style={{ margin: 0, color: "var(--ink-1)", fontSize: "0.9rem" }}>
-            Only the league Owner can export or import the application&rsquo;s data.
+            A backup covers every league on this installation, so only the application
+            Owner can export or import it. Owning one league isn&rsquo;t enough.
           </p>
         </div>
       </div>

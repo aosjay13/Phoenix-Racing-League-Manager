@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { LEAGUE_CHANGE_EVENT } from "@/lib/leagueClient";
 import { newAdditions } from "@/lib/rosterAdditions";
 
 // The red badge on the sidebar's Driver Roster link: drivers who have been
@@ -44,11 +45,16 @@ export function useRosterAdditions(isAdmin) {
     const timer = setInterval(load, POLL_MS);
     // Approving a sign-up, or marking the panel read, fires this — the badge
     // moves at once rather than up to a minute later.
+    // Every count below is scoped to the ACTIVE LEAGUE (api() stamps the
+    // header), so a league switch makes the number on screen wrong until the
+    // next poll. Re-ask the moment it changes.
+    window.addEventListener(LEAGUE_CHANGE_EVENT, load);
     window.addEventListener(ROSTER_SEEN_EVENT, load);
     window.addEventListener("focus", onVisible);
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       clearInterval(timer);
+      window.removeEventListener(LEAGUE_CHANGE_EVENT, load);
       window.removeEventListener(ROSTER_SEEN_EVENT, load);
       window.removeEventListener("focus", onVisible);
       document.removeEventListener("visibilitychange", onVisible);

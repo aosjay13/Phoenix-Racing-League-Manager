@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useAuth } from "@/components/AuthProvider";
+import { useLeague } from "@/components/LeagueProvider";
 import { USERS_SEEN_KEY, USERS_SEEN_EVENT, markUserAccountsSeen } from "@/lib/userAccountsAlerts";
 import { api } from "@/lib/api";
 import { normalizeAliases } from "@/lib/aliases";
@@ -287,6 +288,12 @@ function DriverLinkSelect({ drivers, valueId, valueName, disabled, onChange }) {
 // own /admin/users screen).
 export function UserAccountsManager() {
   const { user: me, role: myRole, roleLevel: myLevel } = useAuth();
+  // Roles and driver links are per-league, so this whole screen is about ONE
+  // league — the active one. Switching leagues re-asks for everything rather
+  // than re-labelling what's on screen: the roster, the roles in it and the
+  // driver profiles it links to are different data, not a different view.
+  const { leagueId, league } = useLeague();
+  const leagueName = league?.name || "this league";
   const [users, setUsers] = useState(null);
   const [drivers, setDrivers] = useState([]);
   const [requests, setRequests] = useState([]);   // pending driver-claim requests
@@ -310,7 +317,11 @@ export function UserAccountsManager() {
     setError(null);
     try {
       const [u, d, r] = await Promise.all([
-        api("/api/admin/users"),
+        // `include_unaffiliated` adds the accounts that exist but belong to no
+        // league yet — brand-new signups. They are NOT part of this league's
+        // roster and are listed separately below; asking for them is what keeps
+        // a fresh signup from being invisible to every league at once.
+        api("/api/admin/users?include_unaffiliated=1"),
         api("/api/drivers"),
         api("/api/admin/claim-requests"),
       ]);
@@ -322,7 +333,8 @@ export function UserAccountsManager() {
       setUsers([]);
     }
   }, []);
-  useEffect(() => { load(); }, [load]);
+  // Re-runs on a league switch: every row above is scoped to one league.
+  useEffect(() => { setUsers(null); load(); }, [load, leagueId]);
 
   // Opening this tab acknowledges every account that exists right now, clearing
   // the red "new signups" badges on the sidebar's Drivers link and on this tab
@@ -372,17 +384,31 @@ export function UserAccountsManager() {
     }
   }
 
+  // "Delete" means different things depending on whether this was the account's
+  // last league, so the route decides and says which it did — the toast repeats
+  // the truth rather than a guess made before the call.
   async function deleteAccount(u) {
-    await api(`/api/admin/users/${u.uid}`, { method: "DELETE" });
+    const res = await api(`/api/admin/users/${u.uid}`, { method: "DELETE" });
     await load();
     window.dispatchEvent(new Event(USERS_SEEN_EVENT));
-    showToast("success", `Deleted ${u.display_name || u.email || "account"}.`);
+    const who = u.display_name || u.email || "account";
+    showToast("success", res?.removed_from_league
+      ? `Removed ${who} from ${leagueName}. Their account and their other leagues are untouched.`
+      : `Deleted ${who}.`);
   }
 
   function changeRole(u, newRole) {
     if (newRole === u.role) return;
     patchUser(u.uid, { role: newRole },
-      `${u.display_name || "User"} is now ${ROLE_LABELS[newRole] || newRole}.`);
+      `${u.display_name || "User"} is now ${ROLE_LABELS[newRole] || newRole} in ${leagueName}.`);
+  }
+
+  // Bring an unaffiliated account into this league. It is the same write as any
+  // other role change — giving somebody a role in a league IS their membership
+  // of it — so there is no separate "join" endpoint to keep in step.
+  function joinLeague(u, newRole) {
+    patchUser(u.uid, { role: newRole },
+      `${u.display_name || u.email || "Account"} joined ${leagueName} as ${ROLE_LABELS[newRole] || newRole}.`);
   }
 
   function startEditName(u) { setEditingName(u.uid); setNameDraft(u.display_name || ""); }
@@ -401,23 +427,35 @@ export function UserAccountsManager() {
 
   // Roles this admin is allowed to hand out (never above their own level).
   const roleOptions = useMemo(() => assignableRoles(myRole), [myRole]);
-  const staffCount = useMemo(() => (users || []).filter(u => roleLevel(u.role) >= roleLevel("statistician")).length, [users]);
+  // THIS league's roster, and — kept apart from it — the accounts that exist but
+  // belong to no league yet. The second list is not the league's membership and
+  // must never read as though it were: giving one of them a role is what makes
+  // them a member here.
+  const members = useMemo(() => (users || []).filter(u => u.in_league !== false), [users]);
+  const outsiders = useMemo(() => (users || []).filter(u => u.in_league === false), [users]);
+  const staffCount = useMemo(() => members.filter(u => roleLevel(u.role) >= roleLevel("statistician")).length, [members]);
   // Accounts that exist but aren't fully set up — unverified, or verified and
   // never opened again. Called out so a signup is never quietly missing.
   const pendingCount = useMemo(
-    () => (users || []).filter(u => u.auth_known && !u.env_admin && (!u.email_verified || !u.has_profile)).length,
-    [users],
+    () => members.filter(u => u.auth_known && !u.env_admin && (!u.email_verified || !u.has_profile)).length,
+    [members],
   );
 
   return (
     <section>
       <div className="page-title"><h2>User Accounts</h2><span className="page-badge">Admin</span></div>
       <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.9rem", maxWidth: 720 }}>
-        Everyone who has signed up for the league — including accounts that haven&apos;t verified
-        their email yet, so a new signup is never missing from this list. Assign each account a <strong>role</strong> —
-        Owner ▸ Admin ▸ Moderator ▸ Statistician all manage league data; Players don&apos;t —
-        and link each account to the statistical <strong>Driver Profile</strong> it races as, so you always know who is who.
+        Everyone who is a member of <strong>{leagueName}</strong> — including accounts that
+        haven&apos;t verified their email yet, so a new signup is never missing from this list.
+        Assign each account a <strong>role</strong> — Owner ▸ Admin ▸ Moderator ▸ Statistician all
+        manage league data; Players don&apos;t — and link each account to the statistical{" "}
+        <strong>Driver Profile</strong> it races as here, so you always know who is who.
         You can only manage accounts ranked at or below your own role.
+      </p>
+      <p style={{ marginTop: 4, color: "var(--ink-2)", fontSize: "0.82rem", maxWidth: 720 }}>
+        Roles and driver links are <strong>per league</strong>. Everything you set here applies to{" "}
+        {leagueName} and nowhere else — the same person can be an Admin in one league, a Player in
+        another, and race under a different driver profile in each.
       </p>
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
 
@@ -504,15 +542,15 @@ export function UserAccountsManager() {
 
       {users == null ? (
         <div className="skeleton" style={{ height: 240, marginTop: 16 }} />
-      ) : users.length === 0 && !error ? (
+      ) : members.length === 0 && !error ? (
         <div className="empty-state">
           <span className="empty-state-icon">👥</span>
-          <p>Nobody has signed up yet.</p>
+          <p>Nobody has joined {leagueName} yet.</p>
         </div>
       ) : (
         <>
           <p style={{ fontSize: "0.8rem", color: "var(--ink-2)", margin: "12px 0 8px" }}>
-            {users.length} account{users.length === 1 ? "" : "s"} · {staffCount} staff
+            {members.length} account{members.length === 1 ? "" : "s"} in {leagueName} · {staffCount} staff
             {pendingCount > 0 && ` · ${pendingCount} not fully set up`}
           </p>
           <div className="table-wrap">
@@ -528,7 +566,7 @@ export function UserAccountsManager() {
                   </tr>
                 </thead>
                 <tbody>
-                  {users.map(u => {
+                  {members.map(u => {
                     const isBusy = !!busy[u.uid];
                     const isMe = me?.uid === u.uid;
                     const isNew = (u.created_at || "") > prevSeenRef.current;
@@ -610,8 +648,11 @@ export function UserAccountsManager() {
                               style={{ marginTop: 0, padding: "6px 14px" }}
                               disabled={isBusy}
                               onClick={() => setDeletingUser(u)}
+                              title={u.league_count > 1
+                                ? `Takes them off ${leagueName} only — they belong to other leagues`
+                                : "Deletes the account outright — this is their only league"}
                             >
-                              Delete
+                              {u.league_count > 1 ? "Remove" : "Delete"}
                             </button>
                           )}
                         </td>
@@ -624,15 +665,86 @@ export function UserAccountsManager() {
         </>
       )}
 
-      {deletingUser && (
+      {outsiders.length > 0 && (
+        <div className="form-card" style={{ marginTop: 20 }}>
+          <h3 style={{ marginTop: 0 }}>Not in {leagueName} yet</h3>
+          <p style={{ marginTop: 0, color: "var(--ink-1)", fontSize: "0.85rem", maxWidth: 720 }}>
+            Accounts that exist on this installation but belong to no league — almost always
+            somebody who has just signed up. They are <strong>not</strong> members of {leagueName}:
+            they can&apos;t be linked to a driver profile and they don&apos;t appear anywhere else in
+            it. Giving one a role is what brings them in.
+          </p>
+          <div className="table-wrap">
+            <table className="stats-table" style={{ width: "100%", minWidth: 640 }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: "left" }}>Account</th>
+                  <th style={{ textAlign: "left" }}>Email</th>
+                  <th style={{ textAlign: "center" }}>Status</th>
+                  <th style={{ textAlign: "center", minWidth: 170 }}>Add to {leagueName}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {outsiders.map(u => {
+                  const isBusy = !!busy[u.uid];
+                  const name = u.display_name || u.email || "Unknown";
+                  return (
+                    <tr key={u.uid}>
+                      <td style={{ textAlign: "left", whiteSpace: "normal" }}>
+                        <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          {u.photo_url
+                            ? <img src={u.photo_url} alt="" className="avatar avatar-sm" />
+                            : <span className="avatar avatar-sm avatar-fallback">{String(name)[0]?.toUpperCase()}</span>}
+                          <strong>{name}</strong>
+                          {(u.created_at || "") > prevSeenRef.current && (
+                            <span className="nav-badge" style={{ position: "static" }}>NEW</span>
+                          )}
+                        </span>
+                      </td>
+                      <td style={{ textAlign: "left", whiteSpace: "normal", color: "var(--ink-1)" }}>
+                        {u.email || <span style={{ color: "var(--ink-2)" }}>&mdash;</span>}
+                      </td>
+                      <td style={{ textAlign: "center" }}><StatusBadge status={accountStatus(u)} /></td>
+                      <td style={{ textAlign: "center" }}>
+                        <select
+                          value=""
+                          disabled={isBusy}
+                          onChange={e => e.target.value && joinLeague(u, e.target.value)}
+                          style={{ minWidth: 160, padding: "6px 10px" }}
+                          title={`Give this account a role in ${leagueName}`}
+                        >
+                          <option value="">Add as&hellip;</option>
+                          {roleOptions.map(r => (
+                            <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                          ))}
+                        </select>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {deletingUser && (deletingUser.league_count > 1 ? (
+        <ConfirmDialog
+          title={`Remove from ${leagueName}`}
+          message={`Remove ${deletingUser.display_name || deletingUser.email || "this account"} from ${leagueName}? They lose their role here and the driver profile they raced as here returns to this league's unclaimed pool (race results stay on record). Their account, their sign-in and the ${deletingUser.league_count - 1} other league${deletingUser.league_count === 2 ? "" : "s"} they belong to are untouched.`}
+          confirmLabel="Remove from League"
+          onConfirm={() => deleteAccount(deletingUser)}
+          onClose={() => setDeletingUser(null)}
+        />
+      ) : (
         <ConfirmDialog
           title="Delete Account"
-          message={`Permanently delete ${deletingUser.display_name || deletingUser.email || "this account"}? Their linked driver profile returns to the unclaimed pool (race results stay on record), and they'll be signed out and unable to sign back in. This can't be undone.`}
+          message={`${leagueName} is the only league ${deletingUser.display_name || deletingUser.email || "this account"} belongs to, so removing them here deletes the account outright. Their linked driver profile returns to the unclaimed pool (race results stay on record), and they'll be signed out and unable to sign back in. This can't be undone.`}
           confirmLabel="Delete Account"
           onConfirm={() => deleteAccount(deletingUser)}
           onClose={() => setDeletingUser(null)}
         />
-      )}
+      ))}
     </section>
   );
 }

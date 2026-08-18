@@ -704,9 +704,19 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      really is new gets a driver profile created as part of the import — so an imported roster is
      never full of entries attached to nobody. The result says how it split: how many landed on
      drivers you already had, and how many profiles were made.
-   - **User Accounts** *(admin)* — every account that has signed up: set its **role**, link it to
-     the driver profile it races as, rename it, delete it, and approve or deny **pending driver
-     requests**. The red badge on the Drivers nav item counts new signups + pending requests.
+   - **User Accounts** *(admin)* — every account that is a member of **the league you're in**: set
+     its **role**, link it to the driver profile it races as *here*, rename it, remove it, and
+     approve or deny **pending driver requests**. The red badge on the Drivers nav item counts new
+     signups + pending requests.
+
+     **Everything on this screen is scoped to one league.** Roles are held per league, so an Admin
+     of another league appears here only if they're a member of this one, and promoting somebody
+     here says nothing about what they are anywhere else. Accounts that exist but belong to no
+     league yet — almost always a brand-new signup — are listed in their own **"Not in … yet"**
+     section below the roster; giving one a role is what brings them in. **Remove** takes somebody
+     off this league (their role here, and the driver profile they raced as here) and leaves their
+     account and their other leagues alone; it only becomes **Delete** — the full account, sign-in
+     included — when this is the last league they belong to.
 
      The **Linked Driver Profile** cell is a searchable picker listing every driver with its
      availability (unclaimed / linked here / linked to another account). It renders into `<body>`
@@ -1192,11 +1202,32 @@ last week's copy behind next to it.
 hierarchy/pool collection — `games`, `series`, `seasons`, `races`, `entries`, `teams`,
 `team_seasons`, `results`, `drivers`, `tracks`, `points_templates` — carries a `league_id` and is read/written
 scoped to the active league (sent as an `X-League-Id` header; see `lib/serverAuth.js`
-`getRequestLeagueId`/`scopeByLeague`). `users` and `claim_requests` are **not** league-scoped —
-accounts and their roles span leagues. That partition map lives once, in `lib/backup.js`
+`getRequestLeagueId`/`scopeByLeague`). That partition map lives once, in `lib/backup.js`
 (`SCOPED_COLLECTIONS` / `GLOBAL_COLLECTIONS`), and is imported by both the containment migration
 and the backup engine, so adding a collection can't leave one of them behind. `signup_requests`
 (players waiting to be approved onto a roster) is league-scoped like the rest.
+
+`users` and `claim_requests` are the two collections that are **not** partitioned by a
+`league_id` field, because an *account* is a person and a person can race in several leagues.
+They are partitioned all the same, just differently: an account's standing is a **map keyed by
+league**, and a claim request carries the league it was filed in.
+
+```
+users/<uid> = {
+  display_name, email, photo_url, bio, country, number, …,
+  role: "admin",                       // legacy, read-only — see the fallback below
+  league_roles: {                      // the real answer: one entry per league
+    "<leagueA>": "owner",
+    "<leagueB>": "player",
+  },
+}
+```
+
+**A league that is not a key of that map is a league the account has no standing in at all** —
+not a player of it, not on its user roster, not linked to any of its drivers, and certainly not
+staff. That is the whole isolation rule; `lib/leagueRoles.js` holds it as pure functions
+(`leagueRoleFor`, `isLeagueMember`, `leagueRolePatch`, `seedLeagueRoles`, `adminGateVerdict`) so it
+can be unit-tested without Firestore, and `lib/__tests__/leagueIsolation.test.jsx` pins it.
 
 Two collections are internal bookkeeping and are excluded from backups: `backup_log` (the
 export/restore history shown on the Backup & Restore screen — restoring an old copy of it would
@@ -2580,16 +2611,73 @@ into `Dirt Oval` and `Dirt Road Course`, and non-circuit venues have their own e
 `Drag Strip`, `Demo Derby Arena`). A track saved with a value outside the list still displays
 and stays selectable while editing, so nothing has to be in the list to survive.
 
+### Roles are held per league
+
+Staff standing is **per league**, not per installation. An Owner of League A opening League B is a
+plain player there: the AdminGate refuses them, every `withAdmin` / `withRole` / `withOwner` route
+refuses them, and League B's user roster doesn't list them. The role behind all of it is resolved
+against the league the request names (`X-League-Id`), so the question "is this user an Admin?" is
+never asked in the abstract.
+
+- **The API.** `getUserRole(user, leagueId)` reads `users.league_roles[leagueId]`; the wrappers in
+  `lib/serverAuth.js` resolve the active league themselves and hand the handler
+  `(request, ctx, user, role, leagueId)`.
+- **The browser.** `GET /api/users/me` answers `role` / `role_level` / `is_admin` **for the active
+  league** and says which league it answered for (`league_id`). `AuthProvider` re-asks on every
+  league switch — `lib/leagueClient.js` fires an event when the active league changes, because
+  AuthProvider sits above LeagueProvider and can't see it through context — and exposes `roleStale`
+  for the moment in between. `AdminGate` renders the loading state rather than a decision while an
+  answer is stale, so an Admin of League A never flashes League B's admin page.
+- **Document routes.** `withAdmin` says *which league's staff you are*, not *which documents you may
+  touch*, so the id-addressed routes check both: `docInLeague()` in `lib/entityApi.js`
+  (`makeDocRoutes`) and in the bespoke admin routes answers a cross-league id with a 404.
+- **User management.** `GET /api/admin/users` lists only accounts with a membership of the active
+  league. `PATCH /api/admin/users/[uid]` writes one key of the role map, so promoting somebody here
+  says nothing about them anywhere else; the hierarchy guard ("you can't edit someone at or above
+  your own rank") compares **this league's** ranks. `DELETE` **removes them from this league** —
+  role entry dropped, this league's driver link returned to its pool — and only deletes the account
+  outright when this was the last league they belonged to.
+- **The application Owner.** Backup and restore cover every league at once, so they are gated on
+  `isGlobalOwner` (an `ADMIN_EMAILS` account, or the Owner of the legacy league) rather than on the
+  Owner of whichever league is on screen. On a single-league install that is the same person, so
+  nothing they could do before is refused now.
+
+**One account, one driver profile *per league*.** A driver belongs to exactly one league, so the
+same person can race as "Driver X" in League A and "Driver Y" in League B, each with its own number,
+aliases and race history. `linkedDriver(uid, leagueId)` resolves the profile for the league being
+viewed, and the Dashboard, the claim queue, Connected Accounts and the career-stats pages all ask it
+that way — a career page in League B never folds in races run in League A.
+
+### No user gets locked out
+
+Per-league roles could have locked every existing league owner out of their own league the moment
+they shipped. Four things stop that, and they overlap on purpose:
+
+1. **Accounts that predate the map keep their old role — in the legacy league only.** An account with
+   no `league_roles` field at all resolves its legacy global `role` inside the *oldest* league (the
+   containment migration's target), and reads as a plain player everywhere else. So the app is
+   correct even if the migration is never run.
+2. **The migration writes that fallback down as data** (step 3 below).
+3. **`ADMIN_EMAILS` accounts are permanent Owners of every league**, whatever any map says. That is
+   the escape hatch of last resort.
+4. **The fallback keys on the field being *absent*, not on the map being empty.** An account
+   deliberately removed from every league does not come back to life through its old global role.
+
 **Containment migration:** existing data created before the multi-league layer is safely
-partitioned by an Owner-only, idempotent, additive-only backfill (`POST /api/admin/leagues/migrate`,
-surfaced as a button in **League Setup → League Settings**). It creates the first default league
-and stamps `league_id` onto every existing record that lacks one — never deleting or overwriting
-anything, and safe to re-run.
+partitioned by an application-Owner-only, idempotent, additive-only backfill
+(`POST /api/admin/leagues/migrate`, surfaced as a button in **League Setup → League Settings**).
+It (1) creates the first default league, (2) stamps `league_id` onto every existing record that
+lacks one, and (3) copies every account's existing `role` into `league_roles` under that league —
+never deleting or overwriting anything, and safe to re-run. Step 3 only *adds* a key when it is
+missing, so a second run can't undo a role change made since the first. The result reports how many
+accounts were carried over alongside the per-collection stamp counts.
 
 A driver's car `number` lives on their per-season `entry`, so it's naturally scoped to a
 series (every season belongs to exactly one series) — a driver can carry a different number
 in each series they race in. Drivers are unified across seasons/series for stats and roster
-aggregation by `user_id` when linked, otherwise by roster name.
+aggregation by `user_id` when linked, otherwise by roster name — within one league: a driver
+document belongs to exactly one league, and career stats built through the account (`user_id`) are
+filtered to the league being viewed so a profile never blends two leagues' racing together.
 
 Everything runs through the server API — clients never talk to Firestore directly (see
 `firebase/firestore.rules` and `firebase/storage.rules`).
@@ -2606,7 +2694,7 @@ between them.
 Two things are deliberately *not* in a backup, because they don't live in Firestore:
 
 - **Sign-in credentials.** Passwords and Google/OAuth links live in Firebase Auth. The `users`
-  documents — display name, role, driver link, profile — restore fine; the credential behind a uid
+  documents — display name, per-league roles, driver link, profile — restore fine; the credential behind a uid
   is Firebase's to keep. Restoring into a brand-new project therefore restores the *profiles*, and
   people sign in again to reattach them.
 - **Uploaded images.** Logos and avatars live in Cloud Storage. The backup keeps their URLs, which

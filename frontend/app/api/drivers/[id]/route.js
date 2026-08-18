@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { makeDocRoutes, SPECS, coerceField } from "@/lib/entityApi";
 import { db } from "@/lib/firebase";
-import { withAdmin } from "@/lib/serverAuth";
+import { docInLeague, getRequestLeagueId, withAdmin } from "@/lib/serverAuth";
+import { linkedDriver } from "@/lib/carSelectionServer";
 import { syncEntryNamesForDriver } from "@/lib/driverSync";
 import { buildCareerProfile } from "@/lib/careerStatsServer";
 import { computeGameSkillRatings } from "@/lib/skillRatingServer";
@@ -17,7 +18,7 @@ export const DELETE = routes.DELETE;
 // current name onto every roster entry that resolves to this driver, so the
 // rename shows up everywhere old results are displayed. Only the denormalized
 // entry.name is touched; no results/stats/profiles are mutated (zero data loss).
-export const PATCH = withAdmin(async (request, { params }) => {
+export const PATCH = withAdmin(async (request, { params }, user, role, patchLeagueId) => {
   const body = await request.json();
   const updates = {};
   for (const [name, opts] of Object.entries(SPECS.drivers.fields)) {
@@ -39,6 +40,11 @@ export const PATCH = withAdmin(async (request, { params }) => {
   const ref = db().collection("drivers").doc(params.id);
   const doc = await ref.get();
   if (!doc.exists) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  // A driver belongs to exactly one league, so editing one — including
+  // re-pointing its `user_id` link — is this league's staff's job alone.
+  if (!docInLeague(doc.data(), patchLeagueId)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
   await ref.update(updates);
 
   let entries_synced;
@@ -63,6 +69,7 @@ export const PATCH = withAdmin(async (request, { params }) => {
 // or not they've made an account.
 export async function GET(request, { params }) {
   const id = params.id;
+  const leagueId = getRequestLeagueId(request);
 
   let driverId = null;
   let driver = null;
@@ -70,18 +77,24 @@ export async function GET(request, { params }) {
 
   const driverDoc = await db().collection("drivers").doc(id).get();
   if (driverDoc.exists) {
+    // A driver belongs to exactly one league; asking for one from another
+    // league's page is a miss, not a profile.
+    if (!docInLeague(driverDoc.data(), leagueId)) {
+      return NextResponse.json({ error: "Driver not found" }, { status: 404 });
+    }
     driverId = id;
     driver = driverDoc.data();
     linkedUserId = driver.user_id || null;
   } else {
-    // Maybe `id` is an account uid (older profile links).
+    // Maybe `id` is an account uid (older profile links) — in which case the
+    // profile shown is the one that account races as HERE.
     const userDoc = await db().collection("users").doc(id).get();
     if (!userDoc.exists) return NextResponse.json({ error: "Driver not found" }, { status: 404 });
     linkedUserId = id;
-    const poolSnap = await db().collection("drivers").where("user_id", "==", id).limit(1).get();
-    if (!poolSnap.empty) {
-      driverId = poolSnap.docs[0].id;
-      driver = poolSnap.docs[0].data();
+    const mine = await linkedDriver(id, leagueId);
+    if (mine) {
+      driverId = mine.id;
+      driver = mine;
     }
   }
 
@@ -116,7 +129,9 @@ export async function GET(request, { params }) {
     aliases = aliases.map(a => ({ ...a, game_name: null }));
   }
 
-  const career = await buildCareerProfile({ driverId, userId: linkedUserId });
+  // Confined to this league: the account behind a driver may race in others,
+  // and their races there are not this league's driver's career.
+  const career = await buildCareerProfile({ driverId, userId: linkedUserId, leagueId });
 
   // Each game the driver has raced in carries the name they're shown under
   // THERE, so the profile's per-game breakdown can label it ("racing as

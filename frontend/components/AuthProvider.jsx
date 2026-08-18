@@ -4,15 +4,38 @@ import { createContext, useContext, useEffect, useState, useCallback } from "rea
 import { onAuthStateChanged, sendEmailVerification, signOut as fbSignOut } from "firebase/auth";
 import { clientAuth } from "@/lib/firebaseClient";
 import { api } from "@/lib/api";
+import { LEAGUE_CHANGE_EVENT, getActiveLeagueId } from "@/lib/leagueClient";
 import { roleLevel as levelOf } from "@/lib/roles";
 
-const AuthContext = createContext({ user: null, profile: null, isAdmin: false, role: "player", roleLevel: 0, emailVerified: false, loading: true });
+const AuthContext = createContext({
+  user: null, profile: null, isAdmin: false, role: "player", roleLevel: 0,
+  leagueId: "", leagueRoles: {}, roleStale: false, isGlobalOwner: false,
+  emailVerified: false, loading: true,
+});
 
+// ── Roles are answered PER LEAGUE ───────────────────────────────────────────
+//
+// `role`, `roleLevel` and `isAdmin` here describe the signed-in account IN THE
+// ACTIVE LEAGUE. /api/users/me resolves them against the X-League-Id header
+// api() stamps on every request and tells us which league it answered for
+// (`profile.league_id`), so switching leagues genuinely changes what this
+// context says — an Admin of League A reads as a plain player the moment the
+// switcher moves to League B.
+//
+// AuthProvider sits ABOVE LeagueProvider in the tree (the league list is fetched
+// with the user's token), so it can't learn about a switch through context. It
+// listens for the event lib/leagueClient.js fires instead, and re-asks. In the
+// gap between the switch and the answer, `roleStale` is true: the role on hand
+// belongs to the league just left, and anything gating on it (AdminGate) must
+// wait rather than act on it.
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [emailVerified, setEmailVerified] = useState(false);
   const [loading, setLoading] = useState(true);
+  // The league the profile on hand was resolved for, tracked separately so a
+  // switch can invalidate it before the new answer lands.
+  const [wantedLeagueId, setWantedLeagueId] = useState(() => getActiveLeagueId());
 
   const refreshProfile = useCallback(async () => {
     try {
@@ -47,6 +70,18 @@ export function AuthProvider({ children }) {
     });
   }, [refreshProfile]);
 
+  // A league switch changes what this account IS. Re-ask, and mark the role on
+  // hand stale until the answer arrives.
+  useEffect(() => {
+    function onLeagueChange(e) {
+      const next = e?.detail?.leagueId ?? getActiveLeagueId();
+      setWantedLeagueId(next);
+      if (clientAuth().currentUser) refreshProfile();
+    }
+    window.addEventListener(LEAGUE_CHANGE_EVENT, onLeagueChange);
+    return () => window.removeEventListener(LEAGUE_CHANGE_EVENT, onLeagueChange);
+  }, [refreshProfile]);
+
   // Re-check verification after the user clicks the emailed link. onAuthStateChanged
   // doesn't fire for that, so we reload the user and force a token refresh so the
   // server also sees the updated email_verified claim.
@@ -72,11 +107,23 @@ export function AuthProvider({ children }) {
   const signOut = useCallback(() => fbSignOut(clientAuth()), []);
 
   const role = profile?.role || "player";
+  // The answer describes a different league than the one now active — a switch
+  // is in flight. Only ever true for a signed-in account with a profile: a
+  // signed-out visitor has no role to be stale.
+  const roleStale = !!profile && (profile.league_id || "") !== (wantedLeagueId || "");
   return (
     <AuthContext.Provider value={{
       user, profile,
-      isAdmin: !!profile?.is_admin,   // true for any staff role (owner→statistician)
+      isAdmin: !!profile?.is_admin,   // true for any staff role (owner→statistician) IN THIS LEAGUE
       role, roleLevel: profile?.role_level ?? levelOf(role),
+      // Which league the three above are about, and every league this account
+      // holds standing in ({ leagueId: role }).
+      leagueId: profile?.league_id || "",
+      leagueRoles: profile?.league_roles || {},
+      // Owner of the APPLICATION rather than of the league on screen — the only
+      // thing that may back up or restore every league's data at once.
+      isGlobalOwner: !!profile?.global_owner,
+      roleStale,
       emailVerified, loading,
       signOut, refreshProfile, refreshVerification, resendVerification,
     }}>

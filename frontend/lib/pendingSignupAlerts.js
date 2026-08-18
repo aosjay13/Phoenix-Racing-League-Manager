@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { LEAGUE_CHANGE_EVENT } from "@/lib/leagueClient";
 import { ROLE_LEVEL } from "@/lib/roles";
 
 // The red badge on the sidebar's Approvals link: how many player sign-ups are
@@ -50,11 +51,16 @@ export function usePendingSignupCount(roleLevel) {
     const timer = setInterval(load, POLL_MS);
     // Approving or denying from the queue fires this, so the badge drops the
     // moment the work is done rather than up to a minute later.
+    // Every count below is scoped to the ACTIVE LEAGUE (api() stamps the
+    // header), so a league switch makes the number on screen wrong until the
+    // next poll. Re-ask the moment it changes.
+    window.addEventListener(LEAGUE_CHANGE_EVENT, load);
     window.addEventListener(SIGNUPS_CHANGED_EVENT, load);
     window.addEventListener("focus", onVisible);
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       clearInterval(timer);
+      window.removeEventListener(LEAGUE_CHANGE_EVENT, load);
       window.removeEventListener(SIGNUPS_CHANGED_EVENT, load);
       window.removeEventListener("focus", onVisible);
       document.removeEventListener("visibilitychange", onVisible);

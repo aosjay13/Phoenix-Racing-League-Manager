@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
-import { withOwner } from "@/lib/serverAuth";
+import { withGlobalOwner } from "@/lib/serverAuth";
 import {
   RESTORE_UPLOAD_COLLECTION,
   restoreBackup,
@@ -137,7 +137,7 @@ async function runRestore(payload, { mode, confirm }, user) {
   return NextResponse.json({ ok: true, mode, source: summary, ...result });
 }
 
-export const POST = withOwner(async (request, ctx, user) => {
+export const POST = withGlobalOwner(async (request, ctx, user) => {
   let body;
   try {
     body = await request.json();

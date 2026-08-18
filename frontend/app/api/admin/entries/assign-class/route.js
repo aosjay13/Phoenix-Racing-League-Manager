@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
-import { withAdmin } from "@/lib/serverAuth";
+import { docInLeague, withAdmin } from "@/lib/serverAuth";
 import { entryClassIds } from "@/lib/classServer";
 
 export const dynamic = "force-dynamic";
@@ -22,13 +22,18 @@ export const dynamic = "force-dynamic";
 //
 //   "unclassified" (default) — only drivers not yet in any class
 //   "all"                    — every driver in the season
-export const POST = withAdmin(async (request) => {
+export const POST = withAdmin(async (request, ctx, admin, role, leagueId) => {
   const { season_id, class_id, scope = "unclassified" } = await request.json();
   if (!season_id || !class_id) {
     return NextResponse.json({ error: "season_id and class_id required" }, { status: 400 });
   }
 
   const classDoc = await db().collection("classes").doc(class_id).get();
+  // The class — and therefore the season whose roster is about to be rewritten —
+  // has to belong to the league this admin is staff of.
+  if (classDoc.exists && !docInLeague(classDoc.data(), leagueId)) {
+    return NextResponse.json({ error: "Class not found" }, { status: 404 });
+  }
   if (!classDoc.exists) return NextResponse.json({ error: "Class not found" }, { status: 404 });
   if (classDoc.data().season_id !== season_id) {
     // A class belongs to exactly one season; assigning across seasons would put

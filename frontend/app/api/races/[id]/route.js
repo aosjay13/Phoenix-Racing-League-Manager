@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { SPECS, coerceField } from "@/lib/entityApi";
 import { db } from "@/lib/firebase";
-import { getUserRole, withAdmin } from "@/lib/serverAuth";
+import { docInLeague, withAdmin } from "@/lib/serverAuth";
 import { canUploadImages, imageFieldNames, stripImageFields } from "@/lib/imagePermissions";
 import { recalcGameSkillRatings, gameIdForSeason } from "@/lib/skillRatingServer";
 
@@ -9,7 +9,7 @@ import { recalcGameSkillRatings, gameIdForSeason } from "@/lib/skillRatingServer
 // event's DATE or ROUND NUMBER reorders the game's SR timeline, so we trigger a
 // chronological recalc afterwards — this is the retroactive "ripple" for a race
 // that gets re-dated into the past (or future).
-export const PATCH = withAdmin(async (request, { params }, user) => {
+export const PATCH = withAdmin(async (request, { params }, user, role, leagueId) => {
   const body = await request.json();
   const updates = {};
   for (const [name, opts] of Object.entries(SPECS.races.fields)) {
@@ -22,6 +22,12 @@ export const PATCH = withAdmin(async (request, { params }, user) => {
   const ref = db().collection("races").doc(params.id);
   const doc = await ref.get();
   if (!doc.exists) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  // Staff of this league edit this league's events. Addressed by id, so the
+  // check belongs here as well as on the listing. (docInLeague lets a legacy,
+  // unstamped doc through, so a half-migrated league keeps working.)
+  if (!docInLeague(doc.data(), leagueId)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
 
   // The track logo is an image, and images are the Owner's to set (see
   // lib/imagePermissions.js). Re-posting the one the form was showing isn't a
@@ -30,7 +36,7 @@ export const PATCH = withAdmin(async (request, { params }, user) => {
   const guarded = stripImageFields(updates, {
     fields: imageFieldNames(SPECS.races.fields),
     existing: doc.data(),
-    allowed: canUploadImages(await getUserRole(user)),
+    allowed: canUploadImages(role),
   });
   Object.keys(updates).forEach(k => { if (!(k in guarded.updates)) delete updates[k]; });
   if (!Object.keys(updates).length) {
@@ -55,8 +61,13 @@ export const PATCH = withAdmin(async (request, { params }, user) => {
 // Deleting a race cascades to its saved results — stats/standings query
 // results by season_id, so orphaned results would otherwise keep counting
 // after the race is gone.
-export const DELETE = withAdmin(async (request, { params }) => {
+export const DELETE = withAdmin(async (request, { params }, user, role, leagueId) => {
   const raceDoc = await db().collection("races").doc(params.id).get();
+  // A delete cascades to results and can't be undone, so it gets the same
+  // cross-league check the edit above does.
+  if (raceDoc.exists && !docInLeague(raceDoc.data(), leagueId)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
   const seasonId = raceDoc.exists ? raceDoc.data().season_id : null;
 
   const resultsSnap = await db().collection("results").where("race_id", "==", params.id).get();

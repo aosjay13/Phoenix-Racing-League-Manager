@@ -15,10 +15,11 @@ const ALLOWED = ["image/png", "image/jpeg", "image/webp", "image/gif", "image/sv
 // using the app; this is the part that means it. Every kind of image goes
 // through the same check — logos, and avatars too — because every one of them
 // is a file the league pays to keep. See lib/imagePermissions.js.
-export const POST = withUser(async (request, ctx, user) => {
+export const POST = withUser(async (request, ctx, user, leagueId) => {
   // Checked BEFORE the body is read: there is no reason to pull a megabyte off
-  // the wire for a request that cannot be allowed to store it.
-  if (!canUploadImages(await getUserRole(user))) {
+  // the wire for a request that cannot be allowed to store it. Resolved against
+  // the ACTIVE LEAGUE: being the Owner of one league buys no storage in another.
+  if (!canUploadImages(await getUserRole(user, leagueId))) {
     return NextResponse.json({ error: UPLOAD_DENIED_ERROR }, { status: 403 });
   }
 

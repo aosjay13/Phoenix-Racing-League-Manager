@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { emailForUser, postMessage } from "@/lib/messagesServer";
-import { withAdmin } from "@/lib/serverAuth";
+import { docInLeague, withAdmin } from "@/lib/serverAuth";
+import { linkedDriver } from "@/lib/carSelectionServer";
 import { NEW_DRIVER_KIND, requestKind } from "@/lib/signupRequest";
 import { carNumberTaken, seasonAcceptsSignups } from "@/lib/carSelection";
 import { normalizeClassIds } from "@/lib/classFilter";
@@ -26,7 +27,7 @@ import { normalizeClassIds } from "@/lib/classFilter";
 //                  aliases / connected accounts) and, when the request carried
 //                  a series sign-up, the season roster entry as well — so an
 //                  approval is the single click that gets them racing.
-export const PATCH = withAdmin(async (request, { params }, admin) => {
+export const PATCH = withAdmin(async (request, { params }, admin, role, leagueId) => {
   const { id } = params;
   const body = await request.json().catch(() => ({}));
   const action = body.action;
@@ -35,6 +36,11 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
   const reqDoc = await reqRef.get();
   if (!reqDoc.exists) return NextResponse.json({ error: "Request not found" }, { status: 404 });
   const req = reqDoc.data();
+  // Only this league's admins answer this league's queue. Addressed by id, so
+  // the check has to be here as well as on the listing.
+  if (!docInLeague(req, leagueId)) {
+    return NextResponse.json({ error: "Request not found" }, { status: 404 });
+  }
   if (req.status !== "pending") {
     return NextResponse.json({ error: "This request has already been resolved." }, { status: 400 });
   }
@@ -64,11 +70,14 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
   }
 
   // A profile may have been linked (or the request's own account given one)
-  // between the request being filed and this click.
-  const alreadyOwned = await db().collection("drivers").where("user_id", "==", req.uid).limit(1).get();
+  // between the request being filed and this click — IN THIS LEAGUE. The same
+  // account holding a profile in another league is normal and none of this
+  // decision's business.
+  const requestLeagueId = req.league_id || leagueId;
+  const alreadyOwned = await linkedDriver(req.uid, requestLeagueId);
 
   if (requestKind(req) === NEW_DRIVER_KIND) {
-    return approveNewDriver({ id, req, reqRef, stamp, admin, alreadyOwned });
+    return approveNewDriver({ id, req, reqRef, stamp, admin, alreadyOwned, leagueId: requestLeagueId });
   }
 
   const targetRef = db().collection("drivers").doc(req.driver_id);
@@ -76,11 +85,17 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
   if (!targetDoc.exists) {
     return NextResponse.json({ error: "The requested driver profile no longer exists." }, { status: 404 });
   }
+  if (!docInLeague(targetDoc.data(), requestLeagueId)) {
+    return NextResponse.json({ error: "The requested driver profile is not in this league." }, { status: 404 });
+  }
 
   const batch = db().batch();
 
-  // Detach whichever driver currently holds this user's link (one link per user).
-  alreadyOwned.docs.forEach(d => { if (d.id !== req.driver_id) batch.update(d.ref, { user_id: null }); });
+  // Detach the driver this user held in THIS league (one link per user per
+  // league); their profile in any other league is left exactly as it is.
+  if (alreadyOwned && alreadyOwned.id !== req.driver_id) {
+    batch.update(db().collection("drivers").doc(alreadyOwned.id), { user_id: null });
+  }
 
   // Apply the requested link.
   batch.update(targetRef, { user_id: req.uid });
@@ -105,14 +120,14 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
 // has closed or their number has gone since they asked, the driver profile is
 // still created and the admin is told what didn't carry over, rather than the
 // whole approval failing.
-async function approveNewDriver({ id, req, reqRef, stamp, admin, alreadyOwned }) {
+async function approveNewDriver({ id, req, reqRef, stamp, admin, alreadyOwned, leagueId }) {
   const name = String(req.driver_name || "").trim();
   if (!name) {
     return NextResponse.json({ error: "This request has no driver name to create." }, { status: 400 });
   }
-  if (!alreadyOwned.empty) {
+  if (alreadyOwned) {
     return NextResponse.json({
-      error: `${req.user_name || "That account"} already has a driver profile (“${alreadyOwned.docs[0].data().name}”). Deny this request, or unlink that profile first.`,
+      error: `${req.user_name || "That account"} already has a driver profile in this league (“${alreadyOwned.name}”). Deny this request, or unlink that profile first.`,
     }, { status: 409 });
   }
 
@@ -126,7 +141,9 @@ async function approveNewDriver({ id, req, reqRef, stamp, admin, alreadyOwned })
     // Records that this profile came from a player's request an admin approved,
     // rather than being typed in by an admin directly.
     created_from_request: id,
-    ...(req.league_id ? { league_id: req.league_id } : {}),
+    // The league the request was filed in. A driver belongs to one league, and
+    // this is the one the player asked to race in.
+    ...(leagueId ? { league_id: leagueId } : {}),
   };
   const driverRef = await db().collection("drivers").add(driverDoc);
 
@@ -139,7 +156,10 @@ async function approveNewDriver({ id, req, reqRef, stamp, admin, alreadyOwned })
   const signup = req.signup;
   if (signup?.season_id) {
     const seasonDoc = await db().collection("seasons").doc(signup.season_id).get();
-    const season = seasonDoc.exists ? { id: seasonDoc.id, ...seasonDoc.data() } : null;
+    const raw = seasonDoc.exists ? { id: seasonDoc.id, ...seasonDoc.data() } : null;
+    // A season that has since been moved to (or was always in) another league is
+    // treated as gone rather than joined — the driver profile is still created.
+    const season = raw && docInLeague(raw, leagueId) ? raw : null;
     if (!season) {
       signup_note = "The season they asked to join no longer exists, so no roster entry was created.";
     } else if (!seasonAcceptsSignups(season)) {

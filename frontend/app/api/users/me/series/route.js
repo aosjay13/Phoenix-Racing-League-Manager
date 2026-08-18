@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
-import { getRequestLeagueId, withUser } from "@/lib/serverAuth";
+import { withUser } from "@/lib/serverAuth";
 import { normalizeClassIds } from "@/lib/classFilter";
 import {
   carSelectionSlots, normalizeCarNumber, resolveCarSelection, resolveSignupRules,
@@ -31,11 +31,15 @@ export const dynamic = "force-dynamic";
 //
 // Completed seasons never appear as sign-ups and are marked closed in the list,
 // which is what keeps both actions to seasons that are upcoming or running.
-export const GET = withUser(async (request, ctx, user) => {
+export const GET = withUser(async (request, ctx, user, leagueId) => {
+  // Every one of the three is scoped to the ACTIVE LEAGUE: the driver profile
+  // this account races as here, the claim request it has open here, and this
+  // league's seasons. An account that races in two leagues sees each league's
+  // dashboard as if the other did not exist.
   const [driver, pending, index] = await Promise.all([
-    linkedDriver(user.uid),
-    pendingClaim(user.uid),
-    leagueSeasonIndex(getRequestLeagueId(request)),
+    linkedDriver(user.uid, leagueId),
+    pendingClaim(user.uid, leagueId),
+    leagueSeasonIndex(leagueId),
   ]);
   const { seasons, seriesById, gamesById, classesBySeason } = index;
   const seasonsById = Object.fromEntries(seasons.map(s => [s.id, s]));
@@ -133,7 +137,7 @@ export const GET = withUser(async (request, ctx, user) => {
   // the top of the Sign-ups screen with the admin's reason, and the season is
   // held back from the join list until they acknowledge it — see
   // lib/denialNotice.js.
-  const denied = unreadDenials(await deniedRequestsForUser(user.uid));
+  const denied = unreadDenials(await deniedRequestsForUser(user.uid, { leagueId }));
   // The good half — being let in — is announced on the message board instead
   // (lib/messages.js), together with every other decision an admin makes.
   const deniedSeasonIds = new Set(denied.map(d => d.season_id).filter(Boolean));
@@ -244,7 +248,7 @@ export const GET = withUser(async (request, ctx, user) => {
   // created; without this they'd be asked for the same Discord name and iRacing
   // ID again on their second sign-up, minutes after typing them. See
   // knownAliasesFor in lib/signupRequest.js.
-  const myRequests = [...(await pendingRequestsForUser(user.uid)), ...(pending ? [pending] : [])];
+  const myRequests = [...(await pendingRequestsForUser(user.uid, { leagueId })), ...(pending ? [pending] : [])];
   const known_aliases = knownAliasesFor({ driver, requests: myRequests });
   // The same for the name at the top of the form. Their account is the last
   // resort — and only when its display name is one they chose, never the

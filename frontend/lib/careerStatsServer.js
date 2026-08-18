@@ -20,7 +20,14 @@ import { raceDateSortKey } from "@/lib/raceDate";
 // only ever raced under a linked account (older entries without a driver_id)
 // as well as pool drivers who never made an account. Titles = completed
 // seasons where one of their entries finished P1 in points.
-export async function buildCareerProfile({ driverId = null, userId = null }) {
+//
+// `leagueId` confines the whole career to one league. It matters because of the
+// `user_id` half: a driver id belongs to exactly one league, but an ACCOUNT
+// spans them, so without this a profile viewed inside League B would fold in
+// every race the same person ran in League A. Entries written before the
+// containment migration carry no league_id and still count, so a league
+// mid-migration doesn't appear to lose its history.
+export async function buildCareerProfile({ driverId = null, userId = null, leagueId = "" }) {
   const queries = [];
   if (driverId) queries.push(db().collection("entries").where("driver_id", "==", driverId).get());
   if (userId) queries.push(db().collection("entries").where("user_id", "==", userId).get());
@@ -34,7 +41,13 @@ export async function buildCareerProfile({ driverId = null, userId = null }) {
   const snaps = await Promise.all(queries);
   // Dedupe by entry id — the same entry can match both queries.
   const entryMap = new Map();
-  for (const snap of snaps) for (const d of snap.docs) entryMap.set(d.id, { id: d.id, ...d.data() });
+  for (const snap of snaps) {
+    for (const d of snap.docs) {
+      const entry = { id: d.id, ...d.data() };
+      if (leagueId && entry.league_id != null && entry.league_id !== leagueId) continue;
+      entryMap.set(d.id, entry);
+    }
+  }
   const myEntries = [...entryMap.values()];
 
   const seasonIds = [...new Set(myEntries.map(e => e.season_id))];

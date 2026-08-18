@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
-import { withAdmin } from "@/lib/serverAuth";
+import { docInLeague, withAdmin } from "@/lib/serverAuth";
 import { entryClassIds } from "@/lib/classServer";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 // Results are MOVED, never deleted: each one keeps the class_id stamped on it
 // when it was saved, so every class championship still scores exactly the races
 // it always did. Only the emptied duplicate entries are removed.
-export const POST = withAdmin(async (request) => {
+export const POST = withAdmin(async (request, ctx, admin, role, leagueId) => {
   const { entry_ids } = await request.json();
   const ids = [...new Set((Array.isArray(entry_ids) ? entry_ids : []).filter(Boolean))];
   if (ids.length < 2) return NextResponse.json({ error: "Pick at least two entries to combine" }, { status: 400 });
@@ -25,6 +25,11 @@ export const POST = withAdmin(async (request) => {
   const docs = await Promise.all(ids.map(id => db().collection("entries").doc(id).get()));
   const entries = docs.filter(d => d.exists).map(d => ({ id: d.id, ...d.data() }));
   if (entries.length < 2) return NextResponse.json({ error: "Those entries no longer exist" }, { status: 404 });
+  // Entries are named by id, so this is where staff-of-THIS-league is checked
+  // against the rows being written. An id from another league reads as gone.
+  if (entries.some(e => !docInLeague(e, leagueId))) {
+    return NextResponse.json({ error: "Those entries no longer exist" }, { status: 404 });
+  }
 
   // Only ever combine entries that are the same driver in the same season —
   // anything else would be merging two different people's results together.
