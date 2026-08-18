@@ -23,10 +23,11 @@ import assert from "node:assert/strict";
 import { renderToStaticMarkup } from "react-dom/server";
 import { PasswordChangeCard } from "@/components/PasswordChangeCard";
 import {
-  MIN_PASSWORD_LENGTH, PASSWORD_PROVIDER, RESET_SENT_MESSAGE, friendlyAuthError,
-  hasPasswordSignIn, isRecentLoginRequired, passwordChangeError, resetOutcome,
-  signupLeagueId,
+  MIN_PASSWORD_LENGTH, PASSWORD_PROVIDER, RESET_NEUTRAL_MESSAGE, RESET_SENT_MESSAGE,
+  firebaseErrorDetail, friendlyAuthError, hasPasswordSignIn, isRecentLoginRequired,
+  isUnknownAccount, passwordChangeError, resetOutcome, signupLeagueId,
 } from "@/lib/authFlows";
+import { FIREBASE_CONFIG_VARS, missingFirebaseConfig } from "@/lib/firebaseClient";
 
 let n = 0;
 function check(label, actual, expected) {
@@ -116,21 +117,72 @@ ok("an unknown failure still produces a sentence",
 ok("a thrown nothing still produces a sentence",
   friendlyAuthError(undefined, "signin").length > 0);
 
-// ── The reset form never confirms an address ───────────────────────────────
+// ── The reset form, in both of its modes ───────────────────────────────────
+//
+// The default is DIAGNOSTIC: say exactly what Firebase said. That is the mode
+// this app runs in, because the alternative — an answer vague enough to protect
+// the account list — is also vague enough to hide a total delivery outage, and
+// it did. The enumeration-safe mode is kept, and kept tested, so it can be
+// turned back on with one flag once delivery is trusted again.
 
-check("a successful send reports the neutral message",
-  resetOutcome(null), { ok: true, message: RESET_SENT_MESSAGE });
-// The one that matters: an address with no account must look exactly like one
-// that has.
-check("an unknown address looks identical to a known one",
-  resetOutcome(fbErr("auth/user-not-found")), { ok: true, message: RESET_SENT_MESSAGE });
-ok("the neutral message promises nothing about the account existing",
-  /if that email has an account/i.test(RESET_SENT_MESSAGE));
-// Errors the person can actually fix are still surfaced as errors.
-ok("a malformed address is reported as a real error",
-  resetOutcome(fbErr("auth/invalid-email")).ok === false);
-ok("rate limiting is reported as a real error",
-  resetOutcome(fbErr("auth/too-many-requests")).ok === false);
+// A send Firebase accepted. The wording has one job beyond saying "sent": the
+// most common "it didn't arrive" is that it did, into spam.
+check("an accepted send reports success", resetOutcome(null), { ok: true, message: RESET_SENT_MESSAGE });
+ok("…and the success message names the spam folder", /spam/i.test(RESET_SENT_MESSAGE));
+ok("…and says plainly that it was sent", /sent/i.test(RESET_SENT_MESSAGE));
+
+// THE bug this release fixes: an address with no account used to be reported as
+// a success, so the single most common cause of "nothing happened" was
+// indistinguishable from working. It is now an error that names itself.
+const unknown = resetOutcome(fbErr("auth/user-not-found"));
+ok("an unknown address is an error, not a silent success", unknown.ok === false);
+ok("…and it says which Firebase code it was", /auth\/user-not-found/.test(unknown.message));
+ok("…and tells the person what to do about it", /spelling|create an account/i.test(unknown.message));
+
+// Every other failure carries the raw code through to the screen, so a report of
+// "it didn't work" can say which failure it was.
+for (const code of ["auth/invalid-email", "auth/too-many-requests", "auth/invalid-api-key",
+  "auth/network-request-failed", "auth/operation-not-allowed"]) {
+  const out = resetOutcome(fbErr(code));
+  ok(`${code} is reported as a real error`, out.ok === false);
+  ok(`${code} appears verbatim in what the user is shown`, out.message.includes(code));
+}
+
+// The raw detail formatter, which is what makes the above true.
+ok("the detail carries code and message together",
+  firebaseErrorDetail(fbErr("auth/invalid-email")).includes("auth/invalid-email"));
+check("an error with no code at all still says something",
+  firebaseErrorDetail(new Error("boom")), "boom");
+check("a thrown nothing still says something", firebaseErrorDetail(null), "Unknown error");
+ok("an unknown account is recognised", isUnknownAccount(fbErr("auth/user-not-found")));
+ok("…and a malformed address is not", !isUnknownAccount(fbErr("auth/invalid-email")));
+
+// ── The enumeration-safe mode still works ──────────────────────────────────
+//
+// Kept tested so turning it back on is a one-flag change and not a rewrite.
+const safe = { revealDetail: false };
+check("safe mode reports an unknown address as a success",
+  resetOutcome(fbErr("auth/user-not-found"), safe), { ok: true, message: RESET_NEUTRAL_MESSAGE });
+ok("…and the neutral message promises nothing about the account existing",
+  /if that email has an account/i.test(RESET_NEUTRAL_MESSAGE));
+ok("safe mode still surfaces a malformed address",
+  resetOutcome(fbErr("auth/invalid-email"), safe).ok === false);
+ok("safe mode leaks no raw code",
+  !resetOutcome(fbErr("auth/invalid-email"), safe).message.includes("auth/"));
+
+// ── A build missing its Firebase variables says so ─────────────────────────
+//
+// The other way a reset "silently fails": NEXT_PUBLIC_* values are inlined at
+// BUILD time, so a deploy built without them ships a bundle that cannot talk to
+// Firebase at all — and every symptom shows up as a failure of whatever the
+// visitor was doing. The test environment has none of them set, which is exactly
+// the broken-deploy case.
+check("every client variable Auth needs is named",
+  Object.values(FIREBASE_CONFIG_VARS).sort(),
+  ["NEXT_PUBLIC_FIREBASE_API_KEY", "NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN", "NEXT_PUBLIC_FIREBASE_PROJECT_ID"]);
+ok("a build with no config reports every variable by its env-var name",
+  missingFirebaseConfig().every(v => v.startsWith("NEXT_PUBLIC_FIREBASE_")));
+ok("…and reports all three when none are set", missingFirebaseConfig().length === 3);
 
 // ── 3. When a password change may proceed ──────────────────────────────────
 

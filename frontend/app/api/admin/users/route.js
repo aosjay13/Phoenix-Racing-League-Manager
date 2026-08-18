@@ -83,7 +83,12 @@ export const GET = withAdmin(async (request, ctx, admin, role, leagueId) => {
     const data = profileByUid[uid] || null;
     const auth = authByUid[uid] || null;
     const linked = driverByUser[uid] || null;
-    const email = data?.email || auth?.email || null;
+    // The Firebase Auth record's address wins over the profile's copy of it.
+    // Auth is what a sign-in and a password reset actually resolve against; the
+    // profile field is a denormalized mirror, and the dashboard's reset button
+    // hands this exact string to sendPasswordResetEmail. If the two ever drift,
+    // the mirror would send somebody else's account a reset link.
+    const email = auth?.email || data?.email || null;
     const envAdmin = isEnvAdmin(email);
 
     // Membership decides whether this row belongs on this league's roster at

@@ -215,9 +215,11 @@ throwaway key (`openssl genrsa`) — the emulator never checks it.
    wins over whatever league your browser was last on. Signing in while viewing a league you
    haven't joined adds you to it the same way, so you're never looking at a league you have no
    standing in. Verify your email (Firebase sends the link) before you can use anything.
-   - **Forgot your password?** on the sign-in form emails you a link to set a new one. It says
-     the same thing whether or not the address has an account, so the form can't be used to
-     find out who races here.
+   - **Forgot your password?** on the sign-in form emails you a link to set a new one, sent by
+     Firebase itself. A success is a callout that says to check your **spam/junk folder** — that
+     is where an unarrived reset email nearly always is. A failure names the exact reason,
+     including "no account exists with that email address", so a typo doesn't look like an
+     outage.
 2. **My Account** (top right, beside your name) — how you sign in: change your password (your
    current one is asked for first, so a session left open on a shared computer can't be taken
    over), see whether your email is verified, and see every league this account belongs to with
@@ -735,9 +737,10 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      that isn't shared with Admins and Moderators: every other one edits league *data*, while
      this one touches a person's credentials, so it sits with the role that owns the league. The
      link goes to the address on the account and is never shown to the Owner who sent it — they
-     can start the reset, not perform it. Delivery uses the same email path as every other
-     notification (see *Backups & disaster recovery* on the `mail` collection), and the toast
-     says whether the message was actually queued rather than assuming an inbox.
+     can start the reset, not perform it. Firebase sends it directly, using its own password-reset
+     template, so it needs no mail server configured (see *Signing up, signing in, and passwords*
+     for why it is sent from the browser). If it fails, the toast carries the exact Firebase error
+     code; if it succeeds, tell them to check their spam folder before pressing it again.
 
      The **Linked Driver Profile** cell is a searchable picker listing every driver with its
      availability (unclaimed / linked here / linked to another account). It renders into `<body>`
@@ -2709,10 +2712,35 @@ unattended session is the realistic threat — and it also disposes of Firebase'
 `auth/requires-recent-login` before it can be hit. It is still caught, because the two calls are not
 atomic, and the remedy is the form the person is already looking at.
 
-**An Owner resetting somebody else's password** goes through
-`POST /api/admin/users/[uid]/password-reset`: Firebase mints the link
-(`generatePasswordResetLink`), the app's own mail queue delivers it, and the link is never returned
-to the caller. Owner-of-the-active-league only, and the target has to be a member of that league.
+**Both reset paths — the player's own and the Owner's — send from the browser**, through the
+client SDK's `sendPasswordResetEmail`. That is a correction of a real bug rather than a style
+choice. The Firebase **Admin** SDK has no function that sends this email: `generatePasswordResetLink`
+returns a URL string and nothing more, and delivering it needs an SMTP path the server doesn't have.
+The Owner's button originally handed that string to the app's Firestore mail queue, which reports
+success as soon as the document is written — so on an installation without the Trigger Email
+extension it said "sent" every time and delivered nothing. `sendPasswordResetEmail` asks Firebase
+Auth to send its own templated email and needs no mail server at all.
+
+Moving it client-side gives nothing away: `sendPasswordResetEmail` is an unauthenticated Firebase
+operation — anyone can call it for any address from any browser — and the link goes to the account's
+own inbox, never to the Owner who pressed the button. What being an Owner buys is *seeing the
+addresses*, and that still comes from the admin-only roster API, which reads each address from the
+**Firebase Auth record** rather than the profile's copy of it (Auth is what a reset actually resolves
+against; the profile field is a mirror).
+
+**When a reset doesn't arrive**, the app now says why instead of shrugging. The exact Firebase code
+is shown on screen and logged to the console (`auth/user-not-found`, `auth/invalid-email`,
+`auth/invalid-api-key`, …), and a success is a prominent callout that names the spam folder. The
+sign-in form also refuses to pretend: a build shipped without its `NEXT_PUBLIC_FIREBASE_*` variables
+renders a banner naming the missing ones, because those are inlined at **build** time — a deploy
+that was missing one produces a bundle that cannot reach Firebase at all, and every symptom of that
+otherwise shows up as a failure of whatever the visitor happened to be doing.
+
+That last point is a deliberate reversal. An unknown address used to be reported as a success, to
+stop the form being used as an address checker — but an answer vague enough to protect the account
+list is also vague enough to hide a total outage, and it did. `resetOutcome(err, { revealDetail })`
+holds both behaviours, both tested; set `revealDetail: false` to close enumeration back up once
+delivery is trusted.
 
 ### No user gets locked out
 
