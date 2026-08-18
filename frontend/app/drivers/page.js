@@ -1,16 +1,13 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
 import { DirectoryRow } from "@/components/DirectoryRow";
-import { UserAccountsManager } from "@/components/UserAccountsManager";
 import { DriverPoolCreateModal } from "@/components/DriverPoolCreateModal";
 import { DriverEditModal } from "@/components/DriverEditModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Modal } from "@/components/Modal";
-import { useUserAccountsAlerts, alertsTitle } from "@/lib/userAccountsAlerts";
 
 // The global driver directory — the "Drivers" tab, and the only one every
 // visitor sees.
@@ -313,60 +310,19 @@ function DriversDirectory() {
 // missed. `?tab=roster` is redirected there in next.config.js — a server
 // redirect, because the client-side one raced LeagueProvider writing the scope
 // back into the address bar.
-const TABS = [
-  { key: "directory", label: "Drivers",       icon: "🏎", admin: false },
-  { key: "accounts",  label: "User Accounts", icon: "👥", admin: true  },
-];
-
-function DriversTabs() {
-  const { isAdmin } = useAuth();
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const wanted = searchParams.get("tab") || "directory";
-  // Same alert count the sidebar puts on the Drivers link, so an admin who
-  // follows that badge here can see which tab it was pointing at.
-  const alerts = useUserAccountsAlerts(isAdmin);
-
-  const visible = TABS.filter(t => !t.admin || isAdmin);
-  // A non-admin (or an admin whose role is still loading) can only ever be on
-  // the directory, so an admin-only ?tab= falls back rather than showing blank.
-  const tab = visible.some(t => t.key === wanted) ? wanted : "directory";
-
-  function selectTab(key) {
-    // Shallow URL update so the tab is linkable/back-buttonable without
-    // re-running the route.
-    router.replace(key === "directory" ? "/drivers" : `/drivers?tab=${key}`, { scroll: false });
-  }
-
-  return (
-    <section>
-      {visible.length > 1 && (
-        <div className="tab-row" style={{ marginTop: 0, marginBottom: 18, flexWrap: "wrap" }}>
-          {visible.map(t => {
-            const badge = t.key === "accounts" ? alerts.total : 0;
-            return (
-              <button key={t.key} type="button" className={`tab${tab === t.key ? " active" : ""}`}
-                onClick={() => selectTab(t.key)} title={badge > 0 ? alertsTitle(alerts) : undefined}>
-                <span style={{ marginRight: 6 }}>{t.icon}</span>{t.label}
-                {badge > 0 && (
-                  <span className="nav-badge tab-badge">{badge > 99 ? "99+" : badge}</span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {tab === "directory" && <DriversDirectory />}
-      {tab === "accounts" && isAdmin && <UserAccountsManager />}
-    </section>
-  );
-}
+// User Accounts went the same way the roster did: it is a job rather than a
+// view, so it is its own Admin menu entry (app/accounts) instead of a tab you
+// had to know was hidden here. `?tab=accounts` redirects there — see
+// next.config.js — so every old link and bookmark still lands on it.
+//
+// With both jobs gone this page is a single view again, so there is no tab row
+// left to draw — and no ?tab= to read, since next.config.js redirects both of
+// the old ones before this route is reached.
 
 export default function DriversPage() {
   return (
     <Suspense fallback={<div className="skeleton" style={{ height: 240 }} />}>
-      <DriversTabs />
+      <DriversDirectory />
     </Suspense>
   );
 }

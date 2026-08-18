@@ -49,6 +49,12 @@ function accountStatus(u) {
   if (!u.has_profile) {
     return { label: "Not opened yet", tone: "info", title: "Email verified, but they haven't returned to the app since. Their profile finishes setting itself up on their next visit — role and driver links you set now are kept." };
   }
+  // Vouched for by an Owner rather than confirmed by email. Not the same claim,
+  // so it doesn't read as the same pill — whoever looks at this list later
+  // deserves to know which one they're seeing.
+  if (u.verified_by_owner) {
+    return { label: "Verified by you", tone: "info", title: "An Owner marked this account verified by hand — the address itself was never confirmed by email." };
+  }
   return { label: "Active", tone: "ok", title: "Verified and set up" };
 }
 
@@ -309,6 +315,11 @@ export function UserAccountsManager() {
   const [toast, setToast] = useState(null);
   const [deletingUser, setDeletingUser] = useState(null);   // account pending deletion
   const [resettingUser, setResettingUser] = useState(null); // account pending a password-reset email
+  const [verifyingAll, setVerifyingAll] = useState(false);  // bulk-verify confirm dialog
+  // Whether this installation still requires email verification at all, and
+  // whether a change to it is in flight. null = haven't asked yet.
+  const [verifyWall, setVerifyWall] = useState(null);
+  const [wallBusy, setWallBusy] = useState(false);
   const [editingName, setEditingName] = useState(null);     // uid whose name is being edited
   const [nameDraft, setNameDraft] = useState("");
   // Timestamp of the admin's previous visit, captured before the effect below
@@ -342,6 +353,34 @@ export function UserAccountsManager() {
   }, []);
   // Re-runs on a league switch: every row above is scoped to one league.
   useEffect(() => { setUsers(null); load(); }, [load, leagueId]);
+
+  // The installation-wide verification switch. Read here so the recovery panel
+  // can say which way it is set, and flipped from the same place.
+  useEffect(() => {
+    let live = true;
+    fetch("/api/auth/settings", { cache: "no-store" })
+      .then(r => r.json())
+      .then(d => { if (live) setVerifyWall(d?.require_email_verification !== false); })
+      .catch(() => { if (live) setVerifyWall(null); });
+    return () => { live = false; };
+  }, []);
+
+  async function toggleWall(next) {
+    setWallBusy(true);
+    try {
+      const res = await api("/api/auth/settings", {
+        method: "PATCH", body: { require_email_verification: !!next },
+      });
+      setVerifyWall(res.require_email_verification !== false);
+      showToast("success", res.require_email_verification
+        ? "Email verification is required again. New accounts must confirm their address."
+        : "Email verification is off. Anyone who signs up can use the league straight away — turn it back on once email is working.");
+    } catch (err) {
+      showToast("error", err.message);
+    } finally {
+      setWallBusy(false);
+    }
+  }
 
   // Opening this tab acknowledges every account that exists right now, clearing
   // the red "new signups" badges on the sidebar's Drivers link and on this tab
@@ -461,6 +500,45 @@ export function UserAccountsManager() {
       `Password reset email sent to ${u.email}. Tell ${who} to check their inbox and spam/junk folder.`);
   }
 
+  // Mark one account's email verified, by hand.
+  //
+  // This is the answer to the failure the verification wall creates: the wall
+  // refuses every account Firebase hasn't confirmed, and the only thing that
+  // normally confirms one is an email — so the day delivery stops, the whole
+  // league is locked out at once and nothing inside the app can let them back
+  // in. adminAuth().updateUser(uid, { emailVerified: true }) sets the same flag
+  // the emailed link would have, so every gate downstream opens normally.
+  async function verifyUser(u) {
+    setBusy(b => ({ ...b, [u.uid]: true }));
+    try {
+      const res = await api(`/api/admin/users/${u.uid}/verify`, { method: "POST" });
+      await load();
+      showToast("success", res?.already
+        ? `${u.display_name || res.email} was already verified.`
+        : `Verified ${u.display_name || res.email}. They can sign in now — no email needed.`);
+    } catch (err) {
+      showToast("error", err.message);
+    } finally {
+      setBusy(b => ({ ...b, [u.uid]: false }));
+    }
+  }
+
+  // The same thing for everybody at once. The per-row button is right for one
+  // person whose email never came; this is for the situation it was written
+  // during — mail delivery has stopped and the entire league is behind the wall.
+  // Errors are left to the ConfirmDialog, which shows them inline.
+  async function verifyEveryone() {
+    const res = await api("/api/admin/users/verify-all", { method: "POST" });
+    await load();
+    if (!res.verified && !res.failed) {
+      showToast("success", `Everyone in ${leagueName} is already verified.`);
+    } else {
+      showToast(res.failed ? "error" : "success",
+        `Verified ${res.verified} account${res.verified === 1 ? "" : "s"} in ${leagueName}.`
+        + (res.failed ? ` ${res.failed} couldn't be done${res.failed_emails?.length ? `: ${res.failed_emails.join(", ")}` : ""}.` : ""));
+    }
+  }
+
   function startEditName(u) { setEditingName(u.uid); setNameDraft(u.display_name || ""); }
   function cancelEditName() { setEditingName(null); setNameDraft(""); }
   async function saveName(u) {
@@ -490,6 +568,12 @@ export function UserAccountsManager() {
     () => members.filter(u => u.auth_known && !u.env_admin && (!u.email_verified || !u.has_profile)).length,
     [members],
   );
+  // Just the ones stuck behind the verification wall — what "Verify all" would
+  // actually act on.
+  const unverifiedCount = useMemo(
+    () => members.filter(u => u.auth_known && !u.env_admin && !u.email_verified).length,
+    [members],
+  );
 
   return (
     <section>
@@ -507,6 +591,45 @@ export function UserAccountsManager() {
         {leagueName} and nowhere else — the same person can be an Admin in one league, a Player in
         another, and race under a different driver profile in each.
       </p>
+
+      {/* Email is the one dependency this app can't test for itself, and when it
+          stops the verification wall locks out the whole league at once. These
+          two controls are the way through that without an inbox. Owner-only,
+          here and in the routes behind them. */}
+      {isOwner && (
+        <div className="form-card" style={{ marginTop: 16, maxWidth: "100%", borderColor: "var(--accent-amber, #ffb224)" }}>
+          <h3 style={{ marginTop: 0 }}>🛟 Email not working?</h3>
+          <p style={{ marginTop: 0, color: "var(--ink-1)", fontSize: "0.85rem", maxWidth: 720, lineHeight: 1.5 }}>
+            New accounts can&apos;t use the league until Firebase confirms their email address. If
+            those emails aren&apos;t arriving, nobody can get in — and nothing inside the app can
+            normally let them. These two can.
+          </p>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <button type="button" className="btn btn-primary" style={{ marginTop: 0 }}
+              disabled={unverifiedCount === 0}
+              onClick={() => setVerifyingAll(true)}
+              title={unverifiedCount
+                ? `Mark all ${unverifiedCount} unverified members of ${leagueName} verified`
+                : "Everyone in this league is already verified"}>
+              ✓ Verify all {unverifiedCount > 0 ? `(${unverifiedCount})` : ""}
+            </button>
+            <button type="button" className="btn btn-ghost" style={{ marginTop: 0 }}
+              disabled={verifyWall === null || wallBusy}
+              onClick={() => toggleWall(!verifyWall)}
+              title="Turn the whole email-verification requirement on or off for this installation">
+              {wallBusy ? "Saving…"
+                : verifyWall === null ? "Checking…"
+                : verifyWall ? "🔓 Stop requiring email verification"
+                : "🔒 Require email verification again"}
+            </button>
+            <span style={{ fontSize: "0.82rem", color: "var(--ink-2)" }}>
+              {verifyWall === false
+                ? "Verification is OFF — anyone who signs up can use the league immediately."
+                : "Verification is ON — the normal, safer setting."}
+            </span>
+          </div>
+        </div>
+      )}
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
 
       {requests.length > 0 && (
@@ -691,6 +814,23 @@ export function UserAccountsManager() {
                                 account, which is a different kind of power from
                                 editing league data — so it doesn't come with the
                                 other staff roles. Enforced by the route too. */}
+                            {/* The way in when email is what's broken. Only
+                                shown for an account Firebase hasn't confirmed,
+                                and only to an Owner — vouching for an address is
+                                a different kind of claim from editing league
+                                data. Enforced by the route too. */}
+                            {isOwner && u.auth_known && !u.email_verified && (
+                              <button
+                                type="button"
+                                className="btn btn-primary"
+                                style={{ marginTop: 0, padding: "6px 10px" }}
+                                disabled={isBusy}
+                                onClick={() => verifyUser(u)}
+                                title={`Mark ${u.email || "this account"} verified without waiting for an email`}
+                              >
+                                {isBusy ? "…" : "✓ Verify"}
+                              </button>
+                            )}
                             {isOwner && !isMe && u.email && (
                               <button
                                 type="button"
@@ -795,6 +935,18 @@ export function UserAccountsManager() {
             </table>
           </div>
         </div>
+      )}
+
+      {verifyingAll && (
+        <ConfirmDialog
+          title={`Verify everyone in ${leagueName}`}
+          message={`Mark all ${unverifiedCount} unverified member${unverifiedCount === 1 ? "" : "s"} of ${leagueName} as email-verified? They'll be able to sign in immediately without waiting for an email. You are vouching for these addresses yourself — the accounts stay exactly as they are in every other way.`}
+          confirmLabel="Verify Everyone"
+          busyLabel="Verifying…"
+          tone="primary"
+          onConfirm={verifyEveryone}
+          onClose={() => setVerifyingAll(false)}
+        />
       )}
 
       {resettingUser && (

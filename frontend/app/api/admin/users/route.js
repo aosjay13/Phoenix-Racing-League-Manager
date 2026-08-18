@@ -128,6 +128,10 @@ export const GET = withAdmin(async (request, ctx, admin, role, leagueId) => {
       // Verified in Firebase Auth — env admins are verification-exempt
       // (see lib/serverAuth isVerified), so they always read as verified here.
       email_verified: envAdmin || !!auth?.emailVerified,
+      // Verified by an Owner pressing the button rather than by the address
+      // being confirmed. Two different claims, so the roster shows them
+      // differently — see accountStatus in components/UserAccountsManager.jsx.
+      verified_by_owner: !!data?.verified_by_owner,
       // Whether this account has ever completed a verified request. False means
       // "signed up but never got through the door".
       //

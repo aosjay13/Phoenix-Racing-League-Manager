@@ -28,6 +28,8 @@ import {
   isUnknownAccount, passwordChangeError, resetOutcome, signupLeagueId,
 } from "@/lib/authFlows";
 import { FIREBASE_CONFIG_VARS, missingFirebaseConfig } from "@/lib/firebaseClient";
+import { defaultRequireVerification, requireVerificationFrom } from "@/lib/authSettings";
+import { preferredLeagueId } from "@/components/LeagueProvider";
 
 let n = 0;
 function check(label, actual, expected) {
@@ -222,7 +224,58 @@ ok("an account with both can",
 ok("an unreadable account is given the benefit of the doubt", hasPasswordSignIn(null));
 ok("an empty provider list is too", hasPasswordSignIn({ providerData: [] }));
 
-// ── 4. The card mounts ─────────────────────────────────────────────────────
+// ── 4. The verification wall, and the switch that takes it down ────────────
+//
+// The wall refuses every account Firebase hasn't confirmed, and the only thing
+// that normally confirms one is an email — so when delivery stops it locks out
+// the whole league at once, including everybody who could otherwise fix it.
+// These are the rules that decide whether it stands.
+
+check("verification is required by default", requireVerificationFrom(null, true), true);
+check("a missing document leaves the default alone", requireVerificationFrom(undefined, true), true);
+check("an explicit false takes the wall down", requireVerificationFrom({ require_email_verification: false }, true), false);
+check("an explicit true puts it back", requireVerificationFrom({ require_email_verification: true }, false), true);
+// Anything OTHER than an explicit boolean must not move the wall. A half-written
+// or hand-edited document taking the gate down for the whole installation is
+// exactly the accident this guards against.
+for (const junk of [{}, { require_email_verification: "false" }, { require_email_verification: 0 },
+  { require_email_verification: null }, "nonsense", 42]) {
+  check(`${JSON.stringify(junk)} leaves the wall standing`, requireVerificationFrom(junk, true), true);
+  check(`${JSON.stringify(junk)} also leaves it down if that was the default`,
+    requireVerificationFrom(junk, false), false);
+}
+
+check("the env default is 'required' unless something says otherwise",
+  defaultRequireVerification(), true);
+
+// ── 5. Which league an account opens on ────────────────────────────────────
+//
+// Roles are per league, so opening on the wrong one shows an Owner an app with
+// every admin control missing and nothing on screen explaining why. It reads
+// exactly like a permissions bug, and it was reported as one. The rule: open on
+// a league this account actually holds standing in, preferring the strongest.
+
+const leagues = [{ id: A, name: "Alpha" }, { id: B, name: "Bravo" }, { id: C, name: "Charlie" }];
+
+check("an account opens on the league it owns",
+  preferredLeagueId(leagues, { [B]: "owner" }), B);
+check("staff standing beats a plain membership",
+  preferredLeagueId(leagues, { [A]: "player", [C]: "admin" }), C);
+check("the strongest role wins between two staff standings",
+  preferredLeagueId(leagues, { [A]: "moderator", [B]: "owner" }), B);
+check("a single membership is used even when it's only Player",
+  preferredLeagueId(leagues, { [C]: "player" }), C);
+// No standing anywhere → null, so the caller falls back to the oldest league
+// rather than being handed a league that doesn't exist.
+check("no standing anywhere defers to the caller", preferredLeagueId(leagues, {}), null);
+check("no role map at all defers to the caller", preferredLeagueId(leagues, null), null);
+check("no leagues at all defers to the caller", preferredLeagueId([], { [A]: "owner" }), null);
+check("a role naming a league that no longer exists is ignored",
+  preferredLeagueId(leagues, { "deletedLeague": "owner" }), null);
+// A signed-out visitor has no roles; the caller's list[0] fallback applies.
+check("a signed-out visitor defers to the caller", preferredLeagueId(leagues, undefined), null);
+
+// ── 6. The card mounts ─────────────────────────────────────────────────────
 //
 // Mounted with no providers, so useAuth falls back to its signed-out default.
 // Enough to prove every import resolves and the form renders — the failure this

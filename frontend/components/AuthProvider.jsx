@@ -38,12 +38,27 @@ export function AuthProvider({ children }) {
   const [wantedLeagueId, setWantedLeagueId] = useState(() => getActiveLeagueId());
 
   const refreshProfile = useCallback(async () => {
+    // What api() is about to send as X-League-Id. Recorded BEFORE the request so
+    // the answer can be matched against the question that was actually asked —
+    // see roleStale below.
+    const asked = getActiveLeagueId();
     try {
-      setProfile(await api("/api/users/me"));
-    } catch {
-      // Unverified accounts are rejected by the API (403) — profile stays null
-      // and the VerifyGate takes over.
-      setProfile(null);
+      const next = await api("/api/users/me");
+      setProfile(next);
+      // Settle the wanted league on whatever the server answered FOR. Without
+      // this the two could disagree forever — a browser that refuses
+      // localStorage (Safari private mode) sends no header at all, so the
+      // answer's league_id is "" while the switcher says otherwise, and
+      // anything waiting for them to converge would wait for good.
+      setWantedLeagueId(next?.league_id || asked || "");
+    } catch (err) {
+      // A REJECTION is an answer: an unverified account gets a 403, and the
+      // VerifyGate takes over from a null profile. Anything else — a dropped
+      // connection, a cold serverless start, a 500 — is not, and throwing away
+      // a good profile for it is how an Owner ends up staring at "this page is
+      // for league staff only" on their own league until they reload.
+      if (err?.status === 401 || err?.status === 403) setProfile(null);
+      else console.error("[auth] couldn't refresh the profile; keeping the last one", err);
     }
   }, []);
 

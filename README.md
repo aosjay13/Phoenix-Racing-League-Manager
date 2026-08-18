@@ -718,10 +718,17 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      really is new gets a driver profile created as part of the import — so an imported roster is
      never full of entries attached to nobody. The result says how it split: how many landed on
      drivers you already had, and how many profiles were made.
-   - **User Accounts** *(admin)* — every account that is a member of **the league you're in**: set
-     its **role**, link it to the driver profile it races as *here*, rename it, remove it, and
-     approve or deny **pending driver requests**. The red badge on the Drivers nav item counts new
-     signups + pending requests.
+   - **User Accounts** *(Admin ▸ User Accounts, its own sidebar menu)* — every account that is a
+     member of **the league you're in**: set its **role**, link it to the driver profile it races as
+     *here*, rename it, remove it, mark it **verified**, send it a **password reset**, and approve
+     or deny **pending driver requests**. The red badge on that nav item counts new signups +
+     pending requests.
+
+     It was a tab on the Drivers page, which put the one screen you reach for when somebody
+     *can't get in* two clicks deep behind a page about the public driver directory. It is a job
+     rather than a view — the same reasoning that gave Driver Roster and Approvals their own
+     entries — so it has its own. `?tab=accounts` and the older `/admin/users` both redirect to
+     `/accounts`, so every link and bookmark still lands on it.
 
      **Everything on this screen is scoped to one league.** Roles are held per league, so an Admin
      of another league appears here only if they're a member of this one, and promoting somebody
@@ -2741,6 +2748,53 @@ stop the form being used as an address checker — but an answer vague enough to
 list is also vague enough to hide a total outage, and it did. `resetOutcome(err, { revealDetail })`
 holds both behaviours, both tested; set `revealDetail: false` to close enumeration back up once
 delivery is trusted.
+
+### When email breaks: the failsafes
+
+Email is the one dependency this app cannot test for itself, and the verification
+wall is the hardest gate in it — an unverified account is refused by every API route and shown
+nothing but "check your inbox". Put those together and the day delivery stops, the **entire league
+is locked out at once**, including everybody who could otherwise fix it. Four ways through, in the
+order you'd reach for them:
+
+1. **Admin ▸ User Accounts → ✓ Verify** *(Owner)* marks one account's email verified by hand
+   (`adminAuth().updateUser(uid, { emailVerified: true })` — the one function that does this without
+   an inbox). It sets the same flag the emailed link would have, so every gate downstream opens
+   normally. The roster labels those accounts **"Verified by you"** rather than *Active*: vouching
+   for an address and confirming it are different claims, and whoever reads the list later deserves
+   to know which one they're seeing.
+2. **✓ Verify all** does the same for every unverified member of the league in one go — for when
+   clicking through them one at a time isn't a recovery plan.
+3. **Stop requiring email verification** switches the wall off for the whole installation. It is a
+   stored setting (`app_settings/auth`, `lib/authSettings.js`), not an environment variable, so it
+   takes effect in seconds rather than needing a redeploy — which matters, because a redeploy is
+   exactly what you can't do quickly at 9pm on a race night. `REQUIRE_EMAIL_VERIFICATION=false` is
+   the build-time default; the stored setting overrides it either way.
+4. **`/recover`** — the failsafe of last resort, for when *you* are the one locked out. Set
+   `OWNER_RECOVERY_CODE` in your hosting environment, visit `/recover`, and enter an email plus that
+   code: the account is marked verified and made an Owner, with no email involved anywhere. It is
+   **off unless a code is configured**, refuses codes under 16 characters, compares them without
+   leaking length, and only ever grants — it deletes nothing and demotes nobody. **Unset it again
+   afterwards**: a recovery code left in place is a permanent way for anyone who can read your
+   environment to make themselves an Owner. The response says so too.
+
+### Never locked out of your own league
+
+Roles are per league, which introduces a failure that reads exactly like a permissions bug: open on
+a league you hold no standing in and the app renders with every admin control missing and nothing on
+screen explaining why. Three things prevent it:
+
+- **You open on a league you belong to.** `preferredLeagueId` (components/LeagueProvider.jsx) picks
+  from the leagues your account actually holds standing in — strongest role first — rather than
+  whichever happens to be oldest. A league named in the URL or remembered from last time still wins;
+  this only decides the case where neither says anything.
+- **A dropped request doesn't demote you.** `AuthProvider.refreshProfile` used to null the profile on
+  *any* failure, so a cold serverless start or a flaky connection turned an Owner into a player until
+  they reloaded. Only a real 401/403 clears it now; anything else keeps the last good answer.
+- **A stale answer is never acted on.** `AdminGate` renders the loading state rather than a decision
+  while the role on hand describes a different league than the one on screen, and `refreshProfile`
+  settles the "wanted" league on whatever the server actually answered for — so the two always
+  converge, even in a browser that refuses localStorage and therefore sends no league header at all.
 
 ### No user gets locked out
 

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { adminAuth, db } from "@/lib/firebase";
 import { normalizeRole, isStaffRole, roleLevel } from "@/lib/roles";
 import { directLeagueRole, hasLeagueRoles, isLeagueMember } from "@/lib/leagueRoles";
+import { requireEmailVerification } from "@/lib/authSettings";
 
 // The active league for a request. The client stamps it as an `X-League-Id`
 // header (see lib/api.js), with a `league_id` query-param fallback for direct
@@ -173,12 +174,28 @@ export async function isGlobalOwner(user) {
   return (await getUserRole(user, legacy)) === "owner";
 }
 
-// An account may use the app only once its email is verified. Permanent env-var
-// admins are exempt so the league owner can never lock themselves out (e.g. if
-// verification email delivery ever breaks).
-export function isVerified(user) {
-  return !!user && (user.email_verified === true || isEnvAdmin(user.email));
+// An account may use the app only once its email is verified — WHEN this
+// installation requires that at all.
+//
+// Three ways through, and each exists because of a different way the previous
+// two can fail:
+//
+//   1. The account's email really is verified. The ordinary path.
+//   2. It is a permanent env-var (ADMIN_EMAILS) Owner. The escape hatch, so the
+//      league owner can never be locked out by their own mail provider.
+//   3. This installation has the requirement switched OFF (see
+//      lib/authSettings.js). Email is the one dependency the app cannot test for
+//      itself, and when it stops working this gate locks out the entire league
+//      at once — including everybody who could otherwise fix it. An Owner can
+//      take the wall down in seconds rather than needing a redeploy.
+//
+// ASYNC, because (3) is a stored setting. Every caller was already async.
+export async function isVerified(user) {
+  if (!user) return false;
+  if (user.email_verified === true || isEnvAdmin(user.email)) return true;
+  return !(await requireEmailVerification());
 }
+
 
 export function unauthorized() {
   return NextResponse.json({ error: "Sign in required" }, { status: 401 });
@@ -208,7 +225,7 @@ export function withAdmin(handler) {
   return async (request, ctx) => {
     const user = await getRequestUser(request);
     if (!user) return unauthorized();
-    if (!isVerified(user)) return unverified();
+    if (!(await isVerified(user))) return unverified();
     const leagueId = getRequestLeagueId(request);
     const role = await getUserRole(user, leagueId);
     if (!isStaffRole(role)) return forbidden();
@@ -225,7 +242,7 @@ export function withRole(minLevel, handler) {
   return async (request, ctx) => {
     const user = await getRequestUser(request);
     if (!user) return unauthorized();
-    if (!isVerified(user)) return unverified();
+    if (!(await isVerified(user))) return unverified();
     const leagueId = getRequestLeagueId(request);
     const role = await getUserRole(user, leagueId);
     if (roleLevel(role) < minLevel) {
@@ -245,7 +262,7 @@ export function withOwner(handler) {
   return async (request, ctx) => {
     const user = await getRequestUser(request);
     if (!user) return unauthorized();
-    if (!isVerified(user)) return unverified();
+    if (!(await isVerified(user))) return unverified();
     const leagueId = getRequestLeagueId(request);
     const role = await getUserRole(user, leagueId);
     if (role !== "owner") {
@@ -261,7 +278,7 @@ export function withGlobalOwner(handler) {
   return async (request, ctx) => {
     const user = await getRequestUser(request);
     if (!user) return unauthorized();
-    if (!isVerified(user)) return unverified();
+    if (!(await isVerified(user))) return unverified();
     if (!(await isGlobalOwner(user))) {
       return NextResponse.json(
         { error: "This action is for the application Owner only." },
@@ -304,7 +321,7 @@ export function withUser(handler) {
   return async (request, ctx) => {
     const user = await getRequestUser(request);
     if (!user) return unauthorized();
-    if (!isVerified(user)) return unverified();
+    if (!(await isVerified(user))) return unverified();
     return handler(request, ctx, user, getRequestLeagueId(request));
   };
 }

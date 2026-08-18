@@ -71,6 +71,12 @@ const adminNav = [
   // approving a sign-up puts a driver on a roster the admin may not be looking
   // at, which used to happen entirely silently (see lib/rosterAdditions.js).
   { href: "/roster",      label: "Driver Roster",  title: "Season rosters, car numbers, teams & sign-ups", icon: "⊞" },
+  // Who can get in, and as what. It was a tab on the Drivers page, which put
+  // the screen an admin reaches for when somebody CAN'T GET IN two clicks deep
+  // behind a page about the public driver directory. Roles, driver links,
+  // pending claims, password resets and marking an account verified all live
+  // here — that is a job, not a view, and it carries the new-signup badge.
+  { href: "/accounts",    label: "User Accounts",  title: "Roles, driver links, verification & password resets", icon: "👥" },
   { href: "/approvals",   label: "Approvals",      icon: "✅", minLevel: APPROVALS_MIN_LEVEL },
 ];
 
@@ -254,7 +260,9 @@ export function AppShell({ children }) {
   // Accounts tab, so the badge rides along with that nav item.
   const navBadges = {
     "/": { count: unreadMessages.length, title: playerInboxTitle(unreadMessages) },
-    "/drivers": { count: userAccountsAlerts.total, title: alertsTitle(userAccountsAlerts) },
+    // The new-signups / pending-claims badge belongs on the screen that
+    // actions them, which is now its own Admin entry rather than a Drivers tab.
+    "/accounts": { count: userAccountsAlerts.total, title: alertsTitle(userAccountsAlerts) },
     // One badge, two kinds of waiting: undecided requests and unanswered
     // replies. Both are people waiting on an admin, and splitting them across
     // two numbers on one link would only make the link harder to read.
