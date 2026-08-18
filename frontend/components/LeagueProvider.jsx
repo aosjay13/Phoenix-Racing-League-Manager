@@ -7,6 +7,8 @@ import { getActiveLeagueId, setActiveLeagueId } from "@/lib/leagueClient";
 import { readScopeParams, writeScopeParams } from "@/lib/scopeLink";
 import { isBangerScope } from "@/lib/bangerRacing";
 import { isBracketScope } from "@/lib/bracketRacing";
+import { useAuth } from "@/components/AuthProvider";
+import { roleLevel } from "@/lib/roles";
 
 const LeagueContext = createContext(null);
 const STORAGE_KEY = "prlm-selection";
@@ -36,9 +38,28 @@ function loadSaved() {
   return { ...saved, ...urlSelection() };
 }
 
+// Which league should this account open on, given the ones that exist and the
+// standing it holds in each? Staff standing wins over a plain membership, and a
+// higher role wins over a lower one, so the person who runs a league lands in it
+// rather than in whichever league happens to be oldest. Returns null when the
+// account holds no standing anywhere and the caller should fall back.
+export function preferredLeagueId(list, leagueRoles) {
+  const roles = leagueRoles || {};
+  const mine = (list || []).filter(l => roles[l.id]);
+  if (!mine.length) return null;
+  const rank = l => roleLevel(roles[l.id]);
+  return mine.reduce((best, l) => (rank(l) > rank(best) ? l : best), mine[0]).id;
+}
+
 export function LeagueProvider({ children }) {
   // Only read so the scope params can be re-stamped after a navigation.
   const pathname = usePathname();
+  // The signed-in account's standing per league, read without depending on it:
+  // reloadLeagues must not re-run every time the profile refreshes, but it does
+  // need the latest answer when it does run.
+  const { leagueRoles } = useAuth();
+  const myLeagueRolesRef = useRef(leagueRoles);
+  useEffect(() => { myLeagueRolesRef.current = leagueRoles; }, [leagueRoles]);
 
   // Multi-league layer: the list of leagues and which one is active. leagueId
   // is null until the list has loaded and an active league is resolved; only
@@ -93,7 +114,16 @@ export function LeagueProvider({ children }) {
         // was last in a different one — otherwise every id in the link would
         // resolve against the wrong league's data.
         const wanted = prev ?? (readScopeParams().league || getActiveLeagueId());
-        const chosen = list.find(l => l.id === wanted)?.id ?? list[0]?.id ?? "";
+        const chosen = list.find(l => l.id === wanted)?.id
+          // Nothing named and nothing remembered: open on a league this ACCOUNT
+          // actually belongs to rather than on whichever happens to be oldest.
+          //
+          // Roles are per league, so `list[0]` could easily be one they have no
+          // standing in — and an Owner landing on a league where they are a
+          // stranger sees an app with every admin control missing and no clue
+          // why. Their own league first, staff standing preferred over player.
+          ?? preferredLeagueId(list, myLeagueRolesRef.current)
+          ?? list[0]?.id ?? "";
         setActiveLeagueId(chosen);
         return chosen;
       });

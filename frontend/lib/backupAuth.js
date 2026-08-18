@@ -46,7 +46,7 @@ export async function authorizeBackupRequest(request) {
   if (!user) {
     return { response: NextResponse.json({ error: "Sign in required" }, { status: 401 }) };
   }
-  if (!isVerified(user)) {
+  if (!(await isVerified(user))) {
     return {
       response: NextResponse.json(
         { error: "Verify your email address to continue.", code: "email-unverified" },

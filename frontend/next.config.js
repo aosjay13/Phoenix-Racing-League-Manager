@@ -21,7 +21,17 @@ const nextConfig = {
         destination: "/roster",
         permanent: false,
       },
-      { source: "/admin/users", destination: "/drivers?tab=accounts", permanent: false },
+      // User Accounts went the same way, and for the same reason: it is a job
+      // rather than a view, so it is Admin ▸ User Accounts (/accounts) instead
+      // of a tab. Both the old tab URL and the older standalone screen land
+      // there. Server-side for the same reason as the roster redirect above.
+      {
+        source: "/drivers",
+        has: [{ type: "query", key: "tab", value: "accounts" }],
+        destination: "/accounts",
+        permanent: false,
+      },
+      { source: "/admin/users", destination: "/accounts", permanent: false },
       // Race Entry is gone — races are edited from the Schedule.
       { source: "/race-entry", destination: "/schedule", permanent: false },
     ];
