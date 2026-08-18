@@ -208,9 +208,21 @@ throwaway key (`openssl genrsa`) — the emulator never checks it.
 
 ### For players
 
-1. **Sign in** (top right) with email/password or Google. This creates your public driver
-   profile automatically.
-2. **Profile** — edit your display name, avatar, bio, country, and car number. Ask a league
+1. **Sign in** (top right) with email and password, or **Create an account**. Signing up joins
+   you to **the league you're looking at** as a Player — an account is global, but standing in a
+   league is not (see *Roles are held per league*), so the league on screen when you press the
+   button is the one you're recorded in. Follow a link that names a league (`?league=…`) and it
+   wins over whatever league your browser was last on. Signing in while viewing a league you
+   haven't joined adds you to it the same way, so you're never looking at a league you have no
+   standing in. Verify your email (Firebase sends the link) before you can use anything.
+   - **Forgot your password?** on the sign-in form emails you a link to set a new one. It says
+     the same thing whether or not the address has an account, so the form can't be used to
+     find out who races here.
+2. **My Account** (top right, beside your name) — how you sign in: change your password (your
+   current one is asked for first, so a session left open on a shared computer can't be taken
+   over), see whether your email is verified, and see every league this account belongs to with
+   the role you hold in each.
+3. **Profile** — edit your display name, avatar, bio, country, and car number. Ask a league
    admin to link your roster entry to your account so your race results feed your stats.
    - **Connected Accounts**, in its own card below, is the names you go by on Discord and on
      each platform. Two things use them: it's how the league gets hold of you about races, and
@@ -221,7 +233,7 @@ throwaway key (`openssl genrsa`) — the emulator never checks it.
      name with **＋ Add platform**. They're saved against your **driver profile**, not your
      account, which is why the card says so — and why it explains how to get one rather than
      showing a dead form if you haven't signed up for anything yet.
-3. **Drivers** — browse every registered player; open a profile for three tabs of their record:
+4. **Drivers** — browse every registered player; open a profile for three tabs of their record:
    - **Career Stats** — the totals, per game and combined across all games (starts, wins,
      podiums, poles, average finish, titles, etc.), plus every championship won and a by-game
      breakdown. Each championship is named in full — **game › series › season › class** — so a
@@ -242,7 +254,7 @@ throwaway key (`openssl genrsa`) — the emulator never checks it.
      is usually read in (the history by date, newest first; venues by wins; games by starts), and
      the columns where a *smaller* number is the better result — a grid slot, a finishing position,
      an average start or finish — open on P1 rather than on last place.
-4. **Sign-ups** — a menu of its own in the sidebar, and the one screen in the app written for
+5. **Sign-ups** — a menu of its own in the sidebar, and the one screen in the app written for
    somebody who has never used it before. Joining a series is a walkthrough, and its three steps
    are printed at the top *before* anything is asked of you: **pick a series → fill in the short
    form → an admin approves you**. The screen shows one step at a time, so there is never more
@@ -400,7 +412,7 @@ throwaway key (`openssl genrsa`) — the emulator never checks it.
      can change your mind as often as you like until an admin locks the selections. Under it,
      the full roster shows exactly which car everyone else has taken, with a tally of how
      popular each one is.
-5. **Schedule** — the season's race calendar. Completed races are clickable and show full
+6. **Schedule** — the season's race calendar. Completed races are clickable and show full
    results. With **no single season selected** ("All Games" / "All Series") it becomes a feed of
    the league's racing in two halves, split on the calendar: **Upcoming** is everything whose day
    hasn't come yet, soonest first, and **Archive · Recent Results** is everything whose day has
@@ -413,7 +425,7 @@ throwaway key (`openssl genrsa`) — the emulator never checks it.
    Upcoming and Recent Results as separate posts. Events that have session times set (see the
    Calendar below) show a **Session Times** column right of the race date, in the reader's own
    timezone.
-6. **Calendar** — every race in the league on a month-by-month grid, past and future, on the day
+7. **Calendar** — every race in the league on a month-by-month grid, past and future, on the day
    it runs. Each event is a pill showing its series (abbreviated) and the track; click one to open
    that race's page. The **Game** and **Series** menus at the top narrow it to a single series —
    with **no game selected you get every upcoming event in the league, from every game**, which is
@@ -448,18 +460,18 @@ throwaway key (`openssl genrsa`) — the emulator never checks it.
    all follow, with each session arriving as its own appointment at the right time for wherever the
    subscriber is. Races without published times arrive as all-day entries. See the `.ics` feed
    under Project Layout for the details.
-7. **Standings** — driver and team championship tables for the selected season, with
+8. **Standings** — driver and team championship tables for the selected season, with
    points, gaps to the leader, and per-category stats. Click any column header to sort. Level
    on points? The tie-breaker chain below decides, and every step of it is a column in the
    table so you can see why.
-8. **Stats** — use the Game/Series/Season/Class menus to scope driver stats to a class, a
+9. **Stats** — use the Game/Series/Season/Class menus to scope driver stats to a class, a
    season, a whole series, a whole game, or the entire league. Pick "All" at any level to
    widen the scope.
-9. **Tracks** — open a venue for its own page: every race held there, a leaderboard of who has
+10. **Tracks** — open a venue for its own page: every race held there, a leaderboard of who has
    gone best, and its lap records. The **Class** menu scopes it too — the leaderboard, winners
    and headline record become that class's — while the per-game and per-class record breakdowns
    always stay side by side, since that's the comparison they exist to show.
-10. **Records** — the record holder in each category for the current scope, plus **Avg Drivers
+11. **Records** — the record holder in each category for the current scope, plus **Avg Drivers
    per Race**: the average field size across every completed race in scope. Empty and upcoming
    events are ignored, and a heat weekend counts its Feature field once rather than each heat.
    **🖼 Share Graphic** posts the record book as one image — a row per category that has a holder
@@ -717,6 +729,15 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      off this league (their role here, and the driver profile they raced as here) and leaves their
      account and their other leagues alone; it only becomes **Delete** — the full account, sign-in
      included — when this is the last league they belong to.
+
+     **🔑 Send Password Reset** *(Owner only)* emails that player a link to set a new password,
+     so "I can't get in" doesn't mean a trip to the Firebase console. It is the one staff power
+     that isn't shared with Admins and Moderators: every other one edits league *data*, while
+     this one touches a person's credentials, so it sits with the role that owns the league. The
+     link goes to the address on the account and is never shown to the Owner who sent it — they
+     can start the reset, not perform it. Delivery uses the same email path as every other
+     notification (see *Backups & disaster recovery* on the `mail` collection), and the toast
+     says whether the message was actually queued rather than assuming an inbox.
 
      The **Linked Driver Profile** cell is a searchable picker listing every driver with its
      availability (unclaimed / linked here / linked to another account). It renders into `<body>`
@@ -1220,6 +1241,8 @@ users/<uid> = {
     "<leagueA>": "owner",
     "<leagueB>": "player",
   },
+  signup_league_id: "<leagueA>",       // which league they came in through
+  signup_pending: true,                // signed up, no verified visit yet
 }
 ```
 
@@ -2647,6 +2670,49 @@ same person can race as "Driver X" in League A and "Driver Y" in League B, each 
 aliases and race history. `linkedDriver(uid, leagueId)` resolves the profile for the league being
 viewed, and the Dashboard, the claim queue, Connected Accounts and the career-stats pages all ask it
 that way — a career page in League B never folds in races run in League A.
+
+### Signing up, signing in, and passwords
+
+Authentication is Firebase's (email + password); *membership* is this app's. The two meet in three
+places, and all three live in `lib/authFlows.js` as pure functions so the rules can be tested
+without a browser or a Firebase project (`lib/__tests__/authFlows.test.jsx`).
+
+**Which league a new account joins.** The sign-up form resolves it at the moment of submission,
+in priority order: an explicit `?league=…` in the URL (somebody followed a league's own link),
+then the switcher's current league, then the id `api()` is already sending as `X-League-Id`
+(`signupLeagueId`). It then calls `POST /api/users/join`, which writes `league_roles[leagueId] =
+"player"`.
+
+That route is the **one door open before email verification** (`withSignedIn` in
+`lib/serverAuth.js`), and it exists because of an ordering problem: `/api/users/me` refuses an
+unverified account, so until it existed a brand-new player was invisible to the league whose page
+they signed up on until they had been to their inbox and come back. It writes a Player membership
+and the profile fields the sign-in token already carries, and nothing else — everything the app can
+*do* still sits behind the verification wall. It is idempotent and **never demotes**: an Admin
+signing back in keeps their role, and an account that predates `league_roles` is left alone for the
+same reason `/api/users/me` leaves it alone.
+
+Signing in does the same thing, so somebody who signs in while viewing a league they haven't joined
+becomes a Player of it rather than looking at a league they have no standing in. The document it
+writes carries `signup_pending: true`, which `/api/users/me` clears on the first verified visit —
+that is what keeps the admin roster's *"Not opened yet"* pill honest now that a user document exists
+from the moment of sign-up.
+
+**What a failure is allowed to reveal.** `friendlyAuthError` collapses "no such account" and "wrong
+password" into one sentence, and `resetOutcome` reports an unknown address as a success — otherwise
+the sign-in and reset forms become tools for discovering who races here. Errors the person can
+actually fix (a malformed address, rate limiting) are still surfaced as errors.
+
+**Changing a password.** `/account` asks for the current password *first* and re-authenticates
+before calling `updatePassword`. That is a security decision rather than an ergonomic one — an
+unattended session is the realistic threat — and it also disposes of Firebase's
+`auth/requires-recent-login` before it can be hit. It is still caught, because the two calls are not
+atomic, and the remedy is the form the person is already looking at.
+
+**An Owner resetting somebody else's password** goes through
+`POST /api/admin/users/[uid]/password-reset`: Firebase mints the link
+(`generatePasswordResetLink`), the app's own mail queue delivers it, and the link is never returned
+to the caller. Owner-of-the-active-league only, and the target has to be a member of that league.
 
 ### No user gets locked out
 

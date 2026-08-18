@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
+import { friendlyAuthError } from "@/lib/authFlows";
 
 // Hard wall for signed-in accounts that haven't verified their email. It replaces
 // the entire app UI, so an unverified account genuinely can't do anything until
@@ -61,7 +62,7 @@ export function VerifyGate({ children }) {
       await resendVerification();
       setStatus({ type: "success", msg: `Verification email sent to ${user.email}. Check your inbox (and spam).` });
     } catch (err) {
-      setStatus({ type: "error", msg: friendly(err) });
+      setStatus({ type: "error", msg: friendlyAuthError(err, "verify") });
     } finally {
       setBusy(false);
     }
@@ -112,10 +113,4 @@ export function VerifyGate({ children }) {
       </div>
     </section>
   );
-}
-
-function friendly(err) {
-  const s = String(err?.code || err?.message || "");
-  if (s.includes("too-many-requests")) return "Too many emails sent. Wait a minute, then try again.";
-  return err?.message || "Couldn't send the email. Try again.";
 }

@@ -214,6 +214,13 @@ function UserChip() {
           : <span className="avatar avatar-sm avatar-fallback">{String(name)[0]?.toUpperCase()}</span>}
         <span className="user-chip-name">{name}</span>
       </Link>
+      {/* Account settings — how you sign in, your password, the leagues you
+          belong to. Separate from the profile link beside it, which is about
+          how the league sees you. */}
+      <Link href="/account" className="btn btn-ghost" style={{ marginTop: 0, padding: "6px 10px" }}
+        title="Account settings and password">
+        Account
+      </Link>
       <button className="btn btn-ghost" style={{ marginTop: 0, padding: "6px 10px" }} onClick={signOut}>
         Sign out
       </button>

@@ -123,9 +123,20 @@ export const GET = withAdmin(async (request, ctx, admin, role, leagueId) => {
       // Verified in Firebase Auth — env admins are verification-exempt
       // (see lib/serverAuth isVerified), so they always read as verified here.
       email_verified: envAdmin || !!auth?.emailVerified,
-      // Whether this account has ever completed a verified request and had its
-      // user doc created. False means "signed up but never got through the door".
-      has_profile: !!data,
+      // Whether this account has ever completed a verified request. False means
+      // "signed up but never got through the door".
+      //
+      // A document existing is no longer proof of that: sign-up now writes one
+      // straight away (POST /api/users/join) so a new player is visible to the
+      // league they joined from before they reach their inbox. `signup_pending`
+      // is what that write leaves behind, and /api/users/me clears it on the
+      // first verified visit — so this stays the same question it always
+      // answered. Accounts created before the flag existed never carry it and
+      // read exactly as they did.
+      has_profile: !!data && data.signup_pending !== true,
+      // The league this account signed up through, when it came in that way —
+      // context for an admin looking at a name they don't recognize.
+      signup_league_id: data?.signup_league_id || null,
       // Null when Auth couldn't be listed, so the UI can stay quiet about
       // verification rather than claiming everyone is unverified.
       auth_known: !!authAccounts,

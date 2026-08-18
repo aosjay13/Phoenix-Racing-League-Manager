@@ -8,10 +8,17 @@ import { Modal } from "@/components/Modal";
 // (optionally async) onConfirm runs, and surfaces any thrown error inline
 // instead of closing. Callers gate this behind AdminGate / isAdmin — it is
 // purely presentational and enforces no permissions itself.
+// `busyLabel` and `tone` exist because this dialog is no longer only used to
+// delete things — an Owner sending a password reset gets the same
+// "here's what's about to happen, confirm it" treatment, and neither a red
+// button nor the word "Deleting…" is honest about that. Both default to the
+// destructive wording, so every existing caller reads exactly as it did.
 export function ConfirmDialog({
   title = "Are you sure?",
   message,
   confirmLabel = "Delete",
+  busyLabel = "Deleting…",
+  tone = "danger",
   onConfirm,
   onClose,
 }) {
@@ -39,8 +46,9 @@ export function ConfirmDialog({
         <p style={{ margin: "10px 0 0", color: "#f85149", fontSize: "0.85rem" }}>⚠ {error}</p>
       )}
       <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
-        <button type="button" className="btn btn-danger" style={{ marginTop: 0 }} disabled={busy} onClick={run}>
-          {busy ? "Deleting…" : confirmLabel}
+        <button type="button" className={`btn btn-${tone === "danger" ? "danger" : "primary"}`}
+          style={{ marginTop: 0 }} disabled={busy} onClick={run}>
+          {busy ? busyLabel : confirmLabel}
         </button>
         <button type="button" className="btn btn-ghost" style={{ marginTop: 0 }} disabled={busy} onClick={onClose}>
           Cancel

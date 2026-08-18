@@ -1377,6 +1377,22 @@ tbody tr:hover {
   min-height: 60vh;
 }
 
+/* A button that reads as a link. Used where the action is a change of mode
+   rather than a navigation — "Forgot your password?", "Create an account" —
+   so it stays a real <button> (keyboard-operable, announced as a button) while
+   looking like the inline link it behaves as. */
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--accent-cyan);
+  cursor: pointer;
+}
+.link-button:hover { text-decoration: underline; }
+.link-button:disabled { opacity: 0.6; cursor: default; text-decoration: none; }
+
 @media (max-width: 980px) {
   .topbar { padding: 12px 16px; }
   .context-select select { min-width: 110px; }
