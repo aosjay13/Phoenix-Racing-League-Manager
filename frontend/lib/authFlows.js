@@ -40,9 +40,12 @@ export function signupLeagueId({ urlLeague, activeLeague, storedLeague } = {}) {
 //
 // Firebase error codes are precise and, on the sign-in path, too precise: told
 // apart, "no such account" and "wrong password" turn the login form into a
-// tool for discovering who has an account here. So the two collapse into one
-// message, and the password-reset path never confirms an address at all (see
-// resetOutcome below).
+// tool for discovering who has an account here. So on that path the two
+// collapse into one message.
+//
+// The password-RESET path is the deliberate exception, and resetOutcome below
+// explains why: an answer vague enough to protect the account list is also
+// vague enough to hide an outage, and this one was hiding one.
 //
 // `context` narrows the wording — the same code means different things when
 // changing a password than when signing in.
@@ -104,24 +107,80 @@ export function isRecentLoginRequired(err) {
 
 // ── The password-reset answer ──────────────────────────────────────────────
 //
-// A reset form must not become an address checker. "We've sent a link if that
-// address has an account" is true whether or not it does, so an unknown address
-// is reported as success rather than as "no such user" — which is exactly what
-// Firebase's own email-enumeration protection does when a project has it turned
-// on, and what this keeps true when it doesn't.
+// This block holds two behaviours, one flag apart, and the reason is worth
+// stating plainly.
 //
-// Errors that say nothing about whether the account exists — a malformed
-// address, rate limiting — are still surfaced, because those the person can
-// actually fix.
+// There is a genuine tension. Reporting an unknown address as an error tells
+// anyone with the form whether a given email has an account — the form becomes
+// an address checker. Reporting it as a success hides that, which is what
+// Firebase's own email-enumeration protection does when a project has it turned
+// on. So the safe answer is the vague one.
+//
+// But the vague answer is also indistinguishable from an outage. When a reset
+// email is not arriving, "if that email has an account, a link is on its way" is
+// exactly what a working system, a mistyped address, a missing API key and an
+// undelivered email all say — which is how a broken deploy stayed invisible long
+// enough to be reported as "nothing happens".
+//
+//   revealDetail: true   (the default) — say exactly what Firebase said, code
+//                        and all. What you want while delivery is in doubt.
+//   revealDetail: false  — the neutral answer, for turning enumeration
+//                          protection back on once it is working.
+//
+// Both are tested. Flipping the default below is the whole change.
+
+// Shown when Firebase accepted the request. It names the spam folder on
+// purpose: by far the most common "it didn't send" is that it did.
 export const RESET_SENT_MESSAGE =
+  "Password reset email sent! Please check your inbox and your spam/junk folder.";
+
+// The enumeration-safe wording, used when revealDetail is off.
+export const RESET_NEUTRAL_MESSAGE =
   "If that email has an account, a password reset link is on its way. Check your inbox and spam.";
 
-export function resetOutcome(err) {
+// The raw Firebase code and message, formatted to be read off a screen and
+// pasted into a bug report. `auth/user-not-found`, `auth/invalid-email`,
+// `auth/invalid-api-key` and friends are the entire point — mapping these to
+// prose is what made the failure impossible to diagnose from the outside.
+export function firebaseErrorDetail(err) {
+  const code = String(err?.code || "").trim();
+  const message = String(err?.message || "").trim();
+  if (code && message) return `${code} — ${message}`;
+  return code || message || "Unknown error";
+}
+
+// Did Firebase say this address has no account? Called out on its own because
+// it is the answer that most often looks like an outage and isn't: nothing was
+// sent because there was nobody to send to.
+export function isUnknownAccount(err) {
+  return String(err?.code || err?.message || "").includes("user-not-found");
+}
+
+export function resetOutcome(err, { revealDetail = true } = {}) {
   if (!err) return { ok: true, message: RESET_SENT_MESSAGE };
-  const code = String(err?.code || err?.message || "");
-  // "No such user" is the one answer we refuse to give.
-  if (code.includes("user-not-found")) return { ok: true, message: RESET_SENT_MESSAGE };
-  return { ok: false, message: friendlyAuthError(err, "reset") };
+
+  if (!revealDetail) {
+    // Enumeration-safe: an unknown address is reported exactly like a known one.
+    if (isUnknownAccount(err)) return { ok: true, message: RESET_NEUTRAL_MESSAGE };
+    return { ok: false, message: friendlyAuthError(err, "reset") };
+  }
+
+  if (isUnknownAccount(err)) {
+    return {
+      ok: false,
+      code: "auth/user-not-found",
+      message: "No account exists with that email address, so no reset email was sent. "
+        + "Check the spelling, or create an account instead. (auth/user-not-found)",
+    };
+  }
+  return {
+    ok: false,
+    code: err?.code || null,
+    // The plain sentence AND the raw code, in that order: the first is for the
+    // person trying to sign in, the second for whoever they send the screenshot
+    // to.
+    message: `${friendlyAuthError(err, "reset")} (${firebaseErrorDetail(err)})`,
+  };
 }
 
 // ── Changing a password ────────────────────────────────────────────────────

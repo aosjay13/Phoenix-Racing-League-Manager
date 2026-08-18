@@ -9,7 +9,7 @@ import {
   sendPasswordResetEmail,
   updateProfile,
 } from "firebase/auth";
-import { clientAuth } from "@/lib/firebaseClient";
+import { clientAuth, missingFirebaseConfig, usingAuthEmulator } from "@/lib/firebaseClient";
 import { useLeague } from "@/components/LeagueProvider";
 import { getActiveLeagueId } from "@/lib/leagueClient";
 import { readScopeParams } from "@/lib/scopeLink";
@@ -85,11 +85,27 @@ export default function LoginPage() {
     setNotice(null);
 
     if (mode === RESET) {
-      // Never says whether the address has an account — see resetOutcome.
+      const address = form.email.trim();
+      // Logged on purpose, and kept. "Nothing happens" is a report that can mean
+      // the handler never ran, the SDK never dispatched, or the email was sent
+      // and went to spam — and from the outside those look identical. These two
+      // lines tell them apart from the browser console, which is the only place
+      // the answer exists for a deployed build.
+      console.info("[reset] sending password reset email", {
+        to: address,
+        authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "(missing)",
+        missingConfig: missingFirebaseConfig(),
+        emulator: usingAuthEmulator(),
+      });
       try {
-        await sendPasswordResetEmail(clientAuth(), form.email.trim());
+        await sendPasswordResetEmail(clientAuth(), address);
+        console.info("[reset] Firebase accepted the request for", address);
         setNotice(resetOutcome(null).message);
       } catch (err) {
+        // The exact code and message, both to the console and to the screen —
+        // see resetOutcome. A mapped-to-prose failure is what made this
+        // impossible to diagnose.
+        console.error("[reset] sendPasswordResetEmail failed", err?.code, err);
         const outcome = resetOutcome(err);
         if (outcome.ok) setNotice(outcome.message);
         else setError(outcome.message);
@@ -127,10 +143,28 @@ export default function LoginPage() {
   }
 
   const leagueName = league?.league?.name || "";
+  // A build that shipped without its Firebase variables cannot sign anybody in
+  // or send any email, and every symptom of that shows up as a failure of
+  // whatever the visitor was trying to do. Say it here, once, plainly.
+  const missingConfig = missingFirebaseConfig();
 
   return (
     <section className="login-wrap">
       <div className="form-card" style={{ margin: "0 auto" }}>
+        {missingConfig.length > 0 && (
+          <div className="toast toast-error" style={{ marginBottom: 14 }}>
+            <strong>This deployment isn&apos;t connected to Firebase.</strong>{" "}
+            {missingConfig.join(", ")} {missingConfig.length === 1 ? "is" : "are"} missing from the
+            build, so sign-in, sign-up and password reset will all fail. These are inlined at build
+            time — set them and <strong>redeploy</strong>; restarting isn&apos;t enough.
+          </div>
+        )}
+        {usingAuthEmulator() && (
+          <div className="toast toast-success" style={{ marginBottom: 14 }}>
+            Using the local Firebase Auth emulator. Reset and verification emails are printed to the
+            emulator log and never actually delivered.
+          </div>
+        )}
         <h3>
           {mode === SIGN_UP ? "Create your driver account"
             : mode === RESET ? "Reset your password"
@@ -162,8 +196,21 @@ export default function LoginPage() {
             </div>
           )}
 
-          {error && <div className="toast toast-error">{error}</div>}
-          {notice && <div className="toast toast-success">{notice}</div>}
+          {/* Errors carry the raw Firebase code, so they get room to wrap
+              rather than being clipped to one line. */}
+          {error && <div className="toast toast-error" style={{ whiteSpace: "normal" }}>{error}</div>}
+          {/* A reset that worked is the one message on this screen somebody has
+              to actually notice — the alternative is pressing the button again
+              and again while the mail sits in a spam folder. So it is a callout
+              rather than the usual thin toast. */}
+          {notice && (
+            <div className="toast toast-success" style={{
+              whiteSpace: "normal", padding: "14px 16px", fontSize: "0.95rem", lineHeight: 1.45,
+            }}>
+              <span style={{ fontSize: "1.2rem", marginRight: 8 }} aria-hidden="true">📬</span>
+              {notice}
+            </div>
+          )}
 
           <button className="btn btn-primary" disabled={busy} type="submit">
             {busy ? "One moment…"

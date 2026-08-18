@@ -7,6 +7,9 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useAuth } from "@/components/AuthProvider";
 import { useLeague } from "@/components/LeagueProvider";
 import { USERS_SEEN_KEY, USERS_SEEN_EVENT, markUserAccountsSeen } from "@/lib/userAccountsAlerts";
+import { sendPasswordResetEmail } from "firebase/auth";
+import { clientAuth, missingFirebaseConfig, usingAuthEmulator } from "@/lib/firebaseClient";
+import { firebaseErrorDetail, friendlyAuthError } from "@/lib/authFlows";
 import { api } from "@/lib/api";
 import { normalizeAliases } from "@/lib/aliases";
 import { NEW_DRIVER_KIND, requestKind } from "@/lib/signupRequest";
@@ -415,20 +418,47 @@ export function UserAccountsManager() {
       `${u.display_name || u.email || "Account"} joined ${leagueName} as ${ROLE_LABELS[newRole] || newRole}.`);
   }
 
-  // Email a player a link to set a new password. Owner-only, both here and in
-  // the route behind it — a reset link is a way into somebody's account, which
-  // is a different kind of power from editing league data. Thrown errors are
-  // deliberately left to the ConfirmDialog, which keeps itself open and shows
-  // them inline; the same shape deleteAccount uses.
+  // Email a player a link to set a new password.
+  //
+  // SENT FROM THIS BROWSER, not from the server, and that is the fix for a bug
+  // rather than a shortcut. The Firebase Admin SDK has no function that sends
+  // this email: generatePasswordResetLink() only returns a URL string, and
+  // delivering it needs an SMTP path the server doesn't have. The first version
+  // of this button handed that string to the app's Firestore mail queue, which
+  // reports success the moment the document is written — so on an installation
+  // without the Trigger Email extension it said "sent" every time and delivered
+  // nothing.
+  //
+  // The client SDK's sendPasswordResetEmail asks Firebase Auth to send its own
+  // templated email, which is the same machinery the "Forgot your password?"
+  // form uses and needs no mail server at all.
+  //
+  // Nothing is given away by moving it: sendPasswordResetEmail is an
+  // unauthenticated Firebase operation — anyone can call it for any address from
+  // any browser — and the link goes to the account's own inbox, never to the
+  // Owner who pressed the button. What being an Owner buys is seeing the
+  // addresses in the first place, and that still comes from an admin-only API.
+  //
+  // Thrown errors are deliberately left to the ConfirmDialog, which keeps itself
+  // open and shows them inline; the same shape deleteAccount uses.
   async function sendPasswordReset(u) {
-    const res = await api(`/api/admin/users/${u.uid}/password-reset`, { method: "POST" });
     const who = u.display_name || u.email || "that account";
-    // A queued email is not a delivered one: a league that hasn't set up the
-    // mail extension collects the documents and sends nothing (see lib/mailer.js).
-    // Say which happened rather than promising an inbox.
-    showToast(res?.queued ? "success" : "error", res?.queued
-      ? `Password reset link sent to ${res.email}. ${who} can use it to set a new password.`
-      : `Couldn't queue the email for ${res?.email || who}. Check the league's email setup.`);
+    console.info("[reset] admin sending password reset email", {
+      to: u.email,
+      uid: u.uid,
+      missingConfig: missingFirebaseConfig(),
+      emulator: usingAuthEmulator(),
+    });
+    try {
+      await sendPasswordResetEmail(clientAuth(), u.email);
+    } catch (err) {
+      console.error("[reset] sendPasswordResetEmail failed", err?.code, err);
+      // The raw Firebase code travels with it — an Owner reporting "it didn't
+      // work" needs to be able to say which failure it was.
+      throw new Error(`${friendlyAuthError(err, "reset")} (${firebaseErrorDetail(err)})`);
+    }
+    showToast("success",
+      `Password reset email sent to ${u.email}. Tell ${who} to check their inbox and spam/junk folder.`);
   }
 
   function startEditName(u) { setEditingName(u.uid); setNameDraft(u.display_name || ""); }
@@ -770,7 +800,7 @@ export function UserAccountsManager() {
       {resettingUser && (
         <ConfirmDialog
           title="Send Password Reset"
-          message={`Email ${resettingUser.email} a link to set a new password for ${resettingUser.display_name || "this account"}? Their current password keeps working until they use the link, and nothing about their league standing changes.`}
+          message={`Email ${resettingUser.email} a link to set a new password for ${resettingUser.display_name || "this account"}? Firebase sends it directly — tell them to check their spam/junk folder if it doesn't show up. Their current password keeps working until they use the link, and nothing about their league standing changes.`}
           confirmLabel="Send Reset Email"
           busyLabel="Sending…"
           tone="primary"
