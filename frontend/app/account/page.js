@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { useLeague } from "@/components/LeagueProvider";
 import { PasswordChangeCard } from "@/components/PasswordChangeCard";
+import { RecoveryPassphraseCard } from "@/components/RecoveryPassphraseCard";
 import { ROLE_LABELS } from "@/lib/roles";
 
 // My Account — the security and membership half of a player's own record, kept
@@ -74,6 +75,12 @@ export default function MyAccountPage() {
         </div>
 
         <PasswordChangeCard />
+      </div>
+
+      {/* The email-free way back in. Set here, used on the sign-in screen's
+          "Forgot your password?" — see components/RecoveryPassphraseCard.jsx. */}
+      <div style={{ marginTop: 16 }}>
+        <RecoveryPassphraseCard />
       </div>
 
       <div className="form-card" style={{ marginTop: 16, maxWidth: "100%" }}>

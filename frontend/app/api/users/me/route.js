@@ -6,12 +6,16 @@ import {
   LEAGUE_ROLES_FIELD, hasLeagueRoles, leagueRolePatch, normalizeLeagueRoles,
 } from "@/lib/leagueRoles";
 import { linkedDriver } from "@/lib/carSelectionServer";
+import { selfUserFields } from "@/lib/userPrivacy";
 import { UPLOAD_DENIED_ERROR, canUploadImages, stripImageFields } from "@/lib/imagePermissions";
 
 // The response shape, built once so every path through GET agrees. The role
 // reported is the ACTIVE LEAGUE's — see the note on GET.
 async function profileAnswer({ uid, data, leagueId, envAdmin, driver }) {
-  const { [LEAGUE_ROLES_FIELD]: leagueRoles, ...profile } = data;
+  // The account's own view: its standing stays, but anything never meant to
+  // leave the server (the recovery passphrase hash) is stripped here rather
+  // than being spread out by accident. See lib/userPrivacy.js.
+  const { [LEAGUE_ROLES_FIELD]: leagueRoles, ...profile } = selfUserFields(data);
   const role = envAdmin ? "owner" : await resolveLeagueRole(data, leagueId);
   // The APPLICATION owner, as distinct from the owner of whichever league is on
   // screen. Backup and restore span every league, so they are gated on this
