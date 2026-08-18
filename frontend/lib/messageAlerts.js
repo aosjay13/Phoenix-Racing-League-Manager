@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { LEAGUE_CHANGE_EVENT } from "@/lib/leagueClient";
 import { canSeeApprovals } from "@/lib/pendingSignupAlerts";
 import { MESSAGES_CHANGED_EVENT } from "@/components/MessagesProvider";
 
@@ -42,11 +43,16 @@ export function useAdminMessages(roleLevel) {
     const timer = setInterval(load, POLL_MS);
     // Answering a thread fires this, so the badge drops as soon as the work is
     // done rather than up to a minute later.
+    // Every count below is scoped to the ACTIVE LEAGUE (api() stamps the
+    // header), so a league switch makes the number on screen wrong until the
+    // next poll. Re-ask the moment it changes.
+    window.addEventListener(LEAGUE_CHANGE_EVENT, load);
     window.addEventListener(MESSAGES_CHANGED_EVENT, load);
     window.addEventListener("focus", onVisible);
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       clearInterval(timer);
+      window.removeEventListener(LEAGUE_CHANGE_EVENT, load);
       window.removeEventListener(MESSAGES_CHANGED_EVENT, load);
       window.removeEventListener("focus", onVisible);
       document.removeEventListener("visibilitychange", onVisible);

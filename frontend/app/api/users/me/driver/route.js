@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
-import { withUser } from "@/lib/serverAuth";
+import { docInLeague, withUser } from "@/lib/serverAuth";
 import { normalizeAliases } from "@/lib/aliases";
 import { linkedDriver } from "@/lib/carSelectionServer";
 
@@ -16,8 +16,8 @@ export const dynamic = "force-dynamic";
 // profile yet" is a normal state for a new player, and the screen reading this
 // (Profile ▸ Connected Accounts) explains how to get one rather than treating
 // it as an error.
-export const GET = withUser(async (request, ctx, user) => {
-  const driver = await linkedDriver(user.uid);
+export const GET = withUser(async (request, ctx, user, leagueId) => {
+  const driver = await linkedDriver(user.uid, leagueId);
   return NextResponse.json({
     driver: driver
       ? { id: driver.id, name: driver.name || "Driver", aliases: normalizeAliases(driver.aliases) }
@@ -35,13 +35,13 @@ export const GET = withUser(async (request, ctx, user) => {
 // The profile written is the one linked to the caller's account, resolved from
 // the account rather than taken from the request, so there is no way to edit
 // somebody else's.
-export const PATCH = withUser(async (request, ctx, user) => {
+export const PATCH = withUser(async (request, ctx, user, leagueId) => {
   const body = await request.json().catch(() => ({}));
   if (body.aliases === undefined) {
     return NextResponse.json({ error: "No editable fields provided" }, { status: 400 });
   }
 
-  const driver = await linkedDriver(user.uid);
+  const driver = await linkedDriver(user.uid, leagueId);
   if (!driver) {
     return NextResponse.json(
       { error: "No driver profile is linked to your account.", code: "no-driver" },
@@ -57,13 +57,17 @@ export const PATCH = withUser(async (request, ctx, user) => {
 // A user unclaims (unlinks) whichever driver profile is linked to their own
 // account, returning it to the unclaimed pool. Their past race results stay on
 // record — only the account↔driver link (drivers.user_id) is cleared.
-export const DELETE = withUser(async (request, ctx, user) => {
+export const DELETE = withUser(async (request, ctx, user, leagueId) => {
   const snap = await db().collection("drivers").where("user_id", "==", user.uid).get();
-  if (snap.empty) {
-    return NextResponse.json({ error: "No driver profile is linked to your account." }, { status: 400 });
+  // Only the profile they race as IN THIS LEAGUE. Unclaiming here is a decision
+  // about this league; the driver profile this same account holds in another one
+  // is none of this screen's business and must survive untouched.
+  const mine = snap.docs.filter(d => docInLeague(d.data(), leagueId));
+  if (!mine.length) {
+    return NextResponse.json({ error: "No driver profile is linked to your account in this league." }, { status: 400 });
   }
   const batch = db().batch();
-  snap.docs.forEach(d => batch.update(d.ref, { user_id: null }));
+  mine.forEach(d => batch.update(d.ref, { user_id: null }));
   await batch.commit();
-  return NextResponse.json({ ok: true, unlinked: snap.docs.map(d => d.id) });
+  return NextResponse.json({ ok: true, unlinked: mine.map(d => d.id) });
 });

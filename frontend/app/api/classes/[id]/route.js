@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { makeDocRoutes, SPECS } from "@/lib/entityApi";
 import { db } from "@/lib/firebase";
-import { withAdmin } from "@/lib/serverAuth";
+import { docInLeague, withAdmin } from "@/lib/serverAuth";
 
 const routes = makeDocRoutes(SPECS.classes);
 export const PATCH = routes.PATCH;
@@ -10,7 +10,15 @@ export const PATCH = routes.PATCH;
 // Every entry pointing at this class is cleared back to unclassified (and the
 // same for any results that recorded it), so those drivers keep all their
 // points and stats and simply stop appearing under a class championship.
-export const DELETE = withAdmin(async (request, { params }) => {
+export const DELETE = withAdmin(async (request, { params }, user, role, leagueId) => {
+  // Staff of this league delete this league's classes. Addressed by id, so the
+  // check lives here rather than only on the listing — and a delete rewrites
+  // every entry and result that named the class, which is not something another
+  // league's admin gets to do.
+  const target = await db().collection("classes").doc(params.id).get();
+  if (target.exists && !docInLeague(target.data(), leagueId)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
   const [entriesSnap, resultsSnap] = await Promise.all([
     db().collection("entries").where("class_id", "==", params.id).get(),
     db().collection("results").where("class_id", "==", params.id).get(),

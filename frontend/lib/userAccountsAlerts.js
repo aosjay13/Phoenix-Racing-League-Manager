@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { LEAGUE_CHANGE_EVENT } from "@/lib/leagueClient";
 
 // localStorage key + custom event shared by everything that shows the "new
 // accounts" alert: the sidebar (components/AppShell.jsx), the Drivers page tab
@@ -32,7 +33,11 @@ export function useUserAccountsAlerts(isAdmin) {
     if (!isAdmin) { setAlerts(EMPTY); return; }
     try {
       const [users, requests] = await Promise.all([
-        api("/api/admin/users"),
+        // Both are scoped to the active league by the api() wrapper. The badge
+        // counts what THIS league's staff have to look at — including accounts
+        // that have signed up but joined no league yet, which is the one thing
+        // an admin has to notice before it can be actioned.
+        api("/api/admin/users?include_unaffiliated=1"),
         api("/api/admin/claim-requests"),
       ]);
       const userList = Array.isArray(users) ? users : [];
@@ -57,11 +62,16 @@ export function useUserAccountsAlerts(isAdmin) {
     // signup during an open session raises the badge on its own.
     function onVisible() { if (document.visibilityState === "visible") load(); }
     const timer = setInterval(load, ALERTS_POLL_MS);
+    // Every count below is scoped to the ACTIVE LEAGUE (api() stamps the
+    // header), so a league switch makes the number on screen wrong until the
+    // next poll. Re-ask the moment it changes.
+    window.addEventListener(LEAGUE_CHANGE_EVENT, load);
     window.addEventListener(USERS_SEEN_EVENT, onSeen);
     window.addEventListener("focus", onVisible);
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       clearInterval(timer);
+      window.removeEventListener(LEAGUE_CHANGE_EVENT, load);
       window.removeEventListener(USERS_SEEN_EVENT, onSeen);
       window.removeEventListener("focus", onVisible);
       document.removeEventListener("visibilitychange", onVisible);

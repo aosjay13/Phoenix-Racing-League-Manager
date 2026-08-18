@@ -301,6 +301,12 @@ export function LeagueProvider({ children }) {
 
   const value = {
     leagues, leagueId: leagueId ?? "",
+    // Has the active league been resolved yet? `leagueId` is coerced to "" for
+    // callers, which makes "no league selected" and "still working it out" look
+    // the same — and they are not the same to anything that gates on a ROLE,
+    // since roles are per league. AdminGate waits on this rather than deciding
+    // from a league that hasn't settled.
+    leagueReady: leagueId !== null,
     league: leagues.find(l => l.id === leagueId) || null,
     switchLeague, reloadLeagues,
     games, seriesList, seasons, classes,

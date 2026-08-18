@@ -67,7 +67,12 @@ export function LeagueSettings() {
       const res = await api("/api/admin/leagues/migrate", { method: "POST" });
       await reloadLeagues?.();
       if (res.league?.id) switchLeague?.(res.league.id);
-      flash("success", `Data contained into “${res.league?.name}”. Stamped ${res.total} record${res.total === 1 ? "" : "s"}.`);
+      // The account half of the migration is the part somebody will want
+      // confirmed out loud: it is what keeps every existing admin an admin now
+      // that roles are held per league.
+      const members = res.members ?? 0;
+      flash("success", `Data contained into “${res.league?.name}”. Stamped ${res.total} record${res.total === 1 ? "" : "s"}`
+        + (members ? `, and carried ${members} account${members === 1 ? "'s role" : "s' roles"} over to it.` : "."));
     } catch (err) { flash("error", err.message); }
     finally { setBusy(false); }
   }
@@ -91,6 +96,12 @@ export function LeagueSettings() {
             Initializing creates your first league (<strong>Prodigy Racing Association</strong>) and safely
             files every existing record under it — nothing is deleted or changed, only tagged. You can rename
             the league afterward.
+          </p>
+          <p style={{ color: "var(--ink-1)", fontSize: "0.9rem" }}>
+            It also carries every existing account&apos;s <strong>role</strong> over to that league. Roles are
+            held per league now, so this is what keeps your current Owners, Admins, Moderators and
+            Statisticians exactly as they are — nobody is demoted, and nobody has to be re-added. A league
+            you create later starts with no staff but you.
           </p>
           {isOwner ? (
             <button className="btn btn-primary" disabled={busy} onClick={runMigration}>
@@ -133,7 +144,9 @@ export function LeagueSettings() {
               <h3 style={{ marginTop: 0 }}>Create League</h3>
               <p style={{ color: "var(--ink-2)", fontSize: "0.82rem", marginTop: -4 }}>
                 Spins up a fresh, empty environment — no games, seasons, or drivers — that you&apos;ll be
-                switched into. Only Owners can create leagues.
+                switched into as its Owner. Nobody else carries over: this league&apos;s Admins and
+                Moderators have no standing in the new one until you give them a role there. Only Owners
+                can create leagues.
               </p>
               <form onSubmit={createLeague}>
                 <div className="field"><label>New League Name</label>

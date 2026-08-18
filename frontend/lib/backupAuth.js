@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getRequestUser, getUserRole, isVerified } from "@/lib/serverAuth";
+import { getRequestUser, isGlobalOwner, isVerified } from "@/lib/serverAuth";
 
 // Auth for the backup endpoints.
 //
@@ -54,8 +54,17 @@ export async function authorizeBackupRequest(request) {
       ),
     };
   }
-  if ((await getUserRole(user)) !== "owner") {
-    return { response: NextResponse.json({ error: "Owner access required" }, { status: 403 }) };
+  // The APPLICATION owner, not merely the owner of whichever league the tab
+  // happens to be looking at: a backup spans every league, so the owner of a
+  // league created this morning must not be able to export — or restore over —
+  // everybody else's data. See isGlobalOwner in lib/serverAuth.js.
+  if (!(await isGlobalOwner(user))) {
+    return {
+      response: NextResponse.json(
+        { error: "This action is for the application Owner only." },
+        { status: 403 },
+      ),
+    };
   }
   return { ok: true, actor: user, kind: "manual" };
 }

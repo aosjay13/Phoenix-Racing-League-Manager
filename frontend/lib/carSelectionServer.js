@@ -15,22 +15,62 @@ import { DENIED, OPEN_STATUSES, PENDING, SIGNUP_KIND } from "@/lib/signupQueue";
 import { sortSeasons } from "@/lib/seasonOrder";
 import { attachRaceDates, fetchSeasonRaceDates } from "@/lib/seasonOrderServer";
 
-// The one driver profile linked to this account, or null. (The claim flow
-// enforces at most one — see /api/claim-requests.)
-export async function linkedDriver(uid) {
-  const snap = await db().collection("drivers").where("user_id", "==", uid).limit(1).get();
-  if (snap.empty) return null;
-  return { id: snap.docs[0].id, ...snap.docs[0].data() };
+// ── One account, one driver profile PER LEAGUE ─────────────────────────────
+//
+// A driver profile belongs to exactly one league (`drivers.league_id`), so the
+// same person can and should be a different driver in each league they race in:
+// "Driver X" in League A and "Driver Y" in League B, each with its own number,
+// aliases and race history. The account is the thing that spans leagues; the
+// driver is not.
+//
+// So every lookup here takes the ACTIVE LEAGUE and answers within it. Without
+// it, a player would carry League A's profile — and League A's roster, cars and
+// sign-ups — into League B's dashboard.
+//
+// The queries filter in memory rather than adding a second `where`: an account
+// holds at most a handful of driver links (one per league it races in), and a
+// document written before the containment migration carries no `league_id` at
+// all. Those legacy documents still answer, so a league mid-migration keeps
+// working — exactly the rule scopeByLeague follows for collections.
+
+// Keep only the rows belonging to one league.
+function inLeague(docs, leagueId) {
+  return leagueId ? docs.filter(d => d.league_id == null || d.league_id === leagueId) : docs;
 }
 
-// This account's open (pending) driver-claim request, or null — a user waiting
-// on an admin can't sign up yet, and should be told that rather than being
-// offered the claim screen again.
-export async function pendingClaim(uid) {
+// The one row for this league: its own if it has one, otherwise a legacy row
+// with no league at all, otherwise nothing.
+function pickForLeague(docs, leagueId) {
+  if (!docs.length) return null;
+  if (!leagueId) return docs[0];
+  return docs.find(d => d.league_id === leagueId)
+    || docs.find(d => d.league_id == null)
+    || null;
+}
+
+// The driver profile linked to this account IN THIS LEAGUE, or null. (The claim
+// flow enforces at most one per league — see /api/claim-requests.)
+export async function linkedDriver(uid, leagueId = "") {
+  const snap = await db().collection("drivers").where("user_id", "==", uid).get();
+  return pickForLeague(snap.docs.map(d => ({ id: d.id, ...d.data() })), leagueId);
+}
+
+// Every driver profile linked to this account, across every league — the one
+// question that is deliberately NOT scoped, because it is what tells an admin
+// whether deleting an account would take another league's driver with it.
+export async function linkedDriversAllLeagues(uid) {
+  const snap = await db().collection("drivers").where("user_id", "==", uid).get();
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+// This account's open (pending) driver-claim request IN THIS LEAGUE, or null —
+// a user waiting on an admin can't sign up yet, and should be told that rather
+// than being offered the claim screen again. Waiting on League A's admin is no
+// reason to be blocked in League B, hence the scope.
+export async function pendingClaim(uid, leagueId = "") {
   const snap = await db().collection("claim_requests")
-    .where("uid", "==", uid).where("status", "==", "pending").limit(1).get();
-  if (snap.empty) return null;
-  return { id: snap.docs[0].id, ...snap.docs[0].data() };
+    .where("uid", "==", uid).where("status", "==", "pending").get();
+  return pickForLeague(snap.docs.map(d => ({ id: d.id, ...d.data() })), leagueId);
 }
 
 // ── Reading the in-flight queue ────────────────────────────────────────────
@@ -69,9 +109,11 @@ export function openRequestsForSeason(seasonId) {
 // driver profile, a first-time player's answers live here and nowhere else, and
 // the sign-up form seeds itself from them so nobody is asked the same thing
 // twice in one sitting. See knownAliasesFor in lib/signupRequest.js.
-export async function pendingRequestsForUser(uid) {
+// Scoped to the active league: an answer this account gave on a League A
+// sign-up is not something League B's form should be pre-filling itself with.
+export async function pendingRequestsForUser(uid, { leagueId = "" } = {}) {
   if (!uid) return [];
-  return requestsByStatus("uid", uid);
+  return inLeague(await requestsByStatus("uid", uid), leagueId);
 }
 
 // Sign-ups of this account's that an admin turned down.
@@ -80,12 +122,11 @@ export async function pendingRequestsForUser(uid) {
 // nobody hears about is indistinguishable from a sign-up that vanished, and
 // they re-submit the identical form. Capped because this only ever feeds a
 // notice: the whole history stays in the collection.
-export async function deniedRequestsForUser(uid, limit = 20) {
+export async function deniedRequestsForUser(uid, { leagueId = "", limit = 20 } = {}) {
   if (!uid) return [];
   const snap = await db().collection("signup_requests")
     .where("uid", "==", uid).where("status", "==", DENIED).get();
-  return snap.docs
-    .map(d => ({ id: d.id, ...d.data() }))
+  return inLeague(snap.docs.map(d => ({ id: d.id, ...d.data() })), leagueId)
     .sort((a, b) => String(b.resolved_at || "").localeCompare(String(a.resolved_at || "")))
     .slice(0, limit);
 }

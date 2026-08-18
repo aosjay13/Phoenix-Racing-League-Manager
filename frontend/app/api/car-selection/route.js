@@ -36,7 +36,11 @@ export async function GET(request) {
     pendingForSeasons([seasonId]),
   ]);
   const pending = pendings[seasonId] || [];
-  const driver = user ? await linkedDriver(user.uid) : null;
+  // Scoped to the league THIS SEASON belongs to, not to whatever league the
+  // caller's tab is on: the driver answering for a season is that league's
+  // driver profile, and a direct link to a season in another league must still
+  // resolve the right one.
+  const driver = user ? await linkedDriver(user.uid, season.league_id || "") : null;
   const gameId = season.game_id || series?.game_id || null;
   // The game's NAME, not just its id — the sign-up dialog decides what extra
   // information to insist on from it (an iRacing season needs the driver's
@@ -186,17 +190,20 @@ export const POST = withUser(async (request, ctx, user) => {
   const wantedCar = String(body.car ?? "").trim();
   if (!seasonId) return NextResponse.json({ error: "Missing season_id" }, { status: 400 });
 
-  const driver = await linkedDriver(user.uid);
+  const context = await seasonContext(seasonId);
+  if (!context) return NextResponse.json({ error: "Season not found" }, { status: 404 });
+  const { season, classes, slots } = context;
+
+  // Resolved AFTER the season, because which driver profile answers depends on
+  // which league the season is in — this account may hold a different one in
+  // each league it races in.
+  const driver = await linkedDriver(user.uid, season.league_id || "");
   if (!driver) {
     return NextResponse.json(
       { error: "Link a driver profile to your account before locking in a car.", code: "no-driver" },
       { status: 403 },
     );
   }
-
-  const context = await seasonContext(seasonId);
-  if (!context) return NextResponse.json({ error: "Season not found" }, { status: 404 });
-  const { season, classes, slots } = context;
 
   // Marked complete by an admin: the season is closed to players, cars
   // included. Enforced here and not only in the UI, so a tab left open before

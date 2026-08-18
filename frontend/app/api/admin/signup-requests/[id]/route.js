@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
-import { withAdmin } from "@/lib/serverAuth";
+import { docInLeague, withAdmin } from "@/lib/serverAuth";
 import { normalizeClassIds } from "@/lib/classFilter";
 import {
   carCapacity, carCounts, carNumberTaken, resolveSignupRules, seasonAcceptsSignups,
@@ -51,7 +51,7 @@ import { emailForUser, postMessage } from "@/lib/messagesServer";
 // Approval re-checks everything that could have changed while the request sat
 // in the queue — the season closing, the driver being added by hand, the number
 // being taken — because a queue is exactly where stale data comes from.
-export const PATCH = withAdmin(async (request, { params }, admin) => {
+export const PATCH = withAdmin(async (request, { params }, admin, role, leagueId) => {
   const { id } = params;
   const body = await request.json().catch(() => ({}));
   const action = body.action;
@@ -60,6 +60,12 @@ export const PATCH = withAdmin(async (request, { params }, admin) => {
   const reqDoc = await reqRef.get();
   if (!reqDoc.exists) return NextResponse.json({ error: "Request not found" }, { status: 404 });
   const req = { id: reqDoc.id, ...reqDoc.data() };
+  // Only this league's staff answer this league's queue. The route is addressed
+  // by request id, so staff-of-a-league is not enough on its own — it has to be
+  // staff of the league the request was filed in.
+  if (!docInLeague(req, leagueId)) {
+    return NextResponse.json({ error: "Request not found" }, { status: 404 });
+  }
   // A registration approved for placements is NOT finished: nobody is on a
   // roster, and a driver who never turns up to a session would otherwise sit in
   // that state for ever with no way out. Denying is therefore still open to an

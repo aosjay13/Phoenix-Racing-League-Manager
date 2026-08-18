@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
-import { withAdmin, getRequestLeagueId, getUserRole, scopeByLeague } from "@/lib/serverAuth";
+import { withAdmin, docInLeague, getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
 import { canUploadImages, imageFieldNames, stripImageFields } from "@/lib/imagePermissions";
 import { toDateOnly } from "@/lib/raceDate";
 import { normalizeClassIds } from "@/lib/classFilter";
@@ -95,7 +95,7 @@ export function makeCollectionRoutes({ collection, parentField, fields, sortFiel
     return NextResponse.json(docs);
   }
 
-  const POST = withAdmin(async (request, ctx, user) => {
+  const POST = withAdmin(async (request, ctx, user, role, leagueId) => {
     const body = await request.json();
     if (guard) {
       const refusal = await guard(body, request);
@@ -106,12 +106,11 @@ export function makeCollectionRoutes({ collection, parentField, fields, sortFiel
     // dropped and the rest of the create goes through — refusing the whole
     // write would stop an Admin creating a season over a field they can't set
     // anyway. See lib/imagePermissions.js.
-    const mayUpload = canUploadImages(await getUserRole(user));
+    const mayUpload = canUploadImages(role);
     const doc = { created_at: new Date().toISOString(), created_by: user.uid };
     // Stamp the active league so new rows are partitioned like migrated ones.
     // Absent header (pre-migration) leaves it unset; a later migration run
     // backfills it.
-    const leagueId = getRequestLeagueId(request);
     if (leagueId) doc.league_id = leagueId;
     if (parentField) {
       if (!body[parentField]) {
@@ -153,7 +152,7 @@ export function makeCollectionRoutes({ collection, parentField, fields, sortFiel
 // see lib/seasonCompletionServer.js — belongs here rather than in the button
 // that happens to be the usual way to press it.
 export function makeDocRoutes({ collection, fields, normalize = null, afterUpdate = null }) {
-  const PATCH = withAdmin(async (request, { params }, user) => {
+  const PATCH = withAdmin(async (request, { params }, user, role, leagueId) => {
     const body = await request.json();
     const updates = {};
     for (const [name, opts] of Object.entries(fields)) {
@@ -168,6 +167,15 @@ export function makeDocRoutes({ collection, fields, normalize = null, afterUpdat
     const ref = db().collection(collection).doc(params.id);
     const doc = await ref.get();
     if (!doc.exists) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    // Staff of THIS league only ever write THIS league's documents. Reads are
+    // already partitioned by scopeByLeague, but a document route is addressed by
+    // id, so without this an Admin of League B who learned an id could edit
+    // League A's season. Answered as 404 rather than 403 on purpose: a league's
+    // ids are none of another league's business. Legacy docs with no league_id
+    // are exempt (see docInLeague) so a half-migrated league keeps working.
+    if (!docInLeague(doc.data(), leagueId)) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
 
     // Owner-only images (see lib/imagePermissions.js). An edit form posts every
     // field it renders, so a non-Owner saving a rename sends the logo it was
@@ -177,7 +185,7 @@ export function makeDocRoutes({ collection, fields, normalize = null, afterUpdat
     const guarded = stripImageFields(updates, {
       fields: imageFieldNames(fields),
       existing: doc.data(),
-      allowed: canUploadImages(await getUserRole(user)),
+      allowed: canUploadImages(role),
     });
     if (!Object.keys(guarded.updates).length) {
       return NextResponse.json({
@@ -201,8 +209,16 @@ export function makeDocRoutes({ collection, fields, normalize = null, afterUpdat
     return NextResponse.json({ id: params.id, ...doc.data(), ...guarded.updates });
   });
 
-  const DELETE = withAdmin(async (request, { params }) => {
-    await db().collection(collection).doc(params.id).delete();
+  const DELETE = withAdmin(async (request, { params }, user, role, leagueId) => {
+    const ref = db().collection(collection).doc(params.id);
+    const doc = await ref.get();
+    // Deleting somebody else's league's document is the same trespass as
+    // editing it, and a delete can't be undone — so it gets the same check.
+    // A document that is already gone still answers ok, as it always did.
+    if (doc.exists && !docInLeague(doc.data(), leagueId)) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    await ref.delete();
     return NextResponse.json({ ok: true });
   });
 

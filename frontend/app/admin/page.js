@@ -152,7 +152,7 @@ function sessionsToArray(str) {
 }
 
 function AdminInner() {
-  const { role } = useAuth();
+  const { role, isGlobalOwner } = useAuth();
   const isOwner = role === "owner";
   const league = useLeague();
   const { games, seriesList, seasons, gameId, seriesId, seasonId, game, series, season, refresh } = league;
@@ -435,7 +435,10 @@ function AdminInner() {
             </button>
           ))}
         </div>
-        {isOwner && (
+        {/* Backup and restore cover EVERY league, so they belong to the
+            application Owner rather than to the owner of the league on screen —
+            see isGlobalOwner in lib/serverAuth.js. */}
+        {isGlobalOwner && (
           <>
             <span className="setup-switch-label">Data &amp; Recovery</span>
             <div className="setup-switch-row">

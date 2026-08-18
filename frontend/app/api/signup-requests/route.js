@@ -166,7 +166,9 @@ export const POST = withUser(async (request, ctx, user) => {
     );
   }
 
-  const driver = await linkedDriver(user.uid);
+  // This league's driver profile for the caller — the season decides which
+  // league that is, so a sign-up always resolves the profile that races there.
+  const driver = await linkedDriver(user.uid, season.league_id || "");
 
   // A driver already ON the roster asking to change their car number. It goes
   // through the same queue as a sign-up for the same reason a sign-up does: a

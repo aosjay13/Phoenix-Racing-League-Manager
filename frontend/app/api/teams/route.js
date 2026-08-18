@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { coerceField, SPECS } from "@/lib/entityApi";
 import { canUploadImages } from "@/lib/imagePermissions";
-import { getRequestLeagueId, getUserRole, withAdmin } from "@/lib/serverAuth";
+import { getRequestLeagueId, withAdmin } from "@/lib/serverAuth";
 import { findMapping, findTeamByName, loadTeamIndex, TEAM_SEASONS_COLLECTION } from "@/lib/teamsServer";
 
 export const dynamic = "force-dynamic";
@@ -57,14 +57,14 @@ export async function GET(request) {
 // A name that already exists in the league REUSES that team rather than minting
 // a second identity for it — the same rule ensureDriverId applies to the driver
 // pool, and the reason a team no longer fragments into one doc per season.
-export const POST = withAdmin(async (request, ctx, user) => {
+export const POST = withAdmin(async (request, ctx, user, role) => {
   const body = await request.json();
   const leagueId = getRequestLeagueId(request);
 
   // A team logo is an image, and images are the Owner's alone to add (see
   // lib/imagePermissions.js). Anybody else creating a team gets the team —
   // just without a logo on it.
-  const mayUpload = canUploadImages(await getUserRole(user));
+  const mayUpload = canUploadImages(role);
 
   const doc = {};
   for (const [name, opts] of Object.entries(SPECS.teams.fields)) {

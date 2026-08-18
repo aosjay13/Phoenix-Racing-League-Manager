@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
-import { getRequestLeagueId, withUser } from "@/lib/serverAuth";
+import { docInLeague, withUser } from "@/lib/serverAuth";
+import { linkedDriver, pendingClaim } from "@/lib/carSelectionServer";
 import {
   CLAIM_KIND, NEW_DRIVER_KIND, cleanSignupDriverInfo, missingAliasMessage,
   missingRequiredAliases,
@@ -29,33 +30,31 @@ export const dynamic = "force-dynamic";
 // The `signup` half is what makes the series sign-up dialog work for someone
 // the league has never seen: they fill in one form, and the season they wanted
 // to join rides along with the request rather than being lost while they wait.
-export const POST = withUser(async (request, ctx, user) => {
+export const POST = withUser(async (request, ctx, user, leagueId) => {
   const body = await request.json().catch(() => ({}));
   const kind = body.kind === NEW_DRIVER_KIND ? NEW_DRIVER_KIND : CLAIM_KIND;
 
-  // One driver profile per account, and at most one open request — checked for
-  // both kinds, so a user can't queue a claim and a new-driver request at once.
-  const owned = await db().collection("drivers").where("user_id", "==", user.uid).limit(1).get();
-  if (!owned.empty) {
+  // One driver profile per account PER LEAGUE, and at most one open request per
+  // league — checked for both kinds, so a user can't queue a claim and a
+  // new-driver request at once. Both are scoped: racing as somebody in League A
+  // is no reason to be refused a profile in League B, and neither is waiting on
+  // League A's admin.
+  const owned = await linkedDriver(user.uid, leagueId);
+  if (owned) {
     return NextResponse.json(
-      { error: "You already have a driver profile linked to your account. Unclaim it before requesting another." },
+      { error: "You already have a driver profile linked to your account in this league. Unclaim it before requesting another." },
       { status: 400 },
     );
   }
-  const anyPending = await db().collection("claim_requests")
-    .where("uid", "==", user.uid)
-    .where("status", "==", "pending")
-    .limit(1).get();
-  if (!anyPending.empty) {
+  if (await pendingClaim(user.uid, leagueId)) {
     return NextResponse.json(
-      { error: "You already have a pending request. You can only ask for one driver profile at a time." },
+      { error: "You already have a pending request in this league. You can only ask for one driver profile at a time." },
       { status: 409 },
     );
   }
 
   const userDoc = await db().collection("users").doc(user.uid).get();
   const u = userDoc.exists ? userDoc.data() : {};
-  const leagueId = getRequestLeagueId(request);
   const base = {
     kind,
     uid: user.uid,
@@ -76,6 +75,12 @@ export const POST = withUser(async (request, ctx, user) => {
     const driverDoc = await db().collection("drivers").doc(driverId).get();
     if (!driverDoc.exists) return NextResponse.json({ error: "Driver profile not found" }, { status: 404 });
     const driver = driverDoc.data();
+    // Claiming is addressed by driver id, so it has to say which league that id
+    // is allowed to be in — otherwise a player could claim another league's
+    // driver, and with it that league's whole race history.
+    if (!docInLeague(driver, leagueId)) {
+      return NextResponse.json({ error: "Driver profile not found" }, { status: 404 });
+    }
     if (driver.user_id) {
       return NextResponse.json({ error: "This profile is already claimed by another account." }, { status: 400 });
     }
@@ -124,6 +129,10 @@ export const POST = withUser(async (request, ctx, user) => {
     const seasonDoc = await db().collection("seasons").doc(String(body.signup.season_id)).get();
     if (!seasonDoc.exists) return NextResponse.json({ error: "Season not found" }, { status: 404 });
     const season = { id: seasonDoc.id, ...seasonDoc.data() };
+    // A season in another league is not one this request may join.
+    if (!docInLeague(season, leagueId)) {
+      return NextResponse.json({ error: "Season not found" }, { status: 404 });
+    }
     if (!seasonAcceptsSignups(season)) {
       return NextResponse.json(
         { error: `Season over — sign-ups for ${season.name || "that season"} are done.`, code: "season-over" },
@@ -175,9 +184,11 @@ export const POST = withUser(async (request, ctx, user) => {
 
 // The caller's own claim requests — lets the driver profile page reflect a
 // "request pending" state so a user doesn't spam duplicate requests.
-export const GET = withUser(async (request, ctx, user) => {
+export const GET = withUser(async (request, ctx, user, leagueId) => {
   const snap = await db().collection("claim_requests").where("uid", "==", user.uid).get();
-  const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const rows = snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .filter(r => docInLeague(r, leagueId));
   rows.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
   return NextResponse.json(rows);
 });
