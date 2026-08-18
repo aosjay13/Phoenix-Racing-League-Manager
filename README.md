@@ -215,15 +215,19 @@ throwaway key (`openssl genrsa`) — the emulator never checks it.
    wins over whatever league your browser was last on. Signing in while viewing a league you
    haven't joined adds you to it the same way, so you're never looking at a league you have no
    standing in. Verify your email (Firebase sends the link) before you can use anything.
-   - **Forgot your password?** on the sign-in form emails you a link to set a new one, sent by
-     Firebase itself. A success is a callout that says to check your **spam/junk folder** — that
-     is where an unarrived reset email nearly always is. A failure names the exact reason,
-     including "no account exists with that email address", so a typo doesn't look like an
-     outage.
+   - **Forgot your password?** on the sign-in form sets a new password **right there** — no email,
+     no link to wait for. Give your email address, your **recovery passphrase**, and the password
+     you want, and you're signed straight in. If you've never set a passphrase, ask a league Owner
+     to set a password for you instead; it takes effect immediately.
 2. **My Account** (top right, beside your name) — how you sign in: change your password (your
    current one is asked for first, so a session left open on a shared computer can't be taken
    over), see whether your email is verified, and see every league this account belongs to with
    the role you hold in each.
+   - **Recovery Passphrase** — set one here and you can reset your own password from the sign-in
+     screen with no email involved. It's a *second password*, not a security question: don't use
+     anything the league already knows about you, because your name, number and team are all on
+     the public pages. Three or four unrelated words is the shape to aim for. Without one, a
+     forgotten password needs a league Owner.
 3. **Profile** — edit your display name, avatar, bio, country, and car number. Ask a league
    admin to link your roster entry to your account so your race results feed your stats.
    - **Connected Accounts**, in its own card below, is the names you go by on Discord and on
@@ -739,15 +743,13 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      account and their other leagues alone; it only becomes **Delete** — the full account, sign-in
      included — when this is the last league they belong to.
 
-     **🔑 Send Password Reset** *(Owner only)* emails that player a link to set a new password,
-     so "I can't get in" doesn't mean a trip to the Firebase console. It is the one staff power
-     that isn't shared with Admins and Moderators: every other one edits league *data*, while
-     this one touches a person's credentials, so it sits with the role that owns the league. The
-     link goes to the address on the account and is never shown to the Owner who sent it — they
-     can start the reset, not perform it. Firebase sends it directly, using its own password-reset
-     template, so it needs no mail server configured (see *Signing up, signing in, and passwords*
-     for why it is sent from the browser). If it fails, the toast carries the exact Firebase error
-     code; if it succeeds, tell them to check their spam folder before pressing it again.
+     **🔑 Set password** *(Owner only)* sets that player's password immediately and shows it to
+     you so you can pass it on — no email, no link, nothing to wait for. It is the one staff power
+     that isn't shared with Admins and Moderators: every other one edits league *data*, while this
+     one hands over an identity, so it sits with the role that owns the league. It refuses two
+     accounts on purpose: **your own** (use My Account, which asks for your current password
+     first) and a **permanent `ADMIN_EMAILS` Owner** (the installation's escape hatch). Their
+     role, driver profile and race history are untouched — only the sign-in credential changes.
 
      The **Linked Driver Profile** cell is a searchable picker listing every driver with its
      availability (unclaimed / linked here / linked to another account). It renders into `<body>`
@@ -2719,21 +2721,52 @@ unattended session is the realistic threat — and it also disposes of Firebase'
 `auth/requires-recent-login` before it can be hit. It is still caught, because the two calls are not
 atomic, and the remedy is the form the person is already looking at.
 
-**Both reset paths — the player's own and the Owner's — send from the browser**, through the
-client SDK's `sendPasswordResetEmail`. That is a correction of a real bug rather than a style
-choice. The Firebase **Admin** SDK has no function that sends this email: `generatePasswordResetLink`
-returns a URL string and nothing more, and delivering it needs an SMTP path the server doesn't have.
-The Owner's button originally handed that string to the app's Firestore mail queue, which reports
-success as soon as the document is written — so on an installation without the Trigger Email
-extension it said "sent" every time and delivered nothing. `sendPasswordResetEmail` asks Firebase
-Auth to send its own templated email and needs no mail server at all.
+### Password resets happen in the app, not in an inbox
 
-Moving it client-side gives nothing away: `sendPasswordResetEmail` is an unauthenticated Firebase
-operation — anyone can call it for any address from any browser — and the link goes to the account's
-own inbox, never to the Owner who pressed the button. What being an Owner buys is *seeing the
-addresses*, and that still comes from the admin-only roster API, which reads each address from the
-**Firebase Auth record** rather than the profile's copy of it (Auth is what a reset actually resolves
-against; the profile field is a mirror).
+**Nothing about a password reset sends an email any more.** Two paths, both immediate:
+
+**The player's own.** "Forgot your password?" asks for their email, their **recovery passphrase**,
+and the new password they want — then sets it and signs them straight in. `POST
+/api/auth/reset-password` verifies the passphrase and calls
+`adminAuth().updateUser(uid, { password })`. No link, no waiting, no inbox.
+
+The passphrase is a second secret the account sets for itself on **My Account ▸ Recovery
+Passphrase**, stored salted-and-hashed with scrypt (`lib/recoveryServer.js`) exactly as a password
+would be — because that is what it is: a second password whose only job is to authorise setting the
+first one.
+
+**It is deliberately not "confirm your driver name."** That version is cheaper to build and it is an
+open door: this app publishes display names on `/api/users`, driver names on `/api/drivers`, and both
+on every standings table and race result, so a check against them would let any visitor take over any
+account — the Owner's included, and per-league roles mean that is the whole league. A challenge is
+only worth having if it is a secret.
+
+Three things keep the trade honest, all of them pinned by
+`lib/__tests__/directReset.test.jsx`:
+
+- **A real length floor** (12 characters, higher than a password's) so the cheap wrong version can't
+  slip past the same validator.
+- **Guessing costs something.** Five wrong tries lock the *recovery path* for fifteen minutes.
+  Ordinary sign-in is untouched, so a griefer can annoy somebody but never lock them out.
+- **The hash never leaves the server.** Four routes hand user documents to browsers by *spreading*
+  them, which publishes any field added later by default. `lib/userPrivacy.js` holds one strip list
+  and every one of those routes goes through it.
+
+The refusal is one sentence for "no such account", "no passphrase set" and "wrong passphrase"
+together, so the form can't be used to find out who races here or who has recovery armed. A lockout
+says so plainly, because that one is about the request rather than the account.
+
+**The Owner's.** **Admin ▸ User Accounts ▸ 🔑 Set password** writes a player's password directly and
+shows it so the Owner can pass it on. Owner-only, members of their own league only, and it refuses
+two accounts on purpose: **your own** (My Account asks for your current password first, which is
+what stops an open session becoming a takeover) and a **permanent `ADMIN_EMAILS` Owner** (the
+installation's escape hatch — one Owner seizing it would defeat the point of having it).
+
+**Zero account loss, in both paths.** Only the Firebase Auth credential changes. `league_roles`, the
+linked driver profile, roster entries, results and the display name are not named anywhere in either
+route; the single Firestore write is an audit stamp (`password_set_by_owner`) or the cleared guess
+counter. Both revoke the account's other refresh tokens, since a new password means the old access
+should end.
 
 **When a reset doesn't arrive**, the app now says why instead of shrugging. The exact Firebase code
 is shown on screen and logged to the console (`auth/user-not-found`, `auth/invalid-email`,

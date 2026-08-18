@@ -4,12 +4,10 @@ import Link from "next/link";
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { SetPasswordModal } from "@/components/SetPasswordModal";
 import { useAuth } from "@/components/AuthProvider";
 import { useLeague } from "@/components/LeagueProvider";
 import { USERS_SEEN_KEY, USERS_SEEN_EVENT, markUserAccountsSeen } from "@/lib/userAccountsAlerts";
-import { sendPasswordResetEmail } from "firebase/auth";
-import { clientAuth, missingFirebaseConfig, usingAuthEmulator } from "@/lib/firebaseClient";
-import { firebaseErrorDetail, friendlyAuthError } from "@/lib/authFlows";
 import { api } from "@/lib/api";
 import { normalizeAliases } from "@/lib/aliases";
 import { NEW_DRIVER_KIND, requestKind } from "@/lib/signupRequest";
@@ -314,8 +312,8 @@ export function UserAccountsManager() {
   const [error, setError] = useState(null);
   const [toast, setToast] = useState(null);
   const [deletingUser, setDeletingUser] = useState(null);   // account pending deletion
-  const [resettingUser, setResettingUser] = useState(null); // account pending a password-reset email
   const [verifyingAll, setVerifyingAll] = useState(false);  // bulk-verify confirm dialog
+  const [settingPassword, setSettingPassword] = useState(null); // account whose password is being set
   // Whether this installation still requires email verification at all, and
   // whether a change to it is in flight. null = haven't asked yet.
   const [verifyWall, setVerifyWall] = useState(null);
@@ -455,49 +453,6 @@ export function UserAccountsManager() {
   function joinLeague(u, newRole) {
     patchUser(u.uid, { role: newRole },
       `${u.display_name || u.email || "Account"} joined ${leagueName} as ${ROLE_LABELS[newRole] || newRole}.`);
-  }
-
-  // Email a player a link to set a new password.
-  //
-  // SENT FROM THIS BROWSER, not from the server, and that is the fix for a bug
-  // rather than a shortcut. The Firebase Admin SDK has no function that sends
-  // this email: generatePasswordResetLink() only returns a URL string, and
-  // delivering it needs an SMTP path the server doesn't have. The first version
-  // of this button handed that string to the app's Firestore mail queue, which
-  // reports success the moment the document is written — so on an installation
-  // without the Trigger Email extension it said "sent" every time and delivered
-  // nothing.
-  //
-  // The client SDK's sendPasswordResetEmail asks Firebase Auth to send its own
-  // templated email, which is the same machinery the "Forgot your password?"
-  // form uses and needs no mail server at all.
-  //
-  // Nothing is given away by moving it: sendPasswordResetEmail is an
-  // unauthenticated Firebase operation — anyone can call it for any address from
-  // any browser — and the link goes to the account's own inbox, never to the
-  // Owner who pressed the button. What being an Owner buys is seeing the
-  // addresses in the first place, and that still comes from an admin-only API.
-  //
-  // Thrown errors are deliberately left to the ConfirmDialog, which keeps itself
-  // open and shows them inline; the same shape deleteAccount uses.
-  async function sendPasswordReset(u) {
-    const who = u.display_name || u.email || "that account";
-    console.info("[reset] admin sending password reset email", {
-      to: u.email,
-      uid: u.uid,
-      missingConfig: missingFirebaseConfig(),
-      emulator: usingAuthEmulator(),
-    });
-    try {
-      await sendPasswordResetEmail(clientAuth(), u.email);
-    } catch (err) {
-      console.error("[reset] sendPasswordResetEmail failed", err?.code, err);
-      // The raw Firebase code travels with it — an Owner reporting "it didn't
-      // work" needs to be able to say which failure it was.
-      throw new Error(`${friendlyAuthError(err, "reset")} (${firebaseErrorDetail(err)})`);
-    }
-    showToast("success",
-      `Password reset email sent to ${u.email}. Tell ${who} to check their inbox and spam/junk folder.`);
   }
 
   // Mark one account's email verified, by hand.
@@ -831,16 +786,22 @@ export function UserAccountsManager() {
                                 {isBusy ? "…" : "✓ Verify"}
                               </button>
                             )}
-                            {isOwner && !isMe && u.email && (
+                            {/* Sets the password on the spot, with no email
+                                anywhere — the answer to "I can't get in" on an
+                                installation where the emailed link never
+                                arrives. Owner-only here and in the route.
+                                Refused for your own account: My Account asks
+                                for the current password first, deliberately. */}
+                            {isOwner && !isMe && !u.env_admin && (
                               <button
                                 type="button"
                                 className="btn btn-ghost"
                                 style={{ marginTop: 0, padding: "6px 10px" }}
                                 disabled={isBusy}
-                                onClick={() => setResettingUser(u)}
-                                title={`Email ${u.email} a link to set a new password`}
+                                onClick={() => setSettingPassword(u)}
+                                title={`Set a new password for ${u.display_name || u.email || "this account"} immediately — no email`}
                               >
-                                🔑 Reset password
+                                🔑 Set password
                               </button>
                             )}
                             {u.env_admin || isMe || !canManage(myRole, u.role) ? (
@@ -937,6 +898,21 @@ export function UserAccountsManager() {
         </div>
       )}
 
+      {settingPassword && (
+        <SetPasswordModal
+          user={settingPassword}
+          onClose={() => setSettingPassword(null)}
+          onDone={(u) => {
+            // Reloaded so the roster picks up the audit stamp; the modal stays
+            // open on its success state so the Owner can still copy the
+            // password it just set.
+            load();
+            showToast("success",
+              `Password set for ${u.display_name || u.email}. It works immediately — copy it from the dialog and send it to them.`);
+          }}
+        />
+      )}
+
       {verifyingAll && (
         <ConfirmDialog
           title={`Verify everyone in ${leagueName}`}
@@ -946,18 +922,6 @@ export function UserAccountsManager() {
           tone="primary"
           onConfirm={verifyEveryone}
           onClose={() => setVerifyingAll(false)}
-        />
-      )}
-
-      {resettingUser && (
-        <ConfirmDialog
-          title="Send Password Reset"
-          message={`Email ${resettingUser.email} a link to set a new password for ${resettingUser.display_name || "this account"}? Firebase sends it directly — tell them to check their spam/junk folder if it doesn't show up. Their current password keeps working until they use the link, and nothing about their league standing changes.`}
-          confirmLabel="Send Reset Email"
-          busyLabel="Sending…"
-          tone="primary"
-          onConfirm={() => sendPasswordReset(resettingUser)}
-          onClose={() => setResettingUser(null)}
         />
       )}
 

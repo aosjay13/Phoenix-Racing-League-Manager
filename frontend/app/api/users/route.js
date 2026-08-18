@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { getRequestLeagueId, legacyLeagueId } from "@/lib/serverAuth";
 import { isLeagueMember } from "@/lib/leagueRoles";
+import { publicUserFields } from "@/lib/userPrivacy";
 
 export const dynamic = "force-dynamic";
 
@@ -20,10 +21,9 @@ export async function GET(request) {
   ]);
   const users = snap.docs
     .filter(d => !leagueId || isLeagueMember(d.data(), leagueId, { legacyLeagueId: legacy }))
-    .map(d => {
-      const { email, role, league_roles, ...pub } = d.data();
-      return { uid: d.id, ...pub };
-    });
+    // Stripped through one shared list rather than a destructure per route —
+    // see lib/userPrivacy.js for why that matters.
+    .map(d => ({ uid: d.id, ...publicUserFields(d.data()) }));
   users.sort((a, b) => String(a.display_name).localeCompare(String(b.display_name)));
   return NextResponse.json(users);
 }

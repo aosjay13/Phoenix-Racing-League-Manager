@@ -8,6 +8,7 @@ import { buildCareerProfile } from "@/lib/careerStatsServer";
 import { computeGameSkillRatings } from "@/lib/skillRatingServer";
 import { SR_BASELINE } from "@/lib/skillRating";
 import { normalizeAliases } from "@/lib/aliases";
+import { publicUserFields } from "@/lib/userPrivacy";
 import { gameNameFor, normalizeGameNames, overallNameFor } from "@/lib/driverNames";
 
 const routes = makeDocRoutes(SPECS.drivers);
@@ -103,7 +104,7 @@ export async function GET(request, { params }) {
   let account = null;
   if (linkedUserId) {
     const u = await db().collection("users").doc(linkedUserId).get();
-    if (u.exists) { const { email, role, ...pub } = u.data(); account = pub; }
+    if (u.exists) account = publicUserFields(u.data());
   }
 
   // The overall display name: the driver's own override first, then the linked

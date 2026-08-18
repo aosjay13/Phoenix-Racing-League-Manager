@@ -6,7 +6,6 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   sendEmailVerification,
-  sendPasswordResetEmail,
   updateProfile,
 } from "firebase/auth";
 import { clientAuth, missingFirebaseConfig, usingAuthEmulator } from "@/lib/firebaseClient";
@@ -14,13 +13,29 @@ import { useLeague } from "@/components/LeagueProvider";
 import { getActiveLeagueId } from "@/lib/leagueClient";
 import { readScopeParams } from "@/lib/scopeLink";
 import { api } from "@/lib/api";
-import { friendlyAuthError, resetOutcome, signupLeagueId } from "@/lib/authFlows";
+import {
+  MIN_PASSWORD_LENGTH, MIN_RECOVERY_LENGTH, directResetError, friendlyAuthError,
+  signupLeagueId,
+} from "@/lib/authFlows";
 
 // Three states, one screen: sign in, create an account, and "I've forgotten my
 // password". The third is a mode rather than a page of its own so the email
 // already typed carries into it and back out again — forgetting a password is
 // something you discover halfway through signing in, not a journey you set out
 // on.
+//
+// ── The reset flow does not send anything ──────────────────────────────────
+//
+// It used to ask Firebase to email a link. That link never arrived on this
+// installation, which made the most common support request in the league
+// unanswerable from inside the app. So RESET now proves identity IN THE FORM —
+// email plus the account's own recovery passphrase — and sets the new password
+// on the spot (POST /api/auth/reset-password). Nothing is dispatched, nothing
+// is clicked, nothing depends on an inbox.
+//
+// The passphrase is set beforehand on My Account. An account that never set one
+// has no self-service route and must ask an Owner, which the form says plainly
+// rather than leaving them guessing.
 const SIGN_IN = "signin";
 const SIGN_UP = "signup";
 const RESET = "reset";
@@ -34,7 +49,12 @@ export default function LoginPage() {
   // the league list resolves asynchronously and somebody can be quick.
   const league = useLeague();
   const [mode, setMode] = useState(SIGN_IN);
-  const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [form, setForm] = useState({
+    name: "", email: "", password: "",
+    // The reset flow's own three fields: the secret that proves who they are,
+    // and the password they want instead.
+    passphrase: "", newPassword: "", confirmPassword: "",
+  });
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -85,30 +105,48 @@ export default function LoginPage() {
     setNotice(null);
 
     if (mode === RESET) {
-      const address = form.email.trim();
-      // Logged on purpose, and kept. "Nothing happens" is a report that can mean
-      // the handler never ran, the SDK never dispatched, or the email was sent
-      // and went to spam — and from the outside those look identical. These two
-      // lines tell them apart from the browser console, which is the only place
-      // the answer exists for a deployed build.
-      console.info("[reset] sending password reset email", {
-        to: address,
-        authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "(missing)",
-        missingConfig: missingFirebaseConfig(),
-        emulator: usingAuthEmulator(),
+      // Checked here as well as on the button's disabled state, from the same
+      // function, so the two can never disagree about whether this is ready.
+      const invalid = directResetError({
+        email: form.email, passphrase: form.passphrase,
+        next: form.newPassword, confirm: form.confirmPassword,
       });
+      if (invalid) { setError(invalid); setBusy(false); return; }
+
       try {
-        await sendPasswordResetEmail(clientAuth(), address);
-        console.info("[reset] Firebase accepted the request for", address);
-        setNotice(resetOutcome(null).message);
+        const res = await fetch("/api/auth/reset-password", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: form.email.trim(),
+            passphrase: form.passphrase,
+            new_password: form.newPassword,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setError(data?.error || `Couldn't reset the password (${res.status}).`);
+          return;
+        }
+        // Set on the Firebase account already — so rather than telling them to
+        // go and sign in, sign them in. The whole point of this flow is that
+        // there is no second step waiting in an inbox.
+        try {
+          await signInWithEmailAndPassword(clientAuth(), form.email.trim(), form.newPassword);
+          await joinActiveLeague(currentLeagueId());
+          router.push("/");
+          return;
+        } catch (err) {
+          // The password IS changed even if signing in here didn't work, and
+          // saying so matters — otherwise they try the whole flow again.
+          console.error("[reset] signed-in-after-reset failed", err?.code, err);
+          setNotice("Password changed. Sign in with your new password.");
+          setMode(SIGN_IN);
+          setForm(f => ({ ...f, password: "", passphrase: "", newPassword: "", confirmPassword: "" }));
+          return;
+        }
       } catch (err) {
-        // The exact code and message, both to the console and to the screen —
-        // see resetOutcome. A mapped-to-prose failure is what made this
-        // impossible to diagnose.
-        console.error("[reset] sendPasswordResetEmail failed", err?.code, err);
-        const outcome = resetOutcome(err);
-        if (outcome.ok) setNotice(outcome.message);
-        else setError(outcome.message);
+        setError(`Couldn't reach the server: ${err?.message || "unknown error"}`);
       } finally {
         setBusy(false);
       }
@@ -174,7 +212,7 @@ export default function LoginPage() {
           {mode === SIGN_UP
             ? <>Join{leagueName ? <> <strong style={{ color: "var(--ink-0)" }}>{leagueName}</strong></> : " the league"} — your stats follow you across every game.</>
             : mode === RESET
-              ? "Enter the email you sign in with and we'll send you a link to set a new password."
+              ? "No email needed. Confirm who you are with your recovery passphrase and set a new password right here."
               : "Sign in to view your profile and league tools."}
         </p>
 
@@ -192,8 +230,36 @@ export default function LoginPage() {
           {mode !== RESET && (
             <div className="field">
               <label>Password</label>
-              <input type="password" required minLength={6} value={form.password} onChange={set("password")} placeholder="••••••••" />
+              <input type="password" required minLength={MIN_PASSWORD_LENGTH}
+                autoComplete={mode === SIGN_UP ? "new-password" : "current-password"}
+                value={form.password} onChange={set("password")} placeholder="••••••••" />
             </div>
+          )}
+
+          {mode === RESET && (
+            <>
+              <div className="field">
+                <label>Recovery Passphrase</label>
+                <input type="password" required autoComplete="off" value={form.passphrase}
+                  onChange={set("passphrase")} placeholder="The phrase you set on My Account" />
+                <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
+                  The secret you saved under <strong>My Account ▸ Recovery Passphrase</strong> —
+                  at least {MIN_RECOVERY_LENGTH} characters. Not your password, and not your
+                  driver name.
+                </span>
+              </div>
+              <div className="field">
+                <label>New Password</label>
+                <input type="password" required minLength={MIN_PASSWORD_LENGTH} autoComplete="new-password"
+                  value={form.newPassword} onChange={set("newPassword")}
+                  placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`} />
+              </div>
+              <div className="field">
+                <label>Confirm New Password</label>
+                <input type="password" required minLength={MIN_PASSWORD_LENGTH} autoComplete="new-password"
+                  value={form.confirmPassword} onChange={set("confirmPassword")} placeholder="••••••••" />
+              </div>
+            </>
           )}
 
           {/* Errors carry the raw Firebase code, so they get room to wrap
@@ -215,7 +281,7 @@ export default function LoginPage() {
           <button className="btn btn-primary" disabled={busy} type="submit">
             {busy ? "One moment…"
               : mode === SIGN_UP ? "Create Account"
-              : mode === RESET ? "Send Reset Link"
+              : mode === RESET ? "Set New Password"
               : "Sign In"}
           </button>
         </form>
@@ -231,6 +297,9 @@ export default function LoginPage() {
         <p style={{ marginTop: 18, fontSize: "0.85rem", color: "var(--ink-1)" }}>
           {mode === RESET ? (
             <>
+              Never set a recovery passphrase? Ask a league <strong>Owner</strong> to set a new
+              password for you from <em>Admin ▸ User Accounts</em> — it takes effect immediately.
+              <br />
               Remembered it?{" "}
               <button type="button" onClick={() => switchMode(SIGN_IN)} className="link-button">
                 Back to sign in

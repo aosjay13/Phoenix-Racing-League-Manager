@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { getRequestLeagueId, legacyLeagueId } from "@/lib/serverAuth";
 import { isLeagueMember } from "@/lib/leagueRoles";
+import { publicUserFields } from "@/lib/userPrivacy";
 import { linkedDriver } from "@/lib/carSelectionServer";
 import { buildCareerProfile } from "@/lib/careerStatsServer";
 
@@ -26,7 +27,7 @@ export async function GET(request, { params }) {
   if (leagueId && !isLeagueMember(userDoc.data(), leagueId, { legacyLeagueId: await legacyLeagueId() })) {
     return NextResponse.json({ error: "Player not found" }, { status: 404 });
   }
-  const { email, role, league_roles, ...publicProfile } = userDoc.data();
+  const publicProfile = publicUserFields(userDoc.data());
 
   // Include the linked pool driver so entries carrying only a driver_id
   // (no user_id) still count toward this account's stats — the profile they

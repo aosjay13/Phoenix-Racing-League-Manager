@@ -203,6 +203,76 @@ export function passwordChangeError({ current = "", next = "", confirm = "" } = 
   return null;
 }
 
+// ── The recovery passphrase ────────────────────────────────────────────────
+//
+// A second secret an account sets for itself, so it can reset its own password
+// IN THE APP with no email anywhere. The rules live here (pure, testable); the
+// hashing and the guess-throttling live in lib/recoveryServer.js.
+//
+// The floor is higher than a password's on purpose. A password is protected by
+// Firebase's own sign-in throttling and by the fact that it is typed often
+// enough to be remembered; a recovery passphrase is typed once a year and is
+// the single thing standing between a stranger and somebody's account, so a
+// six-character one would be a worse door than the one it replaces.
+export const MIN_RECOVERY_LENGTH = 12;
+
+export function recoveryPassphraseError({ passphrase = "", confirm = "" } = {}) {
+  if (!passphrase) return "Enter a recovery passphrase.";
+  if (passphrase.trim().length < MIN_RECOVERY_LENGTH) {
+    return `Recovery passphrase must be at least ${MIN_RECOVERY_LENGTH} characters — a short phrase you'll remember works well.`;
+  }
+  if (passphrase !== confirm) return "The passphrases don't match.";
+  return null;
+}
+
+// Everything the in-app "I've forgotten my password" form needs before it is
+// worth sending. One function so the button's disabled state and the submit
+// handler can never disagree — the same rule PasswordChangeCard follows.
+export function directResetError({ email = "", passphrase = "", next = "", confirm = "" } = {}) {
+  if (!email.trim() || !email.includes("@")) return "Enter the email address you sign in with.";
+  if (!passphrase) return "Enter your recovery passphrase.";
+  if (!next) return "Enter a new password.";
+  if (next.length < MIN_PASSWORD_LENGTH) {
+    return `New password must be at least ${MIN_PASSWORD_LENGTH} characters.`;
+  }
+  if (next !== confirm) return "The new passwords don't match.";
+  return null;
+}
+
+// What an Owner setting somebody else's password has to get right. Deliberately
+// NOT the same function as the one above: there is no current password and no
+// passphrase in play, only the new one.
+export function adminSetPasswordError({ next = "", confirm = "" } = {}) {
+  if (!next) return "Enter a new password.";
+  if (next.length < MIN_PASSWORD_LENGTH) {
+    return `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`;
+  }
+  if (next !== confirm) return "The passwords don't match.";
+  return null;
+}
+
+// A readable, high-entropy password for an Owner to hand over. Avoids the
+// characters that get misread aloud or over a phone (0/O, 1/l/I) — this is a
+// string somebody will type from a Discord message, and a password that gets
+// mistyped four times is a support request of its own.
+const SUGGEST_ALPHABET = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+export function suggestPassword(length = 16, randomInt = null) {
+  const pick = randomInt || (max => {
+    // crypto in the browser; the fallback only ever runs where crypto is absent,
+    // which in practice is a test environment rather than a user's machine.
+    if (typeof globalThis !== "undefined" && globalThis.crypto?.getRandomValues) {
+      const buf = new Uint32Array(1);
+      globalThis.crypto.getRandomValues(buf);
+      return buf[0] % max;
+    }
+    return Math.floor(Math.random() * max);
+  });
+  let out = "";
+  for (let i = 0; i < length; i++) out += SUGGEST_ALPHABET[pick(SUGGEST_ALPHABET.length)];
+  return out;
+}
+
 // Does this account sign in with a password at all? An account created through
 // a federated provider (or a future magic-link flow) has nothing here to
 // change, and telling them so beats a Firebase error they can't act on.
