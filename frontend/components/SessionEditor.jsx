@@ -15,7 +15,8 @@ import { AUTO_FLAG_FIELDS, applyAutoFlags, detectFlagLocks, autoMostLapsLedSlot 
 import { BANGER_BOOL_FIELDS, BANGER_RESULT_FIELDS, BANGER_STATS, bangerRates, blankBangerRow, hasBangerBonuses } from "@/lib/bangerRacing";
 import { BRACKET_SIZES, bracketGridError, bracketPositionAt, bracketPositions, bracketRoundFor, bracketRounds, bracketSizeForField, bracketSizeLabel, normalizeBracketSize, ordinal } from "@/lib/bracketRacing";
 import { parseTime, formatTime, formatGap, formatDelta, parseDelta, parseLapsDown, deriveLaps } from "@/lib/raceTime";
-import { isRoundsRace, isTimedRace, scheduledLaps, scheduledRounds } from "@/lib/raceLength";
+import { isRoundsRace, isTimedRace, scheduledRounds, sessionScheduledLaps } from "@/lib/raceLength";
+import { classesOnGrid, fillClassLaps, rowsMissingLaps, seedClassLaps } from "@/lib/sessionLaps";
 
 // Every field a saved result can restore into a grid row. The banger fields
 // (Takedowns, Survival, Most Lethal) are always in the list: they're stored on
@@ -114,6 +115,12 @@ function makeProvRow(src = {}) {
 // Attaches a driver (roster entry) to a slot, pre-filling laps to the full
 // race distance so lead-lap finishers don't need manual entry.
 //
+// `totalLaps` is the distance to count off. It's a plain number when one
+// distance covers the whole grid, and a FUNCTION of the row when it doesn't —
+// a multi-class grid, where each class ran its own number of laps and the row's
+// class decides which (see lapsBasis). Either way a null/0 result means there
+// is nothing to count off, and Laps is left blank for manual entry.
+//
 // `pinnedClassId` is the class this grid is declared to be — the class of a
 // per-class session, or the "<class> only" round set on Race Info. When there
 // is one it IS the driver's class here, ahead of the class their roster entry
@@ -128,7 +135,7 @@ function assignEntry(row, entry, totalLaps, pinnedClassId = "") {
     driver_number: entry.number ?? entry.driver_number ?? null,
     class_id: pinnedClassId || entry.class_id || row.class_id || "",
   };
-  const d = deriveLaps(out, totalLaps);
+  const d = deriveLaps(out, typeof totalLaps === "function" ? totalLaps(out) : totalLaps);
   if (d != null) out.laps = String(d);
   return out;
 }
@@ -506,6 +513,10 @@ export function SessionEditor({
     initialSession && names.includes(initialSession) ? initialSession : names[0]
   );
   const [rows, setRows] = useState(() => emptySlots(DEFAULT_ROW_COUNT, bracketLayout));
+  // What each class on a multi-class grid actually ran, as typed by the
+  // statistician, keyed by class id ("" = unclassified). Purely a data-entry
+  // aid — it fills the Laps column and is never itself saved. See lapsBasis.
+  const [classLaps, setClassLaps] = useState({});
   // Which of the auto-derived bonus flags (Fastest Lap / Hard Charger / Most
   // Laps Led) the admin has taken over by hand for this session — see
   // lib/autoFlags.js. A locked flag stops following the grid's data.
@@ -558,7 +569,9 @@ export function SessionEditor({
       // finishing-order grid.
       const mains = existing.filter(r => !r.provisional);
       const provs = existing.filter(r => r.provisional);
-      const loaded = buildRows(entries, mains, scheduledLaps(race), qp, sessionType, bracketLayout, pinnedClassId);
+      // Saved rows restore their own Laps; the basis only fills a row whose
+      // result carried none. A multi-class grid has no blanket one to fill from.
+      const loaded = buildRows(entries, mains, multiClass ? null : sessionLaps, qp, sessionType, bracketLayout, pinnedClassId);
       // The gap columns aren't stored — they're recomputed from the saved lap
       // times each time the sheet opens.
       const built = sessionType === "qualifying" ? computeQualGaps(loaded) : loaded;
@@ -567,6 +580,9 @@ export function SessionEditor({
       // session. Anything that already matches carries on auto-deriving.
       setFlagLocks(sessionType === "qualifying" ? {} : detectFlagLocks(built));
       setRows(built);
+      // Show each class's distance back in its box, read off the sheet that was
+      // saved — so a reopened multi-class grid says what it was entered with.
+      setClassLaps(seedClassLaps(built));
       const entryById = new Map(entries.map(e => [e.id ?? e.entry_id, e]));
       setProvRows(provs.map(r => {
         const e = entryById.get(r.entry_id);
@@ -580,6 +596,7 @@ export function SessionEditor({
       setRows(emptySlots(DEFAULT_ROW_COUNT, bracketLayout));
       setFlagLocks({});
       setProvRows([]);
+      setClassLaps({});
     } finally {
       appliedBracket.current = bracketLayout;
       setLoading(false);
@@ -643,6 +660,14 @@ export function SessionEditor({
         if (qualTimeEdit && field === "qual_time" && parseTime(value) == null) {
           patch.qual_to_lead = "";
           patch.qual_gap = "";
+        }
+        // Moving a row into another class on a multi-class grid: fill Laps from
+        // THAT class's distance, once one has been typed for it. Only ever into
+        // a blank cell — an entered lap count is data, and re-classing a driver
+        // must never rewrite it.
+        if (multiClass && field === "class_id" && String(patch.laps ?? "").trim() === "") {
+          const d = deriveLaps(patch, lapsBasis(patch));
+          if (d != null) patch.laps = String(d);
         }
         return patch;
       });
@@ -851,10 +876,43 @@ export function SessionEditor({
     });
   }
 
-  // The scheduled lap count laps-completed is auto-derived from. Null on a
-  // timed event — it has no scheduled distance to count down from, so laps are
-  // typed in per driver instead of being filled from the total.
-  const totalLaps = scheduledLaps(race);
+  // The scheduled lap count laps-completed is auto-derived from — this
+  // SESSION's, so a Heats tab counts off the event's Heat distance and a
+  // Consolation tab off its Consolation distance, falling back to the Feature's
+  // total where the event names no preliminary one (see lib/raceLength.js).
+  // Null on a timed or rounds event — neither has a scheduled distance to count
+  // down from, so laps are typed in per driver instead of being filled.
+  const sessionLaps = sessionScheduledLaps(race, sessionType);
+
+  // ── Multi-class grids have no single distance ────────────────────────────
+  //
+  // Classes sharing one grid do NOT all complete the same number of laps: the
+  // slower class takes the checkered flag having run fewer than the outright
+  // leader, nearly every time. Filling the scheduled distance into every row of
+  // every class therefore writes a figure that is wrong for all but the leading
+  // class — and writes it silently, which is exactly how it reached the
+  // database unnoticed.
+  //
+  // So on a grid that can hold more than one class nothing is auto-filled from
+  // the scheduled distance. The statistician names each class's distance in the
+  // "Laps completed per class" bar above the grid (or types Laps row by row),
+  // and only that typed figure fills anything — laps down and retirements still
+  // count off it, so a class's sheet is one number plus its exceptions.
+  //
+  // A grid that is one class by construction is untouched, and still auto-counts
+  // exactly as it always has: a per-class session, a "<class> only" round, a
+  // season with a single class, and a season with no classes at all.
+  const multiClass = !scoped && !pinnedClassId && classes.length > 1;
+
+  // The distance one row counts down from: the session's scheduled distance
+  // normally, or — on a multi-class grid — whatever was typed for THAT row's
+  // class. Null there until something is typed, which is what leaves Laps blank
+  // rather than guessed.
+  const lapsBasis = row => {
+    if (!multiClass) return sessionLaps;
+    const n = Number(classLaps[row?.class_id || ""] ?? "");
+    return n > 0 ? n : null;
+  };
 
   // The class this grid is running, used to fill a row that hasn't got one of
   // its own. A driver whose ROSTER entry carries no class — one created inline
@@ -888,7 +946,7 @@ export function SessionEditor({
   // the class the rest of the grid is in, so nobody scores under the wrong
   // points structure by omission.
   const withDriver = (row, entry) => {
-    const out = assignEntry(row, entry, totalLaps, pinnedClassId);
+    const out = assignEntry(row, entry, lapsBasis, pinnedClassId);
     if (sessionType !== "qualifying" && qualPos[out.entry_id] != null) out.start_pos = String(qualPos[out.entry_id]);
     if (!out.class_id && gridClassId) out.class_id = gridClassId;
     return out;
@@ -909,7 +967,28 @@ export function SessionEditor({
   // just the whole-grid version.
   function setClassForAll(classId) {
     if (!classId) return;
-    setRows(prev => prev.map(r => (r.entry_id ? { ...r, class_id: classId } : r)));
+    setRows(prev => prev.map(r => {
+      if (!r.entry_id) return r;
+      const patch = { ...r, class_id: classId };
+      // Same rule as re-classing one row: a blank Laps cell takes the new
+      // class's distance if one has been typed; an entered one is left alone.
+      if (multiClass && String(patch.laps ?? "").trim() === "") {
+        const d = deriveLaps(patch, lapsBasis(patch));
+        if (d != null) patch.laps = String(d);
+      }
+      return patch;
+    }));
+  }
+
+  // Type one class's distance and that class's rows take it — the multi-class
+  // stand-in for the blanket auto-fill this grid deliberately no longer does.
+  // The figure is the statistician's, typed once per class into the box that
+  // then keeps showing it, so what filled a column is on screen beside it.
+  // fillClassLaps holds the rules (laps down subtract, retirements stay manual,
+  // clearing the box clears nothing) — see lib/sessionLaps.js.
+  function setClassLapsFor(classId, value) {
+    setClassLaps(prev => ({ ...prev, [classId]: value }));
+    setRows(prev => fillClassLaps(prev, classId, value));
   }
 
   function addSlot() {
@@ -1048,7 +1127,7 @@ export function SessionEditor({
     const ld = parseLapsDown(value);
     if (ld != null) {
       const patch = { ...next[idx], race_time: "" };
-      const d = deriveLaps(patch, totalLaps);
+      const d = deriveLaps(patch, lapsBasis(patch));
       if (d != null) patch.laps = String(d);
       next[idx] = patch;
     } else {
@@ -1056,7 +1135,7 @@ export function SessionEditor({
       const gap = parseTime(value);
       const patch = { ...next[idx] };
       if (gap != null && lt != null) patch.race_time = formatTime(lt + gap);
-      const d = deriveLaps(patch, totalLaps); // lead-lap finisher → total
+      const d = deriveLaps(patch, lapsBasis(patch)); // lead-lap finisher → the class's full distance
       if (d != null) patch.laps = String(d);
       next[idx] = patch;
     }
@@ -1073,7 +1152,7 @@ export function SessionEditor({
     return rows.map((r, i) => {
       if (i !== idx) return r;
       const patch = { ...r, status: value };
-      const d = deriveLaps(patch, totalLaps);
+      const d = deriveLaps(patch, lapsBasis(patch));
       if (d != null) patch.laps = String(d);
       return patch;
     });
@@ -1593,6 +1672,30 @@ export function SessionEditor({
   // structure instead of the class's.
   const unclassedRows = hasClasses ? rows.filter(r => r.entry_id && !r.class_id) : [];
   const gridClassName = classes.find(c => c.id === gridClassId)?.name ?? "";
+
+  // ── The per-class Laps bar ────────────────────────────────────────────────
+  //
+  // The classes actually on this grid, in the order their best finisher appears
+  // — one Laps box each. Built from the rows rather than from the season's class
+  // list so the bar only ever asks for classes that turned up, and grows as
+  // drivers are entered. "" is the unclassified bucket, which still ran a
+  // distance and still needs one.
+  const gridClasses = useMemo(
+    () => (multiClass && !isQual ? classesOnGrid(rows, classes) : []),
+    [multiClass, isQual, rows, classes]
+  );
+  // Rows still waiting on a lap count. On a multi-class grid nothing fills these
+  // in on the admin's behalf, so they're named rather than left to be noticed:
+  // a blank Laps cell saves as 0, and 0 laps completed is a number the stats
+  // will believe.
+  const missingLapsRows = multiClass && !isQual ? rowsMissingLaps(rows) : [];
+  // Which distance the grid is counting off, for the line under the toolbar. A
+  // heat weekend can be counting off its own Heat (or Consolation) distance
+  // rather than the Feature's, and that is worth naming where the laps appear —
+  // it's the difference between an eight-lap heat and a fifty-lap feature.
+  const lapsSourceLabel = sessionLaps != null && sessionLaps !== sessionScheduledLaps(race, "race")
+    ? (sessionType === "consolation" ? "consolation distance" : "heat distance")
+    : "distance";
   // Rows in some class OTHER than the one this round is run in. New rows can't
   // land here — a pinned round fills every Class cell with its own class — so
   // these are either a deliberate choice or results entered before the round was
@@ -1759,6 +1862,35 @@ export function SessionEditor({
             </span>
           </div>
         )}
+        {/* Laps completed, one distance per class. This is the whole of the
+            multi-class lap entry: nothing here is guessed from the schedule,
+            every figure is typed, and the box that filled a class's column sits
+            next to it showing what it filled. */}
+        {gridClasses.length > 0 && (
+          <div className="field" style={{ margin: 0, minWidth: 260 }}>
+            <label>Laps completed per class</label>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+              {gridClasses.map(c => (
+                <div key={c.id || "__unclassed"} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  <span style={{ fontSize: "0.72rem", color: "var(--ink-2)" }}>{c.name}</span>
+                  <input type="number" min="0" step="1" style={{ width: 92, marginTop: 0 }}
+                    aria-label={`Laps completed by the ${c.name} winner`}
+                    title={`How many laps the ${c.name} winner completed. Fills this class's Laps column: laps-down cars subtract from it, retirements are left alone.`}
+                    placeholder={sessionLaps ? String(sessionLaps) : "laps"}
+                    value={classLaps[c.id] ?? ""}
+                    onChange={e => setClassLapsFor(c.id, e.target.value)} />
+                </div>
+              ))}
+            </div>
+            <span style={{ fontSize: "0.75rem", color: "var(--ink-2)" }}>
+              Laps the <strong>winner of each class</strong> completed — they don&rsquo;t all run the
+              same number, so nothing is filled in until you type it.
+              {sessionLaps ? ` Scheduled distance is ${sessionLaps} laps.` : ""} Each class&rsquo;s rows
+              fill from its own box; <code>1L</code>, <code>2L</code>… in Int subtract from it, and
+              DNF / DNS / DQ rows stay yours to enter.
+            </span>
+          </div>
+        )}
         {(showStatsToggle || showPointsToggle) && (
           <div style={{ display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap" }}>
             {showStatsToggle && (
@@ -1793,7 +1925,9 @@ export function SessionEditor({
       <p style={{ marginTop: 0, color: "var(--ink-1)", fontSize: "0.85rem" }}>
         {sessionType === "qualifying"
           ? "Position 1 is the pole. Each slot starts empty — click it, type a name, and pick the driver from the dropdown (or create a new one inline). This is the only place starting position is recorded — Average Start and Poles are calculated from Qualifying results only."
-          : <>Each finishing position starts empty — click a slot, type a driver's name, and pick them from the dropdown (or create a new driver inline). Drag ⠿ to reorder; positions renumber automatically. Enter <strong>Race Time</strong> for the leader, then either a Race Time or an <strong>Int</strong> (gap behind leader, e.g. <code>+2.345</code>) for everyone else — each fills in the other. Use <code>1L</code>, <code>2L</code>… in Int for laps down.{totalLaps ? ` Laps auto-count off the ${totalLaps}-lap distance (laps down and DNF lap subtract from it).` : " Set Total Race Laps on the Race Info tab so laps auto-count."}</>}
+          : <>Each finishing position starts empty — click a slot, type a driver's name, and pick them from the dropdown (or create a new driver inline). Drag ⠿ to reorder; positions renumber automatically. Enter <strong>Race Time</strong> for the leader, then either a Race Time or an <strong>Int</strong> (gap behind leader, e.g. <code>+2.345</code>) for everyone else — each fills in the other. Use <code>1L</code>, <code>2L</code>… in Int for laps down.{multiClass
+              ? " Laps completed are entered per class above — the classes here don't all run the same distance, so nothing is filled in from the schedule."
+              : sessionLaps ? ` Laps auto-count off the ${sessionLaps}-lap ${lapsSourceLabel} (laps down and DNF lap subtract from it).` : " Set Total Race Laps on the Race Info tab so laps auto-count."}</>}
       </p>
       {isQual && (
         <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.78rem" }}>
@@ -1820,6 +1954,17 @@ export function SessionEditor({
           whoever finished highest), and the highest <strong>Led</strong> count takes Most Laps Led.
           Tick or untick any of them yourself and that one stops moving — your call sticks.
           These are stats either way; they only affect points if your season or points structure pays a bonus for them.
+        </p>
+      )}
+      {missingLapsRows.length > 0 && (
+        <p style={{ marginTop: 0, color: "var(--accent-gold, #e2b714)", fontSize: "0.82rem" }}>
+          ⚠ <strong>{missingLapsRows.length} row{missingLapsRows.length === 1 ? " has" : "s have"} no Laps entered</strong>
+          {missingLapsRows.length <= 4 && <> — {missingLapsRows.map(r => r.driver_name || `P${r.finish_pos}`).join(", ")}</>}.
+          This event runs several classes on one grid, and they don&rsquo;t all complete the same
+          number of laps, so <strong>nothing is filled in automatically</strong>. Enter each
+          class&rsquo;s winner&rsquo;s laps in <strong>Laps completed per class</strong> above, or type
+          the Laps cell row by row. A row left blank saves as <strong>0 laps</strong>, and the stats
+          will take that literally.
         </p>
       )}
       {hasClasses && unclassedRows.length > 0 && (

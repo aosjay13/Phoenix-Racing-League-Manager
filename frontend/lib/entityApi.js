@@ -557,6 +557,14 @@ export const SPECS = {
                        // a rounds race carries `total_rounds`. See lib/raceLength.js.
                        length_type: {}, total_laps: { number: true }, race_minutes: { number: true },
                        total_rounds: { number: true }, car: {},
+                       // Preliminary distances for a heat weekend: how many laps
+                       // each Heat and each Consolation (B-/C-Main) of this event
+                       // runs, as against `total_laps` — which is the FEATURE's
+                       // distance and the only one any public screen prints.
+                       // Optional (0 = unset), and read by the results grid alone,
+                       // where they auto-count laps completed for those tabs off
+                       // the right distance. See lib/raceLength.js.
+                       heat_laps: { number: true }, consolation_laps: { number: true },
                        // Bracket Style Racing: how big the elimination ladder
                        // this event ran was — 4, 8, 16 or 32 drivers. It's what
                        // the results grid builds its finishing positions from

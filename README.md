@@ -911,6 +911,29 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
    stops moving; your choice is saved as-is. They're recorded as stats either way, and only
    affect points if the season (or that session's points structure) pays a bonus for them.
    Qualifying grids have none of these columns.
+   **Laps** counts itself off the event's scheduled distance: a lead-lap finisher gets the full
+   figure, `1L` / `2L`… typed in **Int** subtracts that many, and a DNF / DNS / DQ is left for you
+   to enter the lap they stopped on. Two things change which figure it counts off.
+   **A heat weekend can name its own preliminary distances.** Heats and B-Mains are shorter than the
+   Feature, so Race Info (all three race forms) carries optional **Heat laps** and **Consolation
+   laps** boxes beside the heat and consolation lists. Set them and the **Heats** tab counts off the
+   heat distance and the **Consolation** tab off the consolation distance, while **Race Length**
+   above stays what it always was — the Feature's, and the only lap count the Schedule, the Calendar
+   and the event's own Race Info card ever print. Leave either blank and that session counts off the
+   Feature distance, exactly as before they existed.
+   **A grid holding more than one class fills in nothing.** Classes racing together don't all
+   complete the same number of laps — the slower class takes the flag having run fewer than the
+   outright leader — so filling the scheduled distance into every row would write a number that is
+   wrong for every class but the front one. On a combined grid for a season with two or more classes,
+   Laps therefore starts blank for everybody, and a **Laps completed per class** bar appears above
+   the grid with one box per class actually on it. Type what that class's winner completed and its
+   rows fill from *that*: laps-down cars subtract from it, retirements stay yours to enter, and no
+   other class is touched. Rows still waiting on a figure are counted and named above the grid,
+   because a Laps cell left blank saves as **0 laps** and the stats take that literally. Re-opening a
+   saved sheet reads each class's distance back out of it, so the boxes show what the sheet was
+   entered with. A grid that is one class by construction — a per-class session, a *<class> only*
+   round, a single-class season, or a season with no classes — is unaffected and still counts off the
+   scheduled distance automatically.
    A **Qualifying** grid instead carries **Qual Time**, **To Lead** and **Gap**, and the three
    fill each other in — enter whichever your timing screen gives you. Type lap times and both
    gap columns appear (To Lead is the gap to pole; Gap is to the car one position up); type a

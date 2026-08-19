@@ -119,3 +119,68 @@ export function raceLengthLabel(race, fallback = null) {
   const laps = scheduledLaps(race);
   return laps ? `${laps} Laps` : fallback;
 }
+
+// ── Preliminary sessions: Heat & Consolation lap counts ────────────────────
+//
+// A heat weekend runs three kinds of race off one event doc, and they are not
+// the same distance: eight-lap heats feed a fifteen-lap B-Main which feeds a
+// fifty-lap Feature. `total_laps` above is the FEATURE's distance — it is what
+// the Schedule, the Calendar and every Race Info card print, and it stays that
+// way. These two are the preliminary distances, kept alongside it purely so the
+// results grid can auto-count a heat's laps off eight rather than off fifty:
+//
+//   heat_laps         → the scheduled distance of every Heat of this event
+//   consolation_laps  → the scheduled distance of every Consolation (B-/C-Main)
+//
+// Both are OPTIONAL, and both are a data-entry aid and nothing else. Nothing
+// public reads them: summarizeRace (the Schedule's / Calendar's roll-up) is
+// built from the event's deciding session, and raceLengthLabel below only ever
+// speaks for `total_laps`, so an event with heat laps set reads on every public
+// screen exactly as it did before they were.
+//
+// Left blank, a heat counts off the feature distance exactly as it always has —
+// setting one is what changes anything, so no existing event's entry behaviour
+// moves under it.
+const SESSION_LAP_FIELDS = {
+  heat: "heat_laps",
+  consolation: "consolation_laps",
+};
+
+// The lap count the results grid for `sessionType` should count down from:
+// the session's own scheduled distance when the event names one, else the
+// feature distance (which is what every session used before these existed).
+// Null on a timed or rounds event, and on one with no distance entered at all —
+// there is nothing to count off, so laps are typed in per driver.
+export function sessionScheduledLaps(race, sessionType = "race") {
+  const feature = scheduledLaps(race);
+  const field = SESSION_LAP_FIELDS[sessionType];
+  if (!field || !race || raceLengthType(race) !== LENGTH_LAPS) return feature;
+  const n = Number(race[field]);
+  return n > 0 ? n : feature;
+}
+
+// True when this session type has a scheduled distance of its own to set.
+export function hasSessionLaps(sessionType) {
+  return Object.hasOwn(SESSION_LAP_FIELDS, sessionType);
+}
+
+// A saved race doc → the two preliminary lap fields, as the strings the inputs
+// want. Blank (rather than "0") for an event that has never set one, so the
+// placeholder shows and the field reads as the optional aid it is.
+export function sessionLapsForm(race = {}) {
+  const str = v => (Number(v) > 0 ? String(v) : "");
+  return { heat_laps: str(race.heat_laps), consolation_laps: str(race.consolation_laps) };
+}
+
+// Form fields → the heat/consolation half of a POST/PATCH body. Zeroed — i.e.
+// back to "use the feature distance" — for an event that isn't a heat weekend
+// or isn't measured in laps at all, so a preliminary distance can't survive the
+// format being switched away from under it.
+export function sessionLapsBody(form = {}, heatFormat = true) {
+  const on = !!heatFormat && raceLengthType(form) === LENGTH_LAPS;
+  const num = v => {
+    const n = Number(v);
+    return on && Number.isFinite(n) && n > 0 ? Math.round(n) : 0;
+  };
+  return { heat_laps: num(form.heat_laps), consolation_laps: num(form.consolation_laps) };
+}

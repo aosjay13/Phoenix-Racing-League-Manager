@@ -10,9 +10,10 @@ import { ImageUpload } from "@/components/ImageUpload";
 import { TrackSelect } from "@/components/TrackSelect";
 import { RaceLengthField } from "@/components/RaceLengthField";
 import { HeatPointsDefaultFields } from "@/components/HeatPointsDefaultFields";
+import { SessionLapsFields } from "@/components/SessionLapsFields";
 import { TrackMergeModal } from "@/components/TrackMergeModal";
 import { DriverMergeTool } from "@/components/DriverMergeTool";
-import { LENGTH_LAPS, raceLengthBody, raceLengthForm } from "@/lib/raceLength";
+import { LENGTH_LAPS, raceLengthBody, raceLengthForm, sessionLapsBody, sessionLapsForm } from "@/lib/raceLength";
 import { api } from "@/lib/api";
 import { ALL_BONUS_TYPES, BONUS_TYPES } from "@/lib/standings";
 import { TRACK_TYPES } from "@/lib/trackTypes";
@@ -245,6 +246,10 @@ function AdminInner() {
     name: "", track: "", track_id: "", date: "", round_number: "", track_logo_url: "", sessions: "Race", car: "",
     // Distance: a lap count, or a duration for a race run to the clock.
     length_type: LENGTH_LAPS, total_laps: "", race_minutes: "", total_rounds: "",
+    // Preliminary distances for a heat weekend — the Heats / Consolation tabs of
+    // the results editor auto-count laps off these instead of off the Feature's
+    // total_laps. Optional, and read by the results grid alone.
+    heat_laps: "", consolation_laps: "",
     // Pre-ticked for a season that runs heat racing — every round of it is a heat
     // weekend, so the box starts where the season says it should. Untick it for
     // the odd standard-format round.
@@ -939,6 +944,9 @@ function AdminInner() {
               // are zeroed so a race never keeps a stale length from the format
               // it was switched away from.
               ...raceLengthBody(raceForm),
+              // Cleared with the format itself — a standard-format event has no
+              // heats or consolations for a preliminary distance to describe.
+              ...sessionLapsBody(raceForm, raceForm.heat_format),
               heat_format: !!raceForm.heat_format,
               heats: raceForm.heat_format ? (heats.length ? heats : ["Heat 1"]) : [],
               consolations: raceForm.heat_format ? toArray(raceForm.consolations) : [],
@@ -1000,6 +1008,8 @@ function AdminInner() {
                 <div className="field"><label>Feature name</label>
                   <input disabled={!seasonId} value={raceForm.feature_name} placeholder="A-Main Feature"
                     onChange={e => setRaceForm(f => ({ ...f, feature_name: e.target.value }))} /></div>
+                <SessionLapsFields idPrefix="admin_race" disabled={!seasonId} value={raceForm}
+                  onPatch={patch => setRaceForm(f => ({ ...f, ...patch }))} />
                 <HeatPointsDefaultFields idPrefix="admin_race" disabled={!seasonId} value={raceForm}
                   templates={[...normalizedBuiltinTemplates(), ...templates]}
                   onPatch={patch => setRaceForm(f => ({ ...f, ...patch }))} />
@@ -1037,6 +1047,7 @@ function AdminInner() {
                   sessions: Array.isArray(r.sessions) && r.sessions.length ? r.sessions.join(", ") : "Race",
                   car: r.car || "",
                   ...raceLengthForm(r),
+                  ...sessionLapsForm(r),
                   heat_format: !!r.heat_format,
                   heats: Array.isArray(r.heats) ? r.heats.join(", ") : "",
                   consolations: Array.isArray(r.consolations) ? r.consolations.join(", ") : "",

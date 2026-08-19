@@ -7,13 +7,18 @@ import { ImageUpload } from "@/components/ImageUpload";
 import { TrackSelect } from "@/components/TrackSelect";
 import { RaceLengthField } from "@/components/RaceLengthField";
 import { HeatPointsDefaultFields } from "@/components/HeatPointsDefaultFields";
+import { SessionLapsFields } from "@/components/SessionLapsFields";
 import { normalizedBuiltinTemplates } from "@/lib/pointsTemplates";
-import { LENGTH_LAPS, raceLengthBody } from "@/lib/raceLength";
+import { LENGTH_LAPS, raceLengthBody, sessionLapsBody } from "@/lib/raceLength";
 
 const blankRace = {
   name: "", track: "", track_id: "", date: "", round_number: "", track_logo_url: "", sessions: "Race", car: "",
   // Distance: a lap count, or a duration for a race run to the clock.
   length_type: LENGTH_LAPS, total_laps: "", race_minutes: "", total_rounds: "",
+  // Preliminary distances for a heat weekend — the Heats / Consolation tabs of
+  // the results editor auto-count laps off these instead of off the Feature's
+  // total_laps. Optional, and read by the results grid alone.
+  heat_laps: "", consolation_laps: "",
   heat_format: false, heats: "", consolations: "", feature_name: "A-Main Feature",
   // Default points template for every heat / every consolation of this event —
   // picked once here instead of once per session. Blank = the season's (or
@@ -97,6 +102,9 @@ export function RaceCreateModal({ seasonId, defaultRound, classes = [], perClass
         // zeroed so a race can never carry a stale lap count from before the
         // toggle was flipped.
         ...raceLengthBody(form),
+        // Cleared with the format itself — a standard-format event has no heats
+        // or consolations for a preliminary distance to describe.
+        ...sessionLapsBody(form, form.heat_format),
         heat_format: !!form.heat_format,
         heats: form.heat_format ? (heats.length ? heats : ["Heat 1"]) : [],
         consolations: form.heat_format ? toArray(form.consolations) : [],
@@ -178,6 +186,8 @@ export function RaceCreateModal({ seasonId, defaultRound, classes = [], perClass
               <input value={form.consolations} placeholder="B-Main" onChange={e => setForm(f => ({ ...f, consolations: e.target.value }))} /></div>
             <div className="field"><label>Feature name</label>
               <input value={form.feature_name} placeholder="A-Main Feature" onChange={e => setForm(f => ({ ...f, feature_name: e.target.value }))} /></div>
+            <SessionLapsFields idPrefix="new_race" value={form}
+              onPatch={patch => setForm(f => ({ ...f, ...patch }))} />
             <HeatPointsDefaultFields idPrefix="new_race" value={form} templates={templates}
               onPatch={patch => setForm(f => ({ ...f, ...patch }))} />
           </>

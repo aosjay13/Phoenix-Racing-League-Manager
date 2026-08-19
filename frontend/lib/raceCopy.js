@@ -36,6 +36,11 @@ export const COPIED_RACE_FIELDS = [
   "name", "track", "track_id", "track_logo_url", "date", "car",
   "per_class_results", "sessions",
   "length_type", "total_laps", "race_minutes", "total_rounds", "bracket_size",
+  // The heat / consolation distances travel with the event for the same reason
+  // its Race Length does — they describe how far this weekend's preliminaries
+  // run. They're a results-entry aid rather than a scored figure, so a copy that
+  // dropped them would just be a copy an admin has to re-type.
+  "heat_laps", "consolation_laps",
   "heat_format", "heats", "consolations", "feature_name",
   "session_points", "session_stats", "session_points_enabled",
   // The heat/consolation default points templates travel with the event for the

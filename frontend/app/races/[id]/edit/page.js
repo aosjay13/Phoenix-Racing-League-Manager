@@ -10,7 +10,8 @@ import { TrackSelect } from "@/components/TrackSelect";
 import { RaceLengthField } from "@/components/RaceLengthField";
 import { RaceNav } from "@/components/RaceNav";
 import { HeatPointsDefaultFields } from "@/components/HeatPointsDefaultFields";
-import { LENGTH_LAPS, raceLengthBody, raceLengthForm } from "@/lib/raceLength";
+import { SessionLapsFields } from "@/components/SessionLapsFields";
+import { LENGTH_LAPS, raceLengthBody, raceLengthForm, sessionLapsBody, sessionLapsForm } from "@/lib/raceLength";
 import { normalizedBuiltinTemplates } from "@/lib/pointsTemplates";
 import { carForRace, racePerClassResults, sessionClassScopes } from "@/lib/classFilter";
 import { gameNameFor } from "@/lib/driverNames";
@@ -27,6 +28,10 @@ const BLANK_INFO = {
   // Distance: a lap count, a duration for a race run to the clock, or a number
   // of rounds. See lib/raceLength.js.
   length_type: LENGTH_LAPS, total_laps: "", race_minutes: "", total_rounds: "",
+  // Preliminary distances for a heat weekend — the Heats / Consolation tabs
+  // auto-count laps off these instead of off the Feature's total_laps. Optional,
+  // and read by the results grid alone. See lib/raceLength.js.
+  heat_laps: "", consolation_laps: "",
   car: "", heat_format: false, heats: "", consolations: "", feature_name: "A-Main Feature",
   // Default points template for every heat / every consolation of this event.
   // Blank = they score on the season's (or class's) points structure.
@@ -144,6 +149,7 @@ function RaceInfoTab({ race, season, classes = [], templates = [], onSaved }) {
       track_logo_url: race.track_logo_url || "",
       sessions: Array.isArray(race.sessions) && race.sessions.length ? race.sessions.join(", ") : "Race",
       ...raceLengthForm(race),
+      ...sessionLapsForm(race),
       car: race.car || "",
       heat_format: !!race.heat_format,
       heats: Array.isArray(race.heats) ? race.heats.join(", ") : "",
@@ -195,6 +201,9 @@ function RaceInfoTab({ race, season, classes = [], templates = [], onSaved }) {
         // zeroed so a race never keeps a stale length from the format it was
         // switched away from.
         ...raceLengthBody(form),
+        // Cleared with the heat format itself — a standard-format event has no
+        // heats or consolations for a preliminary distance to describe.
+        ...sessionLapsBody(form, form.heat_format),
         car: form.car,
         heat_format: !!form.heat_format,
         heats: form.heat_format ? (heats.length ? heats : ["Heat 1"]) : [],
@@ -305,6 +314,8 @@ function RaceInfoTab({ race, season, classes = [], templates = [], onSaved }) {
               <input value={form.consolations} onChange={set("consolations")} placeholder="B-Main" /></div>
             <div className="field"><label>Feature name</label>
               <input value={form.feature_name} onChange={set("feature_name")} placeholder="A-Main Feature" /></div>
+            <SessionLapsFields idPrefix="edit_race" value={form}
+              onPatch={patch => setForm(f => ({ ...f, ...patch }))} />
             <HeatPointsDefaultFields idPrefix="edit_race" value={form} templates={templates}
               onPatch={patch => setForm(f => ({ ...f, ...patch }))} />
           </>
