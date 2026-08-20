@@ -12,7 +12,7 @@ import {
 import { raceDateSortKey } from "@/lib/raceDate";
 import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
 import { parseTime, formatTime } from "@/lib/raceTime";
-import { finalSessionName, summarizeRace } from "@/lib/raceSummaryServer";
+import { finalSessionName, indexResultsByRace, summarizeRace } from "@/lib/raceSummaryServer";
 import { carForClass, classIdSet, classIdsInSeason, classOfResult, fetchSeasonClasses } from "@/lib/classServer";
 import { classRecordKey, gameRecordKey, keepFastest } from "@/lib/trackRecords";
 import { fetchNameResolver } from "@/lib/driverNamesServer";
@@ -179,6 +179,9 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
 
     // Keep only results from races held at THIS venue (across all in-scope games).
     const results = allResults.filter(r => venueRaceIds.has(r.race_id));
+    // Grouped once, for the winners loop below — which asks about one race at a
+    // time and used to walk the whole season to answer each question.
+    const resultsByRace = indexResultsByRace(results);
     // The class a result counts toward, as a NAME — that's the identity a
     // cross-season venue record needs (see recordByClass).
     const classNameById = Object.fromEntries(seasonClasses.map(c => [c.id, c.name]));
@@ -225,8 +228,8 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
       if (race.season_id !== seasonId) continue;
       const finalName = finalSessionName(race);
       const firstStd = Array.isArray(race.sessions) && race.sessions.length ? race.sessions[0] : "Race";
-      const winner = results.find(r =>
-        r.race_id === race.id && !isQualifying(r) && !r.provisional && (r.session || firstStd) === finalName &&
+      const winner = (resultsByRace.get(race.id) ?? []).find(r =>
+        !isQualifying(r) && !r.provisional && (r.session || firstStd) === finalName &&
         Number(r.finish_pos) === 1 && inSelectedClass(r));
       if (!winner) continue;
       const entry = entriesById[winner.entry_id];
@@ -234,7 +237,7 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
       // season's — on a season whose classes race different machinery, a GT3
       // win shouldn't be listed under the LMP2 default.
       const winnerClass = seasonClasses.find(c => c.id === classOfResult(winner, entriesById)) ?? null;
-      const summary = summarizeRace(race, results, entriesById, carForClass(season, winnerClass), classSel);
+      const summary = summarizeRace(race, resultsByRace, entriesById, carForClass(season, winnerClass), classSel);
       winners.push({
         race_id: race.id,
         race_name: race.name,
