@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { withAdmin } from "@/lib/serverAuth";
-import { withStatsRefresh } from "@/lib/statsCache";
+import { withStatsRefresh } from "@/lib/statsRefresh";
 
 export const dynamic = "force-dynamic";
 

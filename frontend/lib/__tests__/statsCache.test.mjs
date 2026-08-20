@@ -104,10 +104,15 @@ for (const file of files) {
 ok("there are write routes to check at all", guarded > 20);
 check("every write route that touches a cached collection invalidates", missing, []);
 
-// And the central purge really is wired into the generic routes, since half the
-// coverage above rests on it.
+// And the central refresh really is wired into the generic routes, since half
+// the coverage above rests on it. refreshStats() is the stronger of the two
+// things it could call: it rebuilds the stored answers AND drops the cache,
+// where a bare revalidate would only drop the cache and leave the next reader
+// to pay for the recalculation.
 const entityApi = readFileSync(path.join(appRoot, "lib/entityApi.js"), "utf8");
-ok("the generic collection routes purge centrally", /revalidateStats/.test(entityApi));
+ok("the generic collection routes refresh centrally", /refreshStats/.test(entityApi));
+ok("...and wait for it, so the rebuild is not abandoned mid-flight",
+  /await statsChanged\(/.test(entityApi));
 ok("...and only for the collections the cached reads are built from",
   /STATS_COLLECTIONS\.includes\(collection\)/.test(entityApi));
 

@@ -7,7 +7,7 @@ import {
   withoutLeague,
 } from "@/lib/leagueRoles";
 import { syncEntryNamesForDriver } from "@/lib/driverSync";
-import { withStatsRefresh } from "@/lib/statsCache";
+import { withStatsRefresh } from "@/lib/statsRefresh";
 
 // The user doc an account would have received on its first verified request
 // (mirrors /api/users/me), built from its Firebase Auth record. Used when an

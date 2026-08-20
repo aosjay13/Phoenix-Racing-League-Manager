@@ -15,7 +15,7 @@ import { userAccountUpdatesFromSignup } from "@/lib/signupRequest";
 import { denialHtml, denialSubject, denialText } from "@/lib/denialNotice";
 import { queueEmail } from "@/lib/mailer";
 import { emailForUser, postMessage } from "@/lib/messagesServer";
-import { withStatsRefresh } from "@/lib/statsCache";
+import { withStatsRefresh } from "@/lib/statsRefresh";
 
 // Admin-only: let a pending sign-up onto the roster, or turn it down.
 //

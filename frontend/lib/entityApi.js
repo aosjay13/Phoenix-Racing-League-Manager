@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { withAdmin, docInLeague, getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
-import { STATS_COLLECTIONS, revalidateStats } from "@/lib/statsCache";
+import { STATS_COLLECTIONS } from "@/lib/statsCache";
+import { refreshStats } from "@/lib/statsRefresh";
 import { canUploadImages, imageFieldNames, stripImageFields } from "@/lib/imagePermissions";
 import { toDateOnly } from "@/lib/raceDate";
 import { normalizeClassIds } from "@/lib/classFilter";
@@ -77,8 +78,8 @@ export function coerceField(opts, raw) {
 // serve in a single place — games, series, seasons, classes, entries, races,
 // drivers, teams and points templates — rather than relying on twenty route
 // files each remembering to do it.
-function statsChanged(collection, leagueId) {
-  if (STATS_COLLECTIONS.includes(collection)) revalidateStats(leagueId);
+async function statsChanged(collection, leagueId) {
+  if (STATS_COLLECTIONS.includes(collection)) await refreshStats(leagueId);
 }
 
 export function makeCollectionRoutes({ collection, parentField, fields, sortField = "created_at", normalize = null, orderDocs = null, guard = null }) {
@@ -144,7 +145,7 @@ export function makeCollectionRoutes({ collection, parentField, fields, sortFiel
     // Derived fields the spec keeps in sync (e.g. an entry's class_id/class_ids).
     if (normalize) Object.assign(doc, normalize(doc) || {});
     const ref = await db().collection(collection).add(doc);
-    statsChanged(collection, leagueId);
+    await statsChanged(collection, leagueId);
     return NextResponse.json({ id: ref.id, ...doc }, { status: 201 });
   });
 
@@ -207,7 +208,7 @@ export function makeDocRoutes({ collection, fields, normalize = null, afterUpdat
       }, { status: guarded.stripped.length ? 403 : 400 });
     }
     await ref.update(guarded.updates);
-    statsChanged(collection, leagueId);
+    await statsChanged(collection, leagueId);
 
     if (afterUpdate) {
       try {
@@ -232,7 +233,7 @@ export function makeDocRoutes({ collection, fields, normalize = null, afterUpdat
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
     await ref.delete();
-    statsChanged(collection, leagueId);
+    await statsChanged(collection, leagueId);
     return NextResponse.json({ ok: true });
   });
 

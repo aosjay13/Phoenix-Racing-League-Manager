@@ -11,7 +11,7 @@ import {
 } from "@/lib/carSelectionServer";
 import { gameRequirementFlags } from "@/lib/signupRequest";
 import { isAwaitingPlacement, numberRequestFor } from "@/lib/signupQueue";
-import { withStatsRefresh } from "@/lib/statsCache";
+import { withStatsRefresh } from "@/lib/statsRefresh";
 
 export const dynamic = "force-dynamic";
 

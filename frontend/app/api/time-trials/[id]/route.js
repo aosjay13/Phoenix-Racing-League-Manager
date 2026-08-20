@@ -6,7 +6,7 @@ import {
   TRIAL_COLLECTION, TRIAL_ENTRY_COLLECTION,
   fetchTrial, fetchTrialEntries, trialFields,
 } from "@/lib/timeTrialsServer";
-import { withStatsRefresh } from "@/lib/statsCache";
+import { withStatsRefresh } from "@/lib/statsRefresh";
 
 export const dynamic = "force-dynamic";
 

@@ -9,7 +9,7 @@ import {
 import { seasonAcceptsSignups } from "@/lib/carSelection";
 import { matchReason } from "@/lib/driverMatch";
 import { duplicateCheck } from "@/lib/driverMatchServer";
-import { withStatsRefresh } from "@/lib/statsCache";
+import { withStatsRefresh } from "@/lib/statsRefresh";
 
 export const dynamic = "force-dynamic";
 

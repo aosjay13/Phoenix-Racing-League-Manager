@@ -3,7 +3,7 @@ import { db } from "@/lib/firebase";
 import { withAdmin, getRequestLeagueId } from "@/lib/serverAuth";
 import { applyRosterPlan, planRosterImport } from "@/lib/rosterImport";
 import { loadDriverPool, loadGameNames, serializeMatches } from "@/lib/driverMatchServer";
-import { withStatsRefresh } from "@/lib/statsCache";
+import { withStatsRefresh } from "@/lib/statsRefresh";
 
 export const dynamic = "force-dynamic";
 

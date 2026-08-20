@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { withAdmin, getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
-import { withStatsRefresh } from "@/lib/statsCache";
+import { withStatsRefresh } from "@/lib/statsRefresh";
 
 // Hand-sorting a series' seasons — the admin's override of the default order
 // (newest first, by race date; see lib/seasonOrder.js).

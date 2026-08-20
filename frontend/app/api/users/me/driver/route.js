@@ -3,7 +3,7 @@ import { db } from "@/lib/firebase";
 import { docInLeague, withUser } from "@/lib/serverAuth";
 import { normalizeAliases } from "@/lib/aliases";
 import { linkedDriver } from "@/lib/carSelectionServer";
-import { withStatsRefresh } from "@/lib/statsCache";
+import { withStatsRefresh } from "@/lib/statsRefresh";
 
 export const dynamic = "force-dynamic";
 

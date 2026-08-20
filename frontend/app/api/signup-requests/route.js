@@ -17,7 +17,7 @@ import {
   missingAliasMessage, missingRequiredAliases, userAccountUpdatesFromSignup,
 } from "@/lib/signupRequest";
 import { mergeAliases, normalizeAliases } from "@/lib/aliases";
-import { withStatsRefresh } from "@/lib/statsCache";
+import { withStatsRefresh } from "@/lib/statsRefresh";
 
 export const dynamic = "force-dynamic";
 

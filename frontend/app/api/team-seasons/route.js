@@ -4,7 +4,7 @@ import { getRequestLeagueId, withAdmin } from "@/lib/serverAuth";
 import { entryIdentityKeys, teamNameKey, TEAM_SEASONS_COLLECTION } from "@/lib/teams";
 import { findMapping, loadTeamIndex, syncEntryTeams } from "@/lib/teamsServer";
 import { fetchDriverNames } from "@/lib/driverNamesServer";
-import { withStatsRefresh } from "@/lib/statsCache";
+import { withStatsRefresh } from "@/lib/statsRefresh";
 
 export const dynamic = "force-dynamic";
 

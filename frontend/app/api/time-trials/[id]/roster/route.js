@@ -4,7 +4,7 @@ import { getRequestLeagueId, withAdmin } from "@/lib/serverAuth";
 import { groupByTargetSeason, planRosterBuild } from "@/lib/timeTrials";
 import { TRIAL_COLLECTION, TRIAL_STATUS_COMPLETED, fetchTrial, fetchTrialEntries } from "@/lib/timeTrialsServer";
 import { clearPlacementQueue } from "@/lib/placementQueueServer";
-import { withStatsRefresh } from "@/lib/statsCache";
+import { withStatsRefresh } from "@/lib/statsRefresh";
 
 export const dynamic = "force-dynamic";
 
