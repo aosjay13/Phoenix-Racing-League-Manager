@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { withAdmin } from "@/lib/serverAuth";
 import { classIdForScope, classOfResult, isClassScoped } from "@/lib/classServer";
+import { withStatsRefresh } from "@/lib/statsCache";
 
 const SESSION_TYPES = ["qualifying", "race", "heat", "consolation", "feature"];
 
@@ -23,7 +24,7 @@ const SESSION_TYPES = ["qualifying", "race", "heat", "consolation", "feature"];
 // class's session drops to the event-wide assignment for that session, and the
 // event's drops to whatever the class — or, failing that, the season — scores
 // on (see classScoresOwnPoints in lib/standings.js).
-export const POST = withAdmin(async (request, { params }) => {
+const handlePOST = withAdmin(async (request, { params }) => {
   const { session_type, session, template_id, session_class } = await request.json();
   const type = SESSION_TYPES.includes(session_type) ? session_type : "race";
   if (!session) {
@@ -87,3 +88,7 @@ export const POST = withAdmin(async (request, { params }) => {
   const after = await raceRef.get();
   return NextResponse.json({ id: after.id, ...after.data(), _rescored: rescored });
 });
+
+// A successful write here changes something the cached league reads are built
+// from, so the cache is dropped in the same request — see lib/statsCache.js.
+export const POST = withStatsRefresh(handlePOST);

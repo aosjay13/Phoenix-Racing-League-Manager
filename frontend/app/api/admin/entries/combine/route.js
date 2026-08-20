@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { docInLeague, withAdmin } from "@/lib/serverAuth";
 import { entryClassIds } from "@/lib/classServer";
+import { withStatsRefresh } from "@/lib/statsCache";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +18,7 @@ export const dynamic = "force-dynamic";
 // Results are MOVED, never deleted: each one keeps the class_id stamped on it
 // when it was saved, so every class championship still scores exactly the races
 // it always did. Only the emptied duplicate entries are removed.
-export const POST = withAdmin(async (request, ctx, admin, role, leagueId) => {
+const handlePOST = withAdmin(async (request, ctx, admin, role, leagueId) => {
   const { entry_ids } = await request.json();
   const ids = [...new Set((Array.isArray(entry_ids) ? entry_ids : []).filter(Boolean))];
   if (ids.length < 2) return NextResponse.json({ error: "Pick at least two entries to combine" }, { status: 400 });
@@ -83,3 +84,7 @@ export const POST = withAdmin(async (request, ctx, admin, role, leagueId) => {
     results_moved,
   });
 });
+
+// A successful write here changes something the cached league reads are built
+// from, so the cache is dropped in the same request — see lib/statsCache.js.
+export const POST = withStatsRefresh(handlePOST);

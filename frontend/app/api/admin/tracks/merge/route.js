@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { withAdmin } from "@/lib/serverAuth";
+import { withStatsRefresh } from "@/lib/statsCache";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,7 @@ const FILLABLE = ["location", "length", "track_type", "logo_url", "notes"];
 
 const blank = v => !String(v ?? "").trim();
 
-export const POST = withAdmin(async (request) => {
+const handlePOST = withAdmin(async (request) => {
   const body = await request.json();
   const intoId = body.into_id;
   // Accept one id or many; a duplicate list containing the survivor is a no-op
@@ -136,3 +137,7 @@ export const POST = withAdmin(async (request) => {
     merged_names: updates.merged_names,
   });
 });
+
+// A successful write here changes something the cached league reads are built
+// from, so the cache is dropped in the same request — see lib/statsCache.js.
+export const POST = withStatsRefresh(handlePOST);

@@ -6,6 +6,7 @@ import { linkedDriver } from "@/lib/carSelectionServer";
 import { NEW_DRIVER_KIND, requestKind } from "@/lib/signupRequest";
 import { carNumberTaken, seasonAcceptsSignups } from "@/lib/carSelection";
 import { normalizeClassIds } from "@/lib/classFilter";
+import { withStatsRefresh } from "@/lib/statsCache";
 
 // Admin-only: resolve a pending driver-profile request. This route is the ONLY
 // place a user-requested driver profile is ever created or linked — nothing in
@@ -27,7 +28,7 @@ import { normalizeClassIds } from "@/lib/classFilter";
 //                  aliases / connected accounts) and, when the request carried
 //                  a series sign-up, the season roster entry as well — so an
 //                  approval is the single click that gets them racing.
-export const PATCH = withAdmin(async (request, { params }, admin, role, leagueId) => {
+const handlePATCH = withAdmin(async (request, { params }, admin, role, leagueId) => {
   const { id } = params;
   const body = await request.json().catch(() => ({}));
   const action = body.action;
@@ -256,3 +257,7 @@ async function approveNewDriver({ id, req, reqRef, stamp, admin, alreadyOwned, l
     entry_id, signup_note,
   });
 }
+
+// A successful write here changes something the cached league reads are built
+// from, so the cache is dropped in the same request — see lib/statsCache.js.
+export const PATCH = withStatsRefresh(handlePATCH);

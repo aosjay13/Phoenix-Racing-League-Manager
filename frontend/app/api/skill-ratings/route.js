@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { computeGameSkillRatings } from "@/lib/skillRatingServer";
 import { fetchDriverNames } from "@/lib/driverNamesServer";
+import { getRequestLeagueId } from "@/lib/serverAuth";
+import { cachedPayload } from "@/lib/statsCache";
 
 export const dynamic = "force-dynamic";
 
@@ -19,39 +21,53 @@ export const dynamic = "force-dynamic";
 // stored per-result deltas — so they're consistent and order-independent. A
 // narrowed series/season scope only changes which drivers are listed; each still
 // shows their game-wide rating (SR follows a driver across a game's series).
+//
+// Cached on (league, scope) and dropped whenever a write could move a rating —
+// see lib/statsCache.js. A rating is the whole game replayed chronologically,
+// so this is a full-history read like the stats tables.
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
-  const scope = searchParams.get("scope") || "league";
+  const { status, body } = await skillRatingsFor(getRequestLeagueId(request), {
+    scope: searchParams.get("scope") || "league",
+    gameId: searchParams.get("game_id") || "",
+    seriesId: searchParams.get("series_id") || "",
+    seasonId: searchParams.get("season_id") || "",
+  });
+  return NextResponse.json(body, { status });
+}
+
+const skillRatingsFor = cachedPayload("skill-ratings", async (leagueId, params) => {
+  const { scope } = params;
 
   // Resolve the game (which per-game rating to show) plus, for narrower scopes,
   // the specific seasons whose participants should be listed.
   let gameId = null;
   let scopeSeasonIds = null; // null = list everyone rated in the game
   if (scope === "season") {
-    const seasonId = searchParams.get("season_id");
-    if (!seasonId) return NextResponse.json({ error: "season_id required" }, { status: 400 });
+    const seasonId = params.seasonId;
+    if (!seasonId) return { status: 400, body: { error: "season_id required" } };
     const doc = await db().collection("seasons").doc(seasonId).get();
-    if (!doc.exists) return NextResponse.json({ error: "Season not found" }, { status: 404 });
+    if (!doc.exists) return { status: 404, body: { error: "Season not found" } };
     gameId = doc.data().game_id || null;
     scopeSeasonIds = new Set([seasonId]);
   } else if (scope === "series") {
-    const seriesId = searchParams.get("series_id");
-    if (!seriesId) return NextResponse.json({ error: "series_id required" }, { status: 400 });
+    const seriesId = params.seriesId;
+    if (!seriesId) return { status: 400, body: { error: "series_id required" } };
     const doc = await db().collection("series").doc(seriesId).get();
-    if (!doc.exists) return NextResponse.json({ error: "Series not found" }, { status: 404 });
+    if (!doc.exists) return { status: 404, body: { error: "Series not found" } };
     gameId = doc.data().game_id || null;
     const snap = await db().collection("seasons").where("series_id", "==", seriesId).get();
     scopeSeasonIds = new Set(snap.docs.map(d => d.id));
   } else if (scope === "game") {
-    gameId = searchParams.get("game_id");
-    if (!gameId) return NextResponse.json({ error: "game_id required" }, { status: 400 });
+    gameId = params.gameId || null;
+    if (!gameId) return { status: 400, body: { error: "game_id required" } };
   } else {
     // Whole-league scope has no single game and therefore no comparable rating.
-    return NextResponse.json({ error: "Select a game to view Skill Ratings", requires_game: true, count: 0, rows: [] }, { status: 400 });
+    return { status: 400, body: { error: "Select a game to view Skill Ratings", requires_game: true, count: 0, rows: [] } };
   }
 
   if (!gameId) {
-    return NextResponse.json({ error: "This scope isn't tied to a game yet.", requires_game: true, count: 0, rows: [] }, { status: 400 });
+    return { status: 400, body: { error: "This scope isn't tied to a game yet.", requires_game: true, count: 0, rows: [] } };
   }
 
   // Authoritative ratings + trend for this game, replayed chronologically.
@@ -90,5 +106,5 @@ export async function GET(request) {
   );
   rows = rows.map((r, i) => ({ rank: i + 1, ...r }));
 
-  return NextResponse.json({ scope, game_id: gameId, count: rows.length, rows });
-}
+  return { status: 200, body: { scope, game_id: gameId, count: rows.length, rows } };
+});

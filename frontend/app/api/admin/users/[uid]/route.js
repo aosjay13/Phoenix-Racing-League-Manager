@@ -7,6 +7,7 @@ import {
   withoutLeague,
 } from "@/lib/leagueRoles";
 import { syncEntryNamesForDriver } from "@/lib/driverSync";
+import { withStatsRefresh } from "@/lib/statsCache";
 
 // The user doc an account would have received on its first verified request
 // (mirrors /api/users/me), built from its Firebase Auth record. Used when an
@@ -49,7 +50,7 @@ function seedProfile(authRecord, leagueId) {
 // matching the rest of the app (career stats, roster, public profiles). A driver
 // belongs to one league, so an account may hold one per league — setting a new
 // link clears the one they held IN THIS LEAGUE and leaves the others alone.
-export const PATCH = withAdmin(async (request, { params }, admin, actorRole, leagueId) => {
+const handlePATCH = withAdmin(async (request, { params }, admin, actorRole, leagueId) => {
   const { uid } = params;
   const body = await request.json().catch(() => ({}));
 
@@ -199,7 +200,7 @@ export const PATCH = withAdmin(async (request, { params }, admin, actorRole, lea
 //     the Firebase Auth user deleted so they can't sign back in and re-create it.
 //
 // Race results stay on record either way.
-export const DELETE = withAdmin(async (request, { params }, admin, actorRole, leagueId) => {
+const handleDELETE = withAdmin(async (request, { params }, admin, actorRole, leagueId) => {
   const { uid } = params;
 
   // Guard against self-deletion (lockout) and permanent env-var owners.
@@ -262,3 +263,7 @@ export const DELETE = withAdmin(async (request, { params }, admin, actorRole, le
   return NextResponse.json({ ok: true, uid, deleted: true });
 });
 
+// A successful write here changes something the cached league reads are built
+// from, so the cache is dropped in the same request — see lib/statsCache.js.
+export const PATCH = withStatsRefresh(handlePATCH);
+export const DELETE = withStatsRefresh(handleDELETE);

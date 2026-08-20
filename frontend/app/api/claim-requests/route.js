@@ -9,6 +9,7 @@ import {
 import { seasonAcceptsSignups } from "@/lib/carSelection";
 import { matchReason } from "@/lib/driverMatch";
 import { duplicateCheck } from "@/lib/driverMatchServer";
+import { withStatsRefresh } from "@/lib/statsCache";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +31,7 @@ export const dynamic = "force-dynamic";
 // The `signup` half is what makes the series sign-up dialog work for someone
 // the league has never seen: they fill in one form, and the season they wanted
 // to join rides along with the request rather than being lost while they wait.
-export const POST = withUser(async (request, ctx, user, leagueId) => {
+const handlePOST = withUser(async (request, ctx, user, leagueId) => {
   const body = await request.json().catch(() => ({}));
   const kind = body.kind === NEW_DRIVER_KIND ? NEW_DRIVER_KIND : CLAIM_KIND;
 
@@ -192,3 +193,7 @@ export const GET = withUser(async (request, ctx, user, leagueId) => {
   rows.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
   return NextResponse.json(rows);
 });
+
+// A successful write here changes something the cached league reads are built
+// from, so the cache is dropped in the same request — see lib/statsCache.js.
+export const POST = withStatsRefresh(handlePOST);

@@ -4,6 +4,7 @@ import { getRequestLeagueId, withAdmin } from "@/lib/serverAuth";
 import { groupByTargetSeason, planRosterBuild } from "@/lib/timeTrials";
 import { TRIAL_COLLECTION, TRIAL_STATUS_COMPLETED, fetchTrial, fetchTrialEntries } from "@/lib/timeTrialsServer";
 import { clearPlacementQueue } from "@/lib/placementQueueServer";
+import { withStatsRefresh } from "@/lib/statsCache";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,7 @@ export const dynamic = "force-dynamic";
 // Re-running is safe by design: a driver already on a roster is UPDATED to the
 // division the trial placed them in rather than duplicated, so an admin can
 // re-sort the field and press the button again.
-export const POST = withAdmin(async (request, { params }, user) => {
+const handlePOST = withAdmin(async (request, { params }, user) => {
   const { season_id, series_seasons, complete = true, dry_run = false } = await request.json();
   const trial = await fetchTrial(params.id);
   if (!trial) return NextResponse.json({ error: "Time trial not found" }, { status: 404 });
@@ -189,3 +190,7 @@ export const POST = withAdmin(async (request, { params }, user) => {
     trial: { ...trial, ...patch },
   });
 });
+
+// A successful write here changes something the cached league reads are built
+// from, so the cache is dropped in the same request — see lib/statsCache.js.
+export const POST = withStatsRefresh(handlePOST);

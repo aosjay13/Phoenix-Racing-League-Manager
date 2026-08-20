@@ -3,6 +3,7 @@ import { db } from "@/lib/firebase";
 import { docInLeague, withUser } from "@/lib/serverAuth";
 import { normalizeAliases } from "@/lib/aliases";
 import { linkedDriver } from "@/lib/carSelectionServer";
+import { withStatsRefresh } from "@/lib/statsCache";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +36,7 @@ export const GET = withUser(async (request, ctx, user, leagueId) => {
 // The profile written is the one linked to the caller's account, resolved from
 // the account rather than taken from the request, so there is no way to edit
 // somebody else's.
-export const PATCH = withUser(async (request, ctx, user, leagueId) => {
+const handlePATCH = withUser(async (request, ctx, user, leagueId) => {
   const body = await request.json().catch(() => ({}));
   if (body.aliases === undefined) {
     return NextResponse.json({ error: "No editable fields provided" }, { status: 400 });
@@ -57,7 +58,7 @@ export const PATCH = withUser(async (request, ctx, user, leagueId) => {
 // A user unclaims (unlinks) whichever driver profile is linked to their own
 // account, returning it to the unclaimed pool. Their past race results stay on
 // record — only the account↔driver link (drivers.user_id) is cleared.
-export const DELETE = withUser(async (request, ctx, user, leagueId) => {
+const handleDELETE = withUser(async (request, ctx, user, leagueId) => {
   const snap = await db().collection("drivers").where("user_id", "==", user.uid).get();
   // Only the profile they race as IN THIS LEAGUE. Unclaiming here is a decision
   // about this league; the driver profile this same account holds in another one
@@ -71,3 +72,8 @@ export const DELETE = withUser(async (request, ctx, user, leagueId) => {
   await batch.commit();
   return NextResponse.json({ ok: true, unlinked: mine.map(d => d.id) });
 });
+
+// A successful write here changes something the cached league reads are built
+// from, so the cache is dropped in the same request — see lib/statsCache.js.
+export const PATCH = withStatsRefresh(handlePATCH);
+export const DELETE = withStatsRefresh(handleDELETE);

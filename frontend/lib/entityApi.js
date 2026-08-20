@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { withAdmin, docInLeague, getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
+import { STATS_COLLECTIONS, revalidateStats } from "@/lib/statsCache";
 import { canUploadImages, imageFieldNames, stripImageFields } from "@/lib/imagePermissions";
 import { toDateOnly } from "@/lib/raceDate";
 import { normalizeClassIds } from "@/lib/classFilter";
@@ -70,6 +71,16 @@ export function coerceField(opts, raw) {
 // profile for somebody the league already has without the caller confirming it
 // first (see app/api/drivers/route.js). Returning nothing lets the write
 // proceed, so a collection with no guard behaves exactly as it always did.
+// The cached league reads (standings, stats, the schedule feed) are built from
+// these collections, so a create, edit or delete in one of them makes whatever
+// is cached wrong. Dropping it HERE covers every collection the generic routes
+// serve in a single place — games, series, seasons, classes, entries, races,
+// drivers, teams and points templates — rather than relying on twenty route
+// files each remembering to do it.
+function statsChanged(collection, leagueId) {
+  if (STATS_COLLECTIONS.includes(collection)) revalidateStats(leagueId);
+}
+
 export function makeCollectionRoutes({ collection, parentField, fields, sortField = "created_at", normalize = null, orderDocs = null, guard = null }) {
   async function GET(request) {
     const { searchParams } = new URL(request.url);
@@ -133,6 +144,7 @@ export function makeCollectionRoutes({ collection, parentField, fields, sortFiel
     // Derived fields the spec keeps in sync (e.g. an entry's class_id/class_ids).
     if (normalize) Object.assign(doc, normalize(doc) || {});
     const ref = await db().collection(collection).add(doc);
+    statsChanged(collection, leagueId);
     return NextResponse.json({ id: ref.id, ...doc }, { status: 201 });
   });
 
@@ -195,6 +207,7 @@ export function makeDocRoutes({ collection, fields, normalize = null, afterUpdat
       }, { status: guarded.stripped.length ? 403 : 400 });
     }
     await ref.update(guarded.updates);
+    statsChanged(collection, leagueId);
 
     if (afterUpdate) {
       try {
@@ -219,6 +232,7 @@ export function makeDocRoutes({ collection, fields, normalize = null, afterUpdat
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
     await ref.delete();
+    statsChanged(collection, leagueId);
     return NextResponse.json({ ok: true });
   });
 

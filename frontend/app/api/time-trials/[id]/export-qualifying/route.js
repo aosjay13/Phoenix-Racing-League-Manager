@@ -5,6 +5,7 @@ import { classIdForScope, isClassScoped } from "@/lib/classFilter";
 import { bangerFieldsForSave } from "@/lib/bangerRacing";
 import { entryIndex, matchEntry, planQualifyingExport, summarizeEntries } from "@/lib/timeTrials";
 import { fetchTrial, fetchTrialEntries } from "@/lib/timeTrialsServer";
+import { withStatsRefresh } from "@/lib/statsCache";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ export const dynamic = "force-dynamic";
 // `dry_run` reports what would be written (and, more usefully, WHO the target
 // season's roster is missing) without touching anything, which is what the
 // confirmation step shows.
-export const POST = withAdmin(async (request, { params }, user) => {
+const handlePOST = withAdmin(async (request, { params }, user) => {
   const { race_id, sort_key, session_class = null, dry_run = false } = await request.json();
   if (!race_id) return NextResponse.json({ error: "race_id required" }, { status: 400 });
 
@@ -143,3 +144,7 @@ export const POST = withAdmin(async (request, { params }, user) => {
     unmatched,
   }, { status: 201 });
 });
+
+// A successful write here changes something the cached league reads are built
+// from, so the cache is dropped in the same request — see lib/statsCache.js.
+export const POST = withStatsRefresh(handlePOST);

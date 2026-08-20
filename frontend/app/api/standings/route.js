@@ -20,6 +20,7 @@ import { fetchDriverNames } from "@/lib/driverNamesServer";
 import { applySeasonTeams, teamsForEntries } from "@/lib/teams";
 import { loadTeamIndex } from "@/lib/teamsServer";
 import { getRequestLeagueId } from "@/lib/serverAuth";
+import { cachedPayload } from "@/lib/statsCache";
 
 // One season's championship tables.
 //   ?season_id=…              → the overall (whole-field) championship
@@ -29,23 +30,35 @@ import { getRequestLeagueId } from "@/lib/serverAuth";
 // narrowed field: points, gaps, ranks and every stat are recomputed within the
 // class, so its leader is rank 1 with a 0-point gap rather than being pulled out
 // of the combined table.
+//
+// Cached on (league, season, class) and dropped whenever a write could move a
+// number — see lib/statsCache.js. Scoring a season means reading every result
+// in it and running the whole points pipeline over them, which is not work to
+// repeat for every visitor who opens the same table.
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const seasonId = searchParams.get("season_id");
-  const classId = searchParams.get("class_id") || "";
-  const className = searchParams.get("class_name") || "";
   if (!seasonId) return NextResponse.json({ error: "season_id required" }, { status: 400 });
 
+  const { status, body } = await standingsFor(getRequestLeagueId(request), {
+    seasonId,
+    classId: searchParams.get("class_id") || "",
+    className: searchParams.get("class_name") || "",
+  });
+  return NextResponse.json(body, { status });
+}
+
+const standingsFor = cachedPayload("standings", async (leagueId, { seasonId, classId, className }) => {
   const [seasonDoc, entriesSnap, teamIndex, resultsSnap, racesSnap, templatesById, classes] = await Promise.all([
     db().collection("seasons").doc(seasonId).get(),
     db().collection("entries").where("season_id", "==", seasonId).get(),
-    loadTeamIndex({ leagueId: getRequestLeagueId(request) }),
+    loadTeamIndex({ leagueId }),
     db().collection("results").where("season_id", "==", seasonId).get(),
     db().collection("races").where("season_id", "==", seasonId).get(),
     fetchTemplatesById(),
     fetchSeasonClasses(seasonId),
   ]);
-  if (!seasonDoc.exists) return NextResponse.json({ error: "Season not found" }, { status: 404 });
+  if (!seasonDoc.exists) return { status: 404, body: { error: "Season not found" } };
 
   const season = seasonDoc.data();
   // Every entry is stamped with the team that driver raced for IN THIS SEASON
@@ -152,7 +165,7 @@ export async function GET(request) {
       user_id: entriesById[c.entry_id]?.user_id ?? null,
     }));
 
-  return NextResponse.json({
+  return { status: 200, body: {
     season: { id: seasonId, ...season },
     classes,
     champions,
@@ -187,5 +200,5 @@ export async function GET(request) {
     drop_weeks: drivers.drop_weeks,
     drivers: drivers.rows,
     teams: teamRows,
-  });
-}
+  } };
+});

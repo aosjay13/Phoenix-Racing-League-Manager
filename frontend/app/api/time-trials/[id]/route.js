@@ -6,6 +6,7 @@ import {
   TRIAL_COLLECTION, TRIAL_ENTRY_COLLECTION,
   fetchTrial, fetchTrialEntries, trialFields,
 } from "@/lib/timeTrialsServer";
+import { withStatsRefresh } from "@/lib/statsCache";
 
 export const dynamic = "force-dynamic";
 
@@ -72,7 +73,7 @@ export async function GET(request, { params }) {
   });
 }
 
-export const PATCH = withAdmin(async (request, { params }) => {
+const handlePATCH = withAdmin(async (request, { params }) => {
   const body = await request.json();
   const ref = db().collection(TRIAL_COLLECTION).doc(params.id);
   const doc = await ref.get();
@@ -110,7 +111,7 @@ export const PATCH = withAdmin(async (request, { params }) => {
 
 // Deleting a session takes its drivers' laps with it — an entry with no session
 // is unreachable, and would otherwise sit in the records data forever.
-export const DELETE = withAdmin(async (request, { params }) => {
+const handleDELETE = withAdmin(async (request, { params }) => {
   const entries = await db().collection(TRIAL_ENTRY_COLLECTION).where("time_trial_id", "==", params.id).get();
   const batch = db().batch();
   entries.docs.forEach(d => batch.delete(d.ref));
@@ -118,3 +119,8 @@ export const DELETE = withAdmin(async (request, { params }) => {
   await batch.commit();
   return NextResponse.json({ ok: true, deleted_entries: entries.size });
 });
+
+// A successful write here changes something the cached league reads are built
+// from, so the cache is dropped in the same request — see lib/statsCache.js.
+export const PATCH = withStatsRefresh(handlePATCH);
+export const DELETE = withStatsRefresh(handleDELETE);

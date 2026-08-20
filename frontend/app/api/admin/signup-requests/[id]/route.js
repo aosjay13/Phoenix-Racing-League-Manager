@@ -15,6 +15,7 @@ import { userAccountUpdatesFromSignup } from "@/lib/signupRequest";
 import { denialHtml, denialSubject, denialText } from "@/lib/denialNotice";
 import { queueEmail } from "@/lib/mailer";
 import { emailForUser, postMessage } from "@/lib/messagesServer";
+import { withStatsRefresh } from "@/lib/statsCache";
 
 // Admin-only: let a pending sign-up onto the roster, or turn it down.
 //
@@ -51,7 +52,7 @@ import { emailForUser, postMessage } from "@/lib/messagesServer";
 // Approval re-checks everything that could have changed while the request sat
 // in the queue — the season closing, the driver being added by hand, the number
 // being taken — because a queue is exactly where stale data comes from.
-export const PATCH = withAdmin(async (request, { params }, admin, role, leagueId) => {
+const handlePATCH = withAdmin(async (request, { params }, admin, role, leagueId) => {
   const { id } = params;
   const body = await request.json().catch(() => ({}));
   const action = body.action;
@@ -434,3 +435,7 @@ async function announce(req, kind, { adminNote = "", admin, extra = {}, emailed 
     },
   });
 }
+
+// A successful write here changes something the cached league reads are built
+// from, so the cache is dropped in the same request — see lib/statsCache.js.
+export const PATCH = withStatsRefresh(handlePATCH);

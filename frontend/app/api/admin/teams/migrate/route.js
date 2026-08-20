@@ -3,6 +3,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { db } from "@/lib/firebase";
 import { getRequestLeagueId, scopeByLeague, withAdmin } from "@/lib/serverAuth";
 import { TEAM_SEASONS_COLLECTION, teamNameKey } from "@/lib/teams";
+import { withStatsRefresh } from "@/lib/statsCache";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,7 @@ export const dynamic = "force-dynamic";
 // its teams by name (that's the legacy path in lib/teams.js). It's the tidy-up
 // that turns "teams that look persistent" into "teams that are".
 // ─────────────────────────────────────────────────────────────────────────────
-export const POST = withAdmin(async (request, ctx, user) => {
+const handlePOST = withAdmin(async (request, ctx, user) => {
   const leagueId = getRequestLeagueId(request);
   const [teamsSnap, mappingsSnap, entriesSnap] = await Promise.all([
     scopeByLeague(db().collection("teams"), leagueId).get(),
@@ -133,3 +134,7 @@ export const POST = withAdmin(async (request, ctx, user) => {
     entries_repointed: entriesRepointed,
   });
 });
+
+// A successful write here changes something the cached league reads are built
+// from, so the cache is dropped in the same request — see lib/statsCache.js.
+export const POST = withStatsRefresh(handlePOST);

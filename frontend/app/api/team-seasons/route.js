@@ -4,6 +4,7 @@ import { getRequestLeagueId, withAdmin } from "@/lib/serverAuth";
 import { entryIdentityKeys, teamNameKey, TEAM_SEASONS_COLLECTION } from "@/lib/teams";
 import { findMapping, loadTeamIndex, syncEntryTeams } from "@/lib/teamsServer";
 import { fetchDriverNames } from "@/lib/driverNamesServer";
+import { withStatsRefresh } from "@/lib/statsCache";
 
 export const dynamic = "force-dynamic";
 
@@ -84,7 +85,7 @@ export async function GET(request) {
 
 // Enter an existing global team in a season. Idempotent: a team already in the
 // season returns the lineup it already has instead of a second one.
-export const POST = withAdmin(async (request, ctx, user) => {
+const handlePOST = withAdmin(async (request, ctx, user) => {
   const body = await request.json();
   const seasonId = String(body.season_id || "").trim();
   const teamId = String(body.team_id || "").trim();
@@ -116,3 +117,7 @@ export const POST = withAdmin(async (request, ctx, user) => {
   if (doc.driver_ids.length) await syncEntryTeams(seasonId, { teamId, driverIds: doc.driver_ids });
   return NextResponse.json({ id: ref.id, ...doc }, { status: 201 });
 });
+
+// A successful write here changes something the cached league reads are built
+// from, so the cache is dropped in the same request — see lib/statsCache.js.
+export const POST = withStatsRefresh(handlePOST);

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
+import { cachedPayload } from "@/lib/statsCache";
 import { decorateSessionFlags, sessionScopeContext } from "@/lib/standings";
 import { indexResultsByRace, summarizeRace } from "@/lib/raceSummaryServer";
 import { classIdsInSeason, fetchSeasonClasses, filterRacesByClass, carForClass, carsByClassForRace } from "@/lib/classServer";
@@ -39,15 +40,35 @@ async function applyGameNames(rows, gameIdOf) {
 //
 // Kept separate from the generic /api/races feed so the heavier results/entries
 // joins only run for the schedule table that consumes them.
+//
+// Both modes are cached on (league, params) and dropped whenever a write could
+// change a row — see lib/statsCache.js. The master feed is the one that needs
+// it most: it reads every race, entry and result the league has ever recorded,
+// so its cost grows with the league's whole history rather than with what is
+// on screen.
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const seasonId = searchParams.get("season_id");
+  const leagueId = getRequestLeagueId(request);
 
-  if (seasonId) {
-    return oneSeason(seasonId, searchParams.get("class_id") || "", searchParams.get("class_name") || "");
-  }
-  return globalFeed(searchParams.get("game_id"), searchParams.get("series_id"), getRequestLeagueId(request));
+  const rows = seasonId
+    ? await seasonSchedule(leagueId, {
+      seasonId,
+      classId: searchParams.get("class_id") || "",
+      className: searchParams.get("class_name") || "",
+    })
+    : await globalSchedule(leagueId, {
+      gameId: searchParams.get("game_id") || "",
+      seriesId: searchParams.get("series_id") || "",
+    });
+  return NextResponse.json(rows);
 }
+
+const seasonSchedule = cachedPayload("schedule:season", (leagueId, { seasonId, classId, className }) =>
+  oneSeason(seasonId, classId, className));
+
+const globalSchedule = cachedPayload("schedule:all", (leagueId, { gameId, seriesId }) =>
+  globalFeed(gameId || null, seriesId || null, leagueId));
 
 // One season's calendar. `classId` narrows it to that class's schedule: the
 // events pinned to the class plus every shared (unpinned) event. "All Classes"
@@ -111,7 +132,7 @@ async function oneSeason(seasonId, classIdParam = "", className = "") {
     class_summaries: classSummariesFor(r),
     summary: summarizeRace(r, resultsByRace, entriesById, carForClass(season, carClassFor(r)), classSel),
   }));
-  return NextResponse.json(await applyGameNames(rows, () => season?.game_id || null));
+  return applyGameNames(rows, () => season?.game_id || null);
 }
 
 // Master feed across every season (optionally scoped to a game or a series).
@@ -199,5 +220,5 @@ async function globalFeed(gameId, seriesId, leagueId) {
       game_name: season.game_id ? (gameName[season.game_id] || null) : null,
     });
   }
-  return NextResponse.json(await applyGameNames(rows, r => r.game_id));
+  return applyGameNames(rows, r => r.game_id);
 }

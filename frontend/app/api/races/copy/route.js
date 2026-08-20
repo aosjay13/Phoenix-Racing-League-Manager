@@ -7,6 +7,7 @@ import {
   mapClassesByName, mapClassId, planEntryMap, newEntryForDriver,
   copyRaceDoc, copyResultDocs, nextRoundNumber,
 } from "@/lib/raceCopy";
+import { withStatsRefresh } from "@/lib/statsCache";
 
 export const dynamic = "force-dynamic";
 
@@ -128,7 +129,7 @@ async function commitAll(docs) {
   }
 }
 
-export const POST = withAdmin(async (request, ctx, user) => {
+const handlePOST = withAdmin(async (request, ctx, user) => {
   const {
     race_id, to_season_id,
     include_results = true,
@@ -263,3 +264,7 @@ export const POST = withAdmin(async (request, ctx, user) => {
     )].length,
   }, { status: 201 });
 });
+
+// A successful write here changes something the cached league reads are built
+// from, so the cache is dropped in the same request — see lib/statsCache.js.
+export const POST = withStatsRefresh(handlePOST);

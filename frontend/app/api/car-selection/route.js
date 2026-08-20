@@ -11,6 +11,7 @@ import {
 } from "@/lib/carSelectionServer";
 import { gameRequirementFlags } from "@/lib/signupRequest";
 import { isAwaitingPlacement, numberRequestFor } from "@/lib/signupQueue";
+import { withStatsRefresh } from "@/lib/statsCache";
 
 export const dynamic = "force-dynamic";
 
@@ -183,7 +184,7 @@ export async function GET(request) {
 // Security: the entry written is the one belonging to the driver profile linked
 // to the CALLER'S account. The request names a season and a class, never a
 // driver or an entry, so there's nothing here to point at somebody else's row.
-export const POST = withUser(async (request, ctx, user) => {
+const handlePOST = withUser(async (request, ctx, user) => {
   const body = await request.json().catch(() => ({}));
   const seasonId = String(body.season_id ?? "").trim();
   const classId = String(body.class_id ?? "").trim();
@@ -283,3 +284,7 @@ export const POST = withUser(async (request, ctx, user) => {
     ...patch,
   });
 });
+
+// A successful write here changes something the cached league reads are built
+// from, so the cache is dropped in the same request — see lib/statsCache.js.
+export const POST = withStatsRefresh(handlePOST);

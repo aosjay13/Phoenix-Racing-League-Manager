@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { withAdmin, getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
 import { syncEntryNamesForDriver } from "@/lib/driverSync";
+import { withStatsRefresh } from "@/lib/statsCache";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
 // Profile rename. Idempotent and additive — it only rewrites the denormalized
 // entry.name string and never touches results, stats, or profiles. Returns how
 // many drivers/entries were updated so the result is verifiable.
-export const POST = withAdmin(async (request) => {
+const handlePOST = withAdmin(async (request) => {
   const driversSnap = await scopeByLeague(db().collection("drivers"), getRequestLeagueId(request)).get();
   let entriesSynced = 0;
   let driversTouched = 0;
@@ -22,3 +23,7 @@ export const POST = withAdmin(async (request) => {
   }
   return NextResponse.json({ ok: true, drivers: driversSnap.size, drivers_touched: driversTouched, entries_synced: entriesSynced });
 });
+
+// A successful write here changes something the cached league reads are built
+// from, so the cache is dropped in the same request — see lib/statsCache.js.
+export const POST = withStatsRefresh(handlePOST);

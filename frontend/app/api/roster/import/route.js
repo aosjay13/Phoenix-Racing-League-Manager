@@ -3,6 +3,7 @@ import { db } from "@/lib/firebase";
 import { withAdmin, getRequestLeagueId } from "@/lib/serverAuth";
 import { applyRosterPlan, planRosterImport } from "@/lib/rosterImport";
 import { loadDriverPool, loadGameNames, serializeMatches } from "@/lib/driverMatchServer";
+import { withStatsRefresh } from "@/lib/statsCache";
 
 export const dynamic = "force-dynamic";
 
@@ -45,7 +46,7 @@ export const dynamic = "force-dynamic";
 // so they can be tested without a database.
 const SOURCES = new Set(["series", "season"]);
 
-export const POST = withAdmin(async (request, ctx, user) => {
+const handlePOST = withAdmin(async (request, ctx, user) => {
   const { season_id, source, from_season_id, preview = false, decisions = {} } = await request.json();
   if (!season_id) return NextResponse.json({ error: "season_id required" }, { status: 400 });
   if (!SOURCES.has(source)) {
@@ -168,3 +169,7 @@ export const POST = withAdmin(async (request, ctx, user) => {
     summary: plan.summary,
   });
 });
+
+// A successful write here changes something the cached league reads are built
+// from, so the cache is dropped in the same request — see lib/statsCache.js.
+export const POST = withStatsRefresh(handlePOST);

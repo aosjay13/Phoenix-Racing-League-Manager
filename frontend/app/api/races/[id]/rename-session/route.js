@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { withAdmin } from "@/lib/serverAuth";
+import { withStatsRefresh } from "@/lib/statsCache";
 
 // Renames one session of an event and cascades the change so nothing orphans:
 //   - the name in the race's sessions / heats / consolations list (or
@@ -8,7 +9,7 @@ import { withAdmin } from "@/lib/serverAuth";
 //   - the session_points entry keyed by that name (and any per-class ones),
 //   - and every saved results doc filed under the old session name.
 // body: { session_type: "race"|"heat"|"consolation"|"feature", from, to }
-export const POST = withAdmin(async (request, { params }) => {
+const handlePOST = withAdmin(async (request, { params }) => {
   const { session_type, from, to } = await request.json();
   const type = session_type || "race";
   const newName = (to || "").trim();
@@ -79,3 +80,7 @@ export const POST = withAdmin(async (request, { params }) => {
   const after = await raceRef.get();
   return NextResponse.json({ id: after.id, ...after.data(), _migrated: migrated });
 });
+
+// A successful write here changes something the cached league reads are built
+// from, so the cache is dropped in the same request — see lib/statsCache.js.
+export const POST = withStatsRefresh(handlePOST);

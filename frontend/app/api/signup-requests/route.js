@@ -17,6 +17,7 @@ import {
   missingAliasMessage, missingRequiredAliases, userAccountUpdatesFromSignup,
 } from "@/lib/signupRequest";
 import { mergeAliases, normalizeAliases } from "@/lib/aliases";
+import { withStatsRefresh } from "@/lib/statsCache";
 
 export const dynamic = "force-dynamic";
 
@@ -150,7 +151,7 @@ async function numberChangeRequest({ request, user, driver, season, series, game
 // ask for between them (see resolveSignupRules): a car number, a car from the
 // season's one car list, and any alias the game insists on — an iRacing
 // customer ID, so the organiser can send a league invite.
-export const POST = withUser(async (request, ctx, user) => {
+const handlePOST = withUser(async (request, ctx, user) => {
   const body = await request.json().catch(() => ({}));
   const seasonId = String(body.season_id ?? "").trim();
   if (!seasonId) return NextResponse.json({ error: "Missing season_id" }, { status: 400 });
@@ -354,3 +355,7 @@ export const POST = withUser(async (request, ctx, user) => {
 
   return NextResponse.json({ id: ref.id, ...doc, account_updates: accountUpdates }, { status: 201 });
 });
+
+// A successful write here changes something the cached league reads are built
+// from, so the cache is dropped in the same request — see lib/statsCache.js.
+export const POST = withStatsRefresh(handlePOST);

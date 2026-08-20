@@ -4,6 +4,7 @@ import { withAdmin, getRequestLeagueId } from "@/lib/serverAuth";
 import { recalcGameSkillRatings, gameIdForSeason } from "@/lib/skillRatingServer";
 import { classIdForScope, isClassScoped, primaryClassId, resultInSessionClass } from "@/lib/classFilter";
 import { bangerFieldsForSave } from "@/lib/bangerRacing";
+import { withStatsRefresh } from "@/lib/statsCache";
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -70,7 +71,7 @@ function matchesSession(data, sessionType, savingSession, firstSession, sessionC
 // the points system this session was scored under, so standings/stats stay
 // correct even if the season's default or another session's template later
 // changes — see lib/standings.js configForTemplate().
-export const POST = withAdmin(async (request, ctx, user) => {
+const handlePOST = withAdmin(async (request, ctx, user) => {
   const { race_id, season_id, session = "", session_type, session_class, points_template_id, rows } = await request.json();
   const sessionType = SESSION_TYPES.includes(session_type) ? session_type : "race";
   if (!race_id || !season_id || !Array.isArray(rows)) {
@@ -196,7 +197,7 @@ export const POST = withAdmin(async (request, ctx, user) => {
 // &session_class=… narrows the wipe to one class's slice of that session, so
 // clearing (say) the Pro race leaves the Amateur race that ran alongside it
 // alone; omit it to clear the session for every class.
-export const DELETE = withAdmin(async (request) => {
+const handleDELETE = withAdmin(async (request) => {
   const { searchParams } = new URL(request.url);
   const raceId = searchParams.get("race_id");
   const session = searchParams.get("session") || "";
@@ -230,3 +231,8 @@ export const DELETE = withAdmin(async (request) => {
 
   return NextResponse.json({ ok: true, deleted: doomed.length });
 });
+
+// A successful write here changes something the cached league reads are built
+// from, so the cache is dropped in the same request — see lib/statsCache.js.
+export const POST = withStatsRefresh(handlePOST);
+export const DELETE = withStatsRefresh(handleDELETE);

@@ -71,6 +71,25 @@ climbs faster than the data does is superlinear, and will keep getting worse on
 its own. Probes are warmed at the largest size first; without that the first size
 measured pays everyone's JIT cost and the curve reads backwards.
 
+## Proving a refactor changed nothing
+
+`payloads.mjs` dumps every profiled route's response body against the same
+seeded dataset, so a change can be checked against the tree it came from rather
+than eyeballed:
+
+```bash
+git stash && node --import ./scripts/cpu-profile/register.mjs \
+  scripts/cpu-profile/payloads.mjs > /tmp/before.json && git stash pop
+node --import ./scripts/cpu-profile/register.mjs \
+  scripts/cpu-profile/payloads.mjs > /tmp/after.json
+diff /tmp/before.json /tmp/after.json
+```
+
+It covers the success paths and the refusals — a missing param, an unknown
+season, a team nobody has heard of — because a performance change that quietly
+turns a 404 into a 200 is still a broken change. This is what the read cache in
+`lib/statsCache.js` was checked with: identical bytes across every case.
+
 ## Adding a route
 
 Add an entry to `ROUTES` in `profile.mjs` with its file and a URL. If the browser

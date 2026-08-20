@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { docInLeague, withAdmin } from "@/lib/serverAuth";
 import { entryClassIds } from "@/lib/classServer";
+import { withStatsRefresh } from "@/lib/statsCache";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,7 @@ export const dynamic = "force-dynamic";
 //
 //   "unclassified" (default) — only drivers not yet in any class
 //   "all"                    — every driver in the season
-export const POST = withAdmin(async (request, ctx, admin, role, leagueId) => {
+const handlePOST = withAdmin(async (request, ctx, admin, role, leagueId) => {
   const { season_id, class_id, scope = "unclassified" } = await request.json();
   if (!season_id || !class_id) {
     return NextResponse.json({ error: "season_id and class_id required" }, { status: 400 });
@@ -68,3 +69,7 @@ export const POST = withAdmin(async (request, ctx, admin, role, leagueId) => {
     class_name: classDoc.data().name ?? "",
   });
 });
+
+// A successful write here changes something the cached league reads are built
+// from, so the cache is dropped in the same request — see lib/statsCache.js.
+export const POST = withStatsRefresh(handlePOST);

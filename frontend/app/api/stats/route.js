@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
+import { cachedPayload } from "@/lib/statsCache";
 import {
   aggregateCareerStats,
   compareStandings,
@@ -33,43 +34,56 @@ export const dynamic = "force-dynamic";
 // to a single season, so it only bites within that season's slice of the scope.
 // Drivers are unified across seasons by linked account (user_id) when
 // present, otherwise by roster name.
+//
+// Cached on (league, scope, class) and dropped whenever a write could move a
+// number — see lib/statsCache.js. This is the single most expensive read in the
+// app: at league scope it aggregates every result the league has ever recorded,
+// and it backs three screens (Stats, Records and the driver tables), so the
+// same answer used to be recomputed from scratch for each of them.
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
-  const scope = searchParams.get("scope") || "league";
-  const classId = searchParams.get("class_id") || "";
-  // A class NAME is the cross-season identity: above one season, "GT3" is a
-  // separate doc per season, so the name is resolved to each season's own ids.
-  const className = searchParams.get("class_name") || "";
+  const { status, body } = await statsFor(getRequestLeagueId(request), {
+    scope: searchParams.get("scope") || "league",
+    classId: searchParams.get("class_id") || "",
+    // A class NAME is the cross-season identity: above one season, "GT3" is a
+    // separate doc per season, so the name is resolved to each season's own ids.
+    className: searchParams.get("class_name") || "",
+    gameId: searchParams.get("game_id") || "",
+    seriesId: searchParams.get("series_id") || "",
+    seasonId: searchParams.get("season_id") || "",
+  });
+  return NextResponse.json(body, { status });
+}
+
+const statsFor = cachedPayload("stats", async (leagueId, params) => {
+  const { scope, classId, className } = params;
 
   // The team picture for the whole league, read once — every season below asks
   // it who was driving for whom, so a team's stats are the combined results of
   // its lineup in each season, and its all-time line is those seasons added up.
-  const teamIndex = await loadTeamIndex({ leagueId: getRequestLeagueId(request) });
+  const teamIndex = await loadTeamIndex({ leagueId });
 
   let seasonsQuery = db().collection("seasons");
   if (scope === "game") {
-    const gameId = searchParams.get("game_id");
-    if (!gameId) return NextResponse.json({ error: "game_id required" }, { status: 400 });
-    seasonsQuery = seasonsQuery.where("game_id", "==", gameId);
+    if (!params.gameId) return { status: 400, body: { error: "game_id required" } };
+    seasonsQuery = seasonsQuery.where("game_id", "==", params.gameId);
   } else if (scope === "series") {
-    const seriesId = searchParams.get("series_id");
-    if (!seriesId) return NextResponse.json({ error: "series_id required" }, { status: 400 });
-    seasonsQuery = seasonsQuery.where("series_id", "==", seriesId);
+    if (!params.seriesId) return { status: 400, body: { error: "series_id required" } };
+    seasonsQuery = seasonsQuery.where("series_id", "==", params.seriesId);
   } else if (scope === "season") {
-    const seasonId = searchParams.get("season_id");
-    if (!seasonId) return NextResponse.json({ error: "season_id required" }, { status: 400 });
-    const doc = await db().collection("seasons").doc(seasonId).get();
-    if (!doc.exists) return NextResponse.json({ error: "Season not found" }, { status: 404 });
+    if (!params.seasonId) return { status: 400, body: { error: "season_id required" } };
+    const doc = await db().collection("seasons").doc(params.seasonId).get();
+    if (!doc.exists) return { status: 404, body: { error: "Season not found" } };
     const season = { id: doc.id, ...doc.data() };
-    return NextResponse.json(await buildStats([season], classId, className, season.game_id || null, teamIndex));
+    return { status: 200, body: await buildStats([season], classId, className, season.game_id || null, teamIndex) };
   } else if (scope !== "league") {
-    return NextResponse.json({ error: "invalid scope" }, { status: 400 });
+    return { status: 400, body: { error: "invalid scope" } };
   }
 
   // League-wide / game / series scopes read many seasons — constrain them to
   // the active league so stats never bleed across leagues. (scope=season is a
   // single doc, already league-correct via its id, and returns above.)
-  seasonsQuery = scopeByLeague(seasonsQuery, getRequestLeagueId(request));
+  seasonsQuery = scopeByLeague(seasonsQuery, leagueId);
   const snap = await seasonsQuery.get();
   const seasons = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   // A Game or Series scope is tied to one game, so its tables show each
@@ -77,11 +91,11 @@ export async function GET(request) {
   // shows overall names.
   const gameId = await gameIdForScope({
     scope,
-    gameId: searchParams.get("game_id"),
-    seriesId: searchParams.get("series_id"),
+    gameId: params.gameId || null,
+    seriesId: params.seriesId || null,
   });
-  return NextResponse.json(await buildStats(seasons, classId, className, gameId, teamIndex));
-}
+  return { status: 200, body: await buildStats(seasons, classId, className, gameId, teamIndex) };
+});
 
 async function buildStats(seasons, classId = "", className = "", gameId = null, teamIndex = null) {
   // driverKey -> { name, number, user_id, results[], titles }

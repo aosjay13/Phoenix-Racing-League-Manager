@@ -5,6 +5,7 @@ import { syncEntryNamesForDriver, canonicalNameForDriver } from "@/lib/driverSyn
 import { recalcGameSkillRatings, gameIdForSeason } from "@/lib/skillRatingServer";
 import { planProfileMerge } from "@/lib/driverMerge";
 import { TRIAL_ENTRY_COLLECTION } from "@/lib/timeTrialsServer";
+import { withStatsRefresh } from "@/lib/statsCache";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +37,7 @@ export const dynamic = "force-dynamic";
 //
 // The dry run answers the same questions from the same code, so the preview an
 // admin approves is the merge that then runs.
-export const POST = withAdmin(async (request) => {
+const handlePOST = withAdmin(async (request) => {
   const { from_id, into_id, dry_run = false } = await request.json();
   if (!from_id || !into_id) return NextResponse.json({ error: "from_id and into_id required" }, { status: 400 });
   if (from_id === into_id) return NextResponse.json({ error: "Pick two different drivers" }, { status: 400 });
@@ -122,3 +123,7 @@ export const POST = withAdmin(async (request) => {
     merged_names: updates.merged_names,
   });
 });
+
+// A successful write here changes something the cached league reads are built
+// from, so the cache is dropped in the same request — see lib/statsCache.js.
+export const POST = withStatsRefresh(handlePOST);

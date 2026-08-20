@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { fetchSeriesByIds } from "@/lib/seriesServer";
 import { getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
+import { cachedPayload } from "@/lib/statsCache";
 import {
   aggregateCareerStats,
   compareStandings,
@@ -33,12 +34,21 @@ export const dynamic = "force-dynamic";
 // all-time line at the top. A driver who moves teams takes their future results
 // with them and leaves their past ones behind — which is the point of scoping a
 // lineup to a season.
+//
+// Cached on (league, team) and dropped whenever a write could move a number —
+// see lib/statsCache.js. A team's profile is the combined record of its lineup
+// in every season it has ever entered, so it reads the same history the
+// league-wide stats do.
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const wanted = (searchParams.get("team") || searchParams.get("team_id") || searchParams.get("name") || "").trim();
   if (!wanted) return NextResponse.json({ error: "team required" }, { status: 400 });
 
-  const leagueId = getRequestLeagueId(request);
+  const { status, body } = await teamStatsFor(getRequestLeagueId(request), { team: wanted });
+  return NextResponse.json(body, { status });
+}
+
+const teamStatsFor = cachedPayload("team-stats", async (leagueId, { team: wanted }) => {
   const [teamIndex, templatesById, seasonsSnap] = await Promise.all([
     loadTeamIndex({ leagueId }),
     fetchTemplatesById(),
@@ -55,7 +65,7 @@ export async function GET(request) {
       .map(t => teamIndex.teamById(t.id))
       .find(t => t && teamNameKey(t.name) === key) ?? null;
   }
-  if (!team) return NextResponse.json({ error: "Team not found" }, { status: 404 });
+  if (!team) return { status: 404, body: { error: "Team not found" } };
 
   const seasons = seasonsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
   // Each season scores on its SERIES' points unless it overrides them.
@@ -153,7 +163,7 @@ export async function GET(request) {
     .map(d => ({ driver_name: (d.driver_id && names[d.driver_id]?.overall) || d.driver_name, driver_id: d.driver_id, user_id: d.user_id, ...aggregateCareerStats(d.results, d.titles) }))
     .sort((a, b) => compareStandings(a, b, { pointsKey: "points", nameKey: "driver_name" }));
 
-  return NextResponse.json({
+  return { status: 200, body: {
     team_id: team.id,
     team_name: team.name,
     logo_url: team.logo_url ?? null,
@@ -166,5 +176,5 @@ export async function GET(request) {
     seasons_entered: teamIndex.seasonsForTeam(team.id).length,
     drivers: driverRows,
     seasons: perSeason,
-  });
-}
+  } };
+});

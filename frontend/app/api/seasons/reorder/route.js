@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { withAdmin, getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
+import { withStatsRefresh } from "@/lib/statsCache";
 
 // Hand-sorting a series' seasons — the admin's override of the default order
 // (newest first, by race date; see lib/seasonOrder.js).
@@ -14,7 +15,7 @@ import { withAdmin, getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
 // keep whatever they had, and an unstamped one still finds its place by date
 // (that's what keeps a season created after a hand-sort from silently landing
 // at the bottom).
-export const POST = withAdmin(async (request) => {
+const handlePOST = withAdmin(async (request) => {
   const body = await request.json().catch(() => ({}));
   const seriesId = String(body.series_id || "").trim();
   if (!seriesId) return NextResponse.json({ error: "series_id required" }, { status: 400 });
@@ -46,3 +47,7 @@ export const POST = withAdmin(async (request) => {
 
   return NextResponse.json({ ok: true, custom_order: !body.reset, ordered: order.length });
 });
+
+// A successful write here changes something the cached league reads are built
+// from, so the cache is dropped in the same request — see lib/statsCache.js.
+export const POST = withStatsRefresh(handlePOST);
