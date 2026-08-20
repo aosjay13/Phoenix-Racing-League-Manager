@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
 import { decorateSessionFlags, sessionScopeContext } from "@/lib/standings";
-import { summarizeRace } from "@/lib/raceSummaryServer";
+import { indexResultsByRace, summarizeRace } from "@/lib/raceSummaryServer";
 import { classIdsInSeason, fetchSeasonClasses, filterRacesByClass, carForClass, carsByClassForRace } from "@/lib/classServer";
 import { raceInClass } from "@/lib/classFilter";
 import { fetchNameResolver } from "@/lib/driverNamesServer";
@@ -75,6 +75,9 @@ async function oneSeason(seasonId, classIdParam = "", className = "") {
   const racesById = Object.fromEntries(allRaces.map(r => [r.id, r]));
   const results = decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById,
     sessionScopeContext({ seasons: [season], classes, entriesById }));
+  // Grouped once for every summary below, rather than rescanned per race (and
+  // again per class of every race).
+  const resultsByRace = indexResultsByRace(results);
   const classNameById = Object.fromEntries(classes.map(c => [c.id, c.name]));
 
   const viewClass = classId ? classes.find(c => c.id === classId) ?? null : null;
@@ -97,7 +100,7 @@ async function oneSeason(seasonId, classIdParam = "", className = "") {
     const running = classes.filter(c => raceInClass(r, c.id));
     if (running.length < 2) return [];
     return running.map(c => {
-      const s = summarizeRace(r, results, entriesById, null, c.id);
+      const s = summarizeRace(r, resultsByRace, entriesById, null, c.id);
       return { class_id: c.id, class_name: c.name, pole: s.pole, winner: s.winner };
     });
   };
@@ -106,7 +109,7 @@ async function oneSeason(seasonId, classIdParam = "", className = "") {
     class_name: r.class_id ? (classNameById[r.class_id] ?? null) : null,
     class_cars: viewClass ? [] : carsByClassForRace(r, season, classes),
     class_summaries: classSummariesFor(r),
-    summary: summarizeRace(r, results, entriesById, carForClass(season, carClassFor(r)), classSel),
+    summary: summarizeRace(r, resultsByRace, entriesById, carForClass(season, carClassFor(r)), classSel),
   }));
   return NextResponse.json(await applyGameNames(rows, () => season?.game_id || null));
 }
@@ -164,6 +167,10 @@ async function globalFeed(gameId, seriesId, leagueId) {
       classes: Object.values(classesBySeason).flat(),
       entriesById,
     }));
+  // Same grouping as oneSeason, and it matters more here: this feed spans every
+  // season the league has ever raced, so the scan it replaces was the whole
+  // history once per race.
+  const resultsByRace = indexResultsByRace(results);
 
   const rows = [];
   for (const r of races) {
@@ -180,10 +187,10 @@ async function globalFeed(gameId, seriesId, leagueId) {
       ...r,
       class_cars: carsByClassForRace(r, season, seasonClasses),
       class_summaries: running.length < 2 ? [] : running.map(c => {
-        const s = summarizeRace(r, results, entriesById, null, c.id);
+        const s = summarizeRace(r, resultsByRace, entriesById, null, c.id);
         return { class_id: c.id, class_name: c.name, pole: s.pole, winner: s.winner };
       }),
-      summary: summarizeRace(r, results, entriesById, season.car || null),
+      summary: summarizeRace(r, resultsByRace, entriesById, season.car || null),
       season_id: season.id,
       season_name: season.name || "Season",
       series_id: ser?.id || null,

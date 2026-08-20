@@ -11,6 +11,26 @@ export function finalSessionName(race) {
   return s[s.length - 1];
 }
 
+// Results grouped by the race they belong to, built once.
+//
+// Every caller below used to hand summarizeRace the WHOLE league's results and
+// let it filter down to one race — which is a full scan per race, so a schedule
+// feed cost races x results and got measurably worse every season the league
+// raced (see scripts/cpu-profile). Grouping once up front turns that product
+// back into a single pass, and callers hand each race its own results.
+//
+// A Map rather than an object: race ids come from Firestore and an object would
+// have to hash every one of them into a string key it then never uses again.
+export function indexResultsByRace(results) {
+  const byRace = new Map();
+  for (const r of results) {
+    const list = byRace.get(r.race_id);
+    if (list) list.push(r);
+    else byRace.set(r.race_id, [r]);
+  }
+  return byRace;
+}
+
 function personFromEntry(entry) {
   if (!entry) return null;
   return {
@@ -24,7 +44,10 @@ function personFromEntry(entry) {
 // Distils one race into the SimRacerHub-style summary row: pole sitter (P1 of
 // its Qualifying session), winner (P1 of its deciding session), the field size
 // (distinct entries in that deciding session) and the race distance.
-// `results` may span many races — it's filtered to this one here.
+// `results` is either every result to consider — filtered to this race here —
+// or an index from indexResultsByRace, which is the same thing done once for
+// every race instead of once per race. Prefer the index in anything that
+// summarizes more than a single event.
 //
 // The lap count auto-tracks what the winner actually ran, not the scheduled
 // total_laps: the winner is a lead-lap finisher, so their laps completed is the
@@ -53,7 +76,13 @@ export function summarizeRace(race, results, entriesById, defaultCar = null, cla
   const finalName = finalSessionName(race);
   const classes = classIdSet(classSelection);
   const inClass = r => !classes || classes.has(classOfResult(r, entriesById));
-  const raceResults = results.filter(r => r.race_id === race.id && inClass(r));
+  // Already grouped, or grouped on the spot for a one-off caller.
+  const forRace = results instanceof Map
+    ? (results.get(race.id) ?? [])
+    : results.filter(r => r.race_id === race.id);
+  // Unscoped is the common case, and it has nothing to narrow — skip the pass
+  // rather than copy the array to answer "true" for every row in it.
+  const raceResults = classes ? forRace.filter(inClass) : forRace;
   // Provisional entries (drivers who didn't race) never count as part of the
   // field or as the winner — they only carry points.
   const finalResults = raceResults.filter(r => !isQualifying(r) && !r.provisional && (r.session || firstStd) === finalName);
