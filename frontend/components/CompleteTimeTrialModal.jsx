@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { Modal } from "@/components/Modal";
+import { groupByTargetSeason, planRosterRun } from "@/lib/timeTrials";
 
 // "Complete Session" → the roster workflow.
 //
@@ -18,9 +19,9 @@ import { Modal } from "@/components/Modal";
 // It always shows the plan BEFORE writing. Re-running is safe — a driver already
 // on a roster is updated, never duplicated — so an admin can re-sort the field
 // and press it again.
-export function CompleteTimeTrialModal({ trial, seasons = [], placementSeries = [], onClose, onCompleted }) {
+export function CompleteTimeTrialModal({ trial, rows = [], seasons = [], placementSeries = [], onClose, onCompleted }) {
   const [seasonId, setSeasonId] = useState(trial.season_id || "");
-  const [plan, setPlan] = useState(null);
+  const [existingBySeason, setExistingBySeason] = useState(null); // seasonId -> roster entries
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [done, setDone] = useState(null);
@@ -30,18 +31,57 @@ export function CompleteTimeTrialModal({ trial, seasons = [], placementSeries = 
   const seriesTargets = placementSeries.filter(s => s.season_id);
   const canRun = !!seasonId || seriesTargets.length > 0;
 
-  // Preview whenever the target season changes — the plan is entirely a
-  // function of the rosters it is compared against.
+  // Which season each row on the sheet is bound for. A trial placing into three
+  // series builds three rosters, so this is what decides how many rosters the
+  // run touches — and therefore which ones have to be read to plan against.
+  // The map lives on the trial; `placementSeries` is that same map resolved for
+  // display. Reading the stored one keeps this identical to what the write does
+  // with it on the server.
+  const seasonBySeries = useMemo(() => trial.series_seasons || {}, [trial.series_seasons]);
+  const targetSeasonIds = useMemo(() => {
+    const groups = groupByTargetSeason(rows, { trialSeasonId: seasonId, seasonBySeries });
+    groups.delete("");
+    return [...groups.keys()];
+  }, [rows, seasonId, seasonBySeries]);
+  const targetKey = targetSeasonIds.join("|");
+
+  // The rosters this run would write into, as they stand. Raw entry lists — the
+  // matching against them happens below, here.
   useEffect(() => {
-    if (!canRun) { setPlan(null); return; }
+    if (!targetSeasonIds.length) { setExistingBySeason({}); return; }
     let live = true;
-    setPlan(null);
+    setExistingBySeason(null);
     setError(null);
-    api(`/api/time-trials/${trial.id}/roster`, { method: "POST", body: { season_id: seasonId, dry_run: true } })
-      .then(p => { if (live) setPlan(p); })
-      .catch(err => { if (live) { setPlan(null); setError(err.message); } });
+    Promise.all(targetSeasonIds.map(id =>
+      api(`/api/entries?season_id=${encodeURIComponent(id)}`).then(entries => [id, entries])))
+      .then(pairs => { if (live) setExistingBySeason(Object.fromEntries(pairs)); })
+      .catch(err => { if (live) { setExistingBySeason(null); setError(err.message); } });
     return () => { live = false; };
-  }, [seasonId, canRun, trial.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetKey]);
+
+  // Seasons by name, for labelling each roster in the plan below.
+  const seasonNameById = useMemo(() => ({
+    ...Object.fromEntries(seasons.map(s => [s.id, s.name || ""])),
+    ...Object.fromEntries(placementSeries.filter(s => s.season_id).map(s => [s.season_id, s.season_name || ""])),
+  }), [seasons, placementSeries]);
+
+  // What this will do, worked out here: who is created, who is merely
+  // re-classed, who is left alone, per roster. It used to be a `dry_run` POST
+  // fired every time the target season changed — a serverless invocation to
+  // answer a question this component already had the data for. It is the same
+  // pure planner the write uses (lib/timeTrials.js), so the preview IS the
+  // payload and the two can never disagree.
+  const planned = useMemo(() => {
+    if (!canRun || !existingBySeason) return null;
+    return planRosterRun({
+      trial, rows, trialSeasonId: seasonId, seasonBySeries, seasonNameById, existingBySeason,
+    });
+  }, [canRun, existingBySeason, trial, rows, seasonId, seasonBySeries, seasonNameById]);
+  const plan = planned?.error ? null : planned;
+  // The planner's own refusal — the sheet has nowhere to write — reported the
+  // way the route used to report it.
+  const planError = planned?.error ?? null;
 
   async function run(buildRoster) {
     setBusy(true);
@@ -49,10 +89,27 @@ export function CompleteTimeTrialModal({ trial, seasons = [], placementSeries = 
     try {
       if (buildRoster) {
         const res = await api(`/api/time-trials/${trial.id}/roster`, {
-          method: "POST", body: { season_id: seasonId, complete: true },
+          method: "POST",
+          body: {
+            season_id: seasonId,
+            complete: true,
+            // The plan as shown. `placed_entry_ids` names the sheet rows that
+            // actually got a roster spot — including the ones needing no write
+            // at all, because they are already right — so the Placements Queue
+            // is cleared for exactly the drivers who are now on a roster.
+            seasons: plan.seasons.map(p => ({
+              season_id: p.season_id,
+              create: p.create,
+              update: p.update,
+              placed_entry_ids: p.placed.map(r => r.id).filter(Boolean),
+            })),
+          },
         });
-        setDone(res);
-        onCompleted(res.trial, res);
+        // The skipped list is the plan's, not the write's: the server was never
+        // told about the drivers it deliberately did nothing to.
+        const result = { ...res, skipped: plan.skipped };
+        setDone(result);
+        onCompleted(res.trial, result);
       } else {
         // Close the session without touching any roster — an ordinary time
         // attack night that simply finished.
@@ -150,7 +207,11 @@ export function CompleteTimeTrialModal({ trial, seasons = [], placementSeries = 
         </span>
       </div>
 
-      {canRun && !plan && !error && <div className="skeleton" style={{ height: 70 }} />}
+      {canRun && !plan && !error && !planError && <div className="skeleton" style={{ height: 70 }} />}
+
+      {planError && (
+        <p style={{ color: "var(--accent-gold)", fontSize: "0.85rem" }}>{planError}</p>
+      )}
 
       {plan && (
         <div className="bonus-panel" style={{ marginTop: 4 }}>

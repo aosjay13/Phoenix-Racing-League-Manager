@@ -938,6 +938,10 @@ export function TimeTrialScreen() {
       {completing && (
         <CompleteTimeTrialModal
           trial={trial}
+          // The sheet's own rows: the roster plan is worked out from these, in
+          // the browser. openAfterSaving() flushes any pending edits before this
+          // opens, so what is on screen is what is stored.
+          rows={rows}
           seasons={seasonOptions}
           placementSeries={placementSeries}
           onClose={() => setCompleting(false)}

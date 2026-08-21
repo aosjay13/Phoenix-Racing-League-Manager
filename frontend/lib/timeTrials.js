@@ -471,6 +471,65 @@ export function planRosterBuild(rows = [], existing = [], { requireClass = false
   return { create, update, skipped, placed };
 }
 
+// A whole "Complete Session → build the roster" run, planned in one call.
+//
+// planRosterBuild answers for ONE season; this is the layer above it — which
+// seasons are targets at all, which rows land in each, and the totals the
+// confirmation screen reads. It exists because the answer is needed twice, by
+// two different processes: the modal draws its preview from it, and the write
+// it posts is the same plan. Keeping that in one pure function is what stops
+// "what this will do" and "what it did" from ever disagreeing.
+//
+// `existingBySeason` maps a target season id to that season's current roster
+// entries — a driver already in the Pro Series' roster is matched there, not
+// against some other season's.
+//
+// Returns `{ error }` when the sheet has nowhere to write, exactly as the route
+// used to refuse.
+export function planRosterRun({
+  trial = {}, rows = [], trialSeasonId = "", seasonBySeries = {},
+  seasonNameById = {}, existingBySeason = {},
+} = {}) {
+  const groups = groupByTargetSeason(rows, { trialSeasonId, seasonBySeries });
+
+  // Rows with nowhere to go: a driver placed into a series that names no
+  // season, on a trial with no season of its own. They're reported, never
+  // written — inventing a roster for them isn't ours to do.
+  const homeless = groups.get("") || [];
+  groups.delete("");
+  if (!groups.size) {
+    return {
+      error: trialSeasonId
+        ? "Nobody on this sheet has a roster to go to yet."
+        : "Pick the season whose roster this should build.",
+    };
+  }
+
+  // On a class placement night an unplaced driver is left alone: there is no
+  // division to put them in yet, and inventing one isn't ours to do. A driver
+  // sorted into a SERIES has been placed either way — the series is their
+  // division — so they join that series' roster whether or not they also drew a
+  // class inside it. An ordinary trial pushes its field on unclassified.
+  const placesIntoClasses = !!trial.is_placement && (trial.class_ids || []).length > 0;
+  const requireClass = row => placesIntoClasses && !row.assigned_series_id;
+
+  const seasons = [...groups.keys()].map(seasonId => ({
+    season_id: seasonId,
+    season_name: seasonNameById[seasonId] || "",
+    ...planRosterBuild(groups.get(seasonId), existingBySeason[seasonId] || [], { requireClass }),
+  }));
+
+  return {
+    seasons,
+    created: seasons.reduce((n, p) => n + p.create.length, 0),
+    updated: seasons.reduce((n, p) => n + p.update.length, 0),
+    skipped: [
+      ...seasons.flatMap(p => p.skipped),
+      ...homeless.map(r => ({ name: r.name || "", reason: "no season to place them in" })),
+    ],
+  };
+}
+
 // ── Export to Qualifying ────────────────────────────────────────────────────
 
 // The qualifying grid a trial produces: fastest lap = pole, in order, with each

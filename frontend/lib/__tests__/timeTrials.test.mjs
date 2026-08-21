@@ -21,7 +21,7 @@ import {
   autoAssignClasses, autoAssignClassesWithinSeries, autoAssignSeries, averageLabel,
   bestAverage, bestLap, entryIndex, groupByAssignedClass, groupByTargetSeason,
   lapSeconds, matchEntry, normalizeAverageLaps, normalizeLaps, normalizeMaxLaps, placedOrder,
-  planQualifyingExport, planRosterBuild, rankEntries, splitEvenly, summarizeEntries,
+  planQualifyingExport, planRosterBuild, planRosterRun, rankEntries, splitEvenly, summarizeEntries,
   summarizeEntry, targetSeasonFor, trialMatchesScope,
 } from "../timeTrials.js";
 
@@ -214,6 +214,88 @@ check("a driver on the roster under a series alias still matches by account",
     [{ id: "1", name: "Ana", user_id: "u1", assigned_class_id: "pro" }],
     [{ id: "e1", name: "AnaRacer", user_id: "u1", class_id: "" }],
   ).update, [{ id: "e1", name: "AnaRacer", class_id: "pro", class_ids: ["pro"] }]);
+
+// ── 5b. A whole roster run ────────────────────────────────────────────────
+//
+// planRosterRun is the layer the "Complete Session" dialog draws its preview
+// from AND the plan it posts, so this covers the part planRosterBuild doesn't:
+// which seasons are targets at all, and what happens when a row has no roster
+// to go to. A league whose divisions are SERIES builds several rosters in one
+// run, and each is planned against its own season's entries — planning them
+// against a single pooled roster would "move" a driver between seasons that
+// never shared one.
+const runTrial = {
+  is_placement: true,
+  class_ids: ["pro", "am"],
+  series_seasons: { "ser-pro": "s-pro" },
+};
+const runRows = [
+  { id: "r1", name: "Ana", driver_id: "drv-ana", assigned_class_id: "pro" },
+  { id: "r2", name: "Ben", driver_id: "drv-ben", assigned_class_id: "am" },
+  { id: "r3", name: "Cal", driver_id: "drv-cal", assigned_series_id: "ser-pro" },
+  { id: "r4", name: "Dee", assigned_class_id: "" },
+];
+const run = planRosterRun({
+  trial: runTrial,
+  rows: runRows,
+  trialSeasonId: "s-main",
+  seasonBySeries: runTrial.series_seasons,
+  seasonNameById: { "s-main": "Main Season", "s-pro": "Pro Season" },
+  existingBySeason: {
+    "s-main": [{ id: "e-ana", name: "Ana", driver_id: "drv-ana", class_id: "am" }],
+    "s-pro": [],
+  },
+});
+check("a series placement builds its own season's roster, not the trial's",
+  run.seasons.map(p => [p.season_id, p.season_name]),
+  [["s-main", "Main Season"], ["s-pro", "Pro Season"]]);
+check("each roster is planned against its OWN season's entries",
+  run.seasons.map(p => [p.create.map(c => c.name), p.update.map(u => u.id)]),
+  [[["Ben"], ["e-ana"]], [["Cal"], []]]);
+check("the totals add the rosters up", [run.created, run.updated], [2, 1]);
+// A driver sorted into a SERIES has been placed — the series is their division
+// — so they need no class. One left with neither is the only one skipped.
+check("only the driver with no division at all is left alone",
+  run.skipped.map(s => [s.name, s.reason]), [["Dee", "no class assigned"]]);
+
+// A row placed into a series that names no season, on a trial with no season of
+// its own, has nowhere to go. It is reported, never written.
+const homeless = planRosterRun({
+  trial: { is_placement: true, class_ids: ["pro"] },
+  rows: [{ id: "r1", name: "Ana", assigned_series_id: "ser-none", assigned_class_id: "pro" }],
+  trialSeasonId: "",
+  seasonBySeries: {},
+  existingBySeason: {},
+});
+check("with no season anywhere, the run refuses and says which question to answer",
+  homeless.error, "Pick the season whose roster this should build.");
+check("…and a trial that HAS a season but no rows bound for one says so instead",
+  planRosterRun({ trial: {}, rows: [], trialSeasonId: "s-main", existingBySeason: {} }).error,
+  "Nobody on this sheet has a roster to go to yet.");
+// The trial's own season is the fallback for anyone a series can't place, so a
+// row is only homeless when there is no trial season EITHER — the case a
+// placement night run before its season exists actually hits.
+check("with the trial's season set, a series that names none still lands there",
+  planRosterRun({
+    trial: { is_placement: true, class_ids: ["pro"] },
+    rows: [{ id: "r2", name: "Zed", assigned_series_id: "ser-none", assigned_class_id: "pro" }],
+    trialSeasonId: "s-main",
+    seasonBySeries: {},
+    existingBySeason: { "s-main": [] },
+  }).seasons.map(p => [p.season_id, p.create.map(c => c.name)]),
+  [["s-main", ["Zed"]]]);
+check("a row bound nowhere is reported alongside the rosters that did build",
+  planRosterRun({
+    trial: { is_placement: true, class_ids: ["pro"] },
+    rows: [
+      { id: "r1", name: "Ana", assigned_series_id: "ser-pro", assigned_class_id: "pro" },
+      { id: "r2", name: "Zed", assigned_series_id: "ser-none", assigned_class_id: "pro" },
+    ],
+    trialSeasonId: "",
+    seasonBySeries: { "ser-pro": "s-pro" },
+    existingBySeason: { "s-pro": [] },
+  }).skipped,
+  [{ name: "Zed", reason: "no season to place them in" }]);
 
 // ── 6. Export to Qualifying ───────────────────────────────────────────────
 const index = entryIndex([

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { getRequestLeagueId, withAdmin } from "@/lib/serverAuth";
-import { groupByTargetSeason, planRosterBuild } from "@/lib/timeTrials";
 import { TRIAL_COLLECTION, TRIAL_STATUS_COMPLETED, fetchTrial, fetchTrialEntries } from "@/lib/timeTrialsServer";
 import { clearPlacementQueue } from "@/lib/placementQueueServer";
 import { withStatsRefresh } from "@/lib/statsCache";
@@ -16,85 +15,111 @@ export const dynamic = "force-dynamic";
 // straight onto the roster — the hours of manual entry that a placement session
 // otherwise creates.
 //
-//   POST { season_id, series_seasons?, complete: true, dry_run: false }
+//   POST { complete, season_id?, series_seasons?, seasons: [
+//            { season_id, create[], update[], placed_entry_ids[] } ] }
 //
 // A division is not always a class. A league whose divisions are separate
 // SERIES places drivers into series instead, and each series builds the roster
 // of the season behind it — so one run can write SEVERAL rosters, one per
 // target season. `series_seasons` overrides the map stored on the trial for
-// this run; `season_id` is where everyone not placed into a series goes.
+// this run; `season_id` is where everyone not placed into a series goes. Both
+// are recorded on the trial so re-opening the sheet routes the same way.
 //
-// `dry_run` answers "what would this do?" without writing anything, which is
-// what the confirmation modal shows before the admin commits. The plan itself
-// (who is created, who is merely re-classed, who is left alone) lives in
-// lib/timeTrials.js so the two answers can never differ.
+// ── Where the plan comes from ─────────────────────────────────────────────
+//
+// The browser builds it. Grouping the sheet by target season, matching each
+// driver against that season's existing roster and deciding create / re-class /
+// leave alone are pure functions of the sheet on screen and the rosters it is
+// compared against (planRosterRun, lib/timeTrials.js). This route used to run
+// them, and ran them AGAIN for every `dry_run` the confirmation modal fired as
+// the admin changed the target season — a serverless invocation to answer a
+// question the browser had the data for. The modal previews from memory now and
+// posts the plan it showed, so "what this will do" and "what it did" cannot
+// disagree.
 //
 // Re-running is safe by design: a driver already on a roster is UPDATED to the
 // division the trial placed them in rather than duplicated, so an admin can
 // re-sort the field and press the button again.
+//
+// ── What is still checked here ────────────────────────────────────────────
+//
+// Not arithmetic — the things a browser cannot be trusted to have got right:
+// the target seasons still exist, every re-classed entry really belongs to the
+// season it is being re-classed in, and each row carries only the fields a
+// roster entry is allowed to carry. Anything else in the payload is dropped.
+
+// The exact shape planRosterBuild produces, and the only fields that reach a
+// document. A whitelist rather than a spread: this payload arrives over the
+// wire now, and an entry must not be able to grow fields because a request
+// asked it to.
+function createDoc(row) {
+  const name = String(row?.name ?? "").trim();
+  if (!name) return null;
+  const classId = String(row.class_id ?? "");
+  const number = String(row.number ?? "").trim();
+  return {
+    name,
+    ...(number ? { number } : {}),
+    ...(row.driver_id ? { driver_id: String(row.driver_id) } : {}),
+    ...(row.user_id ? { user_id: String(row.user_id) } : {}),
+    class_id: classId,
+    class_ids: Array.isArray(row.class_ids) ? row.class_ids.filter(Boolean).map(String) : (classId ? [classId] : []),
+    team_id: "",
+  };
+}
+
 const handlePOST = withAdmin(async (request, { params }, user) => {
-  const { season_id, series_seasons, complete = true, dry_run = false } = await request.json();
+  const { season_id, series_seasons, complete = true, seasons: planned } = await request.json();
   const trial = await fetchTrial(params.id);
   if (!trial) return NextResponse.json({ error: "Time trial not found" }, { status: 404 });
 
-  // Where each kind of row lands. The trial's own season takes everyone not
-  // placed into a series; each series takes its own season.
-  const trialSeasonId = String(season_id || trial.season_id || "").trim();
-  const seasonBySeries = { ...(trial.series_seasons || {}), ...(series_seasons || {}) };
-  const rows = await fetchTrialEntries(params.id);
-  const groups = groupByTargetSeason(rows, { trialSeasonId, seasonBySeries });
-
-  // Rows with nowhere to go: a driver placed into a series that names no
-  // season, on a trial with no season of its own. They're reported, never
-  // written — inventing a roster for them isn't ours to do.
-  const homeless = groups.get("") || [];
-  groups.delete("");
-  if (!groups.size) {
-    return NextResponse.json({
-      error: trialSeasonId
-        ? "Nobody on this sheet has a roster to go to yet."
-        : "Pick the season whose roster this should build.",
-    }, { status: 400 });
+  if (!Array.isArray(planned) || !planned.length) {
+    return NextResponse.json({ error: "seasons[] required" }, { status: 400 });
   }
 
-  const seasonIds = [...groups.keys()];
+  const trialSeasonId = String(season_id || trial.season_id || "").trim();
+  const seasonBySeries = { ...(trial.series_seasons || {}), ...(series_seasons || {}) };
+
+  const seasonIds = planned.map(p => String(p?.season_id ?? ""));
+  if (seasonIds.some(id => !id) || new Set(seasonIds).size !== seasonIds.length) {
+    return NextResponse.json({ error: "Every roster in the plan needs its own season." }, { status: 400 });
+  }
+
   const seasonDocs = await Promise.all(seasonIds.map(id => db().collection("seasons").doc(id).get()));
-  const missing = seasonIds.filter((id, i) => !seasonDocs[i].exists);
-  if (missing.length) {
+  if (seasonDocs.some(d => !d.exists)) {
     return NextResponse.json({ error: "A season this session places into no longer exists." }, { status: 404 });
   }
   const seasonName = Object.fromEntries(seasonDocs.map(d => [d.id, d.data().name || ""]));
 
-  // One roster per target season, each planned against that season's own
-  // existing entries — a driver already in the Pro Series' roster is matched
-  // there, not against some other season's.
+  // A re-class only ever touches an entry on the roster it belongs to. The plan
+  // was built against these very entries; this is the guarantee, not the filter.
   const existingSnaps = await Promise.all(
     seasonIds.map(id => db().collection("entries").where("season_id", "==", id).get())
   );
-  // On a class placement night an unplaced driver is left alone: there is no
-  // division to put them in yet, and inventing one isn't ours to do. A driver
-  // sorted into a SERIES has been placed either way — the series is their
-  // division — so they join that series' roster whether or not they also drew a
-  // class inside it. An ordinary trial pushes its field on unclassified.
-  const placesIntoClasses = !!trial.is_placement && (trial.class_ids || []).length > 0;
-  const requireClass = row => placesIntoClasses && !row.assigned_series_id;
-  const plans = seasonIds.map((seasonId, i) => ({
-    season_id: seasonId,
-    season_name: seasonName[seasonId],
-    ...planRosterBuild(groups.get(seasonId), existingSnaps[i].docs.map(d => ({ id: d.id, ...d.data() })), { requireClass }),
-  }));
+  const entryIdsBySeason = Object.fromEntries(
+    seasonIds.map((id, i) => [id, new Set(existingSnaps[i].docs.map(d => d.id))]),
+  );
 
-  const totals = {
-    created: plans.reduce((n, p) => n + p.create.length, 0),
-    updated: plans.reduce((n, p) => n + p.update.length, 0),
-    skipped: [
-      ...plans.flatMap(p => p.skipped),
-      ...homeless.map(r => ({ name: r.name || "", reason: "no season to place them in" })),
-    ],
-  };
-
-  if (dry_run) {
-    return NextResponse.json({ ok: true, dry_run: true, seasons: plans, ...totals });
+  const writes = [];
+  for (const plan of planned) {
+    const seasonId = String(plan.season_id);
+    for (const row of Array.isArray(plan.create) ? plan.create : []) {
+      const doc = createDoc(row);
+      if (!doc) return NextResponse.json({ error: "A driver on that plan has no name." }, { status: 400 });
+      writes.push({ kind: "create", seasonId, doc });
+    }
+    for (const row of Array.isArray(plan.update) ? plan.update : []) {
+      const id = String(row?.id ?? "");
+      if (!entryIdsBySeason[seasonId].has(id)) {
+        return NextResponse.json({ error: "That plan re-classes a driver who isn't on the roster." }, { status: 400 });
+      }
+      const classId = String(row.class_id ?? "");
+      writes.push({ kind: "update", id, data: {
+        class_id: classId,
+        class_ids: Array.isArray(row.class_ids) ? row.class_ids.filter(Boolean).map(String) : (classId ? [classId] : []),
+        time_trial_id: params.id,
+      } });
+    }
   }
 
   const leagueId = getRequestLeagueId(request);
@@ -103,10 +128,6 @@ const handlePOST = withAdmin(async (request, { params }, user) => {
 
   // Firestore batches cap at 500 writes; chunk so a placement night of any size
   // goes through in one action, across however many rosters it builds.
-  const writes = plans.flatMap(plan => [
-    ...plan.create.map(row => ({ kind: "create", seasonId: plan.season_id, row })),
-    ...plan.update.map(row => ({ kind: "update", row })),
-  ]);
   for (let i = 0; i < writes.length; i += 400) {
     const batch = db().batch();
     for (const write of writes.slice(i, i + 400)) {
@@ -114,7 +135,7 @@ const handlePOST = withAdmin(async (request, { params }, user) => {
         batch.set(col.doc(), {
           season_id: write.seasonId,
           ...(leagueId ? { league_id: leagueId } : {}),
-          ...write.row,
+          ...write.doc,
           // Where this roster spot came from, so a season's roster can be traced
           // back to the night that built it.
           time_trial_id: params.id,
@@ -122,11 +143,7 @@ const handlePOST = withAdmin(async (request, { params }, user) => {
           created_by: user.uid,
         });
       } else {
-        batch.update(col.doc(write.row.id), {
-          class_id: write.row.class_id,
-          class_ids: write.row.class_ids,
-          time_trial_id: params.id,
-        });
+        batch.update(col.doc(write.id), write.data);
       }
     }
     await batch.commit();
@@ -142,22 +159,27 @@ const handlePOST = withAdmin(async (request, { params }, user) => {
   // Cleared against who ACTUALLY got a roster spot, not against who was on the
   // sheet: a driver left unplaced tonight is still owed a session, and dropping
   // them off the list would lose them exactly as the queue exists to prevent.
+  // The plan names those rows by id; the rows themselves are read back from the
+  // sheet here, so the message each driver gets is built from stored documents
+  // rather than from anything the request said about them.
   //
   // Never allowed to fail the run. The entries are written and the drivers are
   // racing; a queue row that survives is a to-do an admin can clear by hand,
   // while a throw here would report a completed night as a failure.
   let placements = { cleared: [] };
   try {
+    const sheet = Object.fromEntries((await fetchTrialEntries(params.id)).map(r => [r.id, r]));
+    const placedRows = planned.flatMap(plan =>
+      (Array.isArray(plan.placed_entry_ids) ? plan.placed_entry_ids : [])
+        .map(id => sheet[String(id)])
+        .filter(Boolean)
+        .map(row => ({
+          ...row,
+          target_season_id: String(plan.season_id),
+          target_season_name: seasonName[String(plan.season_id)],
+        })));
     placements = await clearPlacementQueue({
-      trial,
-      trialId: params.id,
-      placedRows: plans.flatMap(plan => plan.placed.map(row => ({
-        ...row,
-        target_season_id: plan.season_id,
-        target_season_name: plan.season_name,
-      }))),
-      leagueId,
-      admin: user,
+      trial, trialId: params.id, placedRows, leagueId, admin: user,
     });
   } catch (err) {
     console.error("Clearing the placements queue failed after a roster build", err);
@@ -179,11 +201,14 @@ const handlePOST = withAdmin(async (request, { params }, user) => {
 
   return NextResponse.json({
     ok: true,
-    seasons: plans.map(p => ({
-      season_id: p.season_id, season_name: p.season_name,
-      created: p.create.length, updated: p.update.length,
+    seasons: planned.map(p => ({
+      season_id: String(p.season_id),
+      season_name: seasonName[String(p.season_id)],
+      created: (p.create || []).length,
+      updated: (p.update || []).length,
     })),
-    ...totals,
+    created: writes.filter(w => w.kind === "create").length,
+    updated: writes.filter(w => w.kind === "update").length,
     // Who has stopped waiting on a placement session, so the admin is told that
     // half happened too — it is a change to a screen they are not looking at.
     placements_cleared: placements.cleared.length,
