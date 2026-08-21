@@ -11,6 +11,7 @@ import { ShareGraphicModal } from "@/components/ShareGraphicModal";
 import { leagueLogos, driverDisplayName } from "@/lib/shareGraphic";
 import { formatRaceDate } from "@/lib/raceDate";
 import { raceLengthLabel } from "@/lib/raceLength";
+import { raceStats } from "@/lib/raceStats";
 import { gapColumns, formatDelta, parseTime, parseLapsDown } from "@/lib/raceTime";
 import { carForRace, carsByClassForRace, classIdForScope, sessionClassScopes, soleCarForRace } from "@/lib/classFilter";
 import { bracketRoundFor, bracketSizeLabel, normalizeBracketSize } from "@/lib/bracketRacing";
@@ -263,6 +264,12 @@ export function RaceResultsScreen() {
   const qualGaps = gapColumns(qualRows.map(r => parseTime(r.qual_time)));
   const raceGaps = gapColumns(raceTimesInOrder(finishers));
 
+  // Caution flags / lead changes, if this event recorded any. They describe the
+  // race rather than any driver in it, so they sit in the header beside the
+  // track and the date — and an event that recorded neither (the usual case)
+  // gets an empty list here and no strip on the page at all. See lib/raceStats.js.
+  const eventStats = raceStats(event);
+
   // Shareable graphic for the currently-viewed session (Qualifying or a race).
   const eventDate = event.date ? formatRaceDate(event.date, "long", null) : null;
   const sharingQual = tab === "__qual";
@@ -327,6 +334,9 @@ export function RaceResultsScreen() {
     { label: "Series", value: [game?.name, series?.name].filter(Boolean).join(" · "), wide: true },
     { label: "Season", value: season?.name },
     { label: "Length", value: raceLengthLabel(event) },
+    // Only the stats this event actually recorded — the strip drops a fact with
+    // no value, so an event with neither carries neither.
+    ...eventStats.map(s => ({ label: s.label, value: s.value })),
     { label: "Class", value: activeClass?.label },
     { label: "Session", value: tabName },
   ];
@@ -368,6 +378,19 @@ export function RaceResultsScreen() {
             {/* Scheduled distance: "100 Laps", or the clock on a timed event. */}
             {raceLengthLabel(event) ? ` · ${raceLengthLabel(event)}` : ""}
           </p>
+          {/* Race stats: shown only for the figures this event has. A blank or
+              0 is left off entirely — see lib/raceStats.js. */}
+          {eventStats.length > 0 && (
+            <p className="race-stat-row">
+              {eventStats.map(s => (
+                <span key={s.key} className="race-stat-chip" title={s.title}>
+                  <span aria-hidden="true">{s.icon}</span>
+                  <span className="race-stat-label">{s.label}</span>
+                  <span className="race-stat-value">{s.value}</span>
+                </span>
+              ))}
+            </p>
+          )}
           {classCars.length > 0 && (
             <p style={{ margin: "4px 0 0", display: "flex", gap: 10, flexWrap: "wrap", fontSize: "0.82rem", color: "var(--ink-1)" }}>
               {classCars.map(c => (

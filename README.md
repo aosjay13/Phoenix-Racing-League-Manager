@@ -878,6 +878,17 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
    stats, and every linked player's profile update immediately. Re-open and re-save a race
    any time to correct results; it overwrites cleanly.
 
+   **Caution flags and lead changes belong to the race, not to a driver.** The **Race Info** tab
+   carries two optional boxes — **Caution flags** and **Lead changes** — filled in after the event
+   has been run. Whatever is entered appears at the **top of that event's results page**, beside the
+   track, the date and the race length, and is offered on its Share Graphic's metadata strip. They
+   count toward nothing: no points, no bonus, no driver stat, no standing. Not every league counts
+   them and not every game reports them, so **anything left blank — or on 0 — is left off the page
+   altogether**: an event with neither reads exactly as it always did, an event with only one shows
+   only that one, and "0 cautions" is never printed as though somebody had counted them. Copying an
+   event carries the two figures **only when its results come across with it**, since they record
+   the race that was run rather than the round it was scheduled as. See `lib/raceStats.js`.
+
    **Adding a driver mid-entry picks from the drivers you already have.** The
    **＋ Add a driver to this race…** box at the bottom of the grid searches **every name a driver
    answers to** — their profile name, the name they use in *this* game, their Discord / PSN /

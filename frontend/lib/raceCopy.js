@@ -17,6 +17,7 @@ import { identityKeys } from "@/lib/rosterImport";
 import { UNCLASSIFIED } from "@/lib/classFilter";
 import { BANGER_RESULT_FIELDS } from "@/lib/bangerRacing";
 import { toDateOnly } from "@/lib/raceDate";
+import { RACE_STAT_FIELDS } from "@/lib/raceStats";
 
 // Race fields that describe the EVENT and so carry over to the copy: what it's
 // called, where and how long it runs, its session structure and which points
@@ -30,6 +31,13 @@ import { toDateOnly } from "@/lib/raceDate";
 //                             SR timeline. The copy has its own field in its
 //                             own season, so a carried-over number would be a
 //                             fabrication; the next recalc writes the real one.
+//   caution_flags,
+//   lead_changes              a record of the race being RUN, not of how it is
+//                             scheduled — so they travel with the results and
+//                             only with them (see copyRaceDoc's
+//                             `include_results`). A copy taken as a fresh round
+//                             to enter results into must not open already
+//                             claiming six cautions it never ran.
 //   created_at/created_by,
 //   league_id                 audit + partitioning, stamped fresh on write
 export const COPIED_RACE_FIELDS = [
@@ -148,10 +156,20 @@ export function newEntryForDriver(entry, classIds = []) {
 // another season. Scopes whose class didn't survive the mapping are dropped;
 // those sessions fall back to `session_points`, then to the season's own
 // points, exactly as an event that never named them does.
-export function copyRaceDoc(race, { season_id, round_number, name, date, class_id = "", classMap = {} } = {}) {
+//
+// `include_results` is the admin's "copy the results too" choice, and the race
+// stats (caution flags, lead changes) follow it: they record what happened in
+// the running of the race, so they belong to the copy exactly when its results
+// do. A copy taken as an empty calendar entry gets neither.
+export function copyRaceDoc(race, { season_id, round_number, name, date, class_id = "", classMap = {}, include_results = false } = {}) {
   const doc = { season_id, round_number: Number(round_number) || 1 };
   for (const field of COPIED_RACE_FIELDS) {
     if (race[field] !== undefined) doc[field] = race[field];
+  }
+  if (include_results) {
+    for (const field of RACE_STAT_FIELDS) {
+      if (race[field] !== undefined) doc[field] = race[field];
+    }
   }
   if (name != null && String(name).trim() !== "") doc.name = String(name).trim();
   // Both the carried-over date and a re-date go through toDateOnly, so the copy

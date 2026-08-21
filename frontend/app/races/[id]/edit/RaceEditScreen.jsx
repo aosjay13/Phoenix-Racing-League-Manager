@@ -12,7 +12,9 @@ import { RaceNav } from "@/components/RaceNav";
 import { rawBundlePath } from "@/components/useRawBundle";
 import { HeatPointsDefaultFields } from "@/components/HeatPointsDefaultFields";
 import { SessionLapsFields } from "@/components/SessionLapsFields";
+import { RaceStatsFields } from "@/components/RaceStatsFields";
 import { LENGTH_LAPS, raceLengthBody, raceLengthForm, sessionLapsBody, sessionLapsForm } from "@/lib/raceLength";
+import { raceStatsBody, raceStatsForm } from "@/lib/raceStats";
 import { normalizedBuiltinTemplates } from "@/lib/pointsTemplates";
 import { carForRace, racePerClassResults, sessionClassScopes } from "@/lib/classFilter";
 import { gameNameFor } from "@/lib/driverNames";
@@ -33,6 +35,10 @@ const BLANK_INFO = {
   // auto-count laps off these instead of off the Feature's total_laps. Optional,
   // and read by the results grid alone. See lib/raceLength.js.
   heat_laps: "", consolation_laps: "",
+  // Race statistics — the caution flags and lead changes this event ran to.
+  // Optional, entered after the race, and printed at the top of the public
+  // results page. See lib/raceStats.js.
+  caution_flags: "", lead_changes: "",
   car: "", heat_format: false, heats: "", consolations: "", feature_name: "A-Main Feature",
   // Default points template for every heat / every consolation of this event.
   // Blank = they score on the season's (or class's) points structure.
@@ -151,6 +157,7 @@ function RaceInfoTab({ race, season, classes = [], templates = [], onSaved }) {
       sessions: Array.isArray(race.sessions) && race.sessions.length ? race.sessions.join(", ") : "Race",
       ...raceLengthForm(race),
       ...sessionLapsForm(race),
+      ...raceStatsForm(race),
       car: race.car || "",
       heat_format: !!race.heat_format,
       heats: Array.isArray(race.heats) ? race.heats.join(", ") : "",
@@ -205,6 +212,9 @@ function RaceInfoTab({ race, season, classes = [], templates = [], onSaved }) {
         // Cleared with the heat format itself — a standard-format event has no
         // heats or consolations for a preliminary distance to describe.
         ...sessionLapsBody(form, form.heat_format),
+        // Caution flags / lead changes. Blank or 0 saves as unset, which is
+        // what leaves the stat off the public results page.
+        ...raceStatsBody(form),
         car: form.car,
         heat_format: !!form.heat_format,
         heats: form.heat_format ? (heats.length ? heats : ["Heat 1"]) : [],
@@ -293,6 +303,8 @@ function RaceInfoTab({ race, season, classes = [], templates = [], onSaved }) {
           lengthType={form.length_type} totalLaps={form.total_laps} raceMinutes={form.race_minutes}
           totalRounds={form.total_rounds}
           onChange={patch => setForm(f => ({ ...f, ...patch }))} />
+        <RaceStatsFields idPrefix="edit_race" value={form}
+          onPatch={patch => setForm(f => ({ ...f, ...patch }))} />
         <div className="field"><label>Car Type</label>
           <input value={form.car} onChange={set("car")} placeholder={classes.length ? "Leave blank to use the class's / season's car" : "Leave blank to use the season's car"} />
           <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>

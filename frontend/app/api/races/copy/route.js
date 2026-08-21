@@ -200,6 +200,9 @@ const handlePOST = withAdmin(async (request, ctx, user) => {
       // stale class id would hide the event from every calendar.
       class_id: mapClassId(race.class_id, classMap),
       classMap,
+      // The event's caution flags / lead changes describe the race that was
+      // run, so they come across only when its results do.
+      include_results,
     }),
     copied_from_race_id: race.id,
     copied_from_season_id: fromSeasonId,

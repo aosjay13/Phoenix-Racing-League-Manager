@@ -1686,6 +1686,42 @@ th.sortable:hover {
   white-space: nowrap;
 }
 
+/* ── Race stats strip (public race results header) ─────────────────────────
+   Caution flags and lead changes — figures that belong to the RACE rather than
+   to any driver in it, so they sit in the event header beside the track and the
+   date. Only the stats an event actually recorded are rendered (see
+   lib/raceStats.js), so this strip is absent from most events entirely. */
+.race-stat-row {
+  margin: 8px 0 0;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.race-stat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated, rgba(255, 255, 255, 0.04));
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.race-stat-chip .race-stat-label {
+  color: var(--ink-1);
+  letter-spacing: 0.02em;
+}
+
+.race-stat-chip .race-stat-value {
+  color: var(--ink-0);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Bonus points panel (public race results) ──────────────────────────────
    Sits above the results table and names every bonus the viewed session pays,
    so a total that is more than the finishing position can be read rather than

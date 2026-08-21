@@ -579,6 +579,13 @@ export const SPECS = {
                        // where they auto-count laps completed for those tabs off
                        // the right distance. See lib/raceLength.js.
                        heat_laps: { number: true }, consolation_laps: { number: true },
+                       // Race statistics — what happened in the RUNNING of this
+                       // event, entered by hand after it has been run: how many
+                       // caution flags flew and how many times the lead changed
+                       // hands. Both optional (0 = unset), read only by the top
+                       // of the public results page, and scored by nothing.
+                       // See lib/raceStats.js.
+                       caution_flags: { number: true }, lead_changes: { number: true },
                        // Bracket Style Racing: how big the elimination ladder
                        // this event ran was — 4, 8, 16 or 32 drivers. It's what
                        // the results grid builds its finishing positions from
