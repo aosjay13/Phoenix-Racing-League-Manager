@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { withAdmin } from "@/lib/serverAuth";
 import { classIdForScope, classOfResult, isClassScoped } from "@/lib/classServer";
-import { withStatsRefresh } from "@/lib/statsRefresh";
+import { withStatsRefresh } from "@/lib/statsCache";
 
 const SESSION_TYPES = ["qualifying", "race", "heat", "consolation", "feature"];
 

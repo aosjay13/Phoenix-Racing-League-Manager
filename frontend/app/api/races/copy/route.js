@@ -7,7 +7,7 @@ import {
   mapClassesByName, mapClassId, planEntryMap, newEntryForDriver,
   copyRaceDoc, copyResultDocs, nextRoundNumber,
 } from "@/lib/raceCopy";
-import { withStatsRefresh } from "@/lib/statsRefresh";
+import { withStatsRefresh } from "@/lib/statsCache";
 
 export const dynamic = "force-dynamic";
 

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { docInLeague, withAdmin } from "@/lib/serverAuth";
 import { entryClassIds } from "@/lib/classServer";
-import { withStatsRefresh } from "@/lib/statsRefresh";
+import { withStatsRefresh } from "@/lib/statsCache";
 
 export const dynamic = "force-dynamic";
 

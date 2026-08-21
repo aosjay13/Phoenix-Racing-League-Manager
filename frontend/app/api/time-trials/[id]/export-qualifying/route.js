@@ -5,7 +5,7 @@ import { classIdForScope, isClassScoped } from "@/lib/classFilter";
 import { bangerFieldsForSave } from "@/lib/bangerRacing";
 import { entryIndex, matchEntry, planQualifyingExport, summarizeEntries } from "@/lib/timeTrials";
 import { fetchTrial, fetchTrialEntries } from "@/lib/timeTrialsServer";
-import { withStatsRefresh } from "@/lib/statsRefresh";
+import { withStatsRefresh } from "@/lib/statsCache";
 
 export const dynamic = "force-dynamic";
 

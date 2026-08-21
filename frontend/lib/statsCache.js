@@ -1,6 +1,4 @@
 import { revalidateTag, unstable_cache } from "next/cache";
-import { readStored, writeStored } from "@/lib/statsStore";
-import { cacheKeyFor } from "@/lib/statsKey";
 import { getRequestLeagueId } from "@/lib/serverAuth";
 
 // The read-path cache for the expensive league-wide reads: standings, stats,
@@ -27,8 +25,6 @@ import { getRequestLeagueId } from "@/lib/serverAuth";
 // mechanism: it decides how long a missed invalidation can go unnoticed. Cached
 // "indefinitely" would make a single missed call permanent, and stale standings
 // that never heal are worse than a recalculation nobody was going to notice.
-export { cacheKeyFor };
-
 export const STATS_TAG = "stats-data";
 
 // Six hours. Long enough that a league racing weekly effectively never pays for
@@ -49,6 +45,19 @@ export function leagueStatsTag(leagueId) {
   return `${STATS_TAG}:${leagueId || "unscoped"}`;
 }
 
+// The cache key for one read. Sorted, so two callers that build the same query
+// with their keys in a different order share an entry rather than each paying
+// for their own; JSON-encoded as pairs, so no combination of values can be
+// spelled two ways or collide with another (a param holding "a|b" is not the
+// same key as two params "a" and "b").
+export function cacheKeyFor(name, leagueId, params = {}) {
+  const pairs = Object.entries(params)
+    .filter(([, v]) => v !== undefined && v !== null && v !== "")
+    .map(([k, v]) => [k, String(v)])
+    .sort((a, b) => a[0].localeCompare(b[0]));
+  return [name, leagueId || "", JSON.stringify(pairs)];
+}
+
 // unstable_cache needs Next's incremental cache, which exists inside a running
 // server and nowhere else — the unit suites and the CPU profiler import route
 // handlers directly, and a test run must not be the reason a route throws.
@@ -66,28 +75,7 @@ function cacheUnavailable(err) {
 // params it must return the same thing, or caching it would be a bug.
 export function cachedPayload(name, compute) {
   return async (leagueId, params = {}) => {
-    // Three layers, cheapest first.
-    //
-    //   1. this request's process already has the answer  → nothing to do
-    //   2. an admin's save already worked it out          → one document read
-    //   3. nobody has                                     → compute it, and keep
-    //                                                       it so nobody has to
-    //                                                       again
-    //
-    // Layer 3 is the one that matters for safety rather than speed: it means the
-    // stored collection is entirely disposable. Delete every precomputed
-    // document and each screen answers exactly as it always did, just slowly,
-    // once, before filing the answer again.
-    const run = async () => {
-      const stored = await readStored(name, leagueId, params);
-      if (stored) return stored;
-      const built = await compute(leagueId, params);
-      // Only successful answers are kept. A 400 for a missing parameter or a 404
-      // for a season that isn't there costs nothing to work out again, and
-      // storing one risks pinning a transient refusal in place.
-      if (built?.status === 200) await writeStored(name, leagueId, params, built);
-      return built;
-    };
+    const run = () => compute(leagueId, params);
     try {
       return await unstable_cache(run, cacheKeyFor(name, leagueId, params), {
         tags: [STATS_TAG, leagueStatsTag(leagueId)],
@@ -121,4 +109,25 @@ export function revalidateStats(leagueId = null) {
       if (!cacheUnavailable(err)) console.error(`Dropping the ${tag} cache failed`, err);
     }
   }
+}
+
+// Wrap a write handler so a SUCCESSFUL write drops the cached reads.
+//
+// Wrapping rather than calling revalidateStats() by hand somewhere inside each
+// handler, for two reasons. It fires on the way out, so it sees the status and
+// a refused write — a 403 from the wrong league, a 404 for a race that is gone,
+// a 400 for a bad body — costs nothing, where a hand-placed call has to be put
+// after every early return to get that right. And it cannot be put in the wrong
+// place, because there is only one place it can go.
+//
+// The generic collection routes do NOT use this: they know which collection
+// they are writing, so they can skip the purge for the ones no cached read is
+// built from (see statsChanged in lib/entityApi.js). The handlers here each
+// write a specific, known-relevant thing, so they always purge.
+export function withStatsRefresh(handler) {
+  return async (request, ctx) => {
+    const res = await handler(request, ctx);
+    if (!res || res.status < 400) revalidateStats(getRequestLeagueId(request));
+    return res;
+  };
 }

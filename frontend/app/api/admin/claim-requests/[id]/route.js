@@ -6,7 +6,7 @@ import { linkedDriver } from "@/lib/carSelectionServer";
 import { NEW_DRIVER_KIND, requestKind } from "@/lib/signupRequest";
 import { carNumberTaken, seasonAcceptsSignups } from "@/lib/carSelection";
 import { normalizeClassIds } from "@/lib/classFilter";
-import { withStatsRefresh } from "@/lib/statsRefresh";
+import { withStatsRefresh } from "@/lib/statsCache";
 
 // Admin-only: resolve a pending driver-profile request. This route is the ONLY
 // place a user-requested driver profile is ever created or linked — nothing in

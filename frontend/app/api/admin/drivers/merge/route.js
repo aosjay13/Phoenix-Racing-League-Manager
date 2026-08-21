@@ -5,7 +5,7 @@ import { syncEntryNamesForDriver, canonicalNameForDriver } from "@/lib/driverSyn
 import { recalcGameSkillRatings, gameIdForSeason } from "@/lib/skillRatingServer";
 import { planProfileMerge } from "@/lib/driverMerge";
 import { TRIAL_ENTRY_COLLECTION } from "@/lib/timeTrialsServer";
-import { withStatsRefresh } from "@/lib/statsRefresh";
+import { withStatsRefresh } from "@/lib/statsCache";
 
 export const dynamic = "force-dynamic";
 
