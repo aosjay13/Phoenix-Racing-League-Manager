@@ -1,5 +1,20 @@
-import { db } from "@/lib/firebase";
-import { fetchSeriesByIds } from "@/lib/seriesServer";
+// A driver's career — every game, every venue, every race they have started,
+// and every championship they have won — computed in the browser.
+//
+// This is the code that used to run inside lib/careerStatsServer.js, moved
+// rather than rewritten. It was the most expensive route in the app by a wide
+// margin: for each season the driver raced, it read that season's entire
+// results, entries and races, and then replayed the Skill Rating timeline of
+// every game they had ever appeared in. On a league with four years of history
+// behind it that was north of fifty thousand documents decoded per profile
+// view, and a driver's profile is one of the most-opened screens there is.
+//
+// It reads the league bundle the Stats and Records screens already use, so a
+// visitor arriving from either has it in hand.
+//
+// Titles = completed seasons where one of their entries finished P1 in points,
+// class championships included.
+
 import {
   aggregateCareerStats,
   decorateRaceBonuses,
@@ -9,83 +24,53 @@ import {
   makeScorer,
   resolveSeasonConfig,
 } from "@/lib/standings";
-import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
-import { fetchSeasonClasses } from "@/lib/classServer";
 import { describeCrowns, seasonChampions, titlesByEntry } from "@/lib/champions";
 import { raceDateSortKey } from "@/lib/raceDate";
+import { bareResults, indexBundle } from "@/lib/rawIndex";
 
-// Builds a driver's career stats grouped per game (and all games combined),
-// from every entry that matches the given global driver id and/or linked
-// account. Matching on both means a profile still resolves for people who
-// only ever raced under a linked account (older entries without a driver_id)
-// as well as pool drivers who never made an account. Titles = completed
-// seasons where one of their entries finished P1 in points.
+// Matching on driver_id AND linked account means a profile still resolves for
+// people who only ever raced under an account (older entries without a
+// driver_id) as well as pool drivers who never made one.
 //
-// `leagueId` confines the whole career to one league. It matters because of the
-// `user_id` half: a driver id belongs to exactly one league, but an ACCOUNT
-// spans them, so without this a profile viewed inside League B would fold in
-// every race the same person ran in League A. Entries written before the
-// containment migration carry no league_id and still count, so a league
-// mid-migration doesn't appear to lose its history.
-export async function buildCareerProfile({ driverId = null, userId = null, leagueId = "" }) {
-  const queries = [];
-  if (driverId) queries.push(db().collection("entries").where("driver_id", "==", driverId).get());
-  if (userId) queries.push(db().collection("entries").where("user_id", "==", userId).get());
-  if (!queries.length) {
-    return {
-      all_games: aggregateCareerStats([], 0),
-      by_game: [], by_track: [], race_history: [], titles_detail: [], seasons_raced: 0,
-    };
-  }
+// The league confinement that the server did by hand — a driver id belongs to
+// one league, but an ACCOUNT spans them, so a profile viewed inside League B
+// must not fold in races run in League A — is structural here: the bundle only
+// ever holds the active league's seasons, so there is nothing else to fold in.
+export function buildCareerProfile(index, { driverId = null, userId = null } = {}) {
+  const empty = {
+    all_games: aggregateCareerStats([], 0),
+    by_game: [], by_track: [], race_history: [], titles_detail: [], seasons_raced: 0,
+  };
+  if (!driverId && !userId) return empty;
 
-  const snaps = await Promise.all(queries);
-  // Dedupe by entry id — the same entry can match both queries.
-  const entryMap = new Map();
-  for (const snap of snaps) {
-    for (const d of snap.docs) {
-      const entry = { id: d.id, ...d.data() };
-      if (leagueId && entry.league_id != null && entry.league_id !== leagueId) continue;
-      entryMap.set(d.id, entry);
-    }
-  }
-  const myEntries = [...entryMap.values()];
+  const myEntries = (index.bundle.entries || []).filter(e =>
+    (driverId && e.driver_id === driverId) || (userId && e.user_id === userId));
+  if (!myEntries.length) return empty;
 
   const seasonIds = [...new Set(myEntries.map(e => e.season_id))];
-  const seasonDocs = await Promise.all(seasonIds.map(id => db().collection("seasons").doc(id).get()));
-  const seasons = Object.fromEntries(seasonDocs.filter(d => d.exists).map(d => [d.id, d.data()]));
-
-  const gameIds = [...new Set(Object.values(seasons).map(s => s.game_id).filter(Boolean))];
-  const gameDocs = await Promise.all(gameIds.map(id => db().collection("games").doc(id).get()));
-  const games = Object.fromEntries(gameDocs.filter(d => d.exists).map(d => [d.id, d.data()]));
 
   const perGame = {};       // gameId -> results
   const titlesPerGame = {}; // gameId -> count
   const perTrack = {};      // trackKey -> { track_id, track_name, results[] }
   const allResults = [];
   const raceHistory = [];   // one row per race session this driver started
-  const titleList = [];     // one row per season won, newest resolved by caller
+  const titleList = [];     // one row per season won
   let totalTitles = 0;
-  const templatesById = await fetchTemplatesById();
-  // Each season scores on its SERIES' points unless it overrides them.
-  const seriesById = await fetchSeriesByIds(Object.values(seasons).map(s => s.series_id));
+  const templatesById = index.templatesById;
 
   for (const seasonId of seasonIds) {
-    const season = seasons[seasonId];
+    const season = index.seasonById[seasonId];
     if (!season) continue;
-    const config = resolveSeasonConfig(season, seriesById[season.series_id] || null);
+    const series = index.seriesFor(season);
+    const config = resolveSeasonConfig(season, series);
     const gameId = season.game_id || "unknown";
     const myEntryIds = new Set(myEntries.filter(e => e.season_id === seasonId).map(e => e.id));
 
-    const [resultsSnap, entriesSnap2, racesSnap, seasonClasses] = await Promise.all([
-      db().collection("results").where("season_id", "==", seasonId).get(),
-      db().collection("entries").where("season_id", "==", seasonId).get(),
-      db().collection("races").where("season_id", "==", seasonId).get(),
-      fetchSeasonClasses(seasonId),
-    ]);
-    const racesById = Object.fromEntries(racesSnap.docs.map(d => [d.id, d.data()]));
-    const seasonEntries = entriesSnap2.docs.map(d => ({ id: d.id, ...d.data() }));
+    const seasonClasses = index.classesFor(seasonId);
+    const racesById = Object.fromEntries(index.racesFor(seasonId).map(({ id, ...race }) => [id, race]));
+    const seasonEntries = index.entriesFor(seasonId);
     const seasonEntriesById = Object.fromEntries(seasonEntries.map(e => [e.id, e]));
-    const seasonResults = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById,
+    const seasonResults = decorateRaceBonuses(decorateSessionFlags(bareResults(index.resultsFor(seasonId)), racesById,
       sessionScopeContext({ seasons: [season], classes: seasonClasses, entriesById: seasonEntriesById })));
     // Scored under the class each result was run in, so a class with its own
     // points structure reaches the career totals as well as the standings.
@@ -162,9 +147,9 @@ export async function buildCareerProfile({ driverId = null, userId = null, leagu
         season_id: seasonId,
         season_name: season.name || "Season",
         series_id: season.series_id || null,
-        series_name: seriesById[season.series_id]?.name || null,
+        series_name: series?.name || null,
         game_id: season.game_id || null,
-        game_name: games[season.game_id]?.name || null,
+        game_name: index.gameById[season.game_id]?.name || null,
         class_name: classNameById[r.class_id] || null,
         // A qualifying row has no race finish — its position is the grid slot,
         // reported as the start.
@@ -197,9 +182,9 @@ export async function buildCareerProfile({ driverId = null, userId = null, leagu
         // place. The series it ran in and the game it was played on travel
         // with it so the profile can print the whole thing.
         series_id: season.series_id ?? null,
-        series_name: seriesById[season.series_id]?.name ?? null,
+        series_name: series?.name ?? null,
         game_id: season.game_id ?? null,
-        game_name: games[season.game_id]?.name ?? null,
+        game_name: index.gameById[season.game_id]?.name ?? null,
         overall: mineRec.overall,
         class_names: mineRec.class_names,
         label: describeCrowns(mineRec),
@@ -209,20 +194,14 @@ export async function buildCareerProfile({ driverId = null, userId = null, leagu
 
   const byGame = Object.entries(perGame).map(([gameId, results]) => ({
     game_id: gameId,
-    game_name: games[gameId]?.name ?? "Unknown Game",
-    game_logo_url: games[gameId]?.logo_url ?? null,
+    game_name: index.gameById[gameId]?.name ?? "Unknown Game",
+    game_logo_url: index.gameById[gameId]?.logo_url ?? null,
     stats: aggregateCareerStats(results, titlesPerGame[gameId] || 0),
   }));
 
-  // Resolve current track names/logos for venues linked by id (a track may have
-  // been renamed since the race ran; the profile should show today's name).
-  const trackIds = [...new Set([
-    ...Object.values(perTrack).map(t => t.track_id),
-    ...raceHistory.map(r => r.track_id),
-  ].filter(Boolean))];
-  const trackDocs = await Promise.all(trackIds.map(id => db().collection("tracks").doc(id).get()));
-  const trackInfo = {};
-  for (const doc of trackDocs) if (doc.exists) trackInfo[doc.id] = doc.data();
+  // Current track names/logos for venues linked by id — a track may have been
+  // renamed since the race ran, and the profile should show today's name.
+  const trackInfo = index.trackById;
 
   const byTrack = Object.values(perTrack)
     .map(t => ({
@@ -266,4 +245,8 @@ export async function buildCareerProfile({ driverId = null, userId = null, leagu
     titles_detail: titleList,
     seasons_raced: seasonIds.length,
   };
+}
+
+export function careerFromBundle(bundle, params) {
+  return buildCareerProfile(indexBundle(bundle), params);
 }

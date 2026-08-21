@@ -537,7 +537,7 @@ export const SPECS = {
   // are free text ("2.5 mi", "Oval"/"Road Course"/"Dirt Oval"/…) so the stats
   // engine never has to parse them; the pickers offer the canonical list in
   // lib/trackTypes.js. See frontend/app/tracks/page.js and
-  // frontend/lib/trackStatsServer.js.
+  // frontend/lib/trackCompute.js.
   tracks:  { collection: "tracks", parentField: null, sortField: "name",
              fields: { name: { required: true }, location: {}, length: {}, track_type: {},
                        logo_url: { image: true }, notes: {} } },

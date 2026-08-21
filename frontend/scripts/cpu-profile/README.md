@@ -57,6 +57,13 @@ graphs.
 **CPU per request** — every route, most expensive first, with documents decoded
 and payload size beside it.
 
+**Moved to the browser** — the screens whose maths used to be a route and now
+runs on the viewer's machine, with the raw bundle each one reads. Vercel is
+billed for none of that CPU, and the bundle is cacheable at the edge, so a
+second view costs neither a calculation nor a function invocation. Read the two
+columns together: this is the trade the refactor made — more bytes out, no
+arithmetic in.
+
 **Background polling** — the routes the browser calls on a timer with nobody
 touching the app, multiplied out to CPU-per-open-tab-per-hour. The intervals are
 parsed out of the client source at run time rather than written down here, so
@@ -73,9 +80,9 @@ measured pays everyone's JIT cost and the curve reads backwards.
 
 ## Proving a refactor changed nothing
 
-`payloads.mjs` dumps every profiled route's response body against the same
-seeded dataset, so a change can be checked against the tree it came from rather
-than eyeballed:
+`payloads.mjs` dumps every payload a screen renders against the same seeded
+dataset, so a change can be checked against the tree it came from rather than
+eyeballed:
 
 ```bash
 git stash && node --import ./scripts/cpu-profile/register.mjs \
@@ -86,9 +93,23 @@ diff /tmp/before.json /tmp/after.json
 ```
 
 It covers the success paths and the refusals — a missing param, an unknown
-season, a team nobody has heard of — because a performance change that quietly
-turns a 404 into a 200 is still a broken change. This is what the read cache in
-`lib/statsCache.js` was checked with: identical bytes across every case.
+season, a team nobody has heard of — because a change that quietly turns a 404
+into a 200 is still a broken change.
+
+There is also a standing check that needs no "before" tree:
+
+```bash
+node --import ./scripts/cpu-profile/register.mjs \
+  scripts/cpu-profile/payloads.mjs --verify
+```
+
+The digests in `payload-digests.json` were blessed from the **output of the old
+server routes** — `/api/standings`, `/api/stats`, `/api/team-stats`,
+`/api/skill-ratings`, `/api/schedule` — on this dataset, immediately before
+those routes were deleted. So `--verify` is the permanent proof that moving the
+championship maths into the browser did not move a single number, and it keeps
+guarding the compute modules against every change after this one. Re-bless with
+`--write-digests`, and only when an answer is meant to change.
 
 ## Adding a route
 

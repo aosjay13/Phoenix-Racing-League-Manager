@@ -4,10 +4,15 @@ import { getRequestLeagueId, legacyLeagueId } from "@/lib/serverAuth";
 import { isLeagueMember } from "@/lib/leagueRoles";
 import { publicUserFields } from "@/lib/userPrivacy";
 import { linkedDriver } from "@/lib/carSelectionServer";
-import { buildCareerProfile } from "@/lib/careerStatsServer";
 
-// Public profile + career stats FOR THE ACTIVE LEAGUE, grouped per game (and
-// all games combined).
+// Public profile FOR THE ACTIVE LEAGUE, and the pool driver this account races
+// as in it.
+//
+// The career that used to be attached here is computed in the browser now, from
+// the raw league bundle (see lib/careerCompute.js) — the driver profile screen
+// reaches it through /api/drivers/<uid>, which resolves an account id to its
+// pool driver. Building it here as well meant a second copy of the app's most
+// expensive read sitting on a public URL with nothing in the app calling it.
 //
 // Two things are scoped, and both matter:
 //
@@ -34,13 +39,10 @@ export async function GET(request, { params }) {
   // race as in THIS league.
   const driver = await linkedDriver(uid, leagueId);
 
-  const career = await buildCareerProfile({ driverId: driver?.id || null, userId: uid, leagueId });
-
   return NextResponse.json({
     uid,
     driver_id: driver?.id || null,
     linked: true,
     profile: publicProfile,
-    ...career,
   });
 }

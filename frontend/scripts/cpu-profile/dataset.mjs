@@ -77,7 +77,10 @@ export function buildDataset({
       league_id: leagueId,
       name: `Driver ${d}`,
       user_id: d < users ? `uid-${d}` : null,
-      game_names: { iracing: `Driver ${d}`, acc: `D${d}` },
+      // The stored shape lib/driverNames.js actually reads: [{ game_id, name }].
+      // `acc` deliberately differs from the overall name, so any table that
+      // resolves names per game is measurably different from one that doesn't.
+      game_names: [{ game_id: "iracing", name: `Driver ${d}` }, { game_id: "acc", name: `D${d}` }],
       created_at: "2021-01-01T00:00:00.000Z",
     });
   }

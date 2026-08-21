@@ -4,6 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { useLeague } from "@/components/LeagueProvider";
+import { rawBundlePath } from "@/components/useRawBundle";
+import { indexBundle } from "@/lib/rawIndex";
+import { buildStandings } from "@/lib/standingsCompute";
 import { Modal } from "@/components/Modal";
 import { ImageUpload } from "@/components/ImageUpload";
 import { ensureDriverId } from "@/lib/driverPool";
@@ -108,9 +111,16 @@ export function TeamRosterManager() {
     setRoster(rosterRes.rows ?? []);
     // Best-effort: the season's team standings, so an admin can see the
     // aggregation land the moment a lineup changes. Never blocks the screen.
+    //
+    // Scored here rather than asked for: the season's raw documents come back
+    // uncalculated (see lib/rawBundle.js) and the same buildStandings the
+    // Standings page runs turns them into the team table.
     try {
-      const standings = await api(`/api/standings?season_id=${targetSeasonId}`);
-      setTeamPoints(Object.fromEntries((standings.teams ?? []).map(t => [t.team_id, t])));
+      const res = await fetch(rawBundlePath({ scope: "season", seasonId: targetSeasonId }));
+      const bundle = await res.json();
+      if (!res.ok) throw new Error(bundle?.error || "Standings unavailable");
+      const standings = buildStandings(indexBundle(bundle), { seasonId: targetSeasonId });
+      setTeamPoints(Object.fromEntries((standings.body?.teams ?? []).map(t => [t.team_id, t])));
     } catch { setTeamPoints({}); }
   }, [targetSeasonId]);
 

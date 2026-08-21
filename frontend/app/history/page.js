@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useLeague } from "@/components/LeagueProvider";
-import { api } from "@/lib/api";
+import { useRawBundle } from "@/components/useRawBundle";
+import { buildSchedule } from "@/lib/scheduleCompute";
 import { formatRaceDate, isPastRaceDate, raceDateSortKey } from "@/lib/raceDate";
 import { lapsAreSecondary } from "@/lib/raceLength";
 
@@ -64,13 +65,15 @@ function CarCell({ summary, classCars }) {
 
 export default function HistoryPage() {
   const { gameId, seriesId, game, series } = useLeague();
-  const [rows, setRows] = useState(null);
-
-  useEffect(() => {
-    const qs = seriesId ? `series_id=${seriesId}` : gameId ? `game_id=${gameId}` : "";
-    setRows(null);
-    api(`/api/schedule${qs ? `?${qs}` : ""}`).then(setRows).catch(() => setRows([]));
-  }, [gameId, seriesId]);
+  // Raw documents for the scope; the per-race pole/winner/field summaries the
+  // table shows are worked out here rather than on the server.
+  const { index, error } = useRawBundle({
+    scope: seriesId ? "series" : gameId ? "game" : "league", gameId, seriesId,
+  });
+  const rows = useMemo(
+    () => (index ? buildSchedule(index, { gameId, seriesId }) : error ? [] : null),
+    [index, gameId, seriesId, error],
+  );
 
   // History is what has already happened: a race with saved results, or one
   // whose date has passed (run but not yet entered). Newest first, all the way

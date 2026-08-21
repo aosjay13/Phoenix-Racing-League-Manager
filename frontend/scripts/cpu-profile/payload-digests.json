@@ -1,0 +1,33 @@
+{
+  "_note": "SHA-256 prefixes of every payload in payloads.mjs, blessed from the OUTPUT OF THE OLD SERVER ROUTES (/api/standings, /api/stats, /api/team-stats, /api/skill-ratings, /api/schedule) on this seeded dataset, immediately before those routes were deleted. `payloads.mjs --verify` checks the browser-side compute against them, so it stays the standing proof that moving the maths off the server did not move a number. Re-bless with --write-digests only when an answer is MEANT to change.",
+  "seasons": 6,
+  "cases": {
+    "schedule/all": "1b9c4b0d8db0f515df974166d9dde987",
+    "schedule/game": "52e28d9e33c0a46d861b7952525ba7f4",
+    "schedule/game-alias": "9d04fa04ed6425372718e554c859737e",
+    "schedule/season": "d59d28e0f54cb76fec5f32cfa4c11fb8",
+    "schedule/season+class": "2af2fbccbdeb60e971880427e80b0ff1",
+    "skill/game": "6e28bb286912ea7218e14e6f343a4f41",
+    "skill/game-alias": "bbb685d877dc947cb189166b64100250",
+    "skill/league": "b273afff27d8ebb0ad8c47c9281fb4de",
+    "skill/season": "e185cf3cde020fa28f056c8f4f1761e5",
+    "skill/series": "1651aac2339c5380353ff18d4b917c4e",
+    "skill/unknown": "e687cfd9379b9c74cef4f2cbb736b694",
+    "standings/class": "854d49a598c32b9d8b002aa61bb73aa9",
+    "standings/missing": "de0f05d0e0ffd0d3164979c13af6718d",
+    "standings/season": "231821311b669972a13e2f1fe0371572",
+    "standings/unknown": "e687cfd9379b9c74cef4f2cbb736b694",
+    "stats/badscope": "763213aac0f814b4c18f47e452c5a9ed",
+    "stats/class": "364fa90819a5b02adf4fb5f85afe19dd",
+    "stats/game": "ce7ee3d309260db1f6fa8ca7136a5fc6",
+    "stats/game-alias": "4f66cfbfb0c9c597757640d486df68e3",
+    "stats/league": "a0ff4221c22041040078a004ec312d56",
+    "stats/nogame": "cec3eb8758d57ece15ed1f2d10b5a739",
+    "stats/season": "2b071402418dd80fa0972005b4cfe09d",
+    "stats/series": "370303b0b704a4cdb748e9fb3c72c02b",
+    "stats/unknown": "e687cfd9379b9c74cef4f2cbb736b694",
+    "team-stats/missing": "36099905393a57f62792d3db7b9331f8",
+    "team-stats/team": "cd1b9a0195f1350c966995f330cdda6b",
+    "team-stats/unknown": "f4d568e661ba458aeae34ae3aa53094e"
+  }
+}

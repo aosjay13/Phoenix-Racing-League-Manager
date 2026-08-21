@@ -79,13 +79,17 @@ const ROUTES = [
   { name: "GET /api/users/me/series", file: "app/api/users/me/series/route.js", url: "/api/users/me/series", poller: "MySignupsProvider" },
 
   // Loaded when somebody opens a screen.
-  { name: "GET /api/schedule (all seasons)", file: "app/api/schedule/route.js", url: "/api/schedule" },
-  { name: "GET /api/schedule?season_id", file: "app/api/schedule/route.js", url: `/api/schedule?season_id=${LAST_SEASON}` },
-  { name: "GET /api/standings?season_id", file: "app/api/standings/route.js", url: `/api/standings?season_id=${LAST_SEASON}` },
-  { name: "GET /api/stats?scope=league", file: "app/api/stats/route.js", url: "/api/stats?scope=league" },
-  { name: "GET /api/stats?scope=season", file: "app/api/stats/route.js", url: `/api/stats?scope=season&season_id=${LAST_SEASON}` },
-  { name: "GET /api/team-stats?team", file: "app/api/team-stats/route.js", url: "/api/team-stats?scope=league&team=Team%200" },
-  { name: "GET /api/skill-ratings?game_id", file: "app/api/skill-ratings/route.js", url: "/api/skill-ratings?scope=game&game_id=iracing" },
+  //
+  // The five routes that used to head this table — standings, stats,
+  // team-stats, skill-ratings and schedule — are gone. Every one of them scored
+  // the league on the read path; that work now runs in the browser (see
+  // lib/rawBundle.js), and what the server serves in their place is the raw
+  // pass-through below. The "moved to the browser" section at the end of this
+  // report measures what it costs there.
+  { name: "GET /api/raw?scope=season", file: "app/api/raw/route.js", url: `/api/raw?scope=season&season_id=${LAST_SEASON}` },
+  { name: "GET /api/raw?scope=game", file: "app/api/raw/route.js", url: "/api/raw?scope=game&game_id=iracing" },
+  { name: "GET /api/raw?scope=league", file: "app/api/raw/route.js", url: "/api/raw?scope=league" },
+  { name: "GET /api/drivers/[id] (career)", file: "app/api/drivers/[id]/route.js", url: "/api/drivers/drv-0", params: { id: "drv-0" } },
   { name: "GET /api/roster", file: "app/api/roster/route.js", url: "/api/roster" },
   { name: "GET /api/drivers", file: "app/api/drivers/route.js", url: "/api/drivers" },
   { name: "GET /api/entries?season_id", file: "app/api/entries/route.js", url: `/api/entries?season_id=${LAST_SEASON}` },
@@ -124,9 +128,10 @@ async function measure(route) {
 
   // Warm up: first call pays JIT and lazy-init costs that a long-lived Fluid
   // instance only pays once, and we are measuring the steady state.
+  const ctx = { params: route.params || {} };
   let probe;
   try {
-    probe = await handler(request(route.url), { params: {} });
+    probe = await handler(request(route.url), ctx);
   } catch (err) {
     return { ...route, skipped: `threw: ${err.message}` };
   }
@@ -139,7 +144,7 @@ async function measure(route) {
   resetStats();
   const c0 = process.cpuUsage();
   const t0 = performance.now();
-  for (let i = 0; i < ITERATIONS; i++) await handler(request(route.url), { params: {} });
+  for (let i = 0; i < ITERATIONS; i++) await handler(request(route.url), ctx);
   const cpu = process.cpuUsage(c0);
   const wallMs = (performance.now() - t0) / ITERATIONS;
   const cpuMs = (cpu.user + cpu.system) / 1000 / ITERATIONS;
@@ -186,9 +191,9 @@ function pollIntervals() {
 // and I didn't do anything" looks like from the inside.
 async function measureGrowth(sizes) {
   const probes = [
-    { name: "GET /api/schedule (all seasons)", file: "app/api/schedule/route.js", url: () => "/api/schedule" },
-    { name: "GET /api/stats?scope=league", file: "app/api/stats/route.js", url: () => "/api/stats?scope=league" },
-    { name: "GET /api/standings?season_id", file: "app/api/standings/route.js", url: n => `/api/standings?season_id=season-${n - 1}` },
+    { name: "GET /api/raw?scope=league", file: "app/api/raw/route.js", url: () => "/api/raw?scope=league" },
+    { name: "GET /api/raw?scope=season", file: "app/api/raw/route.js", url: n => `/api/raw?scope=season&season_id=season-${n - 1}` },
+    { name: "GET /api/drivers/[id] (career)", file: "app/api/drivers/[id]/route.js", url: () => "/api/drivers/drv-0", params: { id: "drv-0" } },
     { name: "GET /api/admin/users", file: "app/api/admin/users/route.js", url: () => "/api/admin/users?include_unaffiliated=1" },
   ];
   // Warm every probe at the LARGEST size first. Without this the first size
@@ -201,7 +206,7 @@ async function measureGrowth(sizes) {
   for (const probe of probes) {
     const mod = await import(pathToFileURL(path.join(appRoot, probe.file)).href);
     for (let i = 0; i < 3; i++) {
-      try { await mod.GET(request(probe.url(warmSize)), { params: {} }); } catch { /* reported below */ }
+      try { await mod.GET(request(probe.url(warmSize)), { params: probe.params || {} }); } catch { /* reported below */ }
     }
   }
 
@@ -216,10 +221,11 @@ async function measureGrowth(sizes) {
       const mod = await import(pathToFileURL(path.join(appRoot, probe.file)).href);
       const url = probe.url(size);
       try {
-        await mod.GET(request(url), { params: {} });          // warm
+        const ctx = { params: probe.params || {} };
+        await mod.GET(request(url), ctx);                     // warm
         resetStats();
         const c0 = process.cpuUsage();
-        for (let i = 0; i < ITERATIONS; i++) await mod.GET(request(url), { params: {} });
+        for (let i = 0; i < ITERATIONS; i++) await mod.GET(request(url), ctx);
         const cpu = process.cpuUsage(c0);
         row.cells[probe.name] = (cpu.user + cpu.system) / 1000 / ITERATIONS;
       } catch {
@@ -232,6 +238,66 @@ async function measureGrowth(sizes) {
   // it would.
   loadStore(dataset.data, { latencyMs: LATENCY, decode: true });
   return { probes: probes.map(p => p.name), rows: out };
+}
+
+// ── What moved to the browser ─────────────────────────────────────────────
+//
+// The five heaviest read routes are gone; the maths they did now runs on the
+// viewer's machine. This measures it there — the SAME compute modules the
+// client components call, over a bundle fetched through the same pass-through
+// reader the raw route uses.
+//
+// Two numbers matter. The bundle fetch is what the server still pays. The
+// compute is what it no longer pays: CPU that used to be billed per visitor,
+// per visit, now spent once in a browser and re-used from memory every time
+// that visitor switches a tab, a class, or a sort order.
+async function measureClientCompute() {
+  const url = f => pathToFileURL(path.join(appRoot, f)).href;
+  const { fetchRawBundle } = await import(url("lib/rawBundle.js"));
+  const { indexBundle } = await import(url("lib/rawIndex.js"));
+  const { buildStandings } = await import(url("lib/standingsCompute.js"));
+  const { buildStats } = await import(url("lib/statsCompute.js"));
+  const { buildTeamStats } = await import(url("lib/teamStatsCompute.js"));
+  const { buildSkillRatings } = await import(url("lib/skillRatingsCompute.js"));
+  const { buildSchedule } = await import(url("lib/scheduleCompute.js"));
+
+  const scopes = {};
+  const bundleFor = async (scope, ids = {}) => {
+    const key = `${scope}|${ids.gameId || ""}|${ids.seasonId || ""}`;
+    if (!scopes[key]) {
+      const raw = await fetchRawBundle(LEAGUE, { scope, ...ids });
+      scopes[key] = { bytes: Buffer.byteLength(JSON.stringify(raw.body)), index: indexBundle(raw.body) };
+    }
+    return scopes[key];
+  };
+
+  const season = await bundleFor("season", { seasonId: LAST_SEASON });
+  const game = await bundleFor("game", { gameId: "iracing" });
+  const league = await bundleFor("league");
+
+  const cases = [
+    { name: "Standings (one season)", bundle: season, run: () => buildStandings(season.index, { seasonId: LAST_SEASON }) },
+    { name: "Schedule (one season)", bundle: season, run: () => buildSchedule(season.index, { seasonId: LAST_SEASON }) },
+    { name: "Stats (one season)", bundle: season, run: () => buildStats(season.index, { scope: "season", seasonId: LAST_SEASON }) },
+    { name: "Skill Ratings (one game)", bundle: game, run: () => buildSkillRatings(game.index, { scope: "game", gameId: "iracing" }) },
+    { name: "Stats (whole league)", bundle: league, run: () => buildStats(league.index, { scope: "league" }) },
+    { name: "Team profile (whole league)", bundle: league, run: () => buildTeamStats(league.index, { team: "Team 0" }) },
+    { name: "Schedule feed (whole league)", bundle: league, run: () => buildSchedule(league.index, {}) },
+  ];
+
+  const out = [];
+  for (const c of cases) {
+    try {
+      c.run(); c.run();                                 // warm
+      const c0 = process.cpuUsage();
+      for (let i = 0; i < ITERATIONS; i++) c.run();
+      const cpu = process.cpuUsage(c0);
+      out.push({ name: c.name, cpuMs: (cpu.user + cpu.system) / 1000 / ITERATIONS, bytes: c.bundle.bytes });
+    } catch (err) {
+      out.push({ name: c.name, error: err.message });
+    }
+  }
+  return out;
 }
 
 // ── Hot spot: the per-race full scan ──────────────────────────────────────
@@ -360,6 +426,26 @@ async function main() {
     console.log(`    ${(perTabHour * 8 * 22 / 3600).toFixed(2)} CPU-hours/month, ${(totalPerHour * 8 * 22).toFixed(0)} invocations/month — from nobody doing anything.`);
     console.log(`  Five such tabs: ${(perTabHour * 8 * 22 * 5 / 3600).toFixed(2)} CPU-hours/month.\n`);
   }
+
+  // ── The work that left the server ───────────────────────────────────────
+  const client = await measureClientCompute();
+  const clientOk = client.filter(c => !c.error);
+  if (clientOk.length) {
+    console.log("\x1b[1mMoved to the browser — CPU the server no longer spends\x1b[0m");
+    console.log(table(clientOk, [
+      { label: "screen", get: c => c.name },
+      { label: "CPU ms", get: c => ms(c.cpuMs), right: true },
+      { label: "bundle", get: c => kb(c.bytes), right: true },
+    ]));
+    console.log("\n  CPU ms = what the VIEWER'S machine spends deriving that screen, once,");
+    console.log("           from a bundle it already holds. Vercel is billed for none of it,");
+    console.log("           and a second view of the same data (another tab, another class,");
+    console.log("           another sort) costs a re-render rather than a request.");
+    console.log("  bundle = the raw payload that scope ships. This is the trade: the server");
+    console.log("           sends more bytes so it can stop doing the arithmetic, and the");
+    console.log("           edge cache serves the repeats without waking a function.\n");
+  }
+  for (const c of client.filter(x => x.error)) console.log(`  (${c.name}: ${c.error})`);
 
   if (arg("hotspots", false)) {
     const h = await measureHotspot();

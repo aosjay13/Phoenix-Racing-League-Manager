@@ -4,12 +4,9 @@ import { db } from "@/lib/firebase";
 import { docInLeague, getRequestLeagueId, withAdmin } from "@/lib/serverAuth";
 import { linkedDriver } from "@/lib/carSelectionServer";
 import { syncEntryNamesForDriver } from "@/lib/driverSync";
-import { buildCareerProfile } from "@/lib/careerStatsServer";
-import { computeGameSkillRatings } from "@/lib/skillRatingServer";
-import { SR_BASELINE } from "@/lib/skillRating";
 import { normalizeAliases } from "@/lib/aliases";
 import { publicUserFields } from "@/lib/userPrivacy";
-import { gameNameFor, normalizeGameNames, overallNameFor } from "@/lib/driverNames";
+import { normalizeGameNames, overallNameFor } from "@/lib/driverNames";
 
 const routes = makeDocRoutes(SPECS.drivers);
 export const DELETE = routes.DELETE;
@@ -63,11 +60,26 @@ export const PATCH = withAdmin(async (request, { params }, user, role, patchLeag
   return NextResponse.json({ id: params.id, ...doc.data(), ...updates, ...(entries_synced != null ? { entries_synced } : {}) });
 });
 
-// Public profile + career stats for any driver — linked to an account or not.
+// Who a driver IS — and nothing about how they race.
+//
 // `id` is a global driver-pool id, but for backward compatibility with links
 // that still pass a Firebase account uid, we fall back to resolving that uid
 // to its pool driver. This means every racer has a reachable profile, whether
 // or not they've made an account.
+//
+// The career itself — every game, venue, race and championship, plus the
+// per-game Skill Ratings — is NOT computed here any more. It used to be, and it
+// made this the most expensive route in the app by a factor of two: a profile
+// view replayed every season the driver had raced and then the whole Elo
+// timeline of every game they had appeared in, which on four years of history is
+// north of fifty thousand documents decoded per visit. The browser does it now,
+// off the same raw league bundle the Stats and Records screens use (see
+// lib/careerCompute.js).
+//
+// What is left is the half a browser genuinely cannot do for itself: resolving
+// the identity, and reading the linked account through publicUserFields so that
+// an email address, a role map and recovery state stay on the server where they
+// belong. Those are a handful of document reads and no arithmetic.
 export async function GET(request, { params }) {
   const id = params.id;
   const leagueId = getRequestLeagueId(request);
@@ -130,44 +142,16 @@ export async function GET(request, { params }) {
     aliases = aliases.map(a => ({ ...a, game_name: null }));
   }
 
-  // Confined to this league: the account behind a driver may race in others,
-  // and their races there are not this league's driver's career.
-  const career = await buildCareerProfile({ driverId, userId: linkedUserId, leagueId });
-
-  // Each game the driver has raced in carries the name they're shown under
-  // THERE, so the profile's per-game breakdown can label it ("racing as
-  // Ryanbirdman") instead of repeating the overall name.
-  for (const g of career.by_game || []) g.driver_game_name = gameNameFor(driver, g.game_id);
-
-  // Per-game Skill Ratings for the profile's "Skill Ratings" section: one entry
-  // per game the driver has raced in (from career.by_game). Rating and trend
-  // come from the authoritative chronological replay (computeGameSkillRatings),
-  // the same source the leaderboard uses — so the two always agree and neither
-  // depends on the order results were entered. A game the driver raced but that
-  // never moved their SR shows the 1500 baseline as unranked. Sorted strongest-
-  // first.
-  const games = career.by_game || [];
-  const replays = await Promise.all(games.map(g => computeGameSkillRatings(g.game_id)));
-  const skill_ratings_by_game = games.map((g, i) => {
-    const rec = driverId ? replays[i].ratings[driverId] : null;
-    return {
-      game_id: g.game_id,
-      game_name: g.game_name,
-      game_logo_url: g.game_logo_url ?? null,
-      rating: rec ? rec.rating : SR_BASELINE,
-      ranked: !!rec,
-      last_delta: rec ? rec.last_delta : null,
-    };
-  }).sort((a, b) => b.rating - a.rating);
-
   return NextResponse.json({
     driver_id: driverId,
     uid: linkedUserId,
     linked: !!(linkedUserId && account),
-    skill_ratings_by_game,
     aliases,
     former_names: Array.isArray(driver?.merged_names) ? driver.merged_names : [],
+    // The per-game display names, so the career breakdown the client computes
+    // can label each game with the name this driver races under THERE ("racing
+    // as Ryanbirdman") rather than repeating the overall one.
+    game_names: normalizeGameNames(driver?.game_names),
     profile,
-    ...career,
   });
 }

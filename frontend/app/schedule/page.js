@@ -12,6 +12,8 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ShareGraphicButton, ShareGraphicModal } from "@/components/ShareGraphicModal";
 import { leagueLogos, specToGraphicTable } from "@/lib/shareGraphic";
 import { api } from "@/lib/api";
+import { useRawBundle } from "@/components/useRawBundle";
+import { buildSchedule } from "@/lib/scheduleCompute";
 import { formatRaceDate, isPastRaceDate, todayDateString } from "@/lib/raceDate";
 import { splitScheduleFeed } from "@/lib/scheduleFeed";
 import { racePerClassResults } from "@/lib/classFilter";
@@ -160,14 +162,19 @@ export default function SchedulePage() {
 function GlobalSchedule() {
   const { gameId, seriesId, game, series, games, seriesList, setGameId, setSeriesId, setSeasonId, refresh } = useLeague();
   const { isAdmin } = useAuth();
-  const [rows, setRows] = useState(null);
   const [showCreateSeason, setShowCreateSeason] = useState(false);
 
-  useEffect(() => {
-    const qs = seriesId ? `series_id=${seriesId}` : gameId ? `game_id=${gameId}` : "";
-    setRows(null);
-    api(`/api/schedule${qs ? `?${qs}` : ""}`).then(setRows).catch(() => setRows([]));
-  }, [gameId, seriesId]);
+  // Every race in scope with its pole, winner, field and distance — worked out
+  // here from raw documents. This feed used to be the heaviest read in the app
+  // after the stats tables: it joins every race, entry and result the scope
+  // covers, and did it on a serverless function once per visitor.
+  const { index, error: feedError } = useRawBundle({
+    scope: seriesId ? "series" : gameId ? "game" : "league", gameId, seriesId,
+  });
+  const rows = useMemo(
+    () => (index ? buildSchedule(index, { gameId, seriesId }) : feedError ? [] : null),
+    [index, gameId, seriesId, feedError],
+  );
 
   // Upcoming (soonest first) and Archive (most recent first), split on the
   // CALENDAR rather than on whether anybody entered results — see
@@ -355,7 +362,6 @@ function SeasonSchedule() {
   const { seasonId, season, classId, className, classes, raceClass, refresh, league, game, series } = useLeague();
   const { isAdmin } = useAuth();
   const router = useRouter();
-  const [races, setRaces] = useState(null);
   const [sharing, setSharing] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [showCopy, setShowCopy] = useState(false);
@@ -376,12 +382,15 @@ function SeasonSchedule() {
 
   // With a class selected, the calendar narrows to that class's schedule — the
   // rounds pinned to it plus every shared round.
-  const loadRaces = () => {
-    if (!seasonId) { setRaces(null); return; }
-    const qs = `season_id=${seasonId}${classId ? `&class_id=${classId}&class_name=${encodeURIComponent(className)}` : ""}`;
-    api(`/api/schedule?${qs}`).then(setRaces).catch(() => setRaces([]));
-  };
-  useEffect(loadRaces, [seasonId, classId]);
+  const { index: seasonIndex, error: seasonFeedError, reload: loadRaces } = useRawBundle({
+    scope: "season", seasonId, enabled: !!seasonId,
+  });
+  const races = useMemo(
+    () => (seasonIndex && seasonId
+      ? buildSchedule(seasonIndex, { seasonId, classId, className })
+      : seasonFeedError ? [] : null),
+    [seasonIndex, seasonId, classId, className, seasonFeedError],
+  );
 
   async function confirmDelete() {
     // Deleting the event removes its race doc and cascades to every saved

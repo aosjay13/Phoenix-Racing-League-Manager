@@ -141,7 +141,7 @@ const handlePOST = withAdmin(async (request, ctx, user) => {
       // Driver's best single lap time for this session, as a clock string
       // ("1:23.456"). Independent of the `fastest_lap` flag (which just marks
       // who set the session's quickest lap): the fastest of these across every
-      // race at a venue is that track's lap record. See lib/trackStatsServer.js.
+      // race at a venue is that track's lap record. See lib/trackCompute.js.
       fastest_lap_time: row.fastest_lap_time || null,
       halfway_leader: !!row.halfway_leader,
       hard_charger: !!row.hard_charger,

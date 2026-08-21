@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLeague } from "@/components/LeagueProvider";
-import { api } from "@/lib/api";
+import { useRawBundle } from "@/components/useRawBundle";
+import { buildSchedule } from "@/lib/scheduleCompute";
 import { todayDateString } from "@/lib/raceDate";
 import {
-  WEEKDAYS, buildMonthGrid, calendarFeedPath, calendarScopeQuery, eventPillLabel,
+  WEEKDAYS, buildMonthGrid, calendarFeedPath, calendarScopeIds, eventPillLabel,
   eventTitle, groupRacesByDate, initialMonth, monthLabel, monthsWithRaces,
   seriesAbbrev, shiftMonth,
 } from "@/lib/calendar";
@@ -30,7 +31,6 @@ import { hasSessionTimes, localZoneLabel, raceSessionTimes, sessionTimeLine } fr
 
 export default function CalendarPage() {
   const { gameId, seriesId, game, series } = useLeague();
-  const [rows, setRows] = useState(null);
   const today = useMemo(() => todayDateString(), []);
   const [view, setView] = useState(() => {
     const [y, m] = todayDateString().split("-").map(Number);
@@ -39,21 +39,17 @@ export default function CalendarPage() {
   // Once the reader has moved the calendar themselves, loading a new scope must
   // not yank them back to wherever the races happen to be.
   const moved = useRef(false);
-  // Which fetch is the current one. A scope change can fire two requests in
-  // quick succession (the tiers settle one at a time — see calendarScopeQuery),
-  // and the first can answer last; without this, a narrower earlier response
-  // could overwrite the wide "every game" one and leave the calendar showing a
+  // Raw documents for the scope. The out-of-order-response guard the fetch here
+  // used to need lives in useRawBundle now — a bundle that arrives for a scope
+  // the user has already left is dropped there, so a narrower late answer can no
+  // longer overwrite the wide "every game" one and leave the calendar showing a
   // single game's races under an "All Games" heading.
-  const fetchSeq = useRef(0);
-
-  useEffect(() => {
-    const qs = calendarScopeQuery({ gameId, seriesId });
-    const seq = ++fetchSeq.current;
-    setRows(null);
-    api(`/api/schedule${qs ? `?${qs}` : ""}`)
-      .then(data => { if (seq === fetchSeq.current) setRows(data); })
-      .catch(() => { if (seq === fetchSeq.current) setRows([]); });
-  }, [gameId, seriesId]);
+  const scope = calendarScopeIds({ gameId, seriesId });
+  const { index, error } = useRawBundle(scope);
+  const rows = useMemo(
+    () => (index ? buildSchedule(index, { gameId: scope.gameId, seriesId: scope.seriesId }) : error ? [] : null),
+    [index, scope.gameId, scope.seriesId, error],
+  );
 
   // Open on the month with racing in it — this one if it has any, else the next
   // that does. A league between seasons shouldn't land on an empty grid.

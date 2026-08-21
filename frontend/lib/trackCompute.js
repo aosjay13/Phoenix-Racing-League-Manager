@@ -1,5 +1,15 @@
-import { db } from "@/lib/firebase";
-import { fetchSeriesByIds } from "@/lib/seriesServer";
+// A venue's history — every race held there, its record books, its leaderboard
+// and its past winners — computed in the browser.
+//
+// This is the code that used to run inside lib/trackStatsServer.js, moved rather
+// than rewritten. It walked every season that had ever raced at the venue and
+// re-read that season whole, which made opening a track page cost about as much
+// as opening the all-time stats table.
+//
+// It reads the league bundle with `include=time_trials`: a time trial IS a lap
+// around a venue, so its hot laps belong in the record books even though the
+// session counts toward no racing statistic.
+
 import {
   aggregateCareerStats,
   decorateRaceBonuses,
@@ -10,31 +20,15 @@ import {
   resolveSeasonConfig,
 } from "@/lib/standings";
 import { raceDateSortKey } from "@/lib/raceDate";
-import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
 import { parseTime, formatTime } from "@/lib/raceTime";
 import { finalSessionName, indexResultsByRace, summarizeRace } from "@/lib/raceSummaryServer";
-import { carForClass, classIdSet, classIdsInSeason, classOfResult, fetchSeasonClasses } from "@/lib/classServer";
+import { carForClass, classIdSet, classIdsInSeason, classOfResult } from "@/lib/classFilter";
 import { classRecordKey, gameRecordKey, keepFastest } from "@/lib/trackRecords";
-import { fetchNameResolver } from "@/lib/driverNamesServer";
-import { fetchTrackRecordLaps } from "@/lib/timeTrialsServer";
+import { trackRecordLapsFrom } from "@/lib/timeTrials";
+import { bareResults, indexBundle, nameResolver } from "@/lib/rawIndex";
 
-// Aggregates a venue's history from every race held there. Races are linked by
-// `track_id`; legacy races that only stored the track NAME (before track_id
-// existed, and still carry no id) are matched by exact name so their history
-// isn't lost. Results are scored the same way standings/career stats are, then
-// grouped into a per-driver leaderboard ("most wins here") and a chronological
-// list of past event winners.
-// `scope` mirrors the top-of-page Game / Series / Season dropdowns, so the
-// venue's records/history reflect exactly the branch the user is viewing:
-// a season narrows to that season, a series to its seasons, a game to its
-// seasons, and nothing selected shows every race ever held here.
-//
-// `records_by_game` is the exception: since lap times aren't comparable across
-// games (a GT7 lap and an iRacing lap around the same circuit are different
-// records), the fastest lap is ALSO broken out per game. That breakdown ignores
-// the Game dropdown (a Series/Season still pins one game) so a track always
-// lists every game's own track record side by side.
-export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
+export function buildTrackProfile(index, { trackId, trackName, scope = {} }) {
+  const bundle = index.bundle;
   // A class selection scopes the leaderboard, the winners list and the headline
   // record to that class — the venue seen through one category's eyes. It's
   // resolved per season (a class doc belongs to one season), so a class picked
@@ -45,39 +39,29 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
   const classFilterOn = !!(className || wantedClassId);
   const empty = { races_held: 0, seasons_raced: 0, record: null, records_by_game: [], records_by_class: [], drivers: [], winners: [] };
   const wantedName = String(trackName || "").trim();
-  const queries = [db().collection("races").where("track_id", "==", trackId).get()];
-  if (wantedName) queries.push(db().collection("races").where("track", "==", wantedName).get());
+  // Every race held here: pinned by track_id, plus legacy free-text races that
+  // only named the venue. A race pinned to a DIFFERENT track's id is never
+  // folded in by name.
+  const allRaces = (bundle.races || []).filter(r =>
+    r.track_id === trackId || (wantedName && !r.track_id && r.track === wantedName));
   // Hot laps set in a Time Trial at this venue. They belong in the record books
   // — a lap is a lap — even though a trial counts toward no racing statistic,
-  // so they're read alongside the races and folded into the records below (and
-  // ONLY into the records: they never reach the leaderboard or the winners
-  // list, which are races). See lib/timeTrials.js for why they live apart.
-  const [snaps, trialLaps] = await Promise.all([
-    Promise.all(queries),
-    fetchTrackRecordLaps({ trackId, trackName: wantedName }).catch(() => []),
-  ]);
-
-  const raceMap = new Map();
-  for (const d of snaps[0].docs) raceMap.set(d.id, { id: d.id, ...d.data() });
-  if (snaps[1]) {
-    for (const d of snaps[1].docs) {
-      const data = d.data();
-      // Only fold in a name-matched race when it has no explicit track_id — a
-      // race pinned to a DIFFERENT track's id must not be double-counted here.
-      if (!data.track_id) raceMap.set(d.id, { id: d.id, ...data });
-    }
-  }
-  const allRaces = [...raceMap.values()];
+  // so they're folded into the records below and ONLY into the records: they
+  // never reach the leaderboard or the winners list, which are races. See
+  // lib/timeTrials.js for why they live apart.
+  const trialLaps = trackRecordLapsFrom({
+    trials: bundle.time_trials || [],
+    entries: bundle.time_trial_entries || [],
+    trackId,
+    trackName: wantedName,
+  });
   // A venue that has only ever hosted time trials still has records to show, so
   // this bails out only when there is nothing of either kind.
   if (!allRaces.length && !trialLaps.length) return empty;
 
-  // Load the season docs for every matched race, then keep only the races whose
-  // season falls inside the selected Game/Series/Season context.
-  const matchedSeasonIds = [...new Set(allRaces.map(r => r.season_id).filter(Boolean))];
-  const seasonDocs = await Promise.all(matchedSeasonIds.map(id => db().collection("seasons").doc(id).get()));
-  const seasonsById = {};
-  for (const doc of seasonDocs) if (doc.exists) seasonsById[doc.id] = { id: doc.id, ...doc.data() };
+  // Keep only the races whose season falls inside the selected
+  // Game/Series/Season context.
+  const seasonsById = index.seasonById;
 
   // Full scope (Game + Series + Season) — governs the leaderboard, past winners,
   // headline record, and the races_held / seasons_raced counts.
@@ -108,7 +92,7 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
   // Nothing to score when no race here is in scope — the trial laps below still
   // are, so the walk simply has no seasons to make and the records stand on
   // them alone.
-  const templatesById = gameRaces.length ? await fetchTemplatesById() : {};
+  const templatesById = gameRaces.length ? index.templatesById : {};
 
   const keyFor = e =>
     e.driver_id ? `d:${e.driver_id}` : e.user_id ? `u:${e.user_id}` : `n:${String(e.name || "").trim().toLowerCase()}`;
@@ -154,24 +138,17 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
       { ...mk(), game_id: gameId, class_name: className });
   };
 
-  // Each season scores on its SERIES' points unless it overrides them.
-  const seriesById = await fetchSeriesByIds(loopSeasonIds.map(id => seasonsById[id]?.series_id));
-
   for (const seasonId of loopSeasonIds) {
     const season = seasonsById[seasonId];
     if (!season) continue;
-    const config = resolveSeasonConfig(season, seriesById[season.series_id] || null);
+    // Each season scores on its SERIES' points unless it overrides them.
+    const config = resolveSeasonConfig(season, index.seriesFor(season));
     const gameId = season.game_id || null;
 
-    const [entriesSnap, resultsSnap, racesSnap, seasonClasses] = await Promise.all([
-      db().collection("entries").where("season_id", "==", seasonId).get(),
-      db().collection("results").where("season_id", "==", seasonId).get(),
-      db().collection("races").where("season_id", "==", seasonId).get(),
-      fetchSeasonClasses(seasonId),
-    ]);
-    const entriesById = Object.fromEntries(entriesSnap.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
-    const racesById = Object.fromEntries(racesSnap.docs.map(d => [d.id, d.data()]));
-    const allResults = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById,
+    const seasonClasses = index.classesFor(seasonId);
+    const entriesById = Object.fromEntries(index.entriesFor(seasonId).map(e => [e.id, e]));
+    const racesById = Object.fromEntries(index.racesFor(seasonId).map(({ id, ...race }) => [id, race]));
+    const allResults = decorateRaceBonuses(decorateSessionFlags(bareResults(index.resultsFor(seasonId)), racesById,
       sessionScopeContext({ seasons: [season], classes: seasonClasses, entriesById })));
     // Scored under the class each result was run in, so a class with its own
     // points structure carries it into the venue leaderboard too.
@@ -320,13 +297,7 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
   // name for the driver, and anything not tied to a single game shows their
   // overall display name. Ids are collected from every section so a
   // record-holder excluded from the leaderboard (different game) still resolves.
-  const nameFor = await fetchNameResolver([
-    ...Object.values(drivers).map(d => d.driver_id),
-    record?.driver_id,
-    ...Object.values(recordByGame).map(r => r.driver_id),
-    ...Object.values(recordByClass).map(r => r.driver_id),
-    ...winners.map(w => w.driver_id),
-  ]);
+  const nameFor = nameResolver(bundle);
   // The leaderboard and headline record are shown under whatever game the page
   // is scoped to — a Series/Season pins one just as a Game selection does.
   const scopeGameId =
@@ -336,26 +307,11 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
     null;
   const canonicalName = Object.fromEntries(nameFor.ids.map(id => [id, nameFor.display(id, scopeGameId)]));
 
-  // Resolve the series each past-result event ran in (seasons sit under series).
-  const seriesIds = [...new Set(winners.map(w => w.series_id).filter(Boolean))];
-  const seriesName = {};
-  if (seriesIds.length) {
-    const docs = await Promise.all(seriesIds.map(id => db().collection("series").doc(id).get()));
-    for (const doc of docs) if (doc.exists) seriesName[doc.id] = doc.data().name;
-  }
-  for (const w of winners) w.series_name = (w.series_id && seriesName[w.series_id]) || null;
+  // The series each past-result event ran in (seasons sit under series).
+  for (const w of winners) w.series_name = (w.series_id && index.seriesById[w.series_id]?.name) || null;
 
-  // Resolve game names for the per-game record breakdown and the winners list.
-  const gameIds = [...new Set([
-    ...Object.keys(recordByGame),
-    ...Object.values(recordByClass).map(r => r.game_id),
-    ...winners.map(w => w.game_id),
-  ].filter(Boolean))];
-  const gameName = {};
-  if (gameIds.length) {
-    const docs = await Promise.all(gameIds.map(id => db().collection("games").doc(id).get()));
-    for (const doc of docs) if (doc.exists) gameName[doc.id] = doc.data().name;
-  }
+  // Game names for the per-game record breakdown and the winners list.
+  const gameName = index.gameNameById;
   for (const w of winners) {
     w.game_name = (w.game_id && gameName[w.game_id]) || null;
     // Each past win belongs to one game, so the winner is named as that game
@@ -415,4 +371,8 @@ export async function buildTrackProfile({ trackId, trackName, scope = {} }) {
     drivers: driverRows,
     winners,
   };
+}
+
+export function trackProfileFromBundle(bundle, params) {
+  return buildTrackProfile(indexBundle(bundle), params);
 }

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { withAdmin } from "@/lib/serverAuth";
-import { summarizeEntries } from "@/lib/timeTrials";
 import {
   TRIAL_COLLECTION, TRIAL_ENTRY_COLLECTION,
   fetchTrial, fetchTrialEntries, trialFields,
@@ -20,12 +19,14 @@ async function seasonClasses(seasonId) {
       String(a.name || "").localeCompare(String(b.name || "")));
 }
 
-// One Time Trial session, with its drivers, their laps, and the derived Best
-// Time / Best Average columns already worked out.
+// One Time Trial session, with its drivers and their laps — raw.
 //
-// The derived columns are computed HERE as well as in the browser on purpose:
-// the same lib does both, so an export, a record and the on-screen table can
-// never disagree about which lap was a driver's fastest.
+// The derived Best Time / Best Average columns used to be worked out here as
+// well as in the browser. They are pure functions of the laps on each entry
+// (summarizeEntries, lib/timeTrials.js) and the sheet already recomputes them
+// on every render, so the second copy was work the server did and nobody read.
+// The screen, the export and the track records all call the same lib, which is
+// what keeps them agreeing about which lap was a driver's fastest.
 export async function GET(request, { params }) {
   const trial = await fetchTrial(params.id);
   if (!trial) return NextResponse.json({ error: "Time trial not found" }, { status: 404 });
@@ -69,7 +70,7 @@ export async function GET(request, { params }) {
     season,
     classes,
     placement_series,
-    entries: summarizeEntries(entries, { averageLaps: trial.average_laps }),
+    entries,
   });
 }
 

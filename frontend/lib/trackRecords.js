@@ -16,7 +16,7 @@
 // identity that survives that.
 //
 // Kept dependency-free so the keying rules can be exercised on their own —
-// lib/trackStatsServer.js supplies the Firestore reads around it.
+// lib/trackCompute.js applies it, over the raw bundle the venue page holds.
 
 // The composite key a lap is filed under for a given breakdown. Returns null
 // when the lap doesn't belong in that breakdown at all: a lap with no game, or

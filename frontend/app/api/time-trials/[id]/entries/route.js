@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { getRequestLeagueId, withAdmin } from "@/lib/serverAuth";
-import { summarizeEntries } from "@/lib/timeTrials";
 import {
   TRIAL_ENTRY_COLLECTION, fetchClassNamesForSeasons, fetchSeriesNames, fetchTrial,
   fetchTrialEntries, targetSeasonIds, trialEntryDoc,
@@ -62,5 +61,8 @@ export const POST = withAdmin(async (request, { params }) => {
   for (const e of existing) if (!keptIds.has(e.id)) batch.delete(col.doc(e.id));
   await batch.commit();
 
-  return NextResponse.json(summarizeEntries(saved, { averageLaps: trial.average_laps }), { status: 201 });
+  // The rows as stored. The sheet re-derives Best Time / Best Average from the
+  // laps on every render anyway (summarizeEntries, lib/timeTrials.js), so
+  // computing them here as well was work nobody read.
+  return NextResponse.json(saved, { status: 201 });
 });

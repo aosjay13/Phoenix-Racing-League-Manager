@@ -11,7 +11,7 @@
 //     so there is nothing to exclude and nothing that can leak in by accident.
 //   • Its laps ARE eligible for the Track Records database — a hot lap is a hot
 //     lap, whoever turned it and whatever session it came from. See
-//     lib/timeTrialsServer.js, which hands them to lib/trackStatsServer.js.
+//     trackRecordLapsFrom below, which hands them to lib/trackCompute.js.
 //
 // The one bridge between the two worlds is deliberate and admin-driven: the
 // "Export to Qualifying" action copies a trial's best laps onto a real race's
@@ -499,4 +499,68 @@ export function planQualifyingExport(rows = [], entryIdFor, { key = "best" } = {
     });
   }
   return { grid, unmatched };
+}
+
+// ── Track Records ───────────────────────────────────────────────────────────
+//
+// A time trial IS a lap around a venue, so its laps belong in that venue's
+// record books even though the session counts toward no racing statistic. This
+// turns a set of trials and their entries into one candidate per driver — their
+// fastest lap of the session — in the same shape a race lap arrives in, so the
+// venue's "keep the fastest" rules do the rest without knowing where a lap came
+// from.
+//
+// Matched to the venue exactly as races are: by `track_id`, plus legacy/free
+// text trials that only named the track. Pure, so the venue page can run it in
+// the browser over a raw bundle; lib/timeTrialsServer.js feeds it from Firestore
+// for anything still server-side.
+export const TRIAL_SESSION_LABEL = "Time Trial";
+
+export function trackRecordLapsFrom({ trials = [], entries = [], trackId, trackName }) {
+  const wantedName = String(trackName || "").trim();
+  const trialsById = new Map();
+  for (const t of trials) {
+    if (t.track_id === trackId) trialsById.set(t.id, t);
+    // A trial pinned to a DIFFERENT venue's id must not be folded in by name.
+    else if (wantedName && !t.track_id && t.track === wantedName) trialsById.set(t.id, t);
+  }
+  if (!trialsById.size) return [];
+
+  const laps = [];
+  for (const entry of entries) {
+    const trial = trialsById.get(entry.time_trial_id);
+    if (!trial) continue;
+    const [summary] = summarizeEntries([entry]);
+    if (summary.best_seconds == null) continue;
+    laps.push({
+      seconds: summary.best_seconds,
+      time: summary.best_time,
+      driver_name: entry.name || "Unknown",
+      driver_id: entry.driver_id || null,
+      user_id: entry.user_id || null,
+      game_id: trial.game_id || null,
+      // A driver placed into a series belongs to THAT series for the purpose of
+      // scoping this lap — a Pro Series placement lap is a Pro Series lap, and
+      // the venue's records narrow by the same Series/Season dropdowns every
+      // other record does. Falls back to the trial's own scope for an ordinary
+      // (class-placement or plain hot-lap) session.
+      series_id: entry.assigned_series_id || trial.series_id || null,
+      season_id: (entry.assigned_series_id && trial.series_seasons?.[entry.assigned_series_id])
+        || trial.season_id || null,
+      // A trial's class is the one the driver was PLACED in (a placement night)
+      // or entered under. Blank leaves the lap out of the per-class breakdown,
+      // exactly as an unclassified race lap is.
+      class_name: entry.assigned_class_name || "",
+      // Rendered on the record card the same way a race lap's is.
+      race_id: null,
+      race_name: trial.name || TRIAL_SESSION_LABEL,
+      session: TRIAL_SESSION_LABEL,
+      from_qualifying: false,
+      from_time_trial: true,
+      time_trial_id: trial.id,
+      date: trial.date || null,
+      lap: summary.best_lap,
+    });
+  }
+  return laps;
 }

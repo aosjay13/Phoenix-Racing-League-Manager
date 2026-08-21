@@ -1,14 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
 import { useLeague } from "@/components/LeagueProvider";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { TimeTrialCreateModal } from "@/components/TimeTrialCreateModal";
 import { formatRaceDate } from "@/lib/raceDate";
-import { averageLabel } from "@/lib/timeTrials";
+import { averageLabel, summarizeEntries } from "@/lib/timeTrials";
 
 // The Time Trials & Placements hub — the control centre for hot-lapping, time
 // attack and division placement nights.
@@ -79,7 +79,7 @@ function TrialRow({ trial, onDelete, isAdmin }) {
 export default function TimeTrialsHubPage() {
   const { isAdmin } = useAuth();
   const { gameId, seriesId, seasonId, classes, seriesList, game, series, season } = useLeague();
-  const [trials, setTrials] = useState(null);
+  const [feed, setFeed] = useState(null);   // { trials, entries } — raw
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState(null);
   const [filter, setFilter] = useState("all"); // all | open | completed | placement
@@ -98,10 +98,33 @@ export default function TimeTrialsHubPage() {
       if (seasonId) qs.set("season_id", seasonId);
     }
     const suffix = qs.toString() ? `?${qs}` : "";
-    api(`/api/time-trials${suffix}`).then(setTrials).catch(() => setTrials([]));
+    api(`/api/time-trials${suffix}`).then(setFeed).catch(() => setFeed(null));
   }, [scoped, gameId, seriesId, seasonId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // How many drivers are on each sheet, and how many timed laps they turned.
+  // Both are counted here, from the raw laps the endpoint hands over: deciding
+  // which of a driver's laps actually carry a time is arithmetic, and the same
+  // lib does it on the sheet itself, so a count in this list can never disagree
+  // with the session it links to.
+  const trials = useMemo(() => {
+    if (!feed) return null;
+    const rowsByTrial = new Map();
+    for (const row of feed.entries || []) {
+      if (!rowsByTrial.has(row.time_trial_id)) rowsByTrial.set(row.time_trial_id, []);
+      rowsByTrial.get(row.time_trial_id).push(row);
+    }
+    return (feed.trials || []).map(t => {
+      const rows = rowsByTrial.get(t.id) || [];
+      return {
+        ...t,
+        driver_count: rows.length,
+        lap_count: summarizeEntries(rows, { averageLaps: t.average_laps })
+          .reduce((n, r) => n + r.laps_timed, 0),
+      };
+    });
+  }, [feed]);
 
   function showToast(type, msg) {
     setToast({ type, msg });
@@ -110,7 +133,7 @@ export default function TimeTrialsHubPage() {
 
   async function remove(trial) {
     await api(`/api/time-trials/${trial.id}`, { method: "DELETE" });
-    setTrials(prev => (prev || []).filter(t => t.id !== trial.id));
+    setFeed(prev => (prev ? { ...prev, trials: prev.trials.filter(t => t.id !== trial.id) } : prev));
     showToast("success", `“${trial.name}” deleted.`);
   }
 
@@ -177,7 +200,10 @@ export default function TimeTrialsHubPage() {
         <TimeTrialCreateModal
           gameId={gameId} seriesId={seriesId} seasonId={seasonId} classes={classes} seriesList={seriesList}
           onClose={() => setCreating(false)}
-          onCreated={trial => { setCreating(false); setTrials(prev => [trial, ...(prev || [])]); }}
+          onCreated={trial => {
+            setCreating(false);
+            setFeed(prev => ({ trials: [trial, ...(prev?.trials || [])], entries: prev?.entries || [] }));
+          }}
         />
       )}
 

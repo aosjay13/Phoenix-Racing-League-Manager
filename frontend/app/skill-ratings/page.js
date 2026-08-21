@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useLeague } from "@/components/LeagueProvider";
 import { useSortable } from "@/components/useSortable";
 import { ShareGraphicButton, ShareGraphicModal } from "@/components/ShareGraphicModal";
 import { leagueLogos, specToGraphicTable } from "@/lib/shareGraphic";
-import { api } from "@/lib/api";
+import { useRawBundle } from "@/components/useRawBundle";
+import { buildSkillRatings } from "@/lib/skillRatingsCompute";
 import { SR_BASELINE } from "@/lib/skillRating";
 
 // Small coloured +/- chip for a driver's most recent SR change.
@@ -31,8 +32,6 @@ function trendText(delta) {
 export default function SkillRatingsPage() {
   const league = useLeague();
   const { gameId, seriesId, seasonId, game, series, season, loading } = league ?? {};
-  const [data, setData] = useState(null);
-  const [error, setError] = useState(null);
   const [sharing, setSharing] = useState(false);
 
   // Scope mirrors the Stats / Records pages: the deepest concrete selection in
@@ -40,22 +39,30 @@ export default function SkillRatingsPage() {
   // "All Games" has no single comparable rating. Narrower series/season scopes
   // still resolve to their game's ratings.
   const active = seasonId
-    ? { params: `scope=season&season_id=${seasonId}`, title: `${series?.name ?? ""} ${season?.name ?? "Season"} Skill Ratings`.trim() }
+    ? { scope: "season", title: `${series?.name ?? ""} ${season?.name ?? "Season"} Skill Ratings`.trim() }
     : seriesId
-      ? { params: `scope=series&series_id=${seriesId}`, title: `${series?.name ?? "Series"} Skill Ratings` }
+      ? { scope: "series", title: `${series?.name ?? "Series"} Skill Ratings` }
       : gameId
-        ? { params: `scope=game&game_id=${gameId}`, title: `${game?.name ?? "Game"} Skill Ratings` }
+        ? { scope: "game", title: `${game?.name ?? "Game"} Skill Ratings` }
         : null; // no game selected → show the "pick a game" prompt below
 
-  const params = active?.params;
-  useEffect(() => {
-    if (loading) return;
-    setData(null);
-    setError(null);
-    if (!params) return; // wait for a game to be chosen
-    api(`/api/skill-ratings?${params}`).then(setData).catch(err => setError(err.message));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params, loading]);
+  // ALWAYS the whole game, whatever the dropdowns say. A rating is that game's
+  // entire timeline replayed from the 1500 baseline, so a season-scoped bundle
+  // would produce a rating that depended on which page you looked at it from; a
+  // narrower scope only decides who is LISTED (see lib/skillRatingsCompute.js).
+  const { index, error: bundleError } = useRawBundle({
+    scope: "game", gameId, enabled: !loading && !!active && !!gameId,
+  });
+
+  // The Elo replay itself, in the browser. This was the app's other
+  // full-history read: every SR race the game has ever run, ordered by date and
+  // exchanged one session at a time.
+  const computed = useMemo(
+    () => (index && active ? buildSkillRatings(index, { scope: active.scope, gameId, seriesId, seasonId }) : null),
+    [index, active?.scope, gameId, seriesId, seasonId],
+  );
+  const data = computed?.status === 200 ? computed.body : null;
+  const error = bundleError || (computed && computed.status !== 200 ? computed.body?.error : null);
 
   const lowIsBetter = useMemo(() => [], []);
   const { sorted: rows, clickSort, arrow } = useSortable(data?.rows, "skill_rating", lowIsBetter);

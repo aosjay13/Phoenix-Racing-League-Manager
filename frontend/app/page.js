@@ -1,18 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
 import { useLeague } from "@/components/LeagueProvider";
 import { useAuth } from "@/components/AuthProvider";
 import { SeriesInfoPanel } from "@/components/SeriesInfoPanel";
 import { MessageBoard } from "@/components/MessageBoard";
-import { api } from "@/lib/api";
+import { useRawBundle } from "@/components/useRawBundle";
+import { buildStandings } from "@/lib/standingsCompute";
+import { buildStats } from "@/lib/statsCompute";
 import { formatRaceDate, isPastRaceDate, raceDateSortKey, toDateOnly } from "@/lib/raceDate";
 
 export default function DashboardPage() {
   const { gameId, seriesId, seasonId, season, series, game, games, loading } = useLeague();
   const { isAdmin } = useAuth();
-  const [data, setData] = useState(null);
 
   // The dashboard follows whichever level of the game → series → season
   // drop-downs is currently narrowed to. An "All …" choice ("") widens the
@@ -20,48 +21,41 @@ export default function DashboardPage() {
   // → the entire league.
   const scope = seasonId ? "season" : seriesId ? "series" : gameId ? "game" : "league";
 
-  useEffect(() => {
-    let live = true;
-    setData(null);
+  // One bundle, whichever scope is showing. A season needs its championship AND
+  // its calendar, which used to be two requests; both come out of the same raw
+  // documents now.
+  const { index } = useRawBundle({ scope, gameId, seriesId, seasonId, enabled: !loading });
 
+  const data = useMemo(() => {
+    if (!index) return null;
     if (scope === "season") {
-      Promise.all([
-        api(`/api/standings?season_id=${seasonId}`),
-        api(`/api/races?season_id=${seasonId}`),
-      ]).then(([standings, races]) => {
-        if (!live) return;
-        // Calendar-date comparisons only — a race dated today is still upcoming,
-        // and no timezone offset can shift it into yesterday.
-        const dated = races.filter(r => toDateOnly(r.date));
-        setData({
-          leader: standings.drivers[0] ?? null,
-          driverCount: new Set(standings.drivers.map(d => d.entry_id)).size,
-          totalRaces: races.length,
-          completed: dated.filter(r => isPastRaceDate(r.date)).length,
-          nextRace: dated.filter(r => !isPastRaceDate(r.date))
-            .sort((a, b) => raceDateSortKey(a.date) - raceDateSortKey(b.date))[0] ?? null,
-        });
-      }).catch(() => setData(null));
-    } else {
-      const qs = scope === "game" ? `scope=game&game_id=${gameId}`
-        : scope === "series" ? `scope=series&series_id=${seriesId}`
-        : "scope=league";
-      api(`/api/stats?${qs}`).then(stats => {
-        if (!live) return;
-        setData({
-          leader: stats.rows[0] ?? null,
-          driverCount: stats.rows.length,
-          teamCount: stats.team_rows.length,
-          seasonsCounted: stats.seasons_counted,
-          totalRaces: stats.race_summary.total,
-          completed: stats.race_summary.completed,
-          nextRace: stats.race_summary.next_race,
-        });
-      }).catch(() => setData(null));
+      const standings = buildStandings(index, { seasonId });
+      if (standings.status !== 200) return null;
+      const races = index.racesFor(seasonId);
+      // Calendar-date comparisons only — a race dated today is still upcoming,
+      // and no timezone offset can shift it into yesterday.
+      const dated = races.filter(r => toDateOnly(r.date));
+      return {
+        leader: standings.body.drivers[0] ?? null,
+        driverCount: new Set(standings.body.drivers.map(d => d.entry_id)).size,
+        totalRaces: races.length,
+        completed: dated.filter(r => isPastRaceDate(r.date)).length,
+        nextRace: dated.filter(r => !isPastRaceDate(r.date))
+          .sort((a, b) => raceDateSortKey(a.date) - raceDateSortKey(b.date))[0] ?? null,
+      };
     }
-
-    return () => { live = false; };
-  }, [scope, gameId, seriesId, seasonId]);
+    const stats = buildStats(index, { scope, gameId, seriesId });
+    if (stats.status !== 200) return null;
+    return {
+      leader: stats.body.rows[0] ?? null,
+      driverCount: stats.body.rows.length,
+      teamCount: stats.body.team_rows.length,
+      seasonsCounted: stats.body.seasons_counted,
+      totalRaces: stats.body.race_summary.total,
+      completed: stats.body.race_summary.completed,
+      nextRace: stats.body.race_summary.next_race,
+    };
+  }, [index, scope, gameId, seriesId, seasonId]);
 
   if (loading) return <div className="skeleton" style={{ height: 200 }} />;
 

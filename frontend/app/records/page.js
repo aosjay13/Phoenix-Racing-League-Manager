@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useLeague } from "@/components/LeagueProvider";
 import { ShareGraphicButton, ShareGraphicModal } from "@/components/ShareGraphicModal";
 import { leagueLogos, specToGraphicTable } from "@/lib/shareGraphic";
-import { api } from "@/lib/api";
+import { useRawBundle } from "@/components/useRawBundle";
+import { buildStats } from "@/lib/statsCompute";
 import { formatStat } from "@/lib/standings";
 
 // Each record category: [key, label, lowerIsBetter, description].
@@ -110,8 +111,6 @@ const holderNames = (holders, isTeams) =>
 export default function RecordsPage() {
   const league = useLeague();
   const { gameId, seriesId, seasonId, classId, className, game, series, season, raceClass, loading } = league ?? {};
-  const [data, setData] = useState(null);
-  const [error, setError] = useState(null);
   const [sharing, setSharing] = useState(false);
   const [tab, setTab] = useState("drivers"); // "drivers" | "teams"
 
@@ -119,14 +118,13 @@ export default function RecordsPage() {
   // Game / Series / Season / Class dropdowns in the top bar.
   // Both id and name: the id pins an exact season's class, the name is what
   // resolves the same class across the seasons in a wider scope.
-  const classParam = classId ? `&class_id=${classId}&class_name=${encodeURIComponent(className)}` : "";
   const active = seasonId
-    ? { params: `scope=season&season_id=${seasonId}${classParam}`, title: `${series?.name ?? ""} ${season?.name ?? "Season"}${className ? ` ${className}` : ""} Records`.trim() }
+    ? { scope: "season", title: `${series?.name ?? ""} ${season?.name ?? "Season"}${className ? ` ${className}` : ""} Records`.trim() }
     : seriesId
-      ? { params: `scope=series&series_id=${seriesId}${classParam}`, title: `${series?.name ?? "Series"} Records` }
+      ? { scope: "series", title: `${series?.name ?? "Series"} Records` }
       : gameId
-        ? { params: `scope=game&game_id=${gameId}${classParam}`, title: `${game?.name ?? "Game"} Records` }
-        : { params: `scope=league${classParam}`, title: "League All-Time Records" };
+        ? { scope: "game", title: `${game?.name ?? "Game"} Records` }
+        : { scope: "league", title: "League All-Time Records" };
 
   // Label for the Average Field Size card — names the exact scope the number
   // was measured over, e.g. "Season 4 Average" / "iRacing Average".
@@ -136,13 +134,17 @@ export default function RecordsPage() {
       : gameId ? (game?.name ?? "Game")
         : "League";
 
-  useEffect(() => {
-    if (loading) return;
-    setData(null);
-    setError(null);
-    api(`/api/stats?${active.params}`).then(setData).catch(err => setError(err.message));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active.params, loading]);
+  // The record book reads the same aggregated rows the Stats screen does, and
+  // works them out the same way: raw documents in, every column crunched here.
+  const { index, error: bundleError } = useRawBundle({
+    scope: active.scope, gameId, seriesId, seasonId, enabled: !loading,
+  });
+  const computed = useMemo(
+    () => (index ? buildStats(index, { scope: active.scope, classId, className, gameId, seriesId, seasonId }) : null),
+    [index, active.scope, classId, className, gameId, seriesId, seasonId],
+  );
+  const data = computed?.status === 200 ? computed.body : null;
+  const error = bundleError || (computed && computed.status !== 200 ? computed.body?.error : null);
 
   const isTeams = tab === "teams";
   const records = useMemo(() => {

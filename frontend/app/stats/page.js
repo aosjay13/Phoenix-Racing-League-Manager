@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useLeague } from "@/components/LeagueProvider";
 import { useSortable } from "@/components/useSortable";
 import { ShareGraphicModal } from "@/components/ShareGraphicModal";
 import { leagueLogos, toGraphicTable } from "@/lib/shareGraphic";
-import { api } from "@/lib/api";
+import { useRawBundle } from "@/components/useRawBundle";
+import { buildStats } from "@/lib/statsCompute";
 import { compareByTieBreakers, formatStat } from "@/lib/standings";
 import { withBangerColumns } from "@/lib/bangerRacing";
 
@@ -63,8 +64,6 @@ const teamHref = row => `/teams/${encodeURIComponent(row.team_id || row.team_nam
 export default function StatsPage() {
   const league = useLeague();
   const { gameId, seriesId, seasonId, classId, className, game, series, season, raceClass, classes, league: activeLeague, loading, isBangerRacing } = league ?? {};
-  const [data, setData] = useState(null);
-  const [error, setError] = useState(null);
   const [tab, setTab] = useState("drivers"); // "drivers" | "teams"
   const [sharing, setSharing] = useState(false);
 
@@ -74,34 +73,43 @@ export default function StatsPage() {
   // keeps these columns out of the Overall (league-wide) and per-Game views,
   // where a takedown count means nothing. See lib/bangerRacing.js.
   const showBanger = !!seriesId && !!isBangerRacing;
-  const baseColumns = tab === "teams" ? TEAM_COLUMNS : COLUMNS;
-  // Slotted in just left of Best Laps, among the rest of the race stats.
-  const columns = useMemo(() => withBangerColumns(baseColumns, showBanger), [baseColumns, showBanger]);
-  const activeRows = tab === "teams" ? data?.team_rows : data?.rows;
-  const lowIsBetter = useMemo(() => columns.filter(c => c[2]).map(c => c[0]), [columns]);
-  const { sorted: rows, clickSort, arrow } = useSortable(activeRows, tab === "teams" ? "points" : "wins", lowIsBetter, compareByTieBreakers);
 
   // Scope comes straight from the top dropdowns: the deepest concrete
   // selection wins; "All …" choices widen the aggregation. A selected Class
   // narrows the field further, so every stat below is that class's own.
   // Both id and name: the id pins an exact season's class, the name is what
   // resolves the same class across the seasons in a wider scope.
-  const classParam = classId ? `&class_id=${classId}&class_name=${encodeURIComponent(className)}` : "";
   const active = seasonId
-    ? { params: `scope=season&season_id=${seasonId}${classParam}`, title: `${series?.name ?? ""} ${season?.name ?? "Season"}${className ? ` ${className}` : ""} Stats`.trim() }
+    ? { scope: "season", title: `${series?.name ?? ""} ${season?.name ?? "Season"}${className ? ` ${className}` : ""} Stats`.trim() }
     : seriesId
-      ? { params: `scope=series&series_id=${seriesId}${classParam}`, title: `${series?.name ?? "Series"} Overall Stats` }
+      ? { scope: "series", title: `${series?.name ?? "Series"} Overall Stats` }
       : gameId
-        ? { params: `scope=game&game_id=${gameId}${classParam}`, title: `${game?.name ?? "Game"} Overall Stats` }
-        : { params: `scope=league${classParam}`, title: "League Overall Stats" };
+        ? { scope: "game", title: `${game?.name ?? "Game"} Overall Stats` }
+        : { scope: "league", title: "League Overall Stats" };
 
-  useEffect(() => {
-    if (loading) return;
-    setData(null);
-    setError(null);
-    api(`/api/stats?${active.params}`).then(setData).catch(err => setError(err.message));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active.params, loading]);
+  // The raw documents for that scope — every season, roster and result it
+  // covers, uncalculated. The aggregation below is the expensive part and it
+  // runs here, in the browser, not on a serverless function.
+  const { index, error: bundleError } = useRawBundle({
+    scope: active.scope, gameId, seriesId, seasonId, enabled: !loading,
+  });
+
+  // Every stat on this screen, derived from documents already in memory.
+  // Switching between the Drivers and Teams tabs, or picking a different class,
+  // re-runs this rather than re-reading the league.
+  const computed = useMemo(
+    () => (index ? buildStats(index, { scope: active.scope, classId, className, gameId, seriesId, seasonId }) : null),
+    [index, active.scope, classId, className, gameId, seriesId, seasonId],
+  );
+  const data = computed?.status === 200 ? computed.body : null;
+  const error = bundleError || (computed && computed.status !== 200 ? computed.body?.error : null);
+
+  const baseColumns = tab === "teams" ? TEAM_COLUMNS : COLUMNS;
+  // Slotted in just left of Best Laps, among the rest of the race stats.
+  const columns = useMemo(() => withBangerColumns(baseColumns, showBanger), [baseColumns, showBanger]);
+  const activeRows = tab === "teams" ? data?.team_rows : data?.rows;
+  const lowIsBetter = useMemo(() => columns.filter(c => c[2]).map(c => c[0]), [columns]);
+  const { sorted: rows, clickSort, arrow } = useSortable(activeRows, tab === "teams" ? "points" : "wins", lowIsBetter, compareByTieBreakers);
 
   // Best value per column, for leader highlighting.
   const best = useMemo(() => {

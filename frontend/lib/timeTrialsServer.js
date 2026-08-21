@@ -1,6 +1,6 @@
 import { db } from "@/lib/firebase";
 import { scopeByLeague } from "@/lib/serverAuth";
-import { normalizeAverageLaps, normalizeLaps, normalizeMaxLaps, summarizeEntries } from "@/lib/timeTrials";
+import { normalizeAverageLaps, normalizeLaps, normalizeMaxLaps, trackRecordLapsFrom, TRIAL_SESSION_LABEL } from "@/lib/timeTrials";
 
 // Firestore reads around the Time Trial rules in lib/timeTrials.js.
 //
@@ -19,8 +19,9 @@ export const TRIAL_STATUS_COMPLETED = "completed";
 
 // The label a trial's laps carry into the Track Records database. Records show
 // the session a lap came from, so a hot lap set in a time trial says so rather
-// than looking like it came out of a race.
-export const TRIAL_SESSION_LABEL = "Time Trial";
+// than looking like it came out of a race. Defined with the pure rule in
+// lib/timeTrials.js and re-exported here, so server-side importers are unchanged.
+export { TRIAL_SESSION_LABEL };
 
 // The series → season map, kept to the series actually being placed into. A
 // leftover entry for a series that was later unticked would otherwise keep
@@ -130,14 +131,9 @@ export function targetSeasonIds(trial = {}) {
 
 // ── Track Records ───────────────────────────────────────────────────────────
 //
-// A time trial IS a lap around a venue, so its laps belong in that venue's
-// record books even though the session counts toward no racing statistic. This
-// hands lib/trackStatsServer.js one candidate per driver — their fastest lap of
-// the session — in the same shape a race lap arrives in, so the existing
-// "keep the fastest" rules do the rest without knowing where the lap came from.
-//
-// Matched to the venue exactly as races are: by `track_id`, plus legacy/free
-// text trials that only named the track.
+// The Firestore reads behind trackRecordLapsFrom (lib/timeTrials.js), which
+// holds the rule. Matched to the venue exactly as races are: by `track_id`, plus
+// legacy/free-text trials that only named the track.
 export async function fetchTrackRecordLaps({ trackId, trackName, leagueId = "" }) {
   const wantedName = String(trackName || "").trim();
   const queries = [scopeByLeague(db().collection(TRIAL_COLLECTION).where("track_id", "==", trackId), leagueId).get()];
@@ -146,61 +142,18 @@ export async function fetchTrackRecordLaps({ trackId, trackName, leagueId = "" }
   }
   const snaps = await Promise.all(queries);
 
-  const trialsById = new Map();
-  for (const d of snaps[0].docs) trialsById.set(d.id, { id: d.id, ...d.data() });
-  if (snaps[1]) {
-    for (const d of snaps[1].docs) {
-      const data = d.data();
-      // A trial pinned to a DIFFERENT venue's id must not be folded in by name.
-      if (!data.track_id) trialsById.set(d.id, { id: d.id, ...data });
-    }
+  const trials = new Map();
+  for (const snap of snaps) {
+    for (const d of snap.docs) trials.set(d.id, { id: d.id, ...d.data() });
   }
-  if (!trialsById.size) return [];
+  if (!trials.size) return [];
 
   const entrySnaps = await Promise.all(
-    [...trialsById.keys()].map(id => db().collection(TRIAL_ENTRY_COLLECTION).where("time_trial_id", "==", id).get())
+    [...trials.keys()].map(id => db().collection(TRIAL_ENTRY_COLLECTION).where("time_trial_id", "==", id).get())
   );
+  const entries = entrySnaps.flatMap(snap => snap.docs.map(d => ({ id: d.id, ...d.data() })));
 
-  const laps = [];
-  for (const snap of entrySnaps) {
-    for (const doc of snap.docs) {
-      const entry = { id: doc.id, ...doc.data() };
-      const trial = trialsById.get(entry.time_trial_id);
-      if (!trial) continue;
-      const [summary] = summarizeEntries([entry]);
-      if (summary.best_seconds == null) continue;
-      laps.push({
-        seconds: summary.best_seconds,
-        time: summary.best_time,
-        driver_name: entry.name || "Unknown",
-        driver_id: entry.driver_id || null,
-        user_id: entry.user_id || null,
-        game_id: trial.game_id || null,
-        // A driver placed into a series belongs to THAT series for the purpose
-        // of scoping this lap — a Pro Series placement lap is a Pro Series lap,
-        // and the venue's records narrow by the same Series/Season dropdowns
-        // every other record does. Falls back to the trial's own scope for an
-        // ordinary (class-placement or plain hot-lap) session.
-        series_id: entry.assigned_series_id || trial.series_id || null,
-        season_id: (entry.assigned_series_id && trial.series_seasons?.[entry.assigned_series_id])
-          || trial.season_id || null,
-        // A trial's class is the one the driver was PLACED in (a placement
-        // night) or entered under. Blank leaves the lap out of the per-class
-        // breakdown, exactly as an unclassified race lap is.
-        class_name: entry.assigned_class_name || "",
-        // Rendered on the record card the same way a race lap's is.
-        race_id: null,
-        race_name: trial.name || TRIAL_SESSION_LABEL,
-        session: TRIAL_SESSION_LABEL,
-        from_qualifying: false,
-        from_time_trial: true,
-        time_trial_id: trial.id,
-        date: trial.date || null,
-        lap: summary.best_lap,
-      });
-    }
-  }
-  return laps;
+  return trackRecordLapsFrom({ trials: [...trials.values()], entries, trackId, trackName });
 }
 
 // Entry payload as it is stored. Laps are capped by the session's own limit, so

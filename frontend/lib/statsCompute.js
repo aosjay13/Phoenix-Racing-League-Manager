@@ -1,7 +1,24 @@
-import { NextResponse } from "next/server";
-import { db } from "@/lib/firebase";
-import { getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
-import { cachedPayload } from "@/lib/statsCache";
+// Aggregated driver and team stats across seasons — the app version of the
+// spreadsheet's "Overall Stats" sheets, computed in the browser.
+//
+// This is the code that used to run inside GET /api/stats, moved rather than
+// rewritten. It was the single most expensive read in the app: at league scope
+// it aggregates every result the league has ever recorded, and it backs three
+// screens (Stats, Records and the dashboard). Every one of those visits used to
+// spend Vercel Active CPU replaying the league's whole history; now the browser
+// does it once over a raw bundle and re-derives from memory as the viewer
+// switches tabs.
+//
+//   scope=league                → every season
+//   scope=game&game_id=…        → all seasons in a game
+//   scope=series&series_id=…    → all seasons in a series
+//   scope=season&season_id=…    → one season
+//
+// Add classId/className to narrow to one season class (Pro, GT3, …). Above one
+// season a class NAME is the cross-season identity, since "GT3" is a separate
+// doc per season. Drivers are unified across seasons by pooled driver profile
+// (driver_id), falling back to linked account, then roster name.
+
 import {
   aggregateCareerStats,
   compareStandings,
@@ -12,100 +29,54 @@ import {
   makeScorer,
   resolveSeasonConfig,
 } from "@/lib/standings";
-import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
-import { classIdsInSeason, fetchSeasonClasses, filterEntriesByClass, filterRacesByClass, filterResultsByClass, orderEntryClasses } from "@/lib/classServer";
+import {
+  classIdsInSeason, filterEntriesByClass, filterRacesByClass, filterResultsByClass, orderEntryClasses,
+} from "@/lib/classFilter";
 import { crownsInScope, seasonChampions, titlesByEntry } from "@/lib/champions";
 import { finalSessionName } from "@/lib/raceSummaryServer";
 import { isPastRaceDate, raceDateSortKey, toDateOnly, todayDateString } from "@/lib/raceDate";
-import { fetchDriverNames, gameIdForScope } from "@/lib/driverNamesServer";
-import { fetchSeriesByIds } from "@/lib/seriesServer";
 import { applySeasonTeams } from "@/lib/teams";
-import { loadTeamIndex } from "@/lib/teamsServer";
+import { bareResults, driverNames, gameIdForBundle, indexBundle } from "@/lib/rawIndex";
 
-export const dynamic = "force-dynamic";
-
-// Aggregated driver stats across seasons — the app version of the
-// spreadsheet's "Overall Stats" sheets.
-//   scope=league                → every season
-//   scope=game&game_id=…        → all seasons in a game
-//   scope=series&series_id=…    → all seasons in a series
-//   scope=season&season_id=…    → one season
-// Add &class_id=… to narrow to one season class (Pro, GT3, …); classes belong
-// to a single season, so it only bites within that season's slice of the scope.
-// Drivers are unified across seasons by linked account (user_id) when
-// present, otherwise by roster name.
-//
-// Cached on (league, scope, class) and dropped whenever a write could move a
-// number — see lib/statsCache.js. This is the single most expensive read in the
-// app: at league scope it aggregates every result the league has ever recorded,
-// and it backs three screens (Stats, Records and the driver tables), so the
-// same answer used to be recomputed from scratch for each of them.
-export async function GET(request) {
-  const { searchParams } = new URL(request.url);
-  const { status, body } = await statsFor(getRequestLeagueId(request), {
-    scope: searchParams.get("scope") || "league",
-    classId: searchParams.get("class_id") || "",
-    // A class NAME is the cross-season identity: above one season, "GT3" is a
-    // separate doc per season, so the name is resolved to each season's own ids.
-    className: searchParams.get("class_name") || "",
-    gameId: searchParams.get("game_id") || "",
-    seriesId: searchParams.get("series_id") || "",
-    seasonId: searchParams.get("season_id") || "",
-  });
-  return NextResponse.json(body, { status });
-}
-
-const statsFor = cachedPayload("stats", async (leagueId, params) => {
-  const { scope, classId, className } = params;
-
-  // The team picture for the whole league, read once — every season below asks
-  // it who was driving for whom, so a team's stats are the combined results of
-  // its lineup in each season, and its all-time line is those seasons added up.
-  const teamIndex = await loadTeamIndex({ leagueId });
-
-  let seasonsQuery = db().collection("seasons");
-  if (scope === "game") {
-    if (!params.gameId) return { status: 400, body: { error: "game_id required" } };
-    seasonsQuery = seasonsQuery.where("game_id", "==", params.gameId);
-  } else if (scope === "series") {
-    if (!params.seriesId) return { status: 400, body: { error: "series_id required" } };
-    seasonsQuery = seasonsQuery.where("series_id", "==", params.seriesId);
-  } else if (scope === "season") {
-    if (!params.seasonId) return { status: 400, body: { error: "season_id required" } };
-    const doc = await db().collection("seasons").doc(params.seasonId).get();
-    if (!doc.exists) return { status: 404, body: { error: "Season not found" } };
-    const season = { id: doc.id, ...doc.data() };
-    return { status: 200, body: await buildStats([season], classId, className, season.game_id || null, teamIndex) };
-  } else if (scope !== "league") {
+// Scope validation, kept identical to the refusals the route used to send so a
+// screen can report a bad scope the same way. `index` is an indexBundle() of a
+// bundle fetched at the matching scope.
+export function buildStats(index, { scope = "league", classId = "", className = "", gameId = "", seriesId = "", seasonId = "" } = {}) {
+  if (scope === "game" && !gameId) return { status: 400, body: { error: "game_id required" } };
+  if (scope === "series" && !seriesId) return { status: 400, body: { error: "series_id required" } };
+  if (scope === "season") {
+    if (!seasonId) return { status: 400, body: { error: "season_id required" } };
+    const season = index.seasonById[seasonId];
+    if (!season) return { status: 404, body: { error: "Season not found" } };
+    return { status: 200, body: aggregate(index, [season], classId, className, season.game_id || null) };
+  }
+  if (scope !== "league" && scope !== "game" && scope !== "series") {
     return { status: 400, body: { error: "invalid scope" } };
   }
 
-  // League-wide / game / series scopes read many seasons — constrain them to
-  // the active league so stats never bleed across leagues. (scope=season is a
-  // single doc, already league-correct via its id, and returns above.)
-  seasonsQuery = scopeByLeague(seasonsQuery, leagueId);
-  const snap = await seasonsQuery.get();
-  const seasons = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  // A Game or Series scope is tied to one game, so its tables show each
-  // driver's name for THAT game; league scope ("All Games") has no game and
-  // shows overall names.
-  const gameId = await gameIdForScope({
-    scope,
-    gameId: params.gameId || null,
-    seriesId: params.seriesId || null,
-  });
-  return { status: 200, body: await buildStats(seasons, classId, className, gameId, teamIndex) };
-});
+  // Every season in the bundle: it was fetched at this scope, so a game bundle
+  // holds that game's seasons and a league bundle holds them all.
+  //
+  // A Game or Series scope is tied to one game, so its tables show each driver's
+  // name for THAT game; league scope ("All Games") has no game and shows overall
+  // names.
+  return { status: 200, body: aggregate(index, index.seasons, classId, className,
+    gameIdForBundle(index.bundle, { scope, gameId, seriesId })) };
+}
 
-async function buildStats(seasons, classId = "", className = "", gameId = null, teamIndex = null) {
+export function statsFromBundle(bundle, params) {
+  return buildStats(indexBundle(bundle), params);
+}
+
+function aggregate(index, seasons, classId = "", className = "", gameId = null) {
+  const teamIndex = index.teamIndex;
+  const templatesById = index.templatesById;
   // driverKey -> { name, number, user_id, results[], titles }
   const drivers = {};
   // teamId -> aggregated team bucket. A team is a persistent document (see
   // lib/teams.js), so its all-time line is simply every season's contribution
   // added together under the same id — even as its driver lineup changes
-  // completely from one season to the next. Legacy per-season team docs fold
-  // onto the canonical doc for their name, so an un-migrated league aggregates
-  // exactly as it did before.
+  // completely from one season to the next.
   const teams = {};
   // Every race across the scope, used for the dashboard's schedule metrics
   // (total / completed / next upcoming) alongside the per-driver aggregates.
@@ -113,28 +84,14 @@ async function buildStats(seasons, classId = "", className = "", gameId = null, 
   // Field-size accumulator: one entry per race that actually has finalized
   // results, holding how many drivers took part. See fieldSizeFor below.
   const fieldSizes = [];
-  const templatesById = await fetchTemplatesById();
-
-  // Every series in scope, read once — each season scores on its series'
-  // structure unless it overrides it.
-  const seriesById = await fetchSeriesByIds(seasons.map(s => s.series_id));
 
   for (const season of seasons) {
-    const config = resolveSeasonConfig(season, seriesById[season.series_id] || null);
-    const [entriesSnap, resultsSnap, racesSnap, seasonClasses] = await Promise.all([
-      db().collection("entries").where("season_id", "==", season.id).get(),
-      db().collection("results").where("season_id", "==", season.id).get(),
-      db().collection("races").where("season_id", "==", season.id).get(),
-      fetchSeasonClasses(season.id),
-    ]);
+    const config = resolveSeasonConfig(season, index.seriesFor(season));
+    const seasonClasses = index.classesFor(season.id);
     // Stamp each entry with the team that driver raced for in THIS season, so
     // a driver who changed teams between seasons contributes their results to
     // the right team in each of them.
-    const allEntries = applySeasonTeams(
-      entriesSnap.docs.map(d => ({ id: d.id, ...d.data() })),
-      season.id,
-      teamIndex,
-    );
+    const allEntries = applySeasonTeams(index.entriesFor(season.id), season.id, teamIndex);
     // Ordered the same way the standings do it, so a result with no class of
     // its own resolves to the same class on both screens.
     const allEntriesById = orderEntryClasses(
@@ -151,14 +108,14 @@ async function buildStats(seasons, classId = "", className = "", gameId = null, 
     if (classFilterOn && !classSel.length) continue;
     const entries = filterEntriesByClass(allEntries, classSel);
     const entriesById = Object.fromEntries(entries.map(e => [e.id, e]));
-    const seasonRaces = racesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const seasonRaces = index.racesFor(season.id);
     // Under a class filter, only that class's calendar counts toward the race
     // totals and field size — its own events plus the shared ones. The
     // race→doc map stays unfiltered so results always resolve their race.
     const races = filterRacesByClass(seasonRaces, classSel);
     const racesById = Object.fromEntries(seasonRaces.map(r => [r.id, r]));
     for (const r of races) allRaces.push(r);
-    const decorated = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById,
+    const decorated = decorateRaceBonuses(decorateSessionFlags(bareResults(index.resultsFor(season.id)), racesById,
       sessionScopeContext({ seasons: [season], classes: seasonClasses, entriesById: allEntriesById })));
     const results = filterResultsByClass(decorated, classSel, allEntriesById);
     // Scores every result under the class its driver raced in, so a class with
@@ -256,7 +213,7 @@ async function buildStats(seasons, classId = "", className = "", gameId = null, 
   // league-wide it's their overall display name (see lib/driverNames.js).
   // `profile_name` keeps the overall name alongside it so a game's table can
   // show "who that is" under the on-track name.
-  const names = await fetchDriverNames(Object.values(drivers).map(d => d.driver_id), gameId);
+  const names = driverNames(index.bundle, Object.values(drivers).map(d => d.driver_id), gameId);
 
   const rows = Object.values(drivers).map(d => {
     const n = d.driver_id ? names[d.driver_id] : null;

@@ -1,30 +1,44 @@
 import { revalidateTag, unstable_cache } from "next/cache";
 import { getRequestLeagueId } from "@/lib/serverAuth";
 
-// The read-path cache for the expensive league-wide reads: standings, stats,
-// team stats, the schedule feed and skill ratings.
+// The write-side half of read caching: the tag every write that can move a
+// number drops, and the wrapper that makes a route drop it.
 //
-// ── Why the cache holds the OUTPUT of the scoring code ─────────────────────
+// ── What changed, and why this is still here ───────────────────────────────
 //
-// The obvious way to keep championship maths off the read path is to compute it
-// when an admin saves a result and store the answer in an aggregate document.
-// The trouble is that the scoring rules are not small — points templates, drop
-// weeks, per-class championships, session flags, bonuses, team roll-ups — and a
-// second implementation of them on the write path is a second thing that can be
-// wrong. When the two disagree, the stored number wins and nobody finds out.
+// This module used to front five expensive read routes — standings, stats,
+// team-stats, skill-ratings and the schedule feed — each of which scored the
+// league on the read path. Those routes are gone. The maths runs in the
+// browser now, over raw documents (see lib/rawBundle.js), and the read path's
+// cache is the CDN: /api/raw is a pure function of (league, scope) and says so
+// in a Cache-Control header, so repeats are served at the edge without waking a
+// function at all.
 //
-// So what is stored here is the output of the SAME code the app has always run.
-// A cache entry cannot disagree with a live calculation, because it IS one,
-// kept. Reads pay a lookup; the first read after a change pays the calculation
-// once and every read after that is free until the next change.
+// So `cachedPayload` below currently has no callers. It is kept, along with the
+// invalidation wiring on every write route, because the CONTRACT is the valuable
+// part and it is expensive to re-establish:
 //
-// ── Freshness ─────────────────────────────────────────────────────────────
+//   every route that writes something a cached read is built from
+//   must drop the cache.
 //
-// Every write that can move a number calls revalidateStats(), which drops the
-// tag and makes the next read recompute. The TTL below is a BACKSTOP, not the
-// mechanism: it decides how long a missed invalidation can go unnoticed. Cached
-// "indefinitely" would make a single missed call permanent, and stale standings
-// that never heal are worse than a recalculation nobody was going to notice.
+// lib/__tests__/statsCache.test.mjs enforces that structurally, over every route
+// file in the tree, so a new write route cannot quietly skip it. A cache that is
+// fast and wrong is worse than no cache — miss one write path and a league sits
+// looking at numbers that quietly disagree with its own results — and the moment
+// anything server-side is cached again, it inherits a rule that is already
+// wired up and already tested rather than one somebody has to remember.
+//
+// ── If you cache a server read again ──────────────────────────────────────
+//
+// Wrap it in cachedPayload and it is invalidated correctly from day one. Note
+// the size limit that pushed the raw bundle to the CDN instead: Vercel's data
+// cache refuses items over a couple of megabytes, and a league-scope bundle is
+// comfortably past that.
+//
+// The TTL below is a BACKSTOP, not the mechanism. It decides how long a missed
+// invalidation can go unnoticed; cached "indefinitely" would make a single
+// missed call permanent, and stale numbers that never heal are worse than a
+// recalculation nobody was going to notice.
 export const STATS_TAG = "stats-data";
 
 // Six hours. Long enough that a league racing weekly effectively never pays for

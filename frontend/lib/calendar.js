@@ -30,11 +30,24 @@ export const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 // request-sequence guard in the calendar page, which handles the other half of
 // that race). Deriving the query from one rule, in one place, is what stops the
 // calendar showing one game's events while claiming to show them all.
-export function calendarScopeQuery({ gameId = "", seriesId = "" } = {}) {
+export function calendarScopeIds({ gameId = "", seriesId = "" } = {}) {
   const game = String(gameId || "");
-  if (!game) return "";
+  if (!game) return { scope: "league", gameId: "", seriesId: "" };
   const series = String(seriesId || "");
-  return series ? `series_id=${encodeURIComponent(series)}` : `game_id=${encodeURIComponent(game)}`;
+  return series
+    ? { scope: "series", gameId: game, seriesId: series }
+    : { scope: "game", gameId: game, seriesId: "" };
+}
+
+// The same rule as a query string, for the .ics feed URL below. The grid itself
+// asks for a raw bundle rather than a URL (see components/useRawBundle.js), so
+// both read the scope out of calendarScopeIds and neither can drift.
+export function calendarScopeQuery({ gameId = "", seriesId = "" } = {}) {
+  const sel = calendarScopeIds({ gameId, seriesId });
+  if (sel.scope === "league") return "";
+  return sel.scope === "series"
+    ? `series_id=${encodeURIComponent(sel.seriesId)}`
+    : `game_id=${encodeURIComponent(sel.gameId)}`;
 }
 
 // The subscribable feed (/api/calendar.ics) for what's currently on screen.

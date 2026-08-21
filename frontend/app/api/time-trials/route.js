@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { getRequestLeagueId, scopeByLeague, withAdmin } from "@/lib/serverAuth";
-import { summarizeEntries, trialMatchesScope } from "@/lib/timeTrials";
+import { trialMatchesScope } from "@/lib/timeTrials";
 import { TRIAL_COLLECTION, TRIAL_ENTRY_COLLECTION, TRIAL_STATUS_OPEN, trialFields } from "@/lib/timeTrialsServer";
 
 export const dynamic = "force-dynamic";
@@ -41,22 +41,15 @@ export async function GET(request) {
   if (wantedTrack) trials = trials.filter(t => (t.track_id || "") === wantedTrack);
   if (searchParams.get("is_placement") === "1") trials = trials.filter(t => !!t.is_placement);
 
-  // How many drivers are on each sheet, so the hub can say so without opening
-  // every session. One read for the whole league's laps, grouped in memory —
-  // a query per trial turned opening the hub into N+1 round trips.
+  // The laps behind every sheet, read once and handed over as they are. The hub
+  // shows a driver count and a lap count per session; it derives both from these
+  // (see app/time-trials/page.js), because counting timed laps means resolving
+  // which of a driver's laps actually carry a time — arithmetic, and arithmetic
+  // does not belong on a read path. One read for the whole league's laps rather
+  // than a query per trial, which is what turned opening the hub into N+1 round
+  // trips before.
   const entriesSnap = await scopeByLeague(db().collection(TRIAL_ENTRY_COLLECTION), leagueId).get();
-  const rowsByTrial = new Map();
-  for (const doc of entriesSnap.docs) {
-    const row = doc.data();
-    if (!rowsByTrial.has(row.time_trial_id)) rowsByTrial.set(row.time_trial_id, []);
-    rowsByTrial.get(row.time_trial_id).push(row);
-  }
-  for (const t of trials) {
-    const rows = rowsByTrial.get(t.id) || [];
-    const summarized = summarizeEntries(rows, { averageLaps: t.average_laps });
-    t.driver_count = rows.length;
-    t.lap_count = summarized.reduce((n, r) => n + r.laps_timed, 0);
-  }
+  const entries = entriesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
   // Newest first — a hub is a place you come back to, and the session you ran
   // last night is the one you want. Dates are bare calendar strings, so they
@@ -65,7 +58,7 @@ export async function GET(request) {
     String(b.date || "").localeCompare(String(a.date || "")) ||
     String(b.created_at || "").localeCompare(String(a.created_at || "")));
 
-  return NextResponse.json(trials);
+  return NextResponse.json({ trials, entries });
 }
 
 export const POST = withAdmin(async (request, ctx, user) => {

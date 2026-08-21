@@ -1,5 +1,16 @@
-import { NextResponse } from "next/server";
-import { db } from "@/lib/firebase";
+// One season's championship tables, computed in the browser.
+//
+// This is the code that used to run inside GET /api/standings, moved rather
+// than rewritten: same order, same rules, same payload. What changed is where
+// it runs and what it starts from — a raw bundle (see lib/rawBundle.js) instead
+// of a fistful of Firestore reads. The route is now a pass-through, and this
+// runs in a useMemo on the Standings page.
+//
+// A class championship is scored exactly like the overall one, just over a
+// narrowed field: points, gaps, ranks and every stat are recomputed within the
+// class, so its leader is rank 1 with a 0-point gap rather than being pulled out
+// of the combined table.
+
 import {
   calculateStandings,
   calculateTeamStandings,
@@ -12,65 +23,31 @@ import {
   resolveSeasonConfig,
 } from "@/lib/standings";
 import { bangerPoints, bangerStatLine, hasBangerBonuses } from "@/lib/bangerRacing";
-import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
-import { classIdsInSeason, classNamesFor, entryClassIds, entryClassIdsOrdered, fetchSeasonClasses, filterEntriesByClass, filterResultsByClass, orderEntryClasses } from "@/lib/classServer";
+import {
+  classIdsInSeason, classNamesFor, entryClassIds, entryClassIdsOrdered,
+  filterEntriesByClass, filterResultsByClass, orderEntryClasses,
+} from "@/lib/classFilter";
 import { seasonChampions } from "@/lib/champions";
-import { fetchSeriesForSeason } from "@/lib/seriesServer";
-import { fetchDriverNames } from "@/lib/driverNamesServer";
 import { applySeasonTeams, teamsForEntries } from "@/lib/teams";
-import { loadTeamIndex } from "@/lib/teamsServer";
-import { getRequestLeagueId } from "@/lib/serverAuth";
-import { cachedPayload } from "@/lib/statsCache";
+import { bareResults, driverNames, indexBundle } from "@/lib/rawIndex";
 
-// One season's championship tables.
-//   ?season_id=…              → the overall (whole-field) championship
-//   ?season_id=…&class_id=…   → that class's own isolated championship
-//
-// A class championship is scored exactly like the overall one, just over a
-// narrowed field: points, gaps, ranks and every stat are recomputed within the
-// class, so its leader is rank 1 with a 0-point gap rather than being pulled out
-// of the combined table.
-//
-// Cached on (league, season, class) and dropped whenever a write could move a
-// number — see lib/statsCache.js. Scoring a season means reading every result
-// in it and running the whole points pipeline over them, which is not work to
-// repeat for every visitor who opens the same table.
-export async function GET(request) {
-  const { searchParams } = new URL(request.url);
-  const seasonId = searchParams.get("season_id");
-  if (!seasonId) return NextResponse.json({ error: "season_id required" }, { status: 400 });
+// `index` is an indexBundle() of a scope=season bundle; `seasonId` names the
+// season inside it. Returns { status, body } so a screen can render a 404 the
+// same way the route reported one.
+export function buildStandings(index, { seasonId, classId = "", className = "" }) {
+  const season = index.seasonById[seasonId];
+  if (!season) return { status: 404, body: { error: "Season not found" } };
 
-  const { status, body } = await standingsFor(getRequestLeagueId(request), {
-    seasonId,
-    classId: searchParams.get("class_id") || "",
-    className: searchParams.get("class_name") || "",
-  });
-  return NextResponse.json(body, { status });
-}
+  const classes = index.classesFor(seasonId);
+  const templatesById = index.templatesById;
+  const teamIndex = index.teamIndex;
 
-const standingsFor = cachedPayload("standings", async (leagueId, { seasonId, classId, className }) => {
-  const [seasonDoc, entriesSnap, teamIndex, resultsSnap, racesSnap, templatesById, classes] = await Promise.all([
-    db().collection("seasons").doc(seasonId).get(),
-    db().collection("entries").where("season_id", "==", seasonId).get(),
-    loadTeamIndex({ leagueId }),
-    db().collection("results").where("season_id", "==", seasonId).get(),
-    db().collection("races").where("season_id", "==", seasonId).get(),
-    fetchTemplatesById(),
-    fetchSeasonClasses(seasonId),
-  ]);
-  if (!seasonDoc.exists) return { status: 404, body: { error: "Season not found" } };
-
-  const season = seasonDoc.data();
   // Every entry is stamped with the team that driver raced for IN THIS SEASON
   // (its `team_seasons` lineup, falling back to the entry's own tag — see
   // lib/teams.js). Doing it here, once, is what makes the team table below a
   // straight roll-up of the driver table: same points, same wins, same poles,
   // just grouped by team.
-  const allEntries = applySeasonTeams(
-    entriesSnap.docs.map(d => ({ id: d.id, ...d.data() })),
-    seasonId,
-    teamIndex,
-  );
+  const allEntries = applySeasonTeams(index.entriesFor(seasonId), seasonId, teamIndex);
   // Put every entry's classes into the season's order first, so a result that
   // records no class of its own resolves to a stable primary class (see
   // orderEntryClasses) instead of whichever class was ticked first.
@@ -79,11 +56,11 @@ const standingsFor = cachedPayload("standings", async (leagueId, { seasonId, cla
     classes,
   );
   const teams = teamsForEntries(allEntries, seasonId, teamIndex);
-  const racesById = Object.fromEntries(racesSnap.docs.map(d => [d.id, d.data()]));
-  const allResults = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), racesById,
+  const racesById = Object.fromEntries(index.racesFor(seasonId).map(({ id, ...race }) => [id, race]));
+  const allResults = decorateRaceBonuses(decorateSessionFlags(bareResults(index.resultsFor(seasonId)), racesById,
     // The season and its classes can name heat/consolation points defaults of
     // their own; they resolve per result, under its own class.
-    sessionScopeContext({ seasons: [{ id: seasonId, ...season }], classes, entriesById })));
+    sessionScopeContext({ seasons: [season], classes, entriesById })));
 
   // Resolve the selection against THIS season's class docs, so a class picked
   // at series level still narrows the season it drills into.
@@ -94,8 +71,7 @@ const standingsFor = cachedPayload("standings", async (leagueId, { seasonId, cla
   // The series is the top of the points chain: its structure is the default
   // this season (and each of its classes) overrides. A series that sets nothing
   // leaves the season exactly as it scored before.
-  const series = await fetchSeriesForSeason(season);
-  const config = resolveSeasonConfig(season, series);
+  const config = resolveSeasonConfig(season, index.seriesFor(season));
   // `classes` lets a class scoring on its own points structure total under it —
   // in its own championship and in the combined table alike.
   const drivers = calculateStandings(results, entries, teams, config, templatesById, classes);
@@ -129,20 +105,19 @@ const standingsFor = cachedPayload("standings", async (leagueId, { seasonId, cla
   // driver is shown under IN THIS GAME when they've set one. The season carries
   // its game_id; resolve every pooled driver's name for that game (see
   // lib/driverNames.js) and stamp it on the row — null when they haven't set
-  // one, so the client falls back to the name on the entry.
+  // one, so the table falls back to the name on the entry.
   const gameId = season.game_id || null;
   if (gameId) {
-    const names = await fetchDriverNames(drivers.rows.map(r => r.driver_id), gameId);
+    const names = driverNames(index.bundle, drivers.rows.map(r => r.driver_id), gameId);
     for (const r of drivers.rows) r.game_alias = r.driver_id ? (names[r.driver_id]?.game ?? null) : null;
   }
 
   // Tag every row with its class so the combined table can still show which
   // class each driver belongs to. A driver entered in several classes lists
   // them all, with the primary one kept in `class_id` for anything that can
-  // only carry a single class.
-  // Every driver lists their classes in the SEASON's order (the order the Class
-  // menu shows), so the column reads the same way on every row instead of
-  // following whatever order each entry happened to be saved with.
+  // only carry a single class. Every driver lists their classes in the SEASON's
+  // order (the order the Class menu shows), so the column reads the same way on
+  // every row instead of following whatever order each entry was saved with.
   for (const r of drivers.rows) {
     const entry = entriesById[r.entry_id];
     const cids = entryClassIdsOrdered(entry, classes);
@@ -157,7 +132,7 @@ const standingsFor = cachedPayload("standings", async (leagueId, { seasonId, cla
   // same order the classes are listed. Computed from the UNFILTERED season, and
   // empty until the season is marked completed (nothing is awarded before
   // then). Named from the roster entry, matching the tables above.
-  const champions = seasonChampions({ id: seasonId, ...season }, allResults, allEntries, config, templatesById, classes)
+  const champions = seasonChampions(season, allResults, allEntries, config, templatesById, classes)
     .map(c => ({
       ...c,
       driver_name: entriesById[c.entry_id]?.name ?? "Unknown",
@@ -166,7 +141,7 @@ const standingsFor = cachedPayload("standings", async (leagueId, { seasonId, cla
     }));
 
   return { status: 200, body: {
-    season: { id: seasonId, ...season },
+    season,
     classes,
     champions,
     class_id: classSel[0] || classId || null,
@@ -201,4 +176,9 @@ const standingsFor = cachedPayload("standings", async (leagueId, { seasonId, cla
     drivers: drivers.rows,
     teams: teamRows,
   } };
-});
+}
+
+// Convenience for callers holding a raw bundle rather than an index.
+export function standingsFromBundle(bundle, params) {
+  return buildStandings(indexBundle(bundle), params);
+}

@@ -1,48 +1,54 @@
-import { NextResponse } from "next/server";
-import { db } from "@/lib/firebase";
-import { decorateRaceBonuses, decorateSessionFlags, isQualifying, makeScorer, resolveSeasonConfig, sessionScopeContext } from "@/lib/standings";
-import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
-import { fetchDriverNames } from "@/lib/driverNamesServer";
-import { fetchSeasonClasses, classOfResult, racePerClassResults } from "@/lib/classServer";
-import { fetchSeriesForSeason } from "@/lib/seriesServer";
+// Full detail for one event: a dedicated qualifying session plus every race
+// session (including heat/consolation/feature sessions for heat-format events),
+// each with computed points — resolved per session via that session's own
+// points_template_id when it has one, else the season default.
+//
+// This is the code that used to run inside GET /api/events/[id], moved rather
+// than rewritten. It is a small read next to the stats tables (one event's
+// results, one season's roster), but the points printed on this page have to be
+// the same numbers the standings total — and the way to guarantee that is for
+// both to come out of the same scorer, run in the same place, over the same
+// season bundle the Standings and Schedule screens already hold.
+
+import {
+  decorateRaceBonuses,
+  decorateSessionFlags,
+  sessionScopeContext,
+  isQualifying,
+  makeScorer,
+  resolveSeasonConfig,
+} from "@/lib/standings";
+import { classOfResult, racePerClassResults } from "@/lib/classFilter";
 import { isBracketDoc, isBracketEvent } from "@/lib/bracketRacing";
 import { isBangerDoc, isBangerEvent } from "@/lib/bangerRacing";
 import { applySeasonTeams } from "@/lib/teams";
-import { loadTeamIndex } from "@/lib/teamsServer";
-import { getRequestLeagueId } from "@/lib/serverAuth";
+import { bareResults, driverNames, indexBundle } from "@/lib/rawIndex";
 
 // Full detail for one event: a dedicated qualifying session plus every race
 // session (including heat/consolation/feature sessions for heat-format
 // events), each with computed points — resolved per-session via that
 // session's own points_template_id when it has one, else the season default.
-export async function GET(request, { params }) {
-  const raceDoc = await db().collection("races").doc(params.id).get();
-  if (!raceDoc.exists) return NextResponse.json({ error: "Event not found" }, { status: 404 });
-  const event = { id: raceDoc.id, ...raceDoc.data() };
+export function buildEvent(index, { raceId }) {
+  const event = (index.bundle.races || []).find(r => r.id === raceId);
+  if (!event) return { status: 404, body: { error: "Event not found" } };
 
-  const [seasonDoc, entriesSnap, teamIndex, resultsSnap, templatesById, classes] = await Promise.all([
-    db().collection("seasons").doc(event.season_id).get(),
-    db().collection("entries").where("season_id", "==", event.season_id).get(),
-    loadTeamIndex({ leagueId: getRequestLeagueId(request) }),
-    db().collection("results").where("race_id", "==", event.id).get(),
-    fetchTemplatesById(),
-    fetchSeasonClasses(event.season_id),
-  ]);
-
-  const season = seasonDoc.exists ? { id: seasonDoc.id, ...seasonDoc.data() } : null;
-  const series = await fetchSeriesForSeason(season);
+  const season = index.seasonById[event.season_id] ?? null;
+  const teamIndex = index.teamIndex;
+  const templatesById = index.templatesById;
+  const classes = index.classesFor(event.season_id);
+  const series = index.seriesFor(season);
   const config = resolveSeasonConfig(season || {}, series);
   // Each row shows the team its driver raced for in THIS season, taken from the
   // season's team lineup (see lib/teams.js) so it matches the standings.
   const entriesById = Object.fromEntries(
-    applySeasonTeams(entriesSnap.docs.map(d => ({ id: d.id, ...d.data() })), event.season_id, teamIndex)
-      .map(e => [e.id, e]),
+    applySeasonTeams(index.entriesFor(event.season_id), event.season_id, teamIndex).map(e => [e.id, e]),
   );
   // The event's own doc is the only race in scope here. Decorating against it
   // resolves each session's stats/points toggles and which class its points
   // template was assigned to, so the points printed on this page are the same
   // numbers the standings total.
-  const all = decorateRaceBonuses(decorateSessionFlags(resultsSnap.docs.map(d => d.data()), { [event.id]: event },
+  const eventResults = index.resultsFor(event.season_id).filter(r => r.race_id === event.id);
+  const all = decorateRaceBonuses(decorateSessionFlags(bareResults(eventResults), { [event.id]: event },
     // The season and this event's classes can each name a heat/consolation points
     // default of their own, so they're resolved here too — the numbers on this
     // page have to be the ones the standings total.
@@ -59,7 +65,7 @@ export async function GET(request, { params }) {
   const gameId = season?.game_id || null;
   let aliasByDriver = {};
   if (gameId) {
-    const names = await fetchDriverNames(all.map(r => entriesById[r.entry_id]?.driver_id), gameId);
+    const names = driverNames(index.bundle, all.map(r => entriesById[r.entry_id]?.driver_id), gameId);
     aliasByDriver = Object.fromEntries(Object.entries(names).map(([id, n]) => [id, n.game]));
   }
 
@@ -146,17 +152,13 @@ export async function GET(request, { params }) {
     .sort((a, b) => a.position - b.position);
 
   // The race stores only the venue's NAME; the exporter's metadata strip wants
-  // its layout/length too, so resolve the linked track doc when there is one.
-  let track = null;
-  if (event.track_id) {
-    const tdoc = await db().collection("tracks").doc(event.track_id).get();
-    if (tdoc.exists) {
-      const t = tdoc.data();
-      track = { id: tdoc.id, name: t.name ?? null, location: t.location ?? null, length: t.length ?? null, track_type: t.track_type ?? null };
-    }
-  }
+  // its layout/length too, so resolve the linked track from the venue pool.
+  const t = event.track_id ? index.trackById[event.track_id] : null;
+  const track = t
+    ? { id: t.id, name: t.name ?? null, location: t.location ?? null, length: t.length ?? null, track_type: t.track_type ?? null }
+    : null;
 
-  return NextResponse.json({
+  return { status: 200, body: {
     event,
     track,
     // Full season doc (not just id/name) so the edit screen can resolve
@@ -187,5 +189,9 @@ export async function GET(request, { params }) {
     banger_classes: classes.filter(isBangerDoc).map(c => c.id),
     races,
     qualifying,
-  });
+  } };
+}
+
+export function eventFromBundle(bundle, params) {
+  return buildEvent(indexBundle(bundle), params);
 }

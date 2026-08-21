@@ -115,7 +115,7 @@ for (const [file, screen] of [
   ["app/calendar/page.js", "the Calendar"],
   ["app/races/[id]/page.js", "the event's Race Info card"],
   ["lib/raceSummaryServer.js", "the event roll-up"],
-  ["lib/trackStatsServer.js", "the track records"],
+  ["lib/trackCompute.js", "the track records"],
   ["lib/icsFeed.js", "the calendar feed"],
 ]) {
   const src = strip(read(file));

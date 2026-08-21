@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLeague } from "@/components/LeagueProvider";
 import { useAuth } from "@/components/AuthProvider";
 import { useSortable } from "@/components/useSortable";
 import { ShareGraphicModal } from "@/components/ShareGraphicModal";
 import { leagueLogos, toGraphicTable } from "@/lib/shareGraphic";
 import { api } from "@/lib/api";
+import { useRawBundle } from "@/components/useRawBundle";
+import { buildStandings } from "@/lib/standingsCompute";
 import { readParam, setParam } from "@/lib/scopeLink";
 import { compareByTieBreakers, formatStat, TIE_BREAKER_SUMMARY } from "@/lib/standings";
 import { withBangerColumns } from "@/lib/bangerRacing";
@@ -145,32 +147,34 @@ export default function StandingsPage() {
     setTab(t);
     setParam("tab", t === "teams" ? "teams" : null);
   };
-  const [data, setData] = useState(null);
   const [adjusting, setAdjusting] = useState(null); // row being edited
   const [adjForm, setAdjForm] = useState({ points_adjustment: "0", adjustment_note: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [sharing, setSharing] = useState(false);
-  const [loadError, setLoadError] = useState(null);
   const [assigning, setAssigning] = useState(false);
+
+  // The season's raw documents — its roster, its calendar, every result — and
+  // nothing computed. The championship is worked out below, in this browser.
+  const { index, error: bundleError, reload: load } = useRawBundle({
+    scope: "season", seasonId, enabled: !!seasonId,
+  });
 
   // The Class dropdown in the top bar scopes the whole table: a class shows that
   // class's own isolated championship (its own points, ranks, and gaps), while
-  // "All Classes" is the combined whole-field championship.
-  const load = useCallback(() => {
-    if (!seasonId) { setData(null); return; }
-    const qs = `season_id=${seasonId}${classId ? `&class_id=${classId}&class_name=${encodeURIComponent(className)}` : ""}`;
-    setLoadError(null);
-    // A failed load used to be swallowed, leaving the page on its skeleton
-    // forever — indistinguishable from "this class has no standings". Say what
-    // went wrong instead, so a broken scope is reportable rather than just
-    // blank.
-    api(`/api/standings?${qs}`)
-      .then(d => { setData(d); setLoadError(null); })
-      .catch(err => { setData(null); setLoadError(err.message || "Failed to load standings."); });
-  }, [seasonId, classId, className]);
-
-  useEffect(load, [load]);
+  // "All Classes" is the combined whole-field championship. Changing it re-runs
+  // the scoring over documents already in memory — no round trip, and no server
+  // CPU, for what is a different view of the same season.
+  const computed = useMemo(
+    () => (index && seasonId ? buildStandings(index, { seasonId, classId, className }) : null),
+    [index, seasonId, classId, className],
+  );
+  const data = computed?.status === 200 ? computed.body : null;
+  // A failed load must not leave the page on its skeleton forever —
+  // indistinguishable from "this class has no standings". Say what went wrong
+  // instead, so a broken scope is reportable rather than just blank.
+  const loadError = bundleError
+    || (computed && computed.status !== 200 ? (computed.body?.error || "Failed to load standings.") : null);
 
   // Put the season's unclassified drivers into the class being viewed, so its
   // championship stops being empty. Their existing results come with them —

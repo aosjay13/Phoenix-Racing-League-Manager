@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 //
 // Nothing is lost: a venue's whole history (its leaderboard, past winners, lap
 // records, each driver's per-track stats) is derived from the races that point
-// at it — see lib/trackStatsServer.js and lib/careerStatsServer.js — so moving
+// at it — see lib/trackCompute.js and lib/careerCompute.js — so moving
 // the races moves all of it. Results reference entries, not tracks, and are
 // never touched.
 //
@@ -58,7 +58,7 @@ const handlePOST = withAdmin(async (request) => {
 
   // Every race to re-point: those linked to a losing venue by id, plus legacy
   // free-text races that only ever stored its NAME (no track_id) — the same
-  // pairing lib/trackStatsServer.js counts as "held here", so a merge captures
+  // pairing lib/trackCompute.js counts as "held here", so a merge captures
   // exactly the history the venue's profile was showing. The survivor's own
   // races are collected too: they don't move, but they carry the venue name as
   // text and so have to follow a rename.
