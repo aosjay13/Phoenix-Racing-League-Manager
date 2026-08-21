@@ -37,6 +37,7 @@ import { buildStats } from "../../lib/statsCompute.js";
 import { buildTeamStats } from "../../lib/teamStatsCompute.js";
 import { buildSkillRatings } from "../../lib/skillRatingsCompute.js";
 import { buildSchedule } from "../../lib/scheduleCompute.js";
+import { buildRoster } from "../../lib/rosterCompute.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DIGEST_FILE = path.join(here, "payload-digests.json");
@@ -110,6 +111,16 @@ const CASES = [
   ["skill/series", "game", { gameId: "iracing" }, i => buildSkillRatings(i, { scope: "series", seriesId: "series-0" })],
   ["skill/league", "league", {}, i => buildSkillRatings(i, { scope: "league" })],
   ["skill/unknown", "game", { gameId: "iracing" }, i => buildSkillRatings(i, { scope: "season", seasonId: "nope" })],
+
+  ["roster/league", "league", {}, i => buildRoster(i, { scope: "league" })],
+  ["roster/game", "game", { gameId: "iracing" }, i => buildRoster(i, { scope: "game", gameId: "iracing" })],
+  ["roster/game-alias", "game", { gameId: "acc" }, i => buildRoster(i, { scope: "game", gameId: "acc" })],
+  ["roster/series", "series", { seriesId: "series-0" }, i => buildRoster(i, { scope: "series", seriesId: "series-0" })],
+  ["roster/season", "season", { seasonId: LAST }, i => buildRoster(i, { scope: "season", seasonId: LAST })],
+  ["roster/badscope", "league", {}, i => buildRoster(i, { scope: "nonsense" })],
+  ["roster/nogame", "league", {}, i => buildRoster(i, { scope: "game" })],
+  ["roster/missing", "season", { seasonId: "" }, null],
+  ["roster/unknown", "season", { seasonId: "nope" }, null],
 ];
 
 // Refusals the raw reader phrases differently from the screen. The screen shows
@@ -118,6 +129,8 @@ const REFUSALS = {
   "standings/missing": { status: 400, body: { error: "season_id required" } },
   "standings/unknown": { status: 404, body: { error: "Season not found" } },
   "stats/unknown": { status: 404, body: { error: "Season not found" } },
+  "roster/missing": { status: 400, body: { error: "season_id required" } },
+  "roster/unknown": { status: 404, body: { error: "Season not found" } },
 };
 
 const out = {};

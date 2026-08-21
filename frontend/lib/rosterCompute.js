@@ -1,91 +1,65 @@
-import { NextResponse } from "next/server";
-import { db } from "@/lib/firebase";
-import { getRequestLeagueId, scopeByLeague } from "@/lib/serverAuth";
-import { fetchDriverNames } from "@/lib/driverNamesServer";
-import { entryClassIds, orderClassIds } from "@/lib/classServer";
-import { applySeasonTeams } from "@/lib/teams";
-import { loadTeamIndex } from "@/lib/teamsServer";
-
-export const dynamic = "force-dynamic";
-
-// Scope-aware roster directory, mirroring /api/stats.
+// Scope-aware roster directory, computed in the browser.
+//
+// This is the code that used to run inside GET /api/roster, moved rather than
+// rewritten. It is a smaller read than the stats tables, but it is the same
+// shape of work — walk every season in scope, fold each driver's entries into
+// one identity, resolve their name and team — and it ran on a serverless
+// function every time somebody opened the roster or switched a dropdown.
+//
 //   scope=season  → drivers in one season (car numbers shown)
 //   scope=series  → drivers across a series; number = latest season's entry number
 //   scope=game    → drivers across every series in a game; number omitted (multiple)
 //   scope=league  → every driver, everywhere; number omitted
 //
 // Identity: every entry should carry a `driver_id` pointing at the global
-// `drivers` collection (see /api/drivers) — that's the real identity, since
-// the same person can run a different display name (alias) per series/game.
-// Entries are unified by driver_id when present, falling back to linked
-// account (user_id) or lowercased name for older entries written before this
-// existed. Each driver also carries `series_entries`, a map of seriesId → the
-// driver's latest entry in that series (including that series' own alias
-// name and number), which powers the per-series alias/number editor.
-export async function GET(request) {
-  const { searchParams } = new URL(request.url);
-  const scope = searchParams.get("scope") || "league";
+// `drivers` collection — that's the real identity, since the same person can run
+// a different display name (alias) per series/game. Entries are unified by
+// driver_id when present, falling back to linked account (user_id) or lowercased
+// name for older entries written before this existed. Each driver also carries
+// `series_entries`, a map of seriesId → the driver's latest entry in that series
+// (including that series' own alias name and number), which powers the
+// per-series alias/number editor.
 
-  let seasons;
-  if (scope === "season") {
-    const id = searchParams.get("season_id");
-    if (!id) return NextResponse.json({ error: "season_id required" }, { status: 400 });
-    const doc = await db().collection("seasons").doc(id).get();
-    if (!doc.exists) return NextResponse.json({ error: "Season not found" }, { status: 404 });
-    seasons = [{ id: doc.id, ...doc.data() }];
-  } else {
-    let q = db().collection("seasons");
-    if (scope === "game") {
-      const gameId = searchParams.get("game_id");
-      if (!gameId) return NextResponse.json({ error: "game_id required" }, { status: 400 });
-      q = q.where("game_id", "==", gameId);
-    } else if (scope === "series") {
-      const seriesId = searchParams.get("series_id");
-      if (!seriesId) return NextResponse.json({ error: "series_id required" }, { status: 400 });
-      q = q.where("series_id", "==", seriesId);
-    } else if (scope !== "league") {
-      return NextResponse.json({ error: "invalid scope" }, { status: 400 });
-    }
-    // league scope reads every season, so it must be constrained; game/series
-    // are already narrowed by a league-scoped id but we still stamp the filter
-    // for defense in depth.
-    q = scopeByLeague(q, getRequestLeagueId(request));
-    const snap = await q.get();
-    seasons = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+import { entryClassIds, orderClassIds } from "@/lib/classFilter";
+import { applySeasonTeams } from "@/lib/teams";
+import { driverNames, indexBundle } from "@/lib/rawIndex";
+
+// Refusals kept identical to the ones the route used to send, so a screen
+// reports a bad scope the same way. `index` is an indexBundle() of a bundle
+// fetched at the matching scope.
+export function buildRoster(index, { scope = "league", gameId = "", seriesId = "", seasonId = "" } = {}) {
+  if (scope === "season" && !seasonId) return { status: 400, body: { error: "season_id required" } };
+  if (scope === "game" && !gameId) return { status: 400, body: { error: "game_id required" } };
+  if (scope === "series" && !seriesId) return { status: 400, body: { error: "series_id required" } };
+  if (!["league", "game", "series", "season"].includes(scope)) {
+    return { status: 400, body: { error: "invalid scope" } };
+  }
+  if (scope === "season" && !index.seasonById[seasonId]) {
+    return { status: 404, body: { error: "Season not found" } };
   }
 
   // Oldest → newest, so the most recent entry overwrites earlier identity data.
-  seasons.sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
+  const seasons = [...index.seasons]
+    .sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
 
   const showNumber = scope === "season" || scope === "series";
-  // Teams for the whole league, read once and asked per season below.
-  const teamIndex = await loadTeamIndex({ leagueId: getRequestLeagueId(request) });
+  const teamIndex = index.teamIndex;
   const drivers = {};        // key -> driver bucket
   let editSeasonId = null;   // latest season in scope; the write target for edits
 
   for (const season of seasons) {
     editSeasonId = season.id;
-    const seriesId = season.series_id || "unknown";
-    const [entriesSnap, classesSnap] = await Promise.all([
-      db().collection("entries").where("season_id", "==", season.id).get(),
-      db().collection("classes").where("season_id", "==", season.id).get(),
-    ]);
-    const className = Object.fromEntries(classesSnap.docs.map(d => [d.id, d.data().name]));
+    const seriesKey = season.series_id || "unknown";
     // The season's classes in their display order (sort_order, then name), so a
-    // driver's classes list the same way on every row — see orderClassIds.
-    const seasonClasses = classesSnap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .sort((a, b) => (Number(a.sort_order || 0) - Number(b.sort_order || 0)) ||
-        String(a.name || "").localeCompare(String(b.name || "")));
+    // driver's classes list the same way on every row — see orderClassIds. The
+    // bundle already hands them over in that order.
+    const seasonClasses = index.classesFor(season.id);
+    const className = Object.fromEntries(seasonClasses.map(c => [c.id, c.name]));
 
     // The team each driver races for THIS season comes from the season's team
     // lineup (see lib/teams.js), falling back to the tag on their entry — the
     // same answer the standings and stats screens resolve.
-    const seasonEntries = applySeasonTeams(
-      entriesSnap.docs.map(d => ({ id: d.id, ...d.data() })),
-      season.id,
-      teamIndex,
-    );
+    const seasonEntries = applySeasonTeams(index.entriesFor(season.id), season.id, teamIndex);
 
     for (const entry of seasonEntries) {
       const key = entry.driver_id
@@ -99,7 +73,6 @@ export async function GET(request) {
         driver_id: null,
         user_id: null,
         number: null,
-        numbers: new Set(),
         team_id: null,
         team_name: null,
         class_id: null,
@@ -140,13 +113,10 @@ export async function GET(request) {
       bucket.entry_id = entry.id;
       if (!bucket.entry_ids.includes(entry.id)) bucket.entry_ids.push(entry.id);
       bucket.season_id = season.id;
-      if (entry.number != null) {
-        bucket.number = entry.number;
-        bucket.numbers.add(entry.number);
-      }
+      if (entry.number != null) bucket.number = entry.number;
       // Per-series: keep the driver's latest entry for that series, including
       // the alias name they race under there.
-      bucket.series_entries[seriesId] = {
+      bucket.series_entries[seriesKey] = {
         entry_id: entry.id,
         season_id: season.id,
         driver_id: entry.driver_id ?? null,
@@ -167,10 +137,10 @@ export async function GET(request) {
   // roster editor writes it straight back; `display_name` is the one to render.
   // League scope spans every game, so it has no per-game name to apply.
   const scopeGameId =
-    scope === "game" ? searchParams.get("game_id")
+    scope === "game" ? gameId
       : scope === "league" ? null
         : (seasons.find(s => s.game_id)?.game_id || null);
-  const names = await fetchDriverNames(Object.values(drivers).map(d => d.driver_id), scopeGameId);
+  const names = driverNames(index.bundle, Object.values(drivers).map(d => d.driver_id), scopeGameId);
 
   if (!showNumber) {
     // Aggregated scopes: a driver can span series with different entry names,
@@ -220,10 +190,14 @@ export async function GET(request) {
     series_entries: d.series_entries,
   }));
 
-  return NextResponse.json({
+  return { status: 200, body: {
     show_number: showNumber,
     edit_season_id: editSeasonId,
     seasons_counted: seasons.length,
     rows,
-  });
+  } };
+}
+
+export function rosterFromBundle(bundle, params) {
+  return buildRoster(indexBundle(bundle), params);
 }

@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { useLeague } from "@/components/LeagueProvider";
 import { rawBundlePath } from "@/components/useRawBundle";
 import { indexBundle } from "@/lib/rawIndex";
+import { buildRoster } from "@/lib/rosterCompute";
 import { buildStandings } from "@/lib/standingsCompute";
 import { Modal } from "@/components/Modal";
 import { ImageUpload } from "@/components/ImageUpload";
@@ -103,25 +104,26 @@ export function TeamRosterManager() {
       setTeamPoints({});
       return;
     }
-    const [seasonTeams, rosterRes] = await Promise.all([
-      api(`/api/team-seasons?season_id=${targetSeasonId}`),
-      api(`/api/roster?scope=season&season_id=${targetSeasonId}`),
-    ]);
+    const seasonTeams = await api(`/api/team-seasons?season_id=${targetSeasonId}`);
     setData(seasonTeams);
-    setRoster(rosterRes.rows ?? []);
     // Best-effort: the season's team standings, so an admin can see the
     // aggregation land the moment a lineup changes. Never blocks the screen.
     //
     // Scored here rather than asked for: the season's raw documents come back
     // uncalculated (see lib/rawBundle.js) and the same buildStandings the
     // Standings page runs turns them into the team table.
+    // One bundle answers both halves of this screen: who is on the season's
+    // roster, and what each team has scored. Both are derived here from raw
+    // documents (see lib/rosterCompute.js and lib/standingsCompute.js).
     try {
       const res = await fetch(rawBundlePath({ scope: "season", seasonId: targetSeasonId }));
       const bundle = await res.json();
-      if (!res.ok) throw new Error(bundle?.error || "Standings unavailable");
-      const standings = buildStandings(indexBundle(bundle), { seasonId: targetSeasonId });
+      if (!res.ok) throw new Error(bundle?.error || "Season unavailable");
+      const index = indexBundle(bundle);
+      setRoster(buildRoster(index, { scope: "season", seasonId: targetSeasonId }).body?.rows ?? []);
+      const standings = buildStandings(index, { seasonId: targetSeasonId });
       setTeamPoints(Object.fromEntries((standings.body?.teams ?? []).map(t => [t.team_id, t])));
-    } catch { setTeamPoints({}); }
+    } catch { setRoster([]); setTeamPoints({}); }
   }, [targetSeasonId]);
 
   useEffect(() => {

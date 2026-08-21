@@ -90,7 +90,6 @@ const ROUTES = [
   { name: "GET /api/raw?scope=game", file: "app/api/raw/route.js", url: "/api/raw?scope=game&game_id=iracing" },
   { name: "GET /api/raw?scope=league", file: "app/api/raw/route.js", url: "/api/raw?scope=league" },
   { name: "GET /api/drivers/[id] (career)", file: "app/api/drivers/[id]/route.js", url: "/api/drivers/drv-0", params: { id: "drv-0" } },
-  { name: "GET /api/roster", file: "app/api/roster/route.js", url: "/api/roster" },
   { name: "GET /api/drivers", file: "app/api/drivers/route.js", url: "/api/drivers" },
   { name: "GET /api/entries?season_id", file: "app/api/entries/route.js", url: `/api/entries?season_id=${LAST_SEASON}` },
   { name: "GET /api/results?season_id", file: "app/api/results/route.js", url: `/api/results?season_id=${LAST_SEASON}` },
@@ -260,6 +259,7 @@ async function measureClientCompute() {
   const { buildTeamStats } = await import(url("lib/teamStatsCompute.js"));
   const { buildSkillRatings } = await import(url("lib/skillRatingsCompute.js"));
   const { buildSchedule } = await import(url("lib/scheduleCompute.js"));
+  const { buildRoster } = await import(url("lib/rosterCompute.js"));
 
   const scopes = {};
   const bundleFor = async (scope, ids = {}) => {
@@ -283,6 +283,8 @@ async function measureClientCompute() {
     { name: "Stats (whole league)", bundle: league, run: () => buildStats(league.index, { scope: "league" }) },
     { name: "Team profile (whole league)", bundle: league, run: () => buildTeamStats(league.index, { team: "Team 0" }) },
     { name: "Schedule feed (whole league)", bundle: league, run: () => buildSchedule(league.index, {}) },
+    { name: "Roster (one season)", bundle: season, run: () => buildRoster(season.index, { scope: "season", seasonId: LAST_SEASON }) },
+    { name: "Roster (whole league)", bundle: league, run: () => buildRoster(league.index, { scope: "league" }) },
   ];
 
   const out = [];

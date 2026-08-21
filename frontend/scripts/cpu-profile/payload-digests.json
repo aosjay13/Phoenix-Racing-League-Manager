@@ -1,7 +1,15 @@
 {
-  "_note": "SHA-256 prefixes of every payload in payloads.mjs, blessed from the OUTPUT OF THE OLD SERVER ROUTES (/api/standings, /api/stats, /api/team-stats, /api/skill-ratings, /api/schedule) on this seeded dataset, immediately before those routes were deleted. `payloads.mjs --verify` checks the browser-side compute against them, so it stays the standing proof that moving the maths off the server did not move a number. Re-bless with --write-digests only when an answer is MEANT to change.",
   "seasons": 6,
   "cases": {
+    "roster/badscope": "763213aac0f814b4c18f47e452c5a9ed",
+    "roster/game": "a071a2412711fe170dad1a719990fa53",
+    "roster/game-alias": "1b82fc7ae9f2a038de570abf712cf26d",
+    "roster/league": "312d1b3077ce5edd06e7d2146561ff5c",
+    "roster/missing": "de0f05d0e0ffd0d3164979c13af6718d",
+    "roster/nogame": "cec3eb8758d57ece15ed1f2d10b5a739",
+    "roster/season": "efd3ecb2041ac66ce47e32eafb369f5a",
+    "roster/series": "29f5a99e2fb3b30d1f928fb10da8196b",
+    "roster/unknown": "e687cfd9379b9c74cef4f2cbb736b694",
     "schedule/all": "1b9c4b0d8db0f515df974166d9dde987",
     "schedule/game": "52e28d9e33c0a46d861b7952525ba7f4",
     "schedule/game-alias": "9d04fa04ed6425372718e554c859737e",

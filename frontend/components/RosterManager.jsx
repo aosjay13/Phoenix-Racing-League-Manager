@@ -16,6 +16,9 @@ import { createDriverProfile, duplicateReportFromError, ensureDriverId, isDuplic
 import { duplicateReport } from "@/lib/driverMatch";
 import { rosterAdditionsChanged, useRosterAdditions } from "@/lib/rosterAlerts";
 import { entryClassIds } from "@/lib/classFilter";
+import { rawBundlePath } from "@/components/useRawBundle";
+import { indexBundle } from "@/lib/rawIndex";
+import { buildRoster } from "@/lib/rosterCompute";
 import { api } from "@/lib/api";
 
 // Resolve the current top-dropdown selection into a roster scope, exactly the
@@ -24,13 +27,25 @@ function useScope(league) {
   const { gameId, seriesId, seasonId, game, series, season } = league;
   return useMemo(() => {
     if (seasonId)
-      return { params: `scope=season&season_id=${seasonId}`, title: `${series?.name ?? ""} ${season?.name ?? "Season"} Roster`.trim() };
+      return { scope: "season", seasonId, title: `${series?.name ?? ""} ${season?.name ?? "Season"} Roster`.trim() };
     if (seriesId)
-      return { params: `scope=series&series_id=${seriesId}`, title: `${series?.name ?? "Series"} Roster` };
+      return { scope: "series", seriesId, title: `${series?.name ?? "Series"} Roster` };
     if (gameId)
-      return { params: `scope=game&game_id=${gameId}`, title: `${game?.name ?? "Game"} Roster` };
-    return { params: "scope=league", title: "League Roster" };
+      return { scope: "game", gameId, title: `${game?.name ?? "Game"} Roster` };
+    return { scope: "league", title: "League Roster" };
   }, [gameId, seriesId, seasonId, game, series, season]);
+}
+
+// A scope's roster, worked out here from raw documents (see
+// lib/rosterCompute.js). The bundle it reads is the same one the Standings and
+// Stats screens hold, so arriving from either costs nothing.
+async function loadRoster(params) {
+  const res = await fetch(rawBundlePath(params));
+  const bundle = await res.json();
+  if (!res.ok) throw new Error(bundle?.error || "Failed to load the roster.");
+  const built = buildRoster(indexBundle(bundle), params);
+  if (built.status !== 200) throw new Error(built.body?.error || "Failed to load the roster.");
+  return built.body;
 }
 
 // One driver's row in the "manage series" panel: shows/edits the alias name
@@ -137,7 +152,7 @@ export function RosterManager() {
   const canManage = !!editSeasonId;
 
   const load = useCallback(async () => {
-    const r = await api(`/api/roster?${scope.params}`);
+    const r = await loadRoster(scope);
     setRoster(r);
     setLoadError(null);
     const u = await api("/api/users");
@@ -149,7 +164,7 @@ export function RosterManager() {
     const gameList = await api("/api/games").catch(() => []);
     setGames(Object.fromEntries((gameList || []).map(g => [g.id, g.name])));
     if (gameId) {
-      const g = await api(`/api/roster?scope=game&game_id=${gameId}`);
+      const g = await loadRoster({ scope: "game", gameId });
       setGameRoster(g.rows);
     } else {
       setGameRoster([]);
@@ -165,7 +180,7 @@ export function RosterManager() {
       setTeams([]);
       setClasses([]);
     }
-  }, [scope.params, gameId, seriesId]);
+  }, [scope, gameId, seriesId]);
 
   useEffect(() => {
     setRoster(null);
@@ -173,9 +188,10 @@ export function RosterManager() {
   }, [load]);
 
   useEffect(() => {
-    // Changing scope invalidates any in-progress inline edit / panel.
+    // Changing scope invalidates any in-progress inline edit / panel. `scope`
+    // is a useMemo, so its identity changes exactly when the selection does.
     setRowKey(null); setRowForm(null); setSeriesPanelKey(null);
-  }, [scope.params]);
+  }, [scope]);
 
   function showToast(type, msg) {
     setToast({ type, msg });

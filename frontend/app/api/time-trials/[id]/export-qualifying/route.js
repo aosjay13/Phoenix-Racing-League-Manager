@@ -3,15 +3,14 @@ import { db } from "@/lib/firebase";
 import { getRequestLeagueId, withAdmin } from "@/lib/serverAuth";
 import { classIdForScope, isClassScoped } from "@/lib/classFilter";
 import { bangerFieldsForSave } from "@/lib/bangerRacing";
-import { entryIndex, matchEntry, planQualifyingExport, summarizeEntries } from "@/lib/timeTrials";
-import { fetchTrial, fetchTrialEntries } from "@/lib/timeTrialsServer";
 import { withStatsRefresh } from "@/lib/statsCache";
 
 export const dynamic = "force-dynamic";
 
 // The bridge: a completed Time Trial becomes a scheduled race's Qualifying.
 //
-//   POST { race_id, sort_key?: "best" | "average", session_class?, dry_run? }
+//   POST { race_id, session_class?, grid: [{ entry_id, finish_pos, qual_time,
+//                                            fastest_lap_time }] }
 //
 // The trial's order IS the grid — fastest lap on pole — and each driver's best
 // lap is filed as their qualifying time. From the moment this writes, those are
@@ -21,15 +20,27 @@ export const dynamic = "force-dynamic";
 // by which a trial ever reaches the standard statistics — an admin has to ask
 // for it, on a named event.
 //
-// `dry_run` reports what would be written (and, more usefully, WHO the target
-// season's roster is missing) without touching anything, which is what the
-// confirmation step shows.
+// ── Where the grid comes from ─────────────────────────────────────────────
+//
+// The browser builds it. Ordering the session, matching each driver to a roster
+// entry and deciding which time is filed are all pure functions of the laps on
+// screen (planQualifyingExport / matchEntry, lib/timeTrials.js), and the sheet
+// has already run them to draw itself. This route used to run them again — and
+// worse, ran them on every `dry_run` the confirmation dialog fired as the admin
+// changed a dropdown, so previewing an export cost a serverless invocation per
+// keystroke. The dialog previews from memory now and posts the finished grid.
+//
+// What is left here is not arithmetic: it is the check that the rows describe
+// drivers who are actually on the target season's roster, and the write.
 const handlePOST = withAdmin(async (request, { params }, user) => {
-  const { race_id, sort_key, session_class = null, dry_run = false } = await request.json();
+  const { race_id, session_class = null, grid } = await request.json();
   if (!race_id) return NextResponse.json({ error: "race_id required" }, { status: 400 });
+  if (!Array.isArray(grid) || !grid.length) {
+    return NextResponse.json({ error: "grid[] required" }, { status: 400 });
+  }
 
-  const trial = await fetchTrial(params.id);
-  if (!trial) return NextResponse.json({ error: "Time trial not found" }, { status: 404 });
+  const trialDoc = await db().collection("time_trials").doc(params.id).get();
+  if (!trialDoc.exists) return NextResponse.json({ error: "Time trial not found" }, { status: 404 });
 
   const raceDoc = await db().collection("races").doc(race_id).get();
   if (!raceDoc.exists) return NextResponse.json({ error: "Race not found" }, { status: 404 });
@@ -38,29 +49,26 @@ const handlePOST = withAdmin(async (request, { params }, user) => {
     return NextResponse.json({ error: "That race isn't attached to a season." }, { status: 400 });
   }
 
-  const [rows, entriesSnap] = await Promise.all([
-    fetchTrialEntries(params.id),
-    db().collection("entries").where("season_id", "==", race.season_id).get(),
-  ]);
-  const entries = entriesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-  const index = entryIndex(entries);
-  const key = sort_key === "average" ? "average" : (trial.sort_key === "average" ? "average" : "best");
-  const summarized = summarizeEntries(rows, { averageLaps: trial.average_laps });
-  const { grid, unmatched } = planQualifyingExport(summarized, row => matchEntry(row, index)?.id || "", { key });
+  const entriesSnap = await db().collection("entries").where("season_id", "==", race.season_id).get();
+  const classByEntry = Object.fromEntries(entriesSnap.docs.map(d => [d.id, d.data().class_id || ""]));
 
-  if (dry_run) {
-    return NextResponse.json({
-      ok: true, dry_run: true, race: { id: race.id, name: race.name },
-      exported: grid.length, unmatched, grid,
-    });
-  }
-  if (!grid.length) {
-    return NextResponse.json({
-      error: unmatched.length
-        ? "None of this session's drivers are on that race's season roster yet."
-        : "Nobody in this session has set a lap time yet.",
-      unmatched,
-    }, { status: 400 });
+  // A result is filed against a roster entry, so every row has to name one that
+  // exists in THIS season — otherwise the export would write results nothing
+  // can resolve a driver for. The client drops unmatched drivers before it gets
+  // here; this is the guarantee, not the filter.
+  const seen = new Set();
+  for (const row of grid) {
+    const entryId = String(row?.entry_id ?? "");
+    if (!(entryId in classByEntry)) {
+      return NextResponse.json({ error: "A driver on that grid isn't on the season's roster." }, { status: 400 });
+    }
+    if (seen.has(entryId)) {
+      return NextResponse.json({ error: "The same driver appears twice on that grid." }, { status: 400 });
+    }
+    seen.add(entryId);
+    if (!Number.isInteger(row.finish_pos) || row.finish_pos < 1) {
+      return NextResponse.json({ error: "Every grid slot needs a position." }, { status: 400 });
+    }
   }
 
   // Which class's qualifying this is, on an event whose sessions are split by
@@ -68,7 +76,6 @@ const handlePOST = withAdmin(async (request, { params }, user) => {
   // exactly as saving the grid by hand would.
   const scoped = isClassScoped(session_class);
   const scopeClassId = scoped ? classIdForScope(session_class) : "";
-  const classByEntry = Object.fromEntries(entries.map(e => [e.id, e.class_id || ""]));
   const leagueId = getRequestLeagueId(request);
 
   const col = db().collection("results");
@@ -89,10 +96,10 @@ const handlePOST = withAdmin(async (request, { params }, user) => {
     .forEach(d => batch.delete(d.ref));
 
   const now = new Date().toISOString();
-  const saved = [];
+  let exported = 0;
   for (const row of grid) {
     const ref = col.doc();
-    const doc = {
+    batch.set(ref, {
       race_id,
       season_id: race.season_id,
       ...(leagueId ? { league_id: leagueId } : {}),
@@ -131,17 +138,15 @@ const handlePOST = withAdmin(async (request, { params }, user) => {
       time_trial_id: params.id,
       created_at: now,
       created_by: user.uid,
-    };
-    batch.set(ref, doc);
-    saved.push({ id: ref.id, ...doc });
+    });
+    exported += 1;
   }
   await batch.commit();
 
   return NextResponse.json({
     ok: true,
     race: { id: race.id, name: race.name },
-    exported: saved.length,
-    unmatched,
+    exported,
   }, { status: 201 });
 });
 

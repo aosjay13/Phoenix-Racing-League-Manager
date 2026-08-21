@@ -19,9 +19,10 @@ export const dynamic = "force-dynamic";
 // the roster has picked so far.
 //
 // The roster half is deliberately public — seeing which cars the rest of the
-// field has taken is the point of the screen, and it's the same roster
-// /api/roster already serves. Only the "which of these is mine" flag needs a
-// signed-in caller, and it's resolved from that caller's own driver profile.
+// field has taken is the point of the screen, and it is the same roster the
+// Roster screen builds from raw documents (lib/rosterCompute.js). Only the
+// "which of these is mine" flag needs a signed-in caller, and it's resolved
+// from that caller's own driver profile.
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const seasonId = searchParams.get("season_id");

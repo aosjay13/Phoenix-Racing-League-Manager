@@ -980,6 +980,12 @@ export function TimeTrialScreen() {
       {exporting && (
         <ExportQualifyingModal
           trial={trial}
+          // The sheet's own rows: the export plans the grid from these, in the
+          // browser, rather than asking the server to re-read and re-order the
+          // session it is already looking at. openAfterSaving() flushes any
+          // pending edits before this opens, so what is on screen is what is
+          // stored.
+          rows={rows}
           seasons={seasonOptions}
           onClose={() => setExporting(false)}
           onExported={() => router.refresh()}
