@@ -256,6 +256,18 @@ export function classConfigs(baseConfig, classes = []) {
   return Object.fromEntries(classes.map(c => [c.id, configForClass(baseConfig, c)]));
 }
 
+// The PRELIMINARY session types — the undercard of a heat weekend. They are the
+// sessions that score nothing at all until somebody names a points system for
+// them (see defaultSessionFlags), which is what makes them special everywhere
+// points are layered: a class's own points structure is a statement about how
+// that class scores its RACES, never about its heats, so it must not be allowed
+// to flatten a heat template back to the class's race scale. See makeScorer.
+export const PRELIMINARY_SESSION_TYPES = new Set(["heat", "consolation"]);
+
+export function isPreliminarySession(sessionType) {
+  return PRELIMINARY_SESSION_TYPES.has(sessionType || "race");
+}
+
 // A heat weekend's DEFAULT points template per session type — the field each one
 // is stored in. Set from the Race Info form of an event ("every heat of this
 // event scores on this template") and, for a league that runs heats all year,
@@ -315,16 +327,43 @@ export function inheritedSessionTemplate(result, { race = null, cls = null, seas
   return fromSeason ? { id: fromSeason, level: "season", forClass: false } : null;
 }
 
-// The points template a result actually scores under: the one stamped on the
-// result (its session's own assignment, event-wide or per class) if it has one,
-// else the default inherited from its event, its class or its season.
+// The template assigned to THIS session from its own results tab — the pick in
+// the "Points system · Heat 1" dropdown — for the class this result counts
+// toward: the class-scoped assignment on a split event
+// (`session_points_by_class`), else the event-wide one (`session_points`).
 //
-// Resolving the default here rather than stamping it onto results at save time
-// is what makes it a default: change the season's heat template and every heat
-// result under it re-scores at once, exactly as changing a season's points
+// Read at scoring time as well as stamped onto results at save time (the
+// session-points route cascades it) so the two can never disagree. A result the
+// cascade never reached — imported, saved from a grid that predates the pick,
+// left behind by a rename — still scores on the template the admin can see in
+// that dropdown, instead of quietly falling through to the season's structure.
+export function assignedSessionTemplate(result, race = null, classId = "") {
+  if (!race) return null;
+  const name = sessionNameOf(result, race);
+  const forClass = classId ? race.session_points_by_class?.[classId]?.[name] : null;
+  if (forClass) return { id: forClass, level: "session", forClass: true };
+  const forEvent = race.session_points?.[name];
+  return forEvent ? { id: forEvent, level: "session", forClass: false } : null;
+}
+
+// The points template a result actually scores under, most specific first: the
+// one stamped on the result at save time, the template assigned to its session,
+// then the default inherited from its event, its class or its season.
+//
+// Resolving the last two here rather than stamping them onto results at save
+// time is what makes them defaults: change the season's heat template and every
+// heat result under it re-scores at once, exactly as changing a season's points
 // structure does — no re-save, no cascade over saved results.
 export function resolveTemplateId(result, scopes = {}) {
-  return result.points_template_id || inheritedSessionTemplate(result, scopes)?.id || null;
+  return result.points_template_id
+    || sessionTemplateFor(result, scopes)?.id
+    || null;
+}
+
+// Which template is in force for a result that carries no stamp of its own, and
+// — the reason this returns more than an id — which level named it.
+export function sessionTemplateFor(result, { race = null, cls = null, season = null, classId = "" } = {}) {
+  return assignedSessionTemplate(result, race, classId) || inheritedSessionTemplate(result, { race, cls, season });
 }
 
 // Whether a session counts toward stats/points by default, before any admin
@@ -336,15 +375,22 @@ export function resolveTemplateId(result, scopes = {}) {
 // session_points_enabled, keyed by session name) override these per session.
 //
 // `scopes` are the event, class and season the session belongs to, and matter
-// for one thing: a level that names a default points template for heats (or
-// consolations) has said those sessions score, so championship points default ON
-// for that type instead of off. Stats stay off by default either way — a heat is
-// still a preliminary as far as Wins / Average Finish are concerned — and an
-// explicit per-session toggle still wins over both.
-export function defaultSessionFlags(sessionType, { race = null, cls = null, season = null } = {}) {
-  const preliminary = sessionType === "heat" || sessionType === "consolation";
-  const scoresByDefault = !!defaultTemplateIdIn([race, cls, season], sessionType);
-  return { counts_stats: !preliminary, counts_points: !preliminary || scoresByDefault };
+// for one thing: naming a points system for a heat (or a consolation) says those
+// sessions score, so championship points default ON instead of off. Either a
+// DEFAULT for the type — the event's, the class's or the season's — or a
+// template picked for THIS ONE session from its own results tab
+// (`sessionTemplateId`) counts as naming one: picking a heat scale and then
+// having the heat pay nothing is never what anybody meant by it, and it is
+// invisible from the grid, whose Points column shows the template's numbers
+// while the standings quietly total zero.
+//
+// Stats stay off by default either way — a heat is still a preliminary as far as
+// Wins / Average Finish are concerned — and an explicit per-session toggle still
+// wins over both.
+export function defaultSessionFlags(sessionType, { race = null, cls = null, season = null, sessionTemplateId = "" } = {}) {
+  const preliminary = isPreliminarySession(sessionType);
+  const named = !!sessionTemplateId || !!defaultTemplateIdIn([race, cls, season], sessionType);
+  return { counts_stats: !preliminary, counts_points: !preliminary || named };
 }
 
 // The event's first standard race session — the name a result saved before the
@@ -369,7 +415,13 @@ export function resolveSessionFlags(result, racesById = {}, scopes = {}) {
   const race = racesById[result.race_id] || {};
   const type = result.session_type || "race";
   const name = sessionNameOf(result, race);
-  const def = defaultSessionFlags(type, { ...scopes, race });
+  // A template picked for this one session — stamped on the result, or sitting
+  // in the event's assignment map — says the session scores, exactly as a
+  // type default does. See defaultSessionFlags.
+  const sessionTemplateId = result.points_template_id
+    || assignedSessionTemplate(result, race, scopes.classId || "")?.id
+    || "";
+  const def = defaultSessionFlags(type, { ...scopes, race, sessionTemplateId });
   const statsMap = race.session_stats || {};
   const pointsMap = race.session_points_enabled || {};
   return {
@@ -420,14 +472,14 @@ export function sessionScopeContext({ seasons = [], classes = [], entriesById = 
 // The class-scoped template assignments ride along for the same reason — one
 // pass over the race docs, and every scorer downstream gets both.
 //
-// So does the heat/consolation DEFAULT points template (see resolveTemplateId):
-// a heat result with no template of its own picks up the default named by its
-// event, its class or its season here, which is why setting one re-scores every
-// heat under it immediately, on every screen. `ctx` (see sessionScopeContext)
-// carries the season and class docs that can name one, plus the entries needed
-// to tell which class a result counts toward; without it only the event's own
-// default applies, which is what every caller did before the season and class
-// levels existed.
+// So does the points template a result scores under when it carries no stamp of
+// its own (see resolveTemplateId): the one assigned to its session, else the
+// heat/consolation DEFAULT named by its event, its class or its season. That is
+// why setting one re-scores every heat under it immediately, on every screen.
+// `ctx` (see sessionScopeContext) carries the season and class docs that can
+// name one, plus the entries needed to tell which class a result counts toward;
+// without it only the event's own default applies, which is what every caller
+// did before the season and class levels existed.
 export function decorateSessionFlags(results, racesById = {}, ctx = {}) {
   const { seasonsById = {}, classesById = {}, entriesById = {} } = ctx;
   return results
@@ -435,19 +487,19 @@ export function decorateSessionFlags(results, racesById = {}, ctx = {}) {
     .map(r => {
       const race = racesById[r.race_id];
       const classId = classOfResult(r, entriesById) || "";
-      const scopes = { race, cls: classesById[classId] || null, season: seasonsById[race.season_id] || null };
-      const inherited = r.points_template_id ? null : inheritedSessionTemplate(r, scopes);
+      const scopes = { race, cls: classesById[classId] || null, season: seasonsById[race.season_id] || null, classId };
+      const resolved = r.points_template_id ? null : sessionTemplateFor(r, scopes);
       const byClass = classSessionTemplates(r, racesById);
       return {
         ...r,
         ...resolveSessionFlags(r, racesById, scopes),
-        points_template_id: r.points_template_id || inherited?.id || null,
+        points_template_id: r.points_template_id || resolved?.id || null,
         // A default named by the CLASS is recorded as that class's own template
         // for the session, which is what puts it on top of the class's points
         // structure rather than under it (see makeScorer). A per-session
         // assignment already in the map is more specific, so it stays.
-        class_session_templates: inherited?.forClass && classId && !byClass[classId]
-          ? { ...byClass, [classId]: inherited.id }
+        class_session_templates: resolved?.forClass && classId && !byClass[classId]
+          ? { ...byClass, [classId]: resolved.id }
           : byClass,
       };
     });
@@ -700,6 +752,17 @@ export function makeScorer(results, { config, classes = [], entriesById = {}, te
   // applies in full to classes that DON'T define their own structure, and a
   // class still inherits anything the event template sets that the class
   // doesn't (a bonus, say), since it is a layer below rather than one dropped.
+  //
+  // A HEAT or a CONSOLATION is the exception to that second case, whoever named
+  // its template — the season, the class, the event, or the session's own
+  // dropdown. Those sessions score nothing at all until a points system is named
+  // for them, so a class's own structure is not a competing statement about
+  // them: it says what the class pays for a FINISH, which was never an answer to
+  // "what does a heat pay?". Laying it over a heat template flattened every heat
+  // back to the class's race scale — a league whose classes scored their own
+  // points had its heat scale, its event's heat default and its season's heat
+  // default all silently ignored, with every dropdown still naming the template
+  // that wasn't being used.
   const cache = new Map();
   function configWith(r, templateId) {
     const classId = classOfResult(r, entriesById) || "";
@@ -710,6 +773,7 @@ export function makeScorer(results, { config, classes = [], entriesById = {}, te
     // means this session awards nothing to anybody, which a class's own scale
     // must not quietly undo.
     const forThisClass = isNoPointsTemplate(template)
+      || isPreliminarySession(r.session_type)
       || (classId && r.class_session_templates?.[classId] === templateId);
     const key = `${classId}|${templateId}|${forThisClass ? "c" : "e"}`;
     if (cache.has(key)) return cache.get(key);

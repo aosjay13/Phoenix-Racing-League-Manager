@@ -419,8 +419,10 @@ export const SPECS = {
                        // event's own default (SPECS.races) and a class's (SPECS.classes)
                        // both override it, and naming one turns championship points on
                        // for that session type by default — see defaultSessionFlags and
-                       // inheritedSessionTemplate in lib/standings.js. Unset on every
-                       // season that names none, which scores exactly as before.
+                       // inheritedSessionTemplate in lib/standings.js. It sits ON TOP of a
+                       // class's own points structure, so a class scoring its own points
+                       // still pays it. Unset on every season that names none, which
+                       // scores exactly as before.
                        heat_format: { bool: true, default: false },
                        heat_points_template_id: {}, consolation_points_template_id: {},
                        ...CAR_SELECTION_FIELDS } },
@@ -467,11 +469,11 @@ export const SPECS = {
                        race_points: {}, qual_points: {}, bonus_points: {},
                        // `heat_format` says THIS CLASS runs heat racing, and unlocks the
                        // same two defaults a season and a race carry: every heat / every
-                       // consolation THIS class runs scores on the named template. Unlike
-                       // the season's and the event's, a class's default sits ON TOP of the
-                       // class's own points structure — it is a statement about the class,
-                       // so a class scoring its own points still pays its heat template
-                       // (see inheritedSessionTemplate in lib/standings.js).
+                       // consolation THIS class runs scores on the named template, and it
+                       // outranks the season's for this class. Like the season's and the
+                       // event's, it sits ON TOP of the class's own points structure, so a
+                       // class scoring its own points still pays its heat template (see
+                       // inheritedSessionTemplate and makeScorer in lib/standings.js).
                        heat_format: { bool: true, default: false },
                        heat_points_template_id: {}, consolation_points_template_id: {},
                        ...CAR_SELECTION_FIELDS,

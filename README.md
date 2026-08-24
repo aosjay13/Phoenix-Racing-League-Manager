@@ -2411,13 +2411,15 @@ outright order, an overall championship across classes just adds their points to
 **Which class pays what.** Points resolve through the same shape of fallback the car does, most
 specific last:
 
-    series default → season → the season's or event's heat/consolation default, or an event-wide session template → the class's own structure → the class's own heat/consolation default → that class's own session template
+    series default → season → an event-wide session template → the class's own structure → any heat/consolation points system → that class's own session template
 
 The **class's own structure** (`classes.race_points` / `qual_points` / `bonus_points`, all unset by
-default = inherit) therefore **overrides the season and the event's default points template alike**.
+default = inherit) therefore **overrides the season and an event-wide session template alike**.
 That placement is the point: a template assigned to a session for the whole event is a statement
 about the event's field, so a class that scores on its own structure outranks it — otherwise picking
-one points system for the Feature silently flattens every per-class scale back to the event's. A
+one points system for the Feature silently flattens every per-class scale back to the event's. The
+one thing it does *not* outrank is a **heat or consolation** points system, at any level it was named
+— see below. A
 template picked for ONE class of a split event is the opposite: the most specific statement there
 is, so it still sits on top of that class's structure. ("No points" is the one event-wide assignment
 that always wins outright — it means nobody scores.) Each level overrides only the fields it
@@ -2460,23 +2462,31 @@ it on the odd standard-format round.
 template assigned to ONE session from its own results tab beats all three. `inheritedSessionTemplate`
 in `lib/standings.js` holds that order.
 
-Where a default sits in the class chain depends on who named it, for the same reason a session
-assignment does. The **season's** and the **event's** are statements about the whole field, so they
-sit *under* the class layer — a class scoring on its own points structure outranks them. A **class's**
-own default sits *on top* of that class's structure, since it is a statement about that class:
-otherwise a class with its own points would ignore the very heat template it was given.
+**A heat's points system always sits on top of the class's structure**, whichever of the three levels
+named it — and so does one picked for a single heat from its own results tab. Heats and consolations
+score *nothing* until somebody names a points system for them, so a class's own structure is not a
+competing statement about them: it answers "what does a FINISH pay in this class?", which was never
+an answer to "what does a heat pay?". (This is the one place the class layer does not win, and it is
+what was broken: a league whose classes scored their own points had its heat scale, its event's heat
+default and its season's heat default all silently flattened back to the class's race scale, while
+every dropdown carried on naming the template that wasn't being used.)
 
 The default is resolved at scoring time (`resolveTemplateId`, stamped onto each result by
 `decorateSessionFlags`, which reads the season/class docs through `sessionScopeContext`) rather than
 written onto saved results — which is what makes it a default: change the season's heat template and
-every heat under it re-scores at once, on every screen, with no re-save. Naming a default also flips
-**championship points on** for that session type, which is off by default for preliminary sessions —
-the point of picking a heat scale is that the heats pay it. Stats stay off (a heat is still a
+every heat under it re-scores at once, on every screen, with no re-save. A template picked for one
+session from its own results tab is read the same way, so a heat scores on the pick the dropdown
+shows even if the cascade never reached its saved results. Naming *either* also flips **championship
+points on** for that session, which is off by default for preliminary sessions — the point of picking
+a heat scale is that the heats pay it, and a grid whose Points column showed the template's numbers
+while the standings totalled zero was the least visible way to get that wrong. Stats stay off (a heat is still a
 preliminary for Wins and Average Finish), and each session keeps its own points switch, so one heat
 can still be excluded. The results screen's points dropdown names the default and the level it came
 from ("Heat default · season — PRA Heats"), so it is always visible which of the three is scoring.
 Leave the pickers on *No default* — or leave the ticks off — and heats and consolations behave exactly
-as they always have. A copied race carries its own two defaults over with the rest of its scoring
+as they always have. A points system that has since been **deleted** resolves to nothing, so those
+sessions fall back to the season's structure; the pickers and the per-session dropdown say so rather
+than snapping back to *No default* and reading as though nothing were set. A copied race carries its own two defaults over with the rest of its scoring
 setup.
 
 **Qualifying scores itself.** Every session scores itself, off its own structure, at the position the

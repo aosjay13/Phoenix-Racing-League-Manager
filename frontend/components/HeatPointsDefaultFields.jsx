@@ -11,10 +11,11 @@ import { NONE_TEMPLATE } from "@/lib/pointsTemplates";
 //
 // Most specific wins: the event's default beats the class's, which beats the
 // season's, and a template assigned to ONE session from its own results tab
-// beats all three. A class's default is the one that sits ON TOP of a class's
-// own points structure — it's a statement about that class — while the season's
-// and the event's sit under it, exactly like an event-wide session assignment.
-// See inheritedSessionTemplate in lib/standings.js.
+// beats all three. Whichever level names it, the template sits ON TOP of a
+// class's own points structure: heats and consolations score nothing until
+// somebody names a points system for them, so a class's structure — its answer
+// to what a FINISH pays — is not a competing statement about them. See
+// inheritedSessionTemplate and makeScorer in lib/standings.js.
 const SCOPES = {
   event: {
     heat: "Every heat of this event scores on this, so heats never need a template picked one at a time.",
@@ -24,7 +25,7 @@ const SCOPES = {
   season: {
     heat: "Every heat of every event in this season scores on this — one pick for the whole year instead of one per race entry.",
     consolation: "Same for every consolation race in the season.",
-    overrides: "A class, a single event, or one session can each override this for what they cover.",
+    overrides: "A class, a single event, or one session can each override this for what they cover — and it sits on top of a class’s own points structure, so a class scoring its own points still pays it.",
   },
   class: {
     heat: "Every heat this class runs scores on this, at every event in the season.",
@@ -56,6 +57,12 @@ export function HeatPointsDefaultFields({
     ["consolation_points_template_id", "Default points template for every Consolation (B-Main, C-Main…)", copy.consolation],
   ];
 
+  // A default pointing at a template that has since been deleted resolves to
+  // nothing at scoring time, so those heats quietly score the season's race
+  // scale. Left to itself the box would snap to "No default" and read as though
+  // nothing were set — so the dangling pick stays visible and is called out.
+  const missing = id => !!id && id !== NONE_TEMPLATE.id && !templates.some(t => t.id === id);
+
   return (
     <>
       {rows.map(([field, label, hint]) => (
@@ -66,7 +73,13 @@ export function HeatPointsDefaultFields({
             <option value="">No default — use the season / class points</option>
             <option value={NONE_TEMPLATE.id}>{NONE_TEMPLATE.name}</option>
             {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            {missing(value[field]) && <option value={value[field]}>⚠ Deleted points system</option>}
           </select>
+          {missing(value[field]) && (
+            <span style={{ fontSize: "0.78rem", color: "var(--accent-gold, #e2b714)" }}>
+              ⚠ This template has been deleted, so these sessions are scoring the season / class points. Pick one again.
+            </span>
+          )}
           <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>{hint}</span>
         </div>
       ))}

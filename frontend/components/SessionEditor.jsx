@@ -10,7 +10,7 @@ import { ImportResultsModal } from "@/components/ImportResultsModal";
 import { ImportTimeTrialModal } from "@/components/ImportTimeTrialModal";
 import { NONE_TEMPLATE, isNoPointsTemplate } from "@/lib/pointsTemplates";
 import { classIdForScope, classOfResult, entriesEligibleForRace, entriesInSessionClass, isClassScoped, resultInSessionClass } from "@/lib/classFilter";
-import { pointsFor, pointsBreakdown, classConfigs, classScoresOwnPoints, configForClass, configForTemplate, inheritedSessionTemplate, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
+import { pointsFor, pointsBreakdown, classConfigs, classScoresOwnPoints, configForClass, configForTemplate, inheritedSessionTemplate, isPreliminarySession, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
 import { AUTO_FLAG_FIELDS, applyAutoFlags, detectFlagLocks, autoMostLapsLedSlot } from "@/lib/autoFlags";
 import { BANGER_BOOL_FIELDS, BANGER_RESULT_FIELDS, BANGER_STATS, bangerRates, blankBangerRow, hasBangerBonuses } from "@/lib/bangerRacing";
 import { BRACKET_SIZES, bracketGridError, bracketPositionAt, bracketPositions, bracketRoundFor, bracketRounds, bracketSizeForField, bracketSizeLabel, normalizeBracketSize, ordinal } from "@/lib/bracketRacing";
@@ -1380,6 +1380,12 @@ export function SessionEditor({
   const typeDefault = useMemo(() => templateFor(typeDefaultId), [templates, typeDefaultId]);
   const effectiveTemplateId = templateId || typeDefaultId;
   const template = useMemo(() => templateFor(effectiveTemplateId), [templates, effectiveTemplateId]);
+  // A points system that no longer resolves — a template deleted after it was
+  // picked here, or named as a heat/consolation default. Everything downstream
+  // falls back to the class/season structure when a template is missing, so
+  // without this the session quietly scores the main race scale while the
+  // dropdown reads like nothing is wrong. Named out loud instead.
+  const missingTemplateId = effectiveTemplateId && !template ? effectiveTemplateId : "";
   // Was the template in force picked for THIS class, or for the event/season as a
   // whole? Only a class's own assignment lives in session_points_by_class — and
   // an inherited default answers for itself.
@@ -1395,10 +1401,16 @@ export function SessionEditor({
   //     class, which overrides it exactly as it overrides the season. Without
   //     that, one template picked for the event flattened every class's own
   //     scale back to the event's.
+  //   • a HEAT or a CONSOLATION, whoever named the template: those sessions pay
+  //     nothing until a points system is named for them, so a class's own
+  //     structure — its answer to "what does a FINISH pay?" — was never a
+  //     statement about them and must not flatten a heat scale back to the
+  //     class's race scale. Same rule makeScorer scores on.
+  const preliminary = isPreliminarySession(sessionType);
   const layered = (classId, tpl, forClass) => {
     if (!tpl) return baseFor(classId);
     const cls = classId ? classes.find(c => c.id === classId) : null;
-    return (forClass || isNoPointsTemplate(tpl) || !cls)
+    return (forClass || preliminary || isNoPointsTemplate(tpl) || !cls)
       ? configForTemplate(baseFor(classId), tpl)
       : configForClass(configForTemplate(seasonConfig, tpl), cls);
   };
@@ -1468,9 +1480,11 @@ export function SessionEditor({
   const isQual = sessionType === "qualifying";
   // A heat/consolation points default — the event's, the class's or the
   // season's — also flips championship points on for that type by default:
-  // naming a template for every heat says heats score. This grid's switch
-  // therefore shows the same state the standings use.
-  const flagDefaults = defaultSessionFlags(sessionType, { race, cls: scopeClass, season });
+  // naming a template for every heat says heats score. So does a template picked
+  // for THIS session from the dropdown above, which is the same statement about
+  // one session instead of all of them. This grid's switch therefore shows the
+  // same state the standings use.
+  const flagDefaults = defaultSessionFlags(sessionType, { race, cls: scopeClass, season, sessionTemplateId: templateId });
   const statsOn = session in sessionStats ? !!sessionStats[session] : flagDefaults.counts_stats;
   const pointsOn = session in sessionPointsEnabled ? !!sessionPointsEnabled[session] : flagDefaults.counts_points;
   const showStatsToggle = !!onSessionStatsChange;
@@ -1825,7 +1839,19 @@ export function SessionEditor({
                 <option value="">{defaultLabel}</option>
                 <option value={NONE_TEMPLATE.id}>{NONE_TEMPLATE.name}</option>
                 {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                {/* Keep a deleted template's id selectable rather than letting
+                    the box snap to the first option, which would read as
+                    "scoring the default" while nothing had been changed. */}
+                {missingTemplateId === templateId && templateId && (
+                  <option value={templateId}>⚠ Deleted points system</option>
+                )}
               </select>
+              {missingTemplateId && (
+                <span style={{ fontSize: "0.75rem", color: "var(--accent-gold, #e2b714)" }}>
+                  ⚠ The points system {templateId ? "picked for this session" : `set as this event's ${(LABELS[sessionType] || "session").toLowerCase()} default`} no
+                  longer exists, so this session is scoring {baseLabel} instead. Pick one again.
+                </span>
+              )}
               {scopeClass ? (
                 <span style={{ fontSize: "0.75rem", color: "var(--ink-2)" }}>
                   {classOwnPoints
