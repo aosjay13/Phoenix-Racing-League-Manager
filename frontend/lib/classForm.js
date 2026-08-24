@@ -29,9 +29,11 @@ export const BLANK_CLASS_FORM = {
   // class in it; see lib/bracketRacing.js.
   isBracketRacing: false,
   // Heat racing for this class alone, plus the points templates its heats and
-  // consolations score on by default. Unlike the season's and the event's, a
-  // class's default sits ON TOP of the class's own points structure — see
-  // inheritedSessionTemplate in lib/standings.js.
+  // consolations score on by default. It outranks the season's and the event's
+  // for this class, and — like theirs — sits ON TOP of the class's own points
+  // structure: heats score nothing until a points system is named for them, so
+  // the class's race scale is not a competing statement about them. See
+  // inheritedSessionTemplate and makeScorer in lib/standings.js.
   heat_format: false,
   heat_points_template_id: "",
   consolation_points_template_id: "",

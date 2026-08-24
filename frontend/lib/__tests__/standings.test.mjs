@@ -295,11 +295,13 @@ check("qualifying adjustment", pointsFor({ ...q("e1", 1), points_adjustment: -4,
     { e1: 168 });
 
   // A class's default outranks the season's for that class's results, and — the
-  // point of the class level — it applies ON TOP of the class's own points
+  // whole point of a heat default — it applies ON TOP of the class's own points
   // structure, so a class scoring its own scale still pays its heat template.
-  // Pro scores 200 a win of its own; its heat pays t-class (30), its B-Main falls
-  // through to the season's B-Main scale (50) laid under Pro's structure, so the
-  // B-Main win pays Pro's 200.
+  // Pro scores 200 a win of its own; its heat pays t-class (30) and its B-Main
+  // falls through to the season's B-Main scale (50), which sits on top of Pro's
+  // structure just as Pro's own heat default does — a class's race scale is its
+  // answer to what a FINISH pays, never a statement about its heats, so it must
+  // not flatten a heat template back to 200.
   const pro = {
     id: "c-pro", name: "Pro", heat_format: true, heat_points_template_id: "t-class",
     race_points: { 1: 200, 2: 180 }, qual_points: { 1: 20 },
@@ -307,13 +309,22 @@ check("qualifying adjustment", pointsFor({ ...q("e1", 1), points_adjustment: -4,
   const proWeekend = weekend.map(r => ({ ...r, class_id: "c-pro" }));
   check("a class's own heat default sits on top of its own points structure",
     score(proWeekend, raceDoc(), { templatesById, classes: [pro], seasonDoc: heatSeason }),
-    { e1: 20 + 30 + 200 + 200 });
+    { e1: 20 + 30 + 50 + 200 });
 
-  // And the event still wins over the class.
+  // And the event still wins over the class — over its own structure too: the
+  // event's heat default pays 8, not Pro's 200.
   check("an event's default overrides a class's",
     score(proWeekend, raceDoc({ heat_points_template_id: "t-event" }),
       { templatesById, classes: [pro], seasonDoc: heatSeason }),
-    { e1: 20 + 200 + 200 + 200 });
+    { e1: 20 + 8 + 50 + 200 });
+
+  // The bug this fixes, stated on its own: a class with its own points structure
+  // used to flatten every heat and consolation template — the season's default,
+  // the event's, and a template picked for the heat itself alike — back to the
+  // class's race scale, while every dropdown still named the template.
+  check("a class's own points structure no longer flattens the season's heat default",
+    score(proWeekend, raceDoc(), { templatesById, classes: [{ ...pro, heat_points_template_id: "" }], seasonDoc: heatSeason }),
+    { e1: 20 + 20 + 50 + 200 });
 
   // Nothing named anywhere = the old behaviour, heats and consolations scoreless.
   check("no default at any level leaves heats scoreless",
@@ -324,6 +335,63 @@ check("qualifying adjustment", pointsFor({ ...q("e1", 1), points_adjustment: -4,
     sessionScopeContext({ seasons: [heatSeason], classes: [], entriesById: { e1: {} } }));
   check("a season default reaches the result", decorated[0].points_template_id, "t-heat");
   check("a season default turns heat points on", decorated[0].counts_points, true);
+}
+
+// ── 19b. A points system picked for ONE heat, with no default anywhere ────
+// The dropdown on a heat's own results tab is the third way to point a heat, and
+// it has to mean the same thing the two defaults do: this heat scores, on this
+// template. Two things used to go wrong with it, both silently.
+{
+  const templatesById = {
+    "t-1pt": { id: "t-1pt", name: "1 point heats", race_points: { 1: 1, 2: 1 }, qual_points: { 1: 0 }, bonus_points: {} },
+  };
+  const heatSeason = { id: "s1", heat_format: true };   // names NO default of its own
+  const raceDoc = extra => ({
+    r1: {
+      season_id: "s1", heat_format: true, heats: ["Heat 1"], feature_name: "A-Main Feature",
+      session_points: { "Heat 1": "t-1pt" }, ...extra,
+    },
+  });
+  const sess = (session, session_type, pos, extra = {}) =>
+    ({ race_id: "r1", entry_id: "e1", session, session_type, finish_pos: pos, ...extra });
+  // The session-points route stamps the pick onto results already saved.
+  const weekend = [
+    q("e1", 1),
+    sess("Heat 1", "heat", 1, { points_template_id: "t-1pt" }),
+    sess("A-Main Feature", "feature", 1),
+  ];
+
+  // Picking a template for the heat says the heat scores — championship points
+  // for it default ON, exactly as naming a heat default does. Without this the
+  // grid's Points column showed the template's 1 while the standings totalled 0.
+  check("a template picked for one heat makes that heat score",
+    score(weekend, raceDoc(), { templatesById, seasonDoc: heatSeason }), { e1: 10 + 1 + 100 });
+
+  const decorated = decorateSessionFlags([sess("Heat 1", "heat", 1, { points_template_id: "t-1pt" })], raceDoc(),
+    sessionScopeContext({ seasons: [heatSeason], classes: [], entriesById: { e1: {} } }));
+  check("picking one turns that heat's points on", decorated[0].counts_points, true);
+  // …and stats stay off: it is still a preliminary for Wins / Average Finish.
+  check("picking one leaves that heat's stats off", decorated[0].counts_stats, false);
+
+  // A result the cascade never reached — imported, or saved from a grid opened
+  // before the pick — carries no template of its own. It still scores on the
+  // assignment sitting on the event, which is what the dropdown shows the admin.
+  const unstamped = weekend.map(r => { const { points_template_id, ...rest } = r; return rest; });
+  check("an unstamped result still scores on its session's assignment",
+    score(unstamped, raceDoc(), { templatesById, seasonDoc: heatSeason }), { e1: 10 + 1 + 100 });
+
+  // And that assignment beats a default named above it — most specific wins.
+  const heatDefaults = { ...heatSeason, heat_points_template_id: "t-20pt" };
+  const withDefault = { ...templatesById, "t-20pt": { id: "t-20pt", name: "20 point heats", race_points: { 1: 20 }, qual_points: { 1: 0 }, bonus_points: {} } };
+  check("a session's own assignment beats the season's heat default",
+    score(unstamped, raceDoc(), { templatesById: withDefault, seasonDoc: heatDefaults }), { e1: 10 + 1 + 100 });
+
+  // A points system that no longer exists resolves to nothing, so the session
+  // falls back to the season's structure — the case the editors now call out
+  // rather than leaving it looking like the default was chosen.
+  check("a deleted template falls back to the season's structure",
+    score(unstamped, raceDoc({ session_points: { "Heat 1": "t-gone" } }), { templatesById, seasonDoc: heatSeason }),
+    { e1: 10 + 100 + 100 });
 }
 
 // ── 20. Which sessions ARE the race (the driver profile's Race History) ───
