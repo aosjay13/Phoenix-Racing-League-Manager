@@ -271,9 +271,13 @@ function aggregate(index, seasons, classId = "", className = "", gameId = null) 
       largest_field: fieldSizes.length ? Math.max(...fieldSizes) : null,
       smallest_field: fieldSizes.length ? Math.min(...fieldSizes) : null,
     },
+    // Every event on the scope's calendar, however far along it is. `total`
+    // counts undated events too (an event with no date yet is still a race the
+    // scope runs), so completed + upcoming can come to less than it.
     race_summary: {
       total: allRaces.length,
       completed,
+      upcoming: dated.length - completed,
       next_race: nextRace ? { name: nextRace.name, track: nextRace.track ?? null, date: toDateOnly(nextRace.date) } : null,
     },
   };

@@ -477,13 +477,18 @@ throwaway key (`openssl genrsa`) — the emulator never checks it.
    gone best, and its lap records. The **Class** menu scopes it too — the leaderboard, winners
    and headline record become that class's — while the per-game and per-class record breakdowns
    always stay side by side, since that's the comparison they exist to show.
-11. **Records** — the record holder in each category for the current scope, plus **Avg Drivers
-   per Race**: the average field size across every completed race in scope. Empty and upcoming
-   events are ignored, and a heat weekend counts its Feature field once rather than each heat.
+11. **Records** — the record holder in each category for the current scope, above them two
+   figures nobody holds. **Total Races** counts every event on the calendar for the Game /
+   Series / Season / Class you've picked — set any of those menus to **All** and it widens with
+   them, right up to every race the league has ever run — and splits that total into how many
+   have been run, how many are still upcoming, and how many have results entered. **Avg Drivers
+   per Race** is the average field size across the completed races in that same scope. Empty and
+   upcoming events are ignored by the average (which is why its sample is usually the smaller
+   count), and a heat weekend counts its Feature field once rather than each heat.
    **🖼 Share Graphic** posts the record book as one image — a row per category that has a holder
-   (ties list everyone), with the average field size carried in the header as context. It follows
-   the Drivers / Teams tab you're on. **Skill Ratings** exports the same way, medalling the top
-   three like the standings do.
+   (ties list everyone), with the race count and average field size carried in the header as
+   context. It follows the Drivers / Teams tab you're on. **Skill Ratings** exports the same way,
+   medalling the top three like the standings do.
 
 ### Sharing a direct link
 
