@@ -67,17 +67,72 @@ function holdersFor(rows, key, lowerIsBetter) {
   return { value: best, holders: eligible.filter(r => r[key] === best) };
 }
 
-// Average Field Size for the current scope. Unlike every other category on this
-// page this isn't a driver record — nobody "holds" it — so it renders as a
-// single contextual figure ("Season 4 Average: 15.2") with the sample it was
-// drawn from. Only races with finalized results feed it (see the field_size
-// block in /api/stats), so upcoming and empty events never drag it down.
-function FieldSizeCard({ fieldSize, scopeLabel, loading }) {
+// The two figures above the record book that nobody "holds": how big a field a
+// race in this scope draws, and how many races the scope contains. Both follow
+// the Game / Series / Season / Class menus exactly — set any of them to "All"
+// and the number widens with the scope, right up to every race the league has
+// ever run.
+function ScopeSummary({ fieldSize, raceSummary, scopeLabel, loading }) {
   if (loading) return <div className="skeleton" style={{ height: 96, marginTop: 18 }} />;
+  return (
+    <div className="metrics" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", marginTop: 18 }}>
+      <RaceCountCard raceSummary={raceSummary} fieldSize={fieldSize} scopeLabel={scopeLabel} />
+      <FieldSizeCard fieldSize={fieldSize} scopeLabel={scopeLabel} />
+    </div>
+  );
+}
+
+// Total races in the current scope, counted off the calendar rather than off
+// the results: an event still to be run is a race this scope holds, so it
+// belongs in the total even though it can't have set a record yet. The line
+// underneath splits that total into what has actually been run, what's still to
+// come, and how many races carry the results the average beside it is drawn
+// from — which is why that count is usually the smaller number.
+function RaceCountCard({ raceSummary, fieldSize, scopeLabel }) {
+  const total = raceSummary?.total ?? 0;
+  const completed = raceSummary?.completed ?? 0;
+  const upcoming = raceSummary?.upcoming ?? 0;
+  const withResults = fieldSize?.races_counted ?? 0;
+  const parts = [
+    `${completed} run`,
+    ...(upcoming ? [`${upcoming} upcoming`] : []),
+    `${withResults} with results`,
+  ];
+  return (
+    <article className="metric-card" style={{ alignItems: "flex-start", textAlign: "left", padding: "16px 18px" }}>
+      <div className="metric-label" style={{ marginBottom: 6 }}>Total Races</div>
+      {total === 0 ? (
+        <>
+          <div style={{ color: "var(--ink-2)" }}>—</div>
+          <div style={{ marginTop: 4, fontSize: "0.85rem", color: "var(--ink-2)" }}>
+            No races on the calendar in this scope yet.
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="metric-num" style={{ fontSize: "1.9rem" }}>{total}</div>
+          <div style={{ marginTop: 4, fontSize: "0.9rem", lineHeight: 1.45 }}>
+            <strong>{scopeLabel} Calendar</strong>
+            <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.82rem" }}>
+              {parts.join(" · ")}
+            </span>
+          </div>
+        </>
+      )}
+    </article>
+  );
+}
+
+// Average Field Size for the current scope. Like the race count beside it this
+// isn't a driver record — nobody "holds" it — so it renders as a single
+// contextual figure ("Season 4 Average: 15.2") with the sample it was drawn
+// from. Only races with finalized results feed it (see the field_size block in
+// lib/statsCompute.js), so upcoming and empty events never drag it down.
+function FieldSizeCard({ fieldSize, scopeLabel }) {
   const avg = fieldSize?.avg_drivers_per_race ?? null;
   const races = fieldSize?.races_counted ?? 0;
   return (
-    <article className="metric-card" style={{ alignItems: "flex-start", textAlign: "left", padding: "16px 18px", marginTop: 18 }}>
+    <article className="metric-card" style={{ alignItems: "flex-start", textAlign: "left", padding: "16px 18px" }}>
       <div className="metric-label" style={{ marginBottom: 6 }}>Avg Drivers per Race</div>
       {avg == null ? (
         <>
@@ -166,6 +221,7 @@ export default function RecordsPage() {
   ];
   const shareTable = specToGraphicTable(shareSpec, held);
   const avgField = data?.field_size?.avg_drivers_per_race;
+  const totalRaces = data?.race_summary?.total ?? 0;
 
   return (
     <section>
@@ -192,8 +248,9 @@ export default function RecordsPage() {
           { label: "Scope", value: scopeLabel, wide: true },
           { label: isTeams ? "Teams" : "Drivers", value: count },
           { label: "Seasons", value: data?.seasons_counted },
-          // The one figure on this page that nobody holds still belongs on the
-          // graphic — it's the context the records were set in.
+          // The two figures on this page that nobody holds still belong on the
+          // graphic — they're the context the records were set in.
+          { label: "Races", value: totalRaces || null },
           { label: "Avg Drivers per Race", value: avgField != null ? avgField.toFixed(1) : null },
         ]}
         logos={leagueLogos({ league: league?.league, game, series, season })}
@@ -205,9 +262,15 @@ export default function RecordsPage() {
         above to change scope (pick &quot;All&quot; to widen it).
       </p>
 
-      {/* Average Field Size — an event stat, not a driver record, so it just
-          reports the number for whatever the dropdowns currently select. */}
-      <FieldSizeCard fieldSize={data?.field_size} scopeLabel={scopeLabel} loading={!data && !error} />
+      {/* Total Races and Average Field Size — event stats, not driver records,
+          so they just report the numbers for whatever the dropdowns currently
+          select ("All" included). */}
+      <ScopeSummary
+        fieldSize={data?.field_size}
+        raceSummary={data?.race_summary}
+        scopeLabel={scopeLabel}
+        loading={!data && !error}
+      />
 
       <div className="tab-row">
         <button className={`tab${tab === "drivers" ? " active" : ""}`} onClick={() => setTab("drivers")}>Drivers</button>
