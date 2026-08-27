@@ -2580,6 +2580,19 @@ that carries prose instead — an event name, a track, or the Schedule's "Pro: A
 winner cells — sets `wrap: true` and gets a capped width it breaks inside; without it a long string
 stretches the table past the card's fixed width and the last columns fall off the edge.
 
+**Entries that belong on a graphic but not in its ranking get a section of their own.** A screen can
+pass `sections` — `[{ title, note?, columns, rows }]` — and each one is drawn as a captioned block
+**below** the main table, above the watermark. A race's **Provisional Entries** are the case this
+exists for: a driver awarded a flat, admin-entered points value without having raced is real to the
+standings, so the points have to be on the image, but dropped into the results table that driver
+would be numbered among the finishers and read as a back-of-field result. The block keeps the
+finishing order honest — it carries no positions and never medals a row — and captions itself
+"points only · did not race · not counted in stats", which is the same split the event page makes
+below its own results table. Sections start ticked under **Extra sections** in the exporter and are
+one click from being left off; an empty one never renders, so an event with no provisional entries
+gets no heading. A session where *every* entry was provisional exports the block on its own rather
+than bare headers over an empty table.
+
 Each screen passes its **full** column list and every one of them opens ticked, so the graphic starts
 out carrying all the data the screen shows; the picker switches off anything you don't want. Identity
 columns (position, driver/team name) are locked on — a row isn't readable without them. Both logo
