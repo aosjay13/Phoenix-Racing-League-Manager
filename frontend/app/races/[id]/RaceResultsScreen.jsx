@@ -340,6 +340,24 @@ export function RaceResultsScreen() {
     { label: "Class", value: activeClass?.label },
     { label: "Session", value: tabName },
   ];
+  // Provisional entries ride along at the BOTTOM of the graphic in a section of
+  // their own — the same split the page makes below its results table. They
+  // score a flat, admin-entered value without having raced, so putting them in
+  // the finishing order would read as a back-of-field result and would number
+  // them among the finishers; the section keeps the order honest while still
+  // showing the points that end up in the standings. Qualifying carries no
+  // provisional entries at all, so its graphic gets no section.
+  const shareSections = (!sharingQual && provisionals.length)
+    ? [{
+        title: "Provisional Entries",
+        note: "points only · did not race · not counted in stats",
+        columns: [
+          { key: "driver", label: "Driver", align: "left" },
+          { key: "points", label: "Pts", align: "center" },
+        ],
+        rows: provisionals.map(r => ({ cells: [driverDisplayName(r), r.points] })),
+      }]
+    : [];
   // Offer the event's track logo alongside any logos from the selected league
   // context; dedupe by url so the same image isn't listed twice.
   const shareLogos = [
@@ -357,6 +375,7 @@ export function RaceResultsScreen() {
         subtitle={[event.track, eventDate, season?.name].filter(Boolean).join(" · ")}
         columns={shareColumns}
         rows={shareRows}
+        sections={shareSections}
         meta={shareMeta}
         logos={shareLogos}
         leagueName={activeLeague?.name ?? ""}
@@ -408,7 +427,7 @@ export function RaceResultsScreen() {
           </div>
           <p style={{ margin: "6px 0 0", display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
             <Link href="/schedule" style={{ color: "var(--accent-cyan)", fontSize: "0.85rem" }}>← Back to Schedule</Link>
-            {shareRows.length > 0 && (
+            {(shareRows.length > 0 || shareSections.length > 0) && (
               <button
                 type="button"
                 className="btn btn-ghost"

@@ -25,6 +25,10 @@ import { createPortal } from "react-dom";
 //                   can't be switched off at all, and `off` ones start unticked.
 //   rows          – [{ cells: (string|number)[], rank? }]  cells.length === columns.length
 //                   rank (1..3) tints the row's leading cell gold/silver/bronze.
+//   sections      – [{ title, note?, columns, rows }] extra tables drawn UNDER the
+//                   main one, for entries that belong on the graphic but not in
+//                   its ranking — a race's provisional entries, say. Each is
+//                   offered as a tick-box and starts on; an empty one is skipped.
 //   logos         – [{ label, url }] logos the user can drop into the header.
 //   leagueName    – pre-fills the League Name field (from League Settings)
 //   leagueLogoUrl – offered as "League Settings logo" in the League Logo picker.
@@ -119,7 +123,7 @@ export function ShareGraphicButton({ onClick, title }) {
 export function ShareGraphicModal({
   open, onClose, kind = "Graphic", defaultTitle = "", subtitle = "",
   columns = [], rows = [], logos = [], leagueName = "", leagueLogoUrl = "",
-  meta = [],
+  meta = [], sections = [],
 }) {
   // Identity of the current column set, so reopening the modal for a different
   // screen (or a different tab of the same screen) re-seeds the picker.
@@ -140,6 +144,10 @@ export function ShareGraphicModal({
   // graphic opens with every stat the screen offers already on it, bar any the
   // screen marked `off` (see defaultHidden).
   const [hidden, setHidden] = useState(() => defaultHidden(columns));
+  // Extra sections (a results graphic's Provisional Entries) the user has
+  // switched OFF, keyed by title. They start on, so a session that has any
+  // carries them without anyone having to remember the tick-box.
+  const [hiddenSections, setHiddenSections] = useState(() => new Set());
   const [pickerOpen, setPickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -157,6 +165,7 @@ export function ShareGraphicModal({
       setLeague(leagueName);
       setLeagueLogo("");
       setHidden(defaultHidden(columns));
+      setHiddenSections(new Set());
       setPickerOpen(false);
       setError(null);
     }
@@ -181,6 +190,15 @@ export function ShareGraphicModal({
     [rows, limit, shownIdx]
   );
 
+  // Extra sections worth drawing: the ones that have entries and haven't been
+  // switched off. An empty one never renders, so an event with no provisional
+  // entries carries no stray heading.
+  const offeredSections = sections.filter(s => s.rows?.length);
+  const shownSections = offeredSections.filter(s => !hiddenSections.has(s.title));
+  // A graphic needs something on it: either a table with rows, or a section
+  // that has entries of its own (a session where every entry was provisional).
+  const hasContent = (shownRows.length && shownColumns.length) || shownSections.length;
+
   if (!mounted || !open) return null;
 
   function toggleColumn(key) {
@@ -188,6 +206,15 @@ export function ShareGraphicModal({
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
+      return next;
+    });
+  }
+
+  function toggleSection(title) {
+    setHiddenSections(prev => {
+      const next = new Set(prev);
+      if (next.has(title)) next.delete(title);
+      else next.add(title);
       return next;
     });
   }
@@ -389,17 +416,37 @@ export function ShareGraphicModal({
           </div>
         )}
 
+        {/* Extra sections — the blocks a screen offers under its main table
+            (a race's Provisional Entries). Each starts on and is one click from
+            being left off the image. */}
+        {offeredSections.length > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", marginBottom: 16 }}>
+            <strong style={{ fontSize: "0.85rem" }}>Extra sections</strong>
+            {offeredSections.map(sec => (
+              <label key={sec.title} className="check-row check-row-center"
+                style={{ gap: 8, margin: 0, fontSize: "0.85rem", cursor: "pointer" }}>
+                <input type="checkbox" checked={!hiddenSections.has(sec.title)} onChange={() => toggleSection(sec.title)} />
+                <span>{sec.title} ({sec.rows.length})</span>
+              </label>
+            ))}
+            <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
+              Drawn as their own block below the table.
+            </span>
+          </div>
+        )}
+
         {/* Live preview — this exact node is what gets captured. */}
         <div style={{ background: t.pageBg, borderRadius: 12, padding: 16, overflowX: "auto", border: "1px solid var(--border)" }}>
           <GraphicCard cardRef={cardRef} theme={t} title={title || defaultTitle || kind} subtitle={subtitle}
             logo={activeLogo} leagueName={league} leagueLogo={activeLeagueLogo} meta={meta}
-            columns={shownColumns} rows={shownRows} totalRows={rows.length} shownCount={shownRows.length} />
+            columns={shownColumns} rows={shownRows} totalRows={rows.length} shownCount={shownRows.length}
+            sections={shownSections} />
         </div>
 
         {error && <div className="toast toast-error" style={{ marginTop: 12 }}>{error}</div>}
 
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-          <button className="btn btn-primary" type="button" onClick={download} disabled={busy || !shownRows.length || !shownColumns.length}>
+          <button className="btn btn-primary" type="button" onClick={download} disabled={busy || !hasContent}>
             {busy ? "Rendering…" : `⬇ Download ${format.toUpperCase()}`}
           </button>
           <button className="btn btn-ghost" type="button" onClick={onClose} disabled={busy}>Cancel</button>
@@ -468,9 +515,15 @@ function FittedLogo({ src, maxW, maxH, radius }) {
 // The league's name is the eyebrow above the headline; its logo anchors the
 // footer, so league branding frames the graphic without fighting the headline or
 // the series logo in the header.
-export function GraphicCard({ cardRef, theme: t, title, subtitle, logo, leagueName, leagueLogo, meta = [], columns, rows, totalRows, shownCount }) {
+export function GraphicCard({ cardRef, theme: t, title, subtitle, logo, leagueName, leagueLogo, meta = [], columns, rows, totalRows, shownCount, sections = [] }) {
   const league = (leagueName || "").trim();
   const sz = tableScale(columns.length);
+  // A section's own type follows the table it sits under, so a dense
+  // thirteen-column results graphic doesn't end up with provisional entries
+  // printed larger than the finishers above them. Bounded either way: never
+  // smaller than a Discord thumbnail can carry, never bigger than the biggest
+  // table the card draws.
+  const secFont = Math.max(14, Math.min(18, sz.font));
   const facts = meta.filter(m => m && m.value != null && String(m.value).trim() !== "");
   return (
     <div
@@ -529,7 +582,9 @@ export function GraphicCard({ cardRef, theme: t, title, subtitle, logo, leagueNa
 
       {/* Table. Type and padding step down as more columns are switched on, so
           a wide selection stays inside the 1080px frame while a narrow one
-          still fills it — see tableScale. */}
+          still fills it — see tableScale. A card with no rows at all (every
+          entry provisional) skips it rather than printing bare headers. */}
+      {rows.length > 0 && (
       <table style={{ width: "100%", maxWidth: "100%", borderCollapse: "collapse", fontSize: sz.font, tableLayout: "auto" }}>
         <thead>
           <tr>
@@ -578,10 +633,73 @@ export function GraphicCard({ cardRef, theme: t, title, subtitle, logo, leagueNa
           ))}
         </tbody>
       </table>
+      )}
+
+      {/* Extra sections, drawn under the finishing order. A race's provisional
+          entries — drivers awarded a flat points value without turning a lap —
+          belong on the graphic, but never inside the results table, where a
+          points-only row would read as a back-of-field finish. Their own
+          captioned block below it says what they are and leaves the order
+          alone. Kept deliberately plain (no medals, no ranking) for the same
+          reason.
+
+          These lists are short by nature — two or three columns of a handful
+          of names — so they don't need the column-count scaling the main table
+          does; they only follow its type size (secFont). */}
+      {sections.filter(sec => sec.rows?.length).map(sec => (
+        <div key={sec.title} style={{ marginTop: rows.length ? 26 : 0 }}>
+          <div style={{
+            padding: "11px 16px", background: t.headBg, borderLeft: `4px solid ${t.accent}`,
+            borderTopLeftRadius: 10, borderTopRightRadius: 10,
+          }}>
+            <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: t.headInk }}>
+              {sec.title}
+            </span>
+            {/* The caption that keeps the block from being misread — "points
+                only · did not race". Inline, so it can't be mistaken for a row. */}
+            {sec.note && (
+              <span style={{ fontSize: 13, color: t.faint, fontWeight: 600, marginLeft: 12 }}>{sec.note}</span>
+            )}
+          </div>
+          <table style={{ width: "100%", maxWidth: "100%", borderCollapse: "collapse", fontSize: secFont, tableLayout: "auto" }}>
+            <thead>
+              <tr>
+                {sec.columns.map((c, i) => (
+                  <th key={c.key ?? i} style={{
+                    textAlign: c.align || (i === 0 ? "left" : "center"),
+                    color: t.faint, fontWeight: 700, fontSize: 12, letterSpacing: "0.14em",
+                    textTransform: "uppercase", padding: "9px 14px", whiteSpace: "nowrap",
+                    borderBottom: `1px solid ${t.border}`,
+                  }}>{c.label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {sec.rows.map((r, ri) => (
+                <tr key={ri} style={{ background: ri % 2 ? t.stripe : "transparent" }}>
+                  {r.cells.map((cell, ci) => (
+                    <td key={sec.columns[ci]?.key ?? ci} style={{
+                      textAlign: sec.columns[ci]?.align || (ci === 0 ? "left" : "center"),
+                      padding: "9px 14px", borderBottom: `1px solid ${t.border}`,
+                      fontWeight: ci === 0 ? 700 : 500,
+                      color: ci === 0 ? t.ink : t.muted,
+                      fontVariantNumeric: "tabular-nums",
+                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                      maxWidth: ci === 0 ? 420 : undefined,
+                    }}>{cell === null || cell === undefined || cell === "" ? "—" : cell}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
 
       {/* Footer / watermark — league branding anchors the bottom edge. */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, marginTop: 20, fontSize: 14, color: t.faint }}>
-        <span>{totalRows > shownCount ? `Top ${shownCount} of ${totalRows}` : `${totalRows} shown`}</span>
+        {/* The count describes the main table; a card that is only a section
+            (every entry provisional) has nothing to count and says nothing. */}
+        <span>{totalRows > shownCount ? `Top ${shownCount} of ${totalRows}` : totalRows ? `${totalRows} shown` : ""}</span>
         <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {leagueLogo && <FittedLogo src={leagueLogo} maxW={110} maxH={34} radius={7} />}
           <span style={{ fontWeight: 600, color: league ? t.muted : t.faint }}>
