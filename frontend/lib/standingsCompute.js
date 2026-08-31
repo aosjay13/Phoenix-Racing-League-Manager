@@ -74,7 +74,18 @@ export function buildStandings(index, { seasonId, classId = "", className = "" }
   const config = resolveSeasonConfig(season, index.seriesFor(season));
   // `classes` lets a class scoring on its own points structure total under it —
   // in its own championship and in the combined table alike.
-  const drivers = calculateStandings(results, entries, teams, config, templatesById, classes);
+  //
+  // The roster handed over is the season's WHOLE roster, never the class's slice
+  // of it. The two arguments answer different questions: `results` is already
+  // narrowed to this class by the class each result RECORDS, while the roster
+  // only ever supplies the name, number, team and points adjustment for the rows
+  // those results produce. Narrow the roster too and every driver whose result is
+  // stamped with this class while their roster entry is not — an unclassified
+  // driver entered in a "<class> only" round, anyone re-classed after they raced
+  // — loses their identity on the way through: they appear in the class table as
+  // "Unknown", with their manual points adjustment silently dropped along with
+  // their name, even though the results being counted are unmistakably theirs.
+  const drivers = calculateStandings(results, Object.values(entriesById), teams, config, templatesById, classes);
   const teamRows = calculateTeamStandings(drivers.rows, teams);
 
   // ── Are the derby stats actually paying? ─────────────────────────────────

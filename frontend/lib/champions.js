@@ -27,7 +27,7 @@
 //     won, since the outright leader is usually a class winner too.
 
 import { calculateStandings } from "@/lib/standings";
-import { classIdSet, filterEntriesByClass, filterResultsByClass } from "@/lib/classFilter";
+import { classIdSet, filterResultsByClass } from "@/lib/classFilter";
 
 // Every crown handed out in one season, as
 // [{ entry_id, kind: "overall" | "class", class_id, class_name }].
@@ -45,7 +45,13 @@ export function seasonChampions(season, results, entries, config, templatesById 
   for (const c of classes) {
     const classResults = filterResultsByClass(results, c.id, entriesById);
     if (!classResults.length) continue;
-    const top = calculateStandings(classResults, filterEntriesByClass(entries, c.id), [], config, templatesById, classes).rows[0];
+    // Scored against the whole roster rather than the class's slice of it:
+    // `classResults` is already this class's field, and the roster is only here
+    // to name each row and carry its points adjustment. A driver whose results
+    // record this class while their entry no longer does still raced it — cut
+    // their entry out and the adjustment vanishes from the total that decides
+    // the crown, and the champion's name comes out as "Unknown".
+    const top = calculateStandings(classResults, entries, [], config, templatesById, classes).rows[0];
     if (top) crowns.push({ entry_id: top.entry_id, kind: "class", class_id: c.id, class_name: c.name ?? null });
   }
 

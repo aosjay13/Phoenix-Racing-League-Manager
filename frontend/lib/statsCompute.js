@@ -30,7 +30,7 @@ import {
   resolveSeasonConfig,
 } from "@/lib/standings";
 import {
-  classIdsInSeason, filterEntriesByClass, filterRacesByClass, filterResultsByClass, orderEntryClasses,
+  classIdsInSeason, filterRacesByClass, filterResultsByClass, orderEntryClasses,
 } from "@/lib/classFilter";
 import { crownsInScope, seasonChampions, titlesByEntry } from "@/lib/champions";
 import { finalSessionName } from "@/lib/raceSummaryServer";
@@ -106,8 +106,6 @@ function aggregate(index, seasons, classId = "", className = "", gameId = null) 
     const classSel = classIdsInSeason(seasonClasses, { className, classId });
     const classFilterOn = !!(className || classId);
     if (classFilterOn && !classSel.length) continue;
-    const entries = filterEntriesByClass(allEntries, classSel);
-    const entriesById = Object.fromEntries(entries.map(e => [e.id, e]));
     const seasonRaces = index.racesFor(season.id);
     // Under a class filter, only that class's calendar counts toward the race
     // totals and field size — its own events plus the shared ones. The
@@ -146,7 +144,15 @@ function aggregate(index, seasons, classId = "", className = "", gameId = null) 
     };
 
     for (const r of results) {
-      const entry = entriesById[r.entry_id];
+      // Resolved against the WHOLE season roster, not the class's slice of it.
+      // `results` is already this class's field, narrowed by the class each
+      // result records; the roster is only here to say who each row belongs to.
+      // Looking a row up in the class's roster instead drops every driver whose
+      // result is stamped with this class while their entry is not — an
+      // unclassified driver entered in a "<class> only" round, anyone re-classed
+      // after they raced — so the class's stats quietly lost drivers the class
+      // standings were still ranking (as "Unknown", before the same fix there).
+      const entry = allEntriesById[r.entry_id];
       if (!entry) continue;
       const key = keyFor(entry);
       const bucket = (drivers[key] ??= {

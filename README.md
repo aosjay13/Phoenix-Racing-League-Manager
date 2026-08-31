@@ -2376,6 +2376,18 @@ the right class once drivers are assigned. Passing `class_id` to `/api/standings
 re-scores the whole table over just that class (its own points, ranks, gaps and averages) rather
 than filtering rows out of the combined table.
 
+**Who is in a class, and what they are called, are two different questions.** A class table takes
+its *field* from the results — narrowed by the class each result records — and every driver's
+*name, number, team and points adjustment* from the season's whole roster. The two deliberately
+disagree: a "`<class>` only" round stamps its class on every row it saves while still letting an
+unclassified driver be entered in it, a per-class session stamps the class being entered so a
+mis-set Class cell can't leak a driver into another class's grid, and a driver re-classed after
+they raced keeps the class on the races they already ran. Resolve identity through the class's
+slice of the roster instead and every one of those drivers arrives in their own class championship
+nameless — a row reading **Unknown**, holding real points but with their manual points adjustment
+dropped along with their name, and missing outright from that class's Stats and Records.
+`lib/__tests__/classIdentity.test.mjs` holds the rule.
+
 **Per-class schedules.** By default every class shares one season calendar. Turning on a season's
 **Per-Class Schedules** lets a race be pinned to a single class via `races.class_id`; a race left
 unpinned stays *shared* by every class, so a season can mix a common opener with class-specific
