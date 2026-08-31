@@ -8,7 +8,7 @@ import { DriverPoolCreateModal } from "@/components/DriverPoolCreateModal";
 import { DriverEditModal } from "@/components/DriverEditModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Modal } from "@/components/Modal";
-import { iracingGameIds, PRIVATE_NAME, publicNameFor } from "@/lib/iracingPrivacy";
+import { globalNameFor, iracingGameIds, PRIVATE_NAME } from "@/lib/iracingPrivacy";
 
 // The global driver directory — the "Drivers" tab, and the only one every
 // visitor sees.
@@ -71,11 +71,12 @@ function DriversDirectory() {
             // display name: the driver's own override first, then a linked
             // account's name, then the pool name (see lib/driverNames.js).
             //
-            // Never the iRacing one. This list is the app's front door — every
-            // visitor sees it — and a real name that iRacing requires must not
-            // be what a driver is called on a page that spans every game they
-            // race (see lib/iracingPrivacy.js).
-            name: publicNameFor(d, { accountName: account?.display_name, iracingIds }) || PRIVATE_NAME,
+            // Not the iRacing one — unless it is the only name this league
+            // holds for them. Somebody who races iRacing and nothing else has
+            // no second identity to protect, and this list spanning every game
+            // is not one of the other games their name has to be kept out of.
+            // See globalNameFor in lib/iracingPrivacy.js.
+            name: globalNameFor(d, { accountName: account?.display_name, iracingIds }) || PRIVATE_NAME,
             pool_name: d.name,
             account_name: account?.display_name || "",
             display_name: d.display_name || "",
@@ -173,7 +174,7 @@ function DriversDirectory() {
             game_names: updated.game_names ?? d.game_names,
             notes: updated.notes ?? d.notes,
             aliases: updated.aliases ?? d.aliases,
-            name: publicNameFor(
+            name: globalNameFor(
               { ...updated, aliases: updated.aliases ?? d.aliases, game_names: updated.game_names ?? d.game_names },
               { accountName: d.account_name, iracingIds },
             ) || PRIVATE_NAME,

@@ -180,6 +180,25 @@ export function publicNameFor(driver, { accountName = null, gameId = null, iraci
   return null;
 }
 
+// The name for a context that belongs to no single game: the driver directory,
+// their own profile header, a league-wide table.
+//
+// The same generic name as everywhere else — and then, if the league holds
+// nothing else to call them by, their iRacing name. That last step matters:
+// somebody who races iRacing and only iRacing has no second identity to
+// protect, and calling them "Driver" on the directory hides a name that was
+// never at risk. The protection is against their real name appearing in ANOTHER
+// GAME, and a page that spans every game is not another game.
+//
+// Deliberately absent from the per-game path: on a BeamNG roster there is no
+// such fallback, and a driver with no gamertag there stays a placeholder rather
+// than being named. That is the whole rule, and it is the one place it bites.
+export function globalNameFor(driver, { accountName = null, iracingIds = new Set() } = {}) {
+  return publicNameFor(driver, { accountName, iracingIds })
+    || iracingNameFor(driver, iracingIds)
+    || null;
+}
+
 // THE resolver. What one driver is called in one context, in the three shapes
 // every table in the app renders:
 //
@@ -213,7 +232,12 @@ export function contextNames(driver, {
   // the value is the iRacing name itself, which no mapping makes safe.
   const raw = gameId ? gameNameFor(driver, gameId) : null;
   const game = raw && !isIracingIdentity(driver, raw, iracingIds) ? raw : null;
-  const overall = publicNameFor(driver, { accountName, iracingIds });
+  // With no game in the frame this is a league-wide or global context, so the
+  // iRacing name is the last thing tried rather than nothing at all (see
+  // globalNameFor). Inside another game it is never tried.
+  const overall = gameId
+    ? publicNameFor(driver, { accountName, iracingIds })
+    : globalNameFor(driver, { accountName, iracingIds });
   return {
     overall: overall || PRIVATE_NAME,
     game,
@@ -241,7 +265,7 @@ export function publicDriverDoc(driver, { iracingIds = new Set(), accountName = 
   };
   return {
     ...driver,
-    name: shows(driver.name) ? driver.name : (publicNameFor(driver, { accountName, iracingIds }) || PRIVATE_NAME),
+    name: shows(driver.name) ? driver.name : (globalNameFor(driver, { accountName, iracingIds }) || PRIVATE_NAME),
     display_name: shows(driver.display_name) ? driver.display_name : "",
     aliases: normalizeAliases(driver.aliases)
       .filter(a => !isIracingLabel(a.label) && !isIracingGameId(a.game_id, iracingIds)),

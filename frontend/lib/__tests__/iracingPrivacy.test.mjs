@@ -18,8 +18,9 @@
 //      never rewrites: one human, one driver id, one set of stats.
 import assert from "node:assert";
 import {
-  PRIVATE_NAME, contextNames, iracingGameIds, iracingIdentityValues, iracingNameFor,
-  isIracingGameId, isIracingIdentity, publicDriverDoc, publicNameFor, racesOnlyIracing,
+  PRIVATE_NAME, contextNames, globalNameFor, iracingGameIds, iracingIdentityValues,
+  iracingNameFor, isIracingGameId, isIracingIdentity, publicDriverDoc, publicNameFor,
+  racesOnlyIracing,
 } from "../iracingPrivacy.js";
 import { matchReason, matchedName, searchDrivers, visibleNames } from "../driverMatch.js";
 import { driverNames, hiddenName, isIracingScope } from "../rawIndex.js";
@@ -113,11 +114,23 @@ ok("racing iRacing and BeamNG is not", !racesOnlyIracing(["g-ir", "g-beam"], ira
 ok("a driver with no results yet is not", !racesOnlyIracing([], iracingIds));
 check("so Ana keeps her name everywhere",
   contextNames(ana, { iracingIds, iracingOnly: true }).display, "Ana Ruiz");
-// And without that carve-out there is genuinely nothing safe left to call her,
-// which must be a placeholder rather than the real name.
-check("with a second game she'd be shown as a placeholder",
-  contextNames(ana, { iracingIds }).display, PRIVATE_NAME);
-check("publicNameFor says so plainly", publicNameFor(ana, { iracingIds }), null);
+// And she keeps it even when nothing has told the app that iRacing is all she
+// races. The driver directory has no results to consult, so it cannot know —
+// and answering "Driver" there hid a name that was never at risk. A context
+// belonging to no single game falls back to the iRacing name rather than to a
+// placeholder.
+check("a global context names her without being told",
+  contextNames(ana, { iracingIds }).display, "Ana Ruiz");
+check("globalNameFor is what does it", globalNameFor(ana, { iracingIds }), "Ana Ruiz");
+// The protection is against ANOTHER GAME, and that is exactly where the
+// fallback stops: on a BeamNG roster she is a placeholder, not a real name.
+check("but another game's table still won't name her",
+  contextNames(ana, { gameId: "g-beam", iracingIds }).display, PRIVATE_NAME);
+check("publicNameFor stays the strict one", publicNameFor(ana, { iracingIds }), null);
+// A driver who DOES race elsewhere is unaffected: the fallback only ever fires
+// when there is no other name at all, so it can never displace a gamertag.
+check("a mixed driver is still named by their handle",
+  globalNameFor(ryan, { iracingIds }), "Ryanbirdman");
 
 // ── 5. The fallback chain, in order ────────────────────────────────────────
 const bare = { id: "d-bare", name: "Sam Okafor", aliases: [{ label: "iRacing Name", value: "Sam Okafor" }] };
@@ -138,6 +151,8 @@ check("the driver is still the same driver", shown.id, ryan.id);
 check("and still linked to the same account", shown.user_id, ryan.user_id);
 ok("a driver with no iRacing identity is handed back untouched",
   publicDriverDoc({ id: "d-x", name: "Pat" }, { iracingIds }).name === "Pat");
+check("and an iRacing-only driver keeps their name in the listing",
+  publicDriverDoc(ana, { iracingIds }).name, "Ana Ruiz");
 
 // ── 7. Search must not surface a profile through the real name ─────────────
 const pool = [ryan, ana, jo];
@@ -200,6 +215,10 @@ ok("nor is a gamertag", !hiddenName(bundle, "d-ryan", "Ryanbirdman", "g-beam"));
 // Ana races iRacing alone, so the bundle sees that and leaves her be — league
 // wide, which is the context that would otherwise blank her.
 check("Ana is named on a league-wide table", driverNames(bundle, ["d-ana"], null)["d-ana"].display, "Ana Ruiz");
+// Even with no results to prove it — the directory's case, where the bundle
+// knows nothing about who races what.
+check("and on one that has never seen her race",
+  driverNames({ ...bundle, entries: [] }, ["d-ana"], null)["d-ana"].display, "Ana Ruiz");
 ok("and her entry's stored name is not flagged", !hiddenName(bundle, "d-ana", "Ana Ruiz", "g-ir"));
 // Ryan, who races both, is not.
 check("Ryan is not, on the same table", driverNames(bundle, ["d-ryan"], null)["d-ryan"].display, "Ryanbirdman");

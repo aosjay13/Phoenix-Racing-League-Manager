@@ -8,7 +8,7 @@ import { normalizeAliases } from "@/lib/aliases";
 import { publicUserFields } from "@/lib/userPrivacy";
 import { normalizeGameNames } from "@/lib/driverNames";
 import {
-  iracingGameIds, iracingIdentityValues, iracingNameFor, isIracingIdentity, publicNameFor,
+  globalNameFor, iracingGameIds, iracingIdentityValues, iracingNameFor, isIracingIdentity,
 } from "@/lib/iracingPrivacy";
 
 const routes = makeDocRoutes(SPECS.drivers);
@@ -147,7 +147,10 @@ export async function GET(request, { params }) {
   // from their results whether iRacing is the ONLY game they play — decides
   // whether the header may show it after all. See app/drivers/[uid].
   const profile = {
-    display_name: publicNameFor(driver, { accountName: account?.display_name, iracingIds }) || "Unknown Driver",
+    // Their generic name, or — when the league holds no other name for them —
+    // their iRacing one, because a driver who races iRacing and nothing else
+    // has nothing to protect and must not be headed "Driver".
+    display_name: globalNameFor(driver, { accountName: account?.display_name, iracingIds }) || "Unknown Driver",
     // Their name on iRacing, for the profile's iRacing section — and for the
     // header when they race nowhere else, since then it is simply their name.
     iracing_name: iracingNameFor(driver, iracingIds),

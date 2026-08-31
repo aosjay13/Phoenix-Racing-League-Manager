@@ -26,7 +26,7 @@
 import { normalizeAliases } from "@/lib/aliases";
 import { normalizeGameNames } from "@/lib/driverNames";
 import {
-  iracingGameIds, iracingIdentityValues, isIracingGameId, PRIVATE_NAME, publicNameFor,
+  globalNameFor, iracingGameIds, iracingIdentityValues, isIracingGameId, PRIVATE_NAME,
 } from "@/lib/iracingPrivacy";
 import { compactName, normalizeName } from "@/lib/nameKey";
 import { nameSimilarity } from "@/lib/resultsImport";
@@ -178,8 +178,10 @@ export function findDriverMatches(pool = [], query = {}, { games = {}, limit = 6
       name: driver.name,
       // The same driver, named in a way that is safe to put in front of
       // anybody: a refusal shown to a player must not answer "who did I
-      // clash with?" with somebody's real iRacing name.
-      public_name: publicNameFor(driver, { iracingIds }) || PRIVATE_NAME,
+      // clash with?" with somebody's real iRacing name — unless that is the
+      // only name the league holds for them, in which case it was never the
+      // protected one (see globalNameFor in lib/iracingPrivacy.js).
+      public_name: globalNameFor(driver, { iracingIds }) || PRIVATE_NAME,
       user_id: driver.user_id || "",
       score: hit.score,
       via: hit.via,
