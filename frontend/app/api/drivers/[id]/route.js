@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { makeDocRoutes, SPECS, coerceField } from "@/lib/entityApi";
 import { db } from "@/lib/firebase";
-import { docInLeague, getRequestLeagueId, withAdmin } from "@/lib/serverAuth";
+import { docInLeague, getRequestLeagueId, getRequestUser, isAdmin, withAdmin } from "@/lib/serverAuth";
 import { linkedDriver } from "@/lib/carSelectionServer";
 import { syncEntryNamesForDriver } from "@/lib/driverSync";
 import { normalizeAliases } from "@/lib/aliases";
@@ -122,6 +122,14 @@ export async function GET(request, { params }) {
     if (u.exists) account = publicUserFields(u.data());
   }
 
+  // Staff see the profile whole. Deciding who a driver IS — linking an account,
+  // merging a duplicate, checking that the name a result imported under belongs
+  // to this person — is an admin's job, and none of it can be done through a
+  // name the page has taken out. So an admin viewer gets the iRacing name and
+  // the former names as stored; everyone else gets the protected view.
+  const viewer = await getRequestUser(request);
+  const staff = !!viewer && await isAdmin(viewer, leagueId);
+
   // Which of this league's games are iRacing, so the one name this profile may
   // not lead with can be told apart from every other name it holds.
   const gamesSnap = await db().collection("games").get();
@@ -176,7 +184,7 @@ export async function GET(request, { params }) {
     // header — so any former name that is the iRacing one is dropped here
     // rather than published beside the generic one.
     former_names: (Array.isArray(driver?.merged_names) ? driver.merged_names : [])
-      .filter(n => !isIracingIdentity(driver, n, iracingIds)),
+      .filter(n => staff || !isIracingIdentity(driver, n, iracingIds)),
     // The per-game display names, so the career breakdown the client computes
     // can label each game with the name this driver races under THERE ("racing
     // as Ryanbirdman") rather than repeating the overall one.
@@ -184,6 +192,10 @@ export async function GET(request, { params }) {
     // The games that make this profile's iRacing name showable, so the browser
     // can answer "is iRacing all they play?" the same way the server would.
     iracing_game_ids: [...iracingIds],
+    // Whether this response was built for a staff viewer, so the page knows the
+    // iRacing name it is holding may be shown outright rather than kept to
+    // iRacing's own section.
+    viewer_is_admin: staff,
     profile,
   });
 }

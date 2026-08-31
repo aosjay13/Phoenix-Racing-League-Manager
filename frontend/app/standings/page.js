@@ -404,15 +404,20 @@ export default function StandingsPage() {
             // On a game-specific standings, show the driver's mapped alias (their
             // on-track name) as the primary label with the profile name muted
             // beneath; fall back to the profile name when no alias is mapped.
+            // The muted line under the on-track name comes from `profile_name`,
+            // which is null on every game but iRacing (see
+            // lib/standingsCompute.js) — outside it that line would be the
+            // driver's real name.
             const alias = r.game_alias && r.game_alias !== r.driver_name ? r.game_alias : null;
             const primary = alias || r.driver_name;
+            const behind = r.profile_name && r.profile_name !== primary ? r.profile_name : null;
             return (
             <>
               {(r.driver_id || r.user_id)
                 ? <Link href={`/drivers/${r.driver_id || r.user_id}`} style={{ color: "var(--accent-cyan)" }}>{primary}</Link>
                 : primary}
               {r.driver_number != null && <span style={{ color: "var(--ink-2)", marginLeft: 6 }}>#{r.driver_number}</span>}
-              {alias && <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.74rem" }}>{r.driver_name}</span>}
+              {behind && <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.74rem" }}>{behind}</span>}
               {r.points_adjustment !== 0 && (
                 <span
                   className="badge"

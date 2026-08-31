@@ -20,7 +20,7 @@
 
 import { replaySkillRatings } from "@/lib/skillRatingReplay";
 import { SR_BASELINE } from "@/lib/skillRating";
-import { driverNames, indexBundle } from "@/lib/rawIndex";
+import { driverNames, indexBundle, isIracingScope } from "@/lib/rawIndex";
 
 // One game's ratings, replayed out of whatever seasons the bundle holds for it.
 // Split out because two screens want it: the leaderboard below, and a driver's
@@ -113,7 +113,11 @@ export function buildSkillRatings(index, { scope = "league", gameId = "", series
     .map(([driverId, rec]) => ({
       driver_id: driverId,
       driver_name: names[driverId]?.display || nameById[driverId]?.driver_name || "Unknown",
-      profile_name: names[driverId]?.overall || nameById[driverId]?.driver_name || "Unknown",
+      // Only iRacing's own board may name the profile behind a gamertag —
+      // everywhere else that line is the real name (see lib/iracingPrivacy.js).
+      profile_name: isIracingScope(bundle, game)
+        ? (names[driverId]?.overall || nameById[driverId]?.driver_name || "Unknown")
+        : null,
       game_alias: names[driverId]?.game ?? null,
       user_id: nameById[driverId]?.user_id || null,
       skill_rating: rec.rating,

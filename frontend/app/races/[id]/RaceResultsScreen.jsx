@@ -26,15 +26,22 @@ function DriverCell({ r }) {
   // On a game-specific event, prefer the driver's mapped alias (their on-track
   // name for this game) as the primary label, keeping the profile name as a
   // muted subtitle. Falls back to the profile name when no alias is mapped.
+  //
+  // That subtitle comes from `profile_name`, which the compute leaves NULL on
+  // every event that isn't iRacing's (see lib/eventCompute.js). It used to read
+  // `driver_name`, and on a race or qualifying sheet for any other game that
+  // put the driver's real name — the one iRacing makes them race under — in a
+  // small grey line directly under the handle this page exists to show instead.
   const alias = r.game_alias && r.game_alias !== r.driver_name ? r.game_alias : null;
   const primary = alias || r.driver_name;
+  const behind = r.profile_name && r.profile_name !== primary ? r.profile_name : null;
   return (
     <>
       {(r.driver_id || r.user_id)
         ? <Link href={`/drivers/${r.driver_id || r.user_id}`} style={{ color: "var(--accent-cyan)" }}>{primary}</Link>
         : primary}
       {r.driver_number != null && <span style={{ color: "var(--ink-2)", marginLeft: 6 }}>#{r.driver_number}</span>}
-      {alias && <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.74rem" }}>{r.driver_name}</span>}
+      {behind && <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.74rem" }}>{behind}</span>}
     </>
   );
 }

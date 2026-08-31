@@ -36,7 +36,7 @@ import { crownsInScope, seasonChampions, titlesByEntry } from "@/lib/champions";
 import { finalSessionName } from "@/lib/raceSummaryServer";
 import { isPastRaceDate, raceDateSortKey, toDateOnly, todayDateString } from "@/lib/raceDate";
 import { applySeasonTeams } from "@/lib/teams";
-import { bareResults, driverNames, gameIdForBundle, indexBundle } from "@/lib/rawIndex";
+import { bareResults, driverNames, gameIdForBundle, indexBundle, isIracingScope } from "@/lib/rawIndex";
 
 // Scope validation, kept identical to the refusals the route used to send so a
 // screen can report a bad scope the same way. `index` is an indexBundle() of a
@@ -220,12 +220,16 @@ function aggregate(index, seasons, classId = "", className = "", gameId = null) 
   // `profile_name` keeps the overall name alongside it so a game's table can
   // show "who that is" under the on-track name.
   const names = driverNames(index.bundle, Object.values(drivers).map(d => d.driver_id), gameId);
+  const iracing = isIracingScope(index.bundle, gameId);
 
   const rows = Object.values(drivers).map(d => {
     const n = d.driver_id ? names[d.driver_id] : null;
     return {
       driver_name: n?.display || d.driver_name,
-      profile_name: n?.overall || d.driver_name,
+      // The muted "who that is" line, and null unless this is iRacing's own
+      // table: outside it, the profile name behind a gamertag is the real name
+      // (see isIracingScope in lib/rawIndex.js).
+      profile_name: iracing ? (n?.overall || d.driver_name) : null,
       game_alias: n?.game ?? null,
       driver_number: d.driver_number,
       driver_id: d.driver_id,

@@ -60,7 +60,7 @@ function SrTrend({ delta }) {
 
 export function DriverProfileScreen() {
   const { uid } = useParams();
-  const { user, profile: myProfile } = useAuth();
+  const { user, profile: myProfile, isAdmin } = useAuth();
   const [identity, setIdentity] = useState(null);
   const [error, setError] = useState(null);
   const [gameFilter, setGameFilter] = useState("all");
@@ -152,13 +152,21 @@ export function DriverProfileScreen() {
   // is the whole of their racing, in which case their iRacing name IS their
   // name and there is no second identity left to protect.
   const headerName = (iracing_only && profile.iracing_name) || profile.display_name;
+  // Staff see the whole profile. Working out who a driver is — linking their
+  // account, merging a duplicate, checking the name a result imported under —
+  // is an admin's job, and a page that hides the name from them is a page they
+  // cannot do it on. So for an admin the iRacing name is shown outright, marked
+  // as the one thing on here that visitors don't get.
+  const staff = !!isAdmin;
   // The connected accounts this profile shows globally, and the iRacing ones it
-  // doesn't. An iRacing identity is listed in iRacing's own section further
-  // down — never in the page-level Aliases list, where it would sit next to the
-  // gamertags it exists to be kept apart from. A driver who races only iRacing
-  // has no such split, so they keep the one list they always had.
-  const publicAliases = iracing_only ? aliases : aliases.filter(a => !a.iracing);
-  const iracingAliases = iracing_only ? [] : aliases.filter(a => a.iracing);
+  // doesn't. For a visitor an iRacing identity is listed in iRacing's own
+  // section further down — never in the page-level Aliases list, where it would
+  // sit next to the gamertags it exists to be kept apart from. A driver who
+  // races only iRacing has no such split, so they keep the one list they always
+  // had, and neither does an admin.
+  const openly = iracing_only || staff;
+  const publicAliases = openly ? aliases : aliases.filter(a => !a.iracing);
+  const iracingAliases = openly ? [] : aliases.filter(a => a.iracing);
   const selectedGame = gameFilter === "all" ? null : by_game.find(g => g.game_id === gameFilter);
   const stats = gameFilter === "all" ? all_games : selectedGame?.stats ?? all_games;
   // Race History lists the races, not everything that ran on the way to them:
@@ -173,7 +181,7 @@ export function DriverProfileScreen() {
   // iRacing is left out: its name has its own section below, and the point of
   // that section is that this line isn't where it goes.
   const gameNames = by_game.filter(g =>
-    g.driver_game_name && g.driver_game_name !== headerName && !(g.iracing && !iracing_only));
+    g.driver_game_name && g.driver_game_name !== headerName && !(g.iracing && !openly));
 
   return (
     <section>
@@ -205,6 +213,15 @@ export function DriverProfileScreen() {
           {gameNames.length > 0 && (
             <p style={{ marginTop: 8, color: "var(--ink-2)", fontSize: "0.82rem" }}>
               Races as: {gameNames.map(g => `${g.driver_game_name} (${g.game_name})`).join(", ")}
+            </p>
+          )}
+          {/* The name iRacing makes this driver race under, spelled out for
+              staff. It is the one thing on this page a visitor does not get,
+              so it says so rather than sitting there looking public. */}
+          {staff && !iracing_only && profile.iracing_name && (
+            <p style={{ marginTop: 8, color: "var(--ink-2)", fontSize: "0.82rem" }}>
+              iRacing: <strong style={{ color: "var(--ink-1)" }}>{profile.iracing_name}</strong>
+              <span className="page-badge" style={{ marginLeft: 8, fontSize: "0.7rem" }}>staff only</span>
             </p>
           )}
           {!linked && (
@@ -304,6 +321,10 @@ export function DriverProfileScreen() {
                   )}
                   {isDisplay && (
                     <span title={`Shown on ${a.game_name || "this game"}'s tables`} style={{ fontSize: "0.72rem", color: "var(--accent-gold)" }}>★ display</span>
+                  )}
+                  {a.iracing && !iracing_only && (
+                    <span title="iRacing requires a real name, so this is shown to staff and on iRacing's own pages — nowhere else"
+                      className="page-badge" style={{ fontSize: "0.7rem" }}>staff only</span>
                   )}
                 </li>
                 );

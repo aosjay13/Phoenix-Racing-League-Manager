@@ -22,7 +22,7 @@ import {
   isIracingGameId, isIracingIdentity, publicDriverDoc, publicNameFor, racesOnlyIracing,
 } from "../iracingPrivacy.js";
 import { matchReason, matchedName, searchDrivers, visibleNames } from "../driverMatch.js";
-import { driverNames, hiddenName } from "../rawIndex.js";
+import { driverNames, hiddenName, isIracingScope } from "../rawIndex.js";
 
 let n = 0;
 const check = (label, got, want) => { n++; assert.deepStrictEqual(got, want, `${label}: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`); };
@@ -204,7 +204,18 @@ ok("and her entry's stored name is not flagged", !hiddenName(bundle, "d-ana", "A
 // Ryan, who races both, is not.
 check("Ryan is not, on the same table", driverNames(bundle, ["d-ryan"], null)["d-ryan"].display, "Ryanbirdman");
 
-// ── 9. Nothing was unlinked ────────────────────────────────────────────────
+// ── 9. No second name under an on-track name, outside iRacing ──────────────
+//
+// The tables print the driver's handle with their profile name in a small grey
+// line beneath it. That line is the leak in its quietest form: on an AMS2 race
+// sheet it read as the real name, under the very handle the page exists to show
+// instead. So the computes only fill it in on iRacing's own pages, and
+// isIracingScope is the gate they all ask.
+ok("an iRacing scope is one", isIracingScope(bundle, "g-ir"));
+ok("a BeamNG scope is not", !isIracingScope(bundle, "g-beam"));
+ok("and neither is a league-wide one", !isIracingScope(bundle, null));
+
+// ── 10. Nothing was unlinked ───────────────────────────────────────────────
 //
 // The whole rule is a read-time projection. If any of it mutated a document,
 // one person's history would split in two — which is the thing this app spends

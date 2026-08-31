@@ -22,7 +22,7 @@ import { classOfResult, racePerClassResults } from "@/lib/classFilter";
 import { isBracketDoc, isBracketEvent } from "@/lib/bracketRacing";
 import { isBangerDoc, isBangerEvent } from "@/lib/bangerRacing";
 import { applySeasonTeams } from "@/lib/teams";
-import { bareResults, driverNames, hiddenName, indexBundle } from "@/lib/rawIndex";
+import { bareResults, driverNames, hiddenName, indexBundle, isIracingScope } from "@/lib/rawIndex";
 
 // Full detail for one event: a dedicated qualifying session plus every race
 // session (including heat/consolation/feature sessions for heat-format
@@ -68,6 +68,13 @@ export function buildEvent(index, { raceId }) {
   // iRacing member it can be their real name, which a result sheet for any other
   // game may not show. Where it is, the resolved generic name replaces it.
   const gameId = season?.game_id || null;
+  // Whether a SECOND name may be printed under the on-track one at all. On an
+  // iRacing event it may — the real name is already on show there, and saying
+  // whose profile a name belongs to is useful. Anywhere else there is no such
+  // name: the profile name standing behind a gamertag is, for anyone who races
+  // iRacing, the real name, and putting it in a muted line under their AMS2
+  // handle publishes it just as surely as printing it outright.
+  const iracing = isIracingScope(index.bundle, gameId);
   const nameByDriver = driverNames(index.bundle, all.map(r => entriesById[r.entry_id]?.driver_id), gameId);
   const aliasByDriver = Object.fromEntries(Object.entries(nameByDriver).map(([id, n]) => [id, n.game]));
   const shownName = entry => {
@@ -85,6 +92,9 @@ export function buildEvent(index, { raceId }) {
       ...r,
       class_id: classOfResult(r, entriesById) || "",
       driver_name: shownName(entry),
+      // The muted "who that is" line under an on-track name — null when this
+      // event's game is not one that may carry it.
+      profile_name: iracing && entry.driver_id ? (nameByDriver[entry.driver_id]?.overall ?? null) : null,
       driver_number: entry.number ?? null,
       driver_id: entry.driver_id ?? null,
       user_id: entry.user_id ?? null,

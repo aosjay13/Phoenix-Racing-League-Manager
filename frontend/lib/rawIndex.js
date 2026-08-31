@@ -152,6 +152,14 @@ export function driverNames(bundle, driverIds, gameId = null) {
   return out;
 }
 
+// Is the context being rendered an iRacing one? What a table asks before it
+// prints a SECOND name under a driver's on-track name: outside iRacing there is
+// no name that may go there, because the profile name standing behind a
+// gamertag is exactly the real name this app keeps off non-iRacing pages.
+export function isIracingScope(bundle, gameId) {
+  return isIracingGameId(gameId, iracingGameIds(bundle?.games || []));
+}
+
 // Is this stored name one the driver's profile marks as an iRacing one, in a
 // context that may not show it? For the places that fall back to a name written
 // onto a document (a roster entry's per-series alias) rather than resolved.

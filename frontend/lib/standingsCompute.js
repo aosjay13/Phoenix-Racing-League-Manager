@@ -29,7 +29,7 @@ import {
 } from "@/lib/classFilter";
 import { seasonChampions } from "@/lib/champions";
 import { applySeasonTeams, teamsForEntries } from "@/lib/teams";
-import { bareResults, driverNames, hiddenName, indexBundle } from "@/lib/rawIndex";
+import { bareResults, driverNames, hiddenName, indexBundle, isIracingScope } from "@/lib/rawIndex";
 
 // A champion, named the way this game's tables name them — and never with an
 // iRacing real name on a season that isn't iRacing's.
@@ -133,12 +133,17 @@ export function buildStandings(index, { seasonId, classId = "", className = "" }
   // is, the resolved generic name stands in; every other row is untouched.
   const gameId = season.game_id || null;
   const names = driverNames(index.bundle, drivers.rows.map(r => r.driver_id), gameId);
+  // And whether the table may print a second name under the on-track one at
+  // all: only iRacing's own standings may, because outside it that line is the
+  // real name (see isIracingScope in lib/rawIndex.js).
+  const iracing = isIracingScope(index.bundle, gameId);
   for (const r of drivers.rows) {
     const n = r.driver_id ? names[r.driver_id] : null;
     r.game_alias = n?.game ?? null;
     if (r.driver_id && hiddenName(index.bundle, r.driver_id, r.driver_name, gameId)) {
       r.driver_name = n?.overall || r.driver_name;
     }
+    r.profile_name = iracing ? (n?.overall ?? null) : null;
   }
 
   // Tag every row with its class so the combined table can still show which

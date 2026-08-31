@@ -22,7 +22,7 @@
 
 import { entryClassIds, orderClassIds } from "@/lib/classFilter";
 import { applySeasonTeams } from "@/lib/teams";
-import { driverNames, hiddenName, indexBundle } from "@/lib/rawIndex";
+import { driverNames, hiddenName, indexBundle, isIracingScope } from "@/lib/rawIndex";
 
 // Refusals kept identical to the ones the route used to send, so a screen
 // reports a bad scope the same way. `index` is an indexBundle() of a bundle
@@ -165,7 +165,9 @@ export function buildRoster(index, { scope = "league", gameId = "", seriesId = "
       ? (n?.display || null)
       : bucket.name;
     bucket.display_name = n?.game || stored;
-    bucket.profile_name = n?.overall || stored;
+    // The muted "who that is" line under an on-track name, and null outside
+    // iRacing: there, the profile name behind a gamertag is the real name.
+    bucket.profile_name = isIracingScope(index.bundle, scopeGameId) ? (n?.overall || stored) : null;
     bucket.game_alias = n?.game ?? null;
   }
 
