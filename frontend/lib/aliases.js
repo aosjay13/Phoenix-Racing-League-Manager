@@ -111,3 +111,133 @@ export function gameAlias(stored, gameId) {
   if (!matches.length) return null;
   return (matches.find(a => a.is_display) || matches[0]).value;
 }
+
+// ── The platform vocabulary ────────────────────────────────────────────────
+//
+// An alias row used to be two free-hand fields and a dropdown: type a platform,
+// type a username, optionally point it at a game. Nothing made the three agree,
+// so "iRacing Name" could sit there mapped to BeamNG, and a driver's racing name
+// in a game could be entered in two places that disagreed. The editor now offers
+// a CHOICE instead, and each choice carries its own game mapping — so the label
+// and the game can no longer contradict each other (see components/AliasEditor).
+
+// The platforms that belong to a person rather than to one game. One handle,
+// used everywhere, mapped to no game.
+export const ACCOUNT_ALIAS_LABELS = [
+  "Discord Name",
+  "PSN Username",
+  "Xbox Gamertag",
+  "Steam Username",
+];
+
+// Discord is asked for by every sign-up in every game (see lib/signupRequest.js),
+// so the driver editor gives it a field of its own rather than a row among the
+// rest.
+export const DISCORD_ALIAS_LABEL = "Discord Name";
+
+// What a driver's racing name in one game is stored under as an alias. The
+// convention is the game's own name plus "Name", which is where the labels this
+// app has always shipped come from: the game called "iRacing" gives
+// "iRacing Name", exactly the row a sign-up has been filling in all along. That
+// is what lets the editor be rebuilt around games without moving a single
+// stored value.
+export function gameNameLabel(gameName) {
+  return `${String(gameName ?? "").trim()} Name`.trim();
+}
+
+// Is this alias the racing NAME for a game, as opposed to something else that
+// merely belongs to it — an iRacing customer id, say? Only a racing name is
+// shown on that game's tables, and only a racing name belongs in the editor's
+// per-game name list.
+export function isGameRacingName(alias, game) {
+  if (!alias || !game || alias.game_id !== game.id) return false;
+  return alias.label.trim().toLowerCase() === gameNameLabel(game.name).toLowerCase();
+}
+
+// The choices a Platform picker offers: the account platforms, then a "<Game>
+// Name" for every game, then anything already stored that neither list covers —
+// a custom platform an admin added, or a pairing from before this vocabulary
+// existed. Nothing stored is ever dropped from the menu, which is what stops the
+// editor quietly unmapping a row it doesn't recognise.
+//
+// `value` is the (label, game) pair as one string, so a <select> can carry both.
+export function aliasPlatformOptions(games = [], aliases = []) {
+  const out = [];
+  const seen = new Set();
+  const labels = new Set();
+  const gameName = Object.fromEntries(games.map(g => [g.id, g.name]));
+  const add = (label, game_id, group) => {
+    const value = `${label}|${game_id}`;
+    if (!label || seen.has(value)) return;
+    seen.add(value);
+    // Two options can carry the same words with different mappings — a saved
+    // "iRacing Name" tied to no game beside the one this league's iRacing game
+    // offers. Spelling out which is which beats a menu with the same line twice.
+    const clash = labels.has(label.toLowerCase());
+    labels.add(label.toLowerCase());
+    const text = clash
+      ? `${label} — ${game_id ? (gameName[game_id] || "a game") : "no game"}`
+      : label;
+    out.push({ value, label, game_id, group, text });
+  };
+
+  for (const label of ACCOUNT_ALIAS_LABELS) add(label, "", "Accounts");
+  for (const g of games) {
+    add(gameNameLabel(g.name), g.id, "Games");
+    // The one per-game identity that isn't a name. It is an iRacing rule rather
+    // than a general one, so it is offered only where iRacing is.
+    if (/iracing/.test(String(g.name ?? "").toLowerCase().replace(/[^a-z0-9]/g, ""))) {
+      add("iRacing ID#", g.id, "Games");
+    }
+  }
+  for (const a of normalizeAliases(aliases)) add(a.label, a.game_id, "Saved");
+  return out;
+}
+
+// Read one labelled alias's value — how the editor lifts Discord out into its
+// own field.
+export function aliasValue(aliases, label) {
+  const key = String(label).trim().toLowerCase();
+  const hit = normalizeAliases(aliases).find(a => a.label.trim().toLowerCase() === key);
+  return hit ? hit.value : "";
+}
+
+// Write one back, in place if it is already there and appended if it is not.
+// A blank value empties the row rather than deleting it, matching how every
+// other alias field behaves.
+export function setAliasValue(aliases, label, value) {
+  const key = String(label).trim().toLowerCase();
+  const rows = normalizeAliases(aliases);
+  const at = rows.findIndex(a => a.label.trim().toLowerCase() === key);
+  const v = String(value ?? "").trim();
+  if (at >= 0) return rows.map((a, i) => (i === at ? { ...a, value: v } : a));
+  return v ? [...rows, { label, value: v, game_id: "", is_display: false }] : rows;
+}
+
+// Keep each game's racing-name alias in step with the name set for that game.
+//
+// The editor shows ONE field per game, because a driver has one racing name per
+// game and two boxes that could disagree is the confusion this replaces. That
+// field is stored as the per-game display name (drivers/<id>.game_names); this
+// carries the same value onto the matching alias, so the two can never drift
+// apart no matter which of them an older screen or an import wrote.
+//
+// One rule, both directions: a game with a name row gets that name, and a game
+// whose row was removed gets an empty one — removing the row is an instruction
+// to stop showing that name, and leaving the alias behind would put it straight
+// back on the next edit.
+//
+// It never CREATES a row (the importer already matches per-game display names,
+// so a new one would buy nothing) and it never DELETES one: the label and its
+// game mapping survive an emptied value, so the row is still there to type back
+// into, and nothing else on the profile is touched.
+export function syncGameNameAliases(aliases, gameNames, games = []) {
+  const byId = Object.fromEntries(games.map(g => [g.id, g]));
+  const nameFor = Object.fromEntries(
+    (gameNames || []).filter(g => g?.game_id && g?.name).map(g => [g.game_id, String(g.name).trim()]));
+  return normalizeAliases(aliases).map(a => {
+    const game = byId[a.game_id];
+    if (!game || !isGameRacingName(a, game)) return a;
+    return { ...a, value: nameFor[a.game_id] || "" };
+  });
+}
