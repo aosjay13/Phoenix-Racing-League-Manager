@@ -85,7 +85,10 @@ export function AddDriverToRace({
   // profile yet. Anyone already in this race is left out.
   const matches = useMemo(() => {
     if (!q) return [];
-    const fromPool = searchDrivers(drivers, q, { games, limit: 8 })
+    // Staff screen: resolving who a driver is is its job, so it searches
+    // every name they answer to, iRacing's included. Unprivileged callers get
+    // the filtered set by default — see visibleNames in lib/driverMatch.js.
+    const fromPool = searchDrivers(drivers, q, { games, limit: 8, privileged: true })
       .filter(h => !taken(h.driver.name))
       .map(h => ({
         key: `d:${h.driver.id}`,

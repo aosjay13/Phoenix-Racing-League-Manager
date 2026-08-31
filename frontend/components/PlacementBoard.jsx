@@ -45,7 +45,10 @@ function DriverCard({ row, metric, buckets, currentKey, onMove, onDrag, canEdit 
       onDragEnd={() => onDrag(null)}>
       <div className="placement-card-head">
         <span className="placement-card-name">
-          {row.name || <em style={{ color: "var(--ink-2)" }}>Unnamed</em>}
+          {/* `display_name` is the name this night's game may show — the stored
+              `name` can be an iRacing real name, and a board for any other game
+              must not print it (see lib/iracingPrivacy.js). */}
+          {row.display_name || row.name || <em style={{ color: "var(--ink-2)" }}>Unnamed</em>}
           {row.number ? <span className="placement-card-number">#{row.number}</span> : null}
         </span>
         {canEdit && currentKey && (
@@ -64,7 +67,7 @@ function DriverCard({ row, metric, buckets, currentKey, onMove, onDrag, canEdit 
         // result — a board that only works with a mouse is a board half the
         // league can't use.
         <select className="placement-card-move" value={currentKey || ""}
-          aria-label={`Move ${row.name || "this driver"} to a division`}
+          aria-label={`Move ${row.display_name || row.name || "this driver"} to a division`}
           onChange={e => onMove(row.id, e.target.value)}>
           <option value="">Unplaced</option>
           {buckets.map(b => <option key={b.key} value={b.key}>{b.label}</option>)}

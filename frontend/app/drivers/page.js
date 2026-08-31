@@ -8,6 +8,7 @@ import { DriverPoolCreateModal } from "@/components/DriverPoolCreateModal";
 import { DriverEditModal } from "@/components/DriverEditModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Modal } from "@/components/Modal";
+import { iracingGameIds, PRIVATE_NAME, publicNameFor } from "@/lib/iracingPrivacy";
 
 // The global driver directory — the "Drivers" tab, and the only one every
 // visitor sees.
@@ -15,6 +16,7 @@ function DriversDirectory() {
   const { user, isAdmin } = useAuth();
   const [drivers, setDrivers] = useState(null);
   const [users, setUsers] = useState([]);
+  const [games, setGames] = useState([]);                  // to tell iRacing apart
   const [myDriverId, setMyDriverId] = useState(null);      // driver linked to me
   const [pendingIds, setPendingIds] = useState([]);        // driver ids I've requested
   const [claimBusy, setClaimBusy] = useState({});          // driver id -> true
@@ -51,12 +53,16 @@ function DriversDirectory() {
   // whether or not they've made an account. Join with the account directory so
   // linked drivers can show their profile photo and country.
   function load() {
-    const calls = [api("/api/drivers"), api("/api/users")];
+    // The games come along because the directory has to know which of them is
+    // iRacing before it can print a name — see below.
+    const calls = [api("/api/drivers"), api("/api/users"), api("/api/games").catch(() => [])];
     if (user) calls.push(api("/api/claim-requests").catch(() => []));
     return Promise.all(calls)
-      .then(([pool, accts, myReqs]) => {
+      .then(([pool, accts, gameList, myReqs]) => {
         setUsers(accts);
+        setGames(gameList || []);
         const byUid = Object.fromEntries(accts.map(u => [u.uid, u]));
+        const iracingIds = iracingGameIds(gameList || []);
         const rows = pool.map(d => {
           const account = d.user_id ? byUid[d.user_id] : null;
           return {
@@ -64,7 +70,12 @@ function DriversDirectory() {
             // The directory isn't tied to a game, so it shows the overall
             // display name: the driver's own override first, then a linked
             // account's name, then the pool name (see lib/driverNames.js).
-            name: d.display_name || account?.display_name || d.name,
+            //
+            // Never the iRacing one. This list is the app's front door — every
+            // visitor sees it — and a real name that iRacing requires must not
+            // be what a driver is called on a page that spans every game they
+            // race (see lib/iracingPrivacy.js).
+            name: publicNameFor(d, { accountName: account?.display_name, iracingIds }) || PRIVATE_NAME,
             pool_name: d.name,
             account_name: account?.display_name || "",
             display_name: d.display_name || "",
@@ -149,11 +160,12 @@ function DriversDirectory() {
   }
 
   function handleSaved(updated) {
+    const iracingIds = iracingGameIds(games);
     setDrivers(prev => (prev || [])
       .map(d => (d.id === updated.id
         // An explicit overall display name wins; without one, a linked driver
         // keeps its account display name and an unlinked one takes the new
-        // pool name.
+        // pool name — and, as on load, never the iRacing one.
         ? {
             ...d,
             pool_name: updated.name,
@@ -161,7 +173,10 @@ function DriversDirectory() {
             game_names: updated.game_names ?? d.game_names,
             notes: updated.notes ?? d.notes,
             aliases: updated.aliases ?? d.aliases,
-            name: (updated.display_name || "").trim() || d.account_name || updated.name,
+            name: publicNameFor(
+              { ...updated, aliases: updated.aliases ?? d.aliases, game_names: updated.game_names ?? d.game_names },
+              { accountName: d.account_name, iracingIds },
+            ) || PRIVATE_NAME,
           }
         : d))
       .sort((a, b) => String(a.name).localeCompare(String(b.name))));

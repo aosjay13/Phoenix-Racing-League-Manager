@@ -29,7 +29,15 @@ import {
 } from "@/lib/classFilter";
 import { seasonChampions } from "@/lib/champions";
 import { applySeasonTeams, teamsForEntries } from "@/lib/teams";
-import { bareResults, driverNames, indexBundle } from "@/lib/rawIndex";
+import { bareResults, driverNames, hiddenName, indexBundle } from "@/lib/rawIndex";
+
+// A champion, named the way this game's tables name them — and never with an
+// iRacing real name on a season that isn't iRacing's.
+function championName(bundle, entry, gameId) {
+  const stored = entry?.name ?? "Unknown";
+  if (!entry?.driver_id || !hiddenName(bundle, entry.driver_id, stored, gameId)) return stored;
+  return driverNames(bundle, [entry.driver_id], gameId)[entry.driver_id]?.overall || stored;
+}
 
 // `index` is an indexBundle() of a scope=season bundle; `seasonId` names the
 // season inside it. Returns { status, body } so a screen can render a 404 the
@@ -117,10 +125,20 @@ export function buildStandings(index, { seasonId, classId = "", className = "" }
   // its game_id; resolve every pooled driver's name for that game (see
   // lib/driverNames.js) and stamp it on the row — null when they haven't set
   // one, so the table falls back to the name on the entry.
+  //
+  // The name stored on the entry is checked here rather than trusted. It is a
+  // copy of whatever the driver's overall name was when the entry was written
+  // (see lib/driverSync.js), so for somebody who races iRacing it can BE their
+  // real name — which an AMS2 or BeamNG standings table may not print. When it
+  // is, the resolved generic name stands in; every other row is untouched.
   const gameId = season.game_id || null;
-  if (gameId) {
-    const names = driverNames(index.bundle, drivers.rows.map(r => r.driver_id), gameId);
-    for (const r of drivers.rows) r.game_alias = r.driver_id ? (names[r.driver_id]?.game ?? null) : null;
+  const names = driverNames(index.bundle, drivers.rows.map(r => r.driver_id), gameId);
+  for (const r of drivers.rows) {
+    const n = r.driver_id ? names[r.driver_id] : null;
+    r.game_alias = n?.game ?? null;
+    if (r.driver_id && hiddenName(index.bundle, r.driver_id, r.driver_name, gameId)) {
+      r.driver_name = n?.overall || r.driver_name;
+    }
   }
 
   // Tag every row with its class so the combined table can still show which
@@ -146,7 +164,7 @@ export function buildStandings(index, { seasonId, classId = "", className = "" }
   const champions = seasonChampions(season, allResults, allEntries, config, templatesById, classes)
     .map(c => ({
       ...c,
-      driver_name: entriesById[c.entry_id]?.name ?? "Unknown",
+      driver_name: championName(index.bundle, entriesById[c.entry_id], gameId),
       driver_id: entriesById[c.entry_id]?.driver_id ?? null,
       user_id: entriesById[c.entry_id]?.user_id ?? null,
     }));

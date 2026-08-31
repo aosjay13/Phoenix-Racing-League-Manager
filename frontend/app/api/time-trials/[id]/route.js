@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
+import { fetchShownNames } from "@/lib/driverNamesServer";
 import { withAdmin } from "@/lib/serverAuth";
 import {
   TRIAL_COLLECTION, TRIAL_ENTRY_COLLECTION,
@@ -65,13 +66,29 @@ export async function GET(request, { params }) {
     };
   });
 
+  // What to CALL each driver on this sheet, alongside the name stored on the
+  // entry. A placement night for an AMS2 or BeamNG series must not print the
+  // real name iRacing makes its members race under, and the name written onto
+  // an entry can be exactly that — it is whatever the sign-up or the queue
+  // import recorded. So the safe name travels as `display_name` and the stored
+  // one is left alone: the sheet saves `name` back verbatim (see
+  // TimeTrialScreen), and redacting the field it writes would lose data.
+  const named = await withDisplayNames(entries, season?.game_id || null);
+
   return NextResponse.json({
     trial,
     season,
     classes,
     placement_series,
-    entries,
+    entries: named,
   });
+}
+
+// Resolve the name each entry is shown under in this night's game, leaving the
+// stored `name` untouched. See lib/iracingPrivacy.js for the rule.
+async function withDisplayNames(entries, gameId) {
+  const shown = await fetchShownNames(entries, gameId);
+  return entries.map((e, i) => ({ ...e, display_name: shown[i] || e.name }));
 }
 
 const handlePATCH = withAdmin(async (request, { params }) => {

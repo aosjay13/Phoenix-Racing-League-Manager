@@ -46,7 +46,9 @@ function blankRow(seed = {}) {
   return {
     id: `new-${++tempSeq}`,
     stored: false,
-    name: "", number: "", driver_id: "", user_id: "", entry_id: "", signup_request_id: "",
+    // `name` is what a save writes back; `display_name` is what the sheet shows,
+    // which for a night that isn't iRacing's is never an iRacing real name.
+    name: "", display_name: "", number: "", driver_id: "", user_id: "", entry_id: "", signup_request_id: "",
     laps: [], assigned_class_id: "", assigned_series_id: "", notes: "",
     ...seed,
   };
@@ -813,7 +815,10 @@ export function TimeTrialScreen() {
                       style={{ marginTop: 0, padding: "2px 6px", color: "var(--accent-cyan)", fontWeight: 600 }}
                       title="Show every lap this driver submitted"
                       onClick={() => setExpanded(row.id)}>
-                      {row.name || <em style={{ color: "var(--ink-2)" }}>Unnamed</em>}
+                      {/* The stored name is what an edit writes back; this is
+                          what the sheet SHOWS, which for a night that isn't
+                          iRacing's is never an iRacing real name. */}
+                      {row.display_name || row.name || <em style={{ color: "var(--ink-2)" }}>Unnamed</em>}
                       {row.number ? <span style={{ color: "var(--ink-2)", marginLeft: 6 }}>#{row.number}</span> : null}
                     </button>
                   </div>
@@ -887,7 +892,7 @@ export function TimeTrialScreen() {
                 })}
                 {canEdit && (
                   <td>
-                    <button className="icon-btn icon-btn-danger" type="button" title={`Remove ${row.name || "this driver"}`}
+                    <button className="icon-btn icon-btn-danger" type="button" title={`Remove ${row.display_name || row.name || "this driver"}`}
                       onClick={() => removeRow(row.id)}>✕</button>
                   </td>
                 )}

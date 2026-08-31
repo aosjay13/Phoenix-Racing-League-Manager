@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
-import { getRequestLeagueId } from "@/lib/serverAuth";
-import { duplicateCheck, duplicateMessage, serializeMatches } from "@/lib/driverMatchServer";
+import { getRequestLeagueId, getRequestUser, isAdmin } from "@/lib/serverAuth";
+import { duplicateCheck, duplicateMessage, loadGameNames, serializeMatches } from "@/lib/driverMatchServer";
 import { makeCollectionRoutes, SPECS } from "@/lib/entityApi";
+import { db } from "@/lib/firebase";
+import { iracingGameIds, publicDriverDoc } from "@/lib/iracingPrivacy";
 
 // The global driver pool. Reads are the plain generated list route; creating
 // one goes past a duplicate check first.
@@ -31,13 +33,56 @@ async function refuseDuplicate(body, request) {
   if (!report) return null;
 
   return NextResponse.json({
-    error: duplicateMessage(report, name),
+    // Admin-only route (POST goes through withAdmin), so the refusal names the
+    // drivers it found as they are stored — resolving identity is the job it
+    // exists for. The player-facing sign-up and claim routes redact instead.
+    error: duplicateMessage(report, name, { privileged: true }),
     code: "possible-duplicate",
     duplicate_status: report.status,
-    matches: serializeMatches(report.matches),
+    matches: serializeMatches(report.matches, { privileged: true }),
   }, { status: 409 });
 }
 
 const routes = makeCollectionRoutes({ ...SPECS.drivers, guard: refuseDuplicate });
-export const GET = routes.GET;
 export const POST = routes.POST;
+
+// The pool as a reader may see it.
+//
+// This list is public — the Drivers directory is the one page every visitor
+// lands on — and a driver document carries every name the league holds for that
+// person, the real name iRacing forces them to race under included. Staff need
+// all of it: resolving who somebody is, merging a duplicate and editing a
+// profile are their jobs, and none of them can be done through a redacted name.
+// Nobody else does, so nobody else is sent it.
+//
+// A projection on the way out, and nothing more: the stored documents are
+// untouched, and the driver a redacted row describes is the same driver, with
+// the same id, the same links and the same stats behind them (see
+// publicDriverDoc in lib/iracingPrivacy.js).
+export async function GET(request) {
+  const response = await routes.GET(request);
+  const user = await getRequestUser(request);
+  const leagueId = getRequestLeagueId(request);
+  if (user && await isAdmin(user, leagueId)) return response;
+
+  const drivers = await response.json();
+  if (!Array.isArray(drivers)) return NextResponse.json(drivers, { status: response.status });
+
+  const iracingIds = iracingGameIds(await loadGameNames(leagueId));
+  const accountNames = await accountNamesFor(drivers);
+  return NextResponse.json(
+    drivers.map(d => publicDriverDoc(d, { iracingIds, accountName: d.user_id ? accountNames[d.user_id] : null })),
+    { status: response.status },
+  );
+}
+
+// The one field of a linked account that name resolution needs. Read here so a
+// redacted row falls back to the same name the directory would have shown.
+async function accountNamesFor(drivers) {
+  const uids = [...new Set(drivers.map(d => d.user_id).filter(Boolean))];
+  if (!uids.length) return {};
+  const docs = await Promise.all(uids.map(uid => db().collection("users").doc(uid).get()));
+  const out = {};
+  for (const u of docs) if (u.exists) out[u.id] = String(u.data().display_name ?? "").trim();
+  return out;
+}

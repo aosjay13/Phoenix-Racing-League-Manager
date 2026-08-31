@@ -22,7 +22,7 @@
 
 import { entryClassIds, orderClassIds } from "@/lib/classFilter";
 import { applySeasonTeams } from "@/lib/teams";
-import { driverNames, indexBundle } from "@/lib/rawIndex";
+import { driverNames, hiddenName, indexBundle } from "@/lib/rawIndex";
 
 // Refusals kept identical to the ones the route used to send, so a screen
 // reports a bad scope the same way. `index` is an indexBundle() of a bundle
@@ -155,8 +155,17 @@ export function buildRoster(index, { scope = "league", gameId = "", seriesId = "
     // A per-game name takes over; without one the row keeps the name it already
     // had — the per-series entry alias in a season/series roster, the profile
     // name in an aggregated one.
-    bucket.display_name = n?.game || bucket.name;
-    bucket.profile_name = n?.overall || bucket.name;
+    //
+    // Except when that stored name is the driver's iRacing real name and this
+    // roster isn't iRacing's. Entries carry a copy of whatever the driver's
+    // overall name was when they were written (see lib/driverSync.js), so on a
+    // BeamNG roster that copy is exactly the leak this app must not have: the
+    // resolved name — their gamertag, or the generic display name — stands in.
+    const stored = bucket.driver_id && hiddenName(index.bundle, bucket.driver_id, bucket.name, scopeGameId)
+      ? (n?.display || null)
+      : bucket.name;
+    bucket.display_name = n?.game || stored;
+    bucket.profile_name = n?.overall || stored;
     bucket.game_alias = n?.game ?? null;
   }
 

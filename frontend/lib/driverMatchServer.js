@@ -1,6 +1,6 @@
 import { db } from "@/lib/firebase";
 import { scopeByLeague } from "@/lib/serverAuth";
-import { duplicateReport, matchReason } from "@/lib/driverMatch";
+import { duplicateReport, matchedName, matchReason } from "@/lib/driverMatch";
 
 // Server-side half of the duplicate-driver rules (lib/driverMatch.js): the two
 // reads the pure matcher needs, and the shape a refusal takes on the wire.
@@ -28,15 +28,19 @@ export async function loadGameNames(leagueId) {
 
 // The matches, trimmed to what a client needs to draw a "did you mean one of
 // these?" prompt: who, why, and how sure.
-export function serializeMatches(matches = []) {
+// `privileged` says whether the caller may see a driver's iRacing real name.
+// Admin screens (the duplicate prompt behind "＋ New Driver") may; a player
+// filling in a sign-up may not, and gets the safe name and a reason that
+// quotes nothing — see matchReason in lib/driverMatch.js.
+export function serializeMatches(matches = [], { privileged = false } = {}) {
   return matches.map(m => ({
     driver_id: m.driver_id,
-    name: m.name,
+    name: matchedName(m, privileged),
     user_id: m.user_id || "",
     confidence: m.confidence,
     score: Math.round(m.score * 100) / 100,
-    via: m.via,
-    reason: matchReason(m),
+    via: privileged || !m.via?.iracing ? m.via : { ...m.via, value: "", label: "a name already on file" },
+    reason: matchReason(m, { privileged }),
   }));
 }
 
@@ -52,11 +56,11 @@ export async function duplicateCheck({ name, user_id, exclude_id, leagueId }) {
 // What a refused create says. Deliberately names the driver it found and the
 // name that gave them away — "there's already a driver called that" was the
 // old message, and it couldn't explain a clash through a PSN username at all.
-export function duplicateMessage(report, typedName = "") {
+export function duplicateMessage(report, typedName = "", { privileged = false } = {}) {
   const name = String(typedName ?? "").trim() || "that driver";
   const lead = report.matches
     .slice(0, 3)
-    .map(m => `${m.name} (${matchReason(m)})`)
+    .map(m => `${matchedName(m, privileged)} (${matchReason(m, { privileged })})`)
     .join(", ");
   if (report.status === "linked") {
     return `“${name}” is already in the app as ${lead}. Add them from the driver list instead of creating a second profile — or confirm you really do mean a new driver.`;

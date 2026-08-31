@@ -50,7 +50,9 @@ export function AddDriverToTrial({
     const seen = new Set();
     const out = [];
 
-    for (const hit of searchDrivers(drivers, q, { games, limit: 8 })) {
+    // Staff screen — searches every name, iRacing's included (see
+    // visibleNames in lib/driverMatch.js).
+    for (const hit of searchDrivers(drivers, q, { games, limit: 8, privileged: true })) {
       const known = byDriverId.get(hit.driver.id) || byName.get(String(hit.driver.name || "").trim().toLowerCase());
       const candidate = {
         ...(known || {}),

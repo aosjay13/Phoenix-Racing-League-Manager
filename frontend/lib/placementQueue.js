@@ -125,6 +125,10 @@ export function queueRowToSheetRow(row = {}) {
   const person = queuePerson(row);
   return {
     name: person.name,
+    // What the sheet and the board SHOW, which for a night that isn't iRacing's
+    // is never an iRacing real name (see lib/iracingPrivacy.js). The stored
+    // `name` above is untouched — it is what a save writes back.
+    display_name: row.display_name || person.name,
     driver_id: person.driver_id,
     user_id: person.user_id,
     number: row.number ?? "",
@@ -153,10 +157,10 @@ export function importFromQueuePlan(queueRows = [], sheetRows = [], dest = {}) {
   for (const row of matchingQueueRows(queueRows, dest)) {
     const keys = queueIdentityKeys(row);
     if (!keys.length) continue;
-    if (keys.some(k => onSheet.has(k))) { already.push(row.name || "Driver"); continue; }
+    if (keys.some(k => onSheet.has(k))) { already.push(row.display_name || row.name || "Driver"); continue; }
     // Two registrations for one person (two seasons, both being placed tonight)
     // are one driver on the sheet.
-    if (keys.some(k => claimed.has(k))) { already.push(row.name || "Driver"); continue; }
+    if (keys.some(k => claimed.has(k))) { already.push(row.display_name || row.name || "Driver"); continue; }
     for (const k of keys) claimed.add(k);
     add.push(queueRowToSheetRow(row));
   }

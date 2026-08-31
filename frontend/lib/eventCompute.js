@@ -22,7 +22,7 @@ import { classOfResult, racePerClassResults } from "@/lib/classFilter";
 import { isBracketDoc, isBracketEvent } from "@/lib/bracketRacing";
 import { isBangerDoc, isBangerEvent } from "@/lib/bangerRacing";
 import { applySeasonTeams } from "@/lib/teams";
-import { bareResults, driverNames, indexBundle } from "@/lib/rawIndex";
+import { bareResults, driverNames, hiddenName, indexBundle } from "@/lib/rawIndex";
 
 // Full detail for one event: a dedicated qualifying session plus every race
 // session (including heat/consolation/feature sessions for heat-format
@@ -62,12 +62,19 @@ export function buildEvent(index, { raceId }) {
   // so resolve the name each driver is shown under in that game (see
   // lib/driverNames.js) and stamp it on every result row — null when they've set
   // none, so the client falls back to the name on the entry.
+  //
+  // The entry's own stored name is checked before it is trusted as the fallback:
+  // it is a copy of the driver's overall name (see lib/driverSync.js), so for an
+  // iRacing member it can be their real name, which a result sheet for any other
+  // game may not show. Where it is, the resolved generic name replaces it.
   const gameId = season?.game_id || null;
-  let aliasByDriver = {};
-  if (gameId) {
-    const names = driverNames(index.bundle, all.map(r => entriesById[r.entry_id]?.driver_id), gameId);
-    aliasByDriver = Object.fromEntries(Object.entries(names).map(([id, n]) => [id, n.game]));
-  }
+  const nameByDriver = driverNames(index.bundle, all.map(r => entriesById[r.entry_id]?.driver_id), gameId);
+  const aliasByDriver = Object.fromEntries(Object.entries(nameByDriver).map(([id, n]) => [id, n.game]));
+  const shownName = entry => {
+    const stored = entry.name ?? "Unknown";
+    if (!entry.driver_id || !hiddenName(index.bundle, entry.driver_id, stored, gameId)) return stored;
+    return nameByDriver[entry.driver_id]?.overall || stored;
+  };
 
   // The class each result counts toward, resolved once here (stamped class, else
   // the driver's roster class) so the client can group a split event's sessions
@@ -77,7 +84,7 @@ export function buildEvent(index, { raceId }) {
     return {
       ...r,
       class_id: classOfResult(r, entriesById) || "",
-      driver_name: entry.name ?? "Unknown",
+      driver_name: shownName(entry),
       driver_number: entry.number ?? null,
       driver_id: entry.driver_id ?? null,
       user_id: entry.user_id ?? null,

@@ -10,6 +10,7 @@ import { api } from "@/lib/api";
 import { buildCareerProfile } from "@/lib/careerCompute";
 import { driverGameRatings } from "@/lib/skillRatingsCompute";
 import { gameNameFor } from "@/lib/driverNames";
+import { racesOnlyIracing } from "@/lib/iracingPrivacy";
 import { formatStat, isMainEvent } from "@/lib/standings";
 
 // The full name of a championship: the game it was played on, the series and
@@ -94,9 +95,18 @@ export function DriverProfileScreen() {
     // instead of repeating the overall name.
     const driverDoc = { game_names: identity.game_names || [] };
     for (const g of career.by_game) g.driver_game_name = gameNameFor(driverDoc, g.game_id);
+    // iRacing makes its members race under their legal name, so that name is
+    // shown here only where it is already on show: inside iRacing's own
+    // section, and — for somebody who races iRacing and nothing else — in the
+    // header, since then it is simply their name and hiding it would leave the
+    // page calling them nobody. The games come from their RESULTS, which is
+    // what "the only game they play" means.
+    const iracingIds = new Set(identity.iracing_game_ids || []);
+    for (const g of career.by_game) g.iracing = iracingIds.has(g.game_id);
     return {
       ...identity,
       ...career,
+      iracing_only: racesOnlyIracing(career.by_game.map(g => g.game_id), iracingIds),
       skill_ratings_by_game: driverGameRatings(index, identity.driver_id, career.by_game),
     };
   }, [identity, index]);
@@ -137,7 +147,18 @@ export function DriverProfileScreen() {
   if (error || bundleError) return <div className="empty-state"><span className="empty-state-icon">🏎</span><p>{error || bundleError}</p></div>;
   if (!data) return <div className="skeleton" style={{ height: 280 }} />;
 
-  const { profile, all_games, by_game, by_track = [], race_history = [], titles_detail = [], linked, skill_ratings_by_game = [], aliases = [], former_names = [] } = data;
+  const { profile, all_games, by_game, by_track = [], race_history = [], titles_detail = [], linked, skill_ratings_by_game = [], aliases = [], former_names = [], iracing_only = false } = data;
+  // The name at the top of the page. Their generic one, always — unless iRacing
+  // is the whole of their racing, in which case their iRacing name IS their
+  // name and there is no second identity left to protect.
+  const headerName = (iracing_only && profile.iracing_name) || profile.display_name;
+  // The connected accounts this profile shows globally, and the iRacing ones it
+  // doesn't. An iRacing identity is listed in iRacing's own section further
+  // down — never in the page-level Aliases list, where it would sit next to the
+  // gamertags it exists to be kept apart from. A driver who races only iRacing
+  // has no such split, so they keep the one list they always had.
+  const publicAliases = iracing_only ? aliases : aliases.filter(a => !a.iracing);
+  const iracingAliases = iracing_only ? [] : aliases.filter(a => a.iracing);
   const selectedGame = gameFilter === "all" ? null : by_game.find(g => g.game_id === gameFilter);
   const stats = gameFilter === "all" ? all_games : selectedGame?.stats ?? all_games;
   // Race History lists the races, not everything that ran on the way to them:
@@ -149,18 +170,21 @@ export function DriverProfileScreen() {
   const crowns = crownRows(titles_detail);
   // Games where this driver is shown under a different name than their profile
   // one — the names that appear on those games' standings, results and stats.
-  const gameNames = by_game.filter(g => g.driver_game_name && g.driver_game_name !== profile.display_name);
+  // iRacing is left out: its name has its own section below, and the point of
+  // that section is that this line isn't where it goes.
+  const gameNames = by_game.filter(g =>
+    g.driver_game_name && g.driver_game_name !== headerName && !(g.iracing && !iracing_only));
 
   return (
     <section>
       <div className="hero" style={{ display: "flex", gap: 24, alignItems: "center", flexWrap: "wrap" }}>
         {profile.photo_url
           ? <img src={profile.photo_url} alt="" className="avatar avatar-xl" />
-          : <span className="avatar avatar-xl avatar-fallback">{String(profile.display_name || "?")[0]?.toUpperCase()}</span>}
+          : <span className="avatar avatar-xl avatar-fallback">{String(headerName || "?")[0]?.toUpperCase()}</span>}
         <div style={{ flex: 1, minWidth: 220 }}>
           <div className="page-title" style={{ marginBottom: 2 }}>
             <h2>
-              {profile.display_name}
+              {headerName}
               {profile.number != null && <span style={{ color: "var(--accent-gold)", marginLeft: 10 }}>#{profile.number}</span>}
             </h2>
           </div>
@@ -252,12 +276,12 @@ export function DriverProfileScreen() {
         </div>
       )}
 
-      {aliases.length > 0 && (() => {
+      {publicAliases.length > 0 && (() => {
         // For each game with 2+ mapped aliases, work out which one is the
         // on-track display name (the one flagged is_display, else the first) so
         // we can mark it — matching gameAlias() on the server.
         const byGame = {};
-        for (const a of aliases) if (a.game_id) (byGame[a.game_id] ??= []).push(a);
+        for (const a of publicAliases) if (a.game_id) (byGame[a.game_id] ??= []).push(a);
         const displayFor = {};
         for (const [gid, list] of Object.entries(byGame)) {
           displayFor[gid] = (list.find(a => a.is_display) || list[0]);
@@ -269,7 +293,7 @@ export function DriverProfileScreen() {
           </div>
           <div className="form-card" style={{ marginTop: 0 }}>
             <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
-              {aliases.map((a, i) => {
+              {publicAliases.map((a, i) => {
                 const isDisplay = a.game_id && byGame[a.game_id].length > 1 && displayFor[a.game_id] === a;
                 return (
                 <li key={i} style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
@@ -315,7 +339,30 @@ export function DriverProfileScreen() {
             </div>
           </div>
 
-          {selectedGame?.driver_game_name && selectedGame.driver_game_name !== profile.display_name && (
+          {selectedGame?.iracing ? (
+            /* iRacing's own section — the one place on this page that names a
+               driver the way iRacing makes them name themselves. It is shown
+               when iRacing's stats are, and nowhere else: their real name has
+               no business heading a profile that also has AMS2 and BeamNG on
+               it. See lib/iracingPrivacy.js. */
+            (selectedGame.driver_game_name || profile.iracing_name || iracingAliases.length > 0) && (
+              <div className="form-card" style={{ marginTop: 0, marginBottom: 14 }}>
+                <p style={{ margin: 0, color: "var(--ink-1)", fontSize: "0.85rem" }}>
+                  Races {selectedGame.game_name} as{" "}
+                  <strong>{selectedGame.driver_game_name || profile.iracing_name}</strong>.
+                </p>
+                {iracingAliases.map((a, i) => (
+                  <p key={i} style={{ margin: "6px 0 0", color: "var(--ink-2)", fontSize: "0.82rem" }}>
+                    {a.label}: <strong style={{ color: "var(--ink-1)" }}>{a.value}</strong>
+                  </p>
+                ))}
+                <p style={{ margin: "8px 0 0", color: "var(--ink-2)", fontSize: "0.78rem" }}>
+                  {selectedGame.game_name} requires a real name, so it is shown here only — every
+                  other roster, result and standings table names this driver by their display name.
+                </p>
+              </div>
+            )
+          ) : selectedGame?.driver_game_name && selectedGame.driver_game_name !== headerName && (
             <p style={{ marginTop: 0, marginBottom: 12, color: "var(--ink-2)", fontSize: "0.85rem" }}>
               Shown as <strong>{selectedGame.driver_game_name}</strong> in {selectedGame.game_name}.
             </p>

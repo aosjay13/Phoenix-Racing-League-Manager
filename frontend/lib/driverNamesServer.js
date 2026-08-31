@@ -1,5 +1,7 @@
 import { db } from "@/lib/firebase";
-import { gameNameFor, overallNameFor } from "@/lib/driverNames";
+import {
+  contextNames, iracingGameIds, isIracingGameId, isIracingIdentity,
+} from "@/lib/iracingPrivacy";
 
 // Server-side name resolution: the database half of lib/driverNames.js, which
 // holds the pure rules. Kept apart so the edit modal (a client component) can
@@ -17,6 +19,13 @@ export async function fetchNameResolver(driverIds) {
   const byId = {};
   const accountName = {};
 
+  // Which of the league's games are iRacing, so a name that iRacing forces to
+  // be a real one is resolved for iRacing pages and for nothing else (see
+  // lib/iracingPrivacy.js). One read of a collection that holds a handful of
+  // documents.
+  const gamesSnap = await db().collection("games").get();
+  const iracingIds = iracingGameIds(gamesSnap.docs.map(d => ({ id: d.id, name: d.data().name })));
+
   if (ids.length) {
     const docs = await Promise.all(ids.map(id => db().collection("drivers").doc(id).get()));
     for (const d of docs) if (d.exists) byId[d.id] = { id: d.id, ...d.data() };
@@ -29,12 +38,42 @@ export async function fetchNameResolver(driverIds) {
     }
   }
 
-  const overall = id => {
+  // The server has no cheap way to ask "does this driver race in iRacing and
+  // nowhere else?" — that needs their entries, which none of these callers
+  // reads — so it never claims they do. The effect is the safe one: a global
+  // name resolved here is the generic one. The Driver Profile, which DOES know,
+  // makes that call itself (see app/api/drivers/[id]).
+  const namesFor = (id, gameId) => {
     const d = byId[id];
-    return d ? overallNameFor(d, d.user_id ? accountName[d.user_id] : null) : null;
+    if (!d) return { overall: null, game: null, display: null };
+    return contextNames(d, { gameId, iracingIds, accountName: d.user_id ? accountName[d.user_id] : null });
   };
-  const forGame = (id, gameId) => (byId[id] ? gameNameFor(byId[id], gameId) : null);
-  return { ids: Object.keys(byId), overall, forGame, display: (id, gameId) => forGame(id, gameId) || overall(id) };
+  return {
+    ids: Object.keys(byId),
+    namesFor,
+    overall: id => namesFor(id, null).overall,
+    forGame: (id, gameId) => namesFor(id, gameId).game,
+    display: (id, gameId) => namesFor(id, gameId).display,
+    // Would printing this stored string expose the driver's iRacing name here?
+    // For the documents that carry a denormalized copy of a name — a roster
+    // entry, a time-trial row — which is left in place and only stood in for
+    // when it is one this context may not show.
+    hides: (id, value, gameId) =>
+      !!byId[id] && !isIracingGameId(gameId, iracingIds) && isIracingIdentity(byId[id], value, iracingIds),
+  };
+}
+
+// The name to SHOW for each of a set of rows that carry their own stored name
+// ({ driver_id, name }), in one game's context. The stored name stands unless
+// it is the driver's iRacing one and this game is not iRacing, in which case
+// the resolved generic name takes its place. Nothing is written back.
+export async function fetchShownNames(rows = [], gameId = null) {
+  const r = await fetchNameResolver(rows.map(row => row?.driver_id));
+  return rows.map(row => {
+    const stored = row?.name ?? "";
+    if (!row?.driver_id || !r.hides(row.driver_id, stored, gameId)) return stored;
+    return r.display(row.driver_id, gameId) || stored;
+  });
 }
 
 // Resolve display names for a set of pool drivers in one round trip.
@@ -46,10 +85,7 @@ export async function fetchNameResolver(driverIds) {
 export async function fetchDriverNames(driverIds, gameId = null) {
   const r = await fetchNameResolver(driverIds);
   const out = {};
-  for (const id of r.ids) {
-    const game = r.forGame(id, gameId);
-    out[id] = { overall: r.overall(id), game, display: game || r.overall(id) };
-  }
+  for (const id of r.ids) out[id] = r.namesFor(id, gameId);
   return out;
 }
 

@@ -3,6 +3,7 @@ import { getRequestLeagueId, withAdmin } from "@/lib/serverAuth";
 import { fetchTrial } from "@/lib/timeTrialsServer";
 import { hasDestinations, matchingQueueRows, trialDestinations } from "@/lib/placementQueue";
 import { fetchPlacementQueue, placementQueueRow } from "@/lib/placementQueueServer";
+import { fetchNameResolver } from "@/lib/driverNamesServer";
 
 export const dynamic = "force-dynamic";
 
@@ -40,8 +41,22 @@ export const GET = withAdmin(async (request, { params }) => {
 
   const queue = await fetchPlacementQueue(getRequestLeagueId(request));
   const rows = matchingQueueRows(queue, destinations);
+
+  // Each waiting driver, named the way the game they signed up for names them.
+  // A queue row carries whatever the sign-up recorded, which for an iRacing
+  // sign-up is the real name iRacing requires — and these rows go straight onto
+  // a placement sheet that anyone can read. The stored name is left as it is;
+  // `display_name` is what the board shows. See lib/iracingPrivacy.js.
+  const named = rows.map(placementQueueRow);
+  const resolver = await fetchNameResolver(named.map(r => r.driver_id));
+  for (const row of named) {
+    row.display_name = row.driver_id && resolver.hides(row.driver_id, row.name, row.game_id)
+      ? (resolver.display(row.driver_id, row.game_id) || row.name)
+      : row.name;
+  }
+
   return NextResponse.json({
-    rows: rows.map(placementQueueRow),
+    rows: named,
     destinations,
     // How many are waiting league-wide, so the screen can say "4 of 27 are for
     // this session's divisions" rather than leaving an admin wondering where

@@ -7,7 +7,7 @@ import {
   missingRequiredAliases,
 } from "@/lib/signupRequest";
 import { seasonAcceptsSignups } from "@/lib/carSelection";
-import { matchReason } from "@/lib/driverMatch";
+import { matchedName, matchReason } from "@/lib/driverMatch";
 import { duplicateCheck } from "@/lib/driverMatchServer";
 import { withStatsRefresh } from "@/lib/statsCache";
 
@@ -116,7 +116,12 @@ const handlePOST = withUser(async (request, ctx, user, leagueId) => {
   if (report && report.status !== "possible") {
     const clash = report.matches[0];
     return NextResponse.json({
-      error: `There's already a driver called “${clash.name}”${clash.via?.source === "name" ? "" : ` (${matchReason(clash)})`}. If that's you, ask to claim that profile instead so your race history comes with it.`,
+      // Named the way a stranger may hear it. The clash can be through an
+      // iRacing real name — the app matches on those, or one person becomes two
+      // profiles — but the refusal is read by whoever typed the form, so it
+      // quotes the safe name and says nothing about which field matched (see
+      // matchedName / matchReason in lib/driverMatch.js).
+      error: `There's already a driver called “${matchedName(clash)}”${clash.via?.source === "name" && !clash.via?.iracing ? "" : ` (${matchReason(clash)})`}. If that's you, ask to claim that profile instead so your race history comes with it.`,
       code: "driver-exists",
       driver_id: clash.driver_id,
     }, { status: 409 });

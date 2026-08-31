@@ -22,7 +22,11 @@ import { duplicateReport, duplicateSummary, findDriverMatches, matchReason } fro
 // the caller can offer the drivers it found (see DuplicateDriverPrompt).
 export class DuplicateDriverError extends Error {
   constructor(report, name = "") {
-    super(duplicateSummary(report, name));
+    // Every screen that raises this one is behind the admin gate (the roster,
+    // the race-entry box, the results importer), and resolving who a driver IS
+    // is exactly their job — so the summary names them as stored, iRacing name
+    // included. The player-facing paths go through the API, which redacts.
+    super(duplicateSummary(report, name, { privileged: true }));
     this.name = "DuplicateDriverError";
     this.report = report;
     this.matches = report?.matches ?? [];

@@ -6,7 +6,10 @@ import { linkedDriver } from "@/lib/carSelectionServer";
 import { syncEntryNamesForDriver } from "@/lib/driverSync";
 import { normalizeAliases } from "@/lib/aliases";
 import { publicUserFields } from "@/lib/userPrivacy";
-import { normalizeGameNames, overallNameFor } from "@/lib/driverNames";
+import { normalizeGameNames } from "@/lib/driverNames";
+import {
+  iracingGameIds, iracingIdentityValues, iracingNameFor, isIracingIdentity, publicNameFor,
+} from "@/lib/iracingPrivacy";
 
 const routes = makeDocRoutes(SPECS.drivers);
 export const DELETE = routes.DELETE;
@@ -119,10 +122,27 @@ export async function GET(request, { params }) {
     if (u.exists) account = publicUserFields(u.data());
   }
 
-  // The overall display name: the driver's own override first, then the linked
-  // account's name, then the pool name (see lib/driverNames.js).
+  // Which of this league's games are iRacing, so the one name this profile may
+  // not lead with can be told apart from every other name it holds.
+  const gamesSnap = await db().collection("games").get();
+  const games = gamesSnap.docs.map(d => ({ id: d.id, name: d.data().name }));
+  const gameNameById = Object.fromEntries(games.map(g => [g.id, g.name]));
+  const iracingIds = iracingGameIds(games);
+
+  // The overall display name — and here it is deliberately NOT the raw one.
+  //
+  // iRacing makes its members race under their legal name, so for a driver who
+  // also races anything else, that name heading their global profile is exactly
+  // the exposure this app has to prevent. So the header gets the generic name
+  // (the admin-set display name, the linked account's, a gamertag), the iRacing
+  // one travels separately as `iracing_name`, and the browser — which knows
+  // from their results whether iRacing is the ONLY game they play — decides
+  // whether the header may show it after all. See app/drivers/[uid].
   const profile = {
-    display_name: overallNameFor(driver, account?.display_name) || "Unknown Driver",
+    display_name: publicNameFor(driver, { accountName: account?.display_name, iracingIds }) || "Unknown Driver",
+    // Their name on iRacing, for the profile's iRacing section — and for the
+    // header when they race nowhere else, since then it is simply their name.
+    iracing_name: iracingNameFor(driver, iracingIds),
     photo_url: account?.photo_url ?? null,
     country: account?.country ?? null,
     bio: account?.bio ?? null,
@@ -133,25 +153,37 @@ export async function GET(request, { params }) {
   // optionally mapped to a game. Decorate every mapped alias with its game name
   // so the profile can label it without a second round trip. Only aliases that
   // carry an actual username are shown.
-  let aliases = normalizeAliases(driver?.aliases).filter(a => a.value);
-  if (aliases.some(a => a.game_id)) {
-    const gamesSnap = await db().collection("games").get();
-    const gameNameById = Object.fromEntries(gamesSnap.docs.map(d => [d.id, d.data().name]));
-    aliases = aliases.map(a => ({ ...a, game_name: a.game_id ? (gameNameById[a.game_id] ?? null) : null }));
-  } else {
-    aliases = aliases.map(a => ({ ...a, game_name: null }));
-  }
+  //
+  // Each one also says whether it is an IRACING identity — the real name, the
+  // customer id — because those belong in the profile's iRacing section and
+  // nowhere else on the page (see the Aliases list in app/drivers/[uid]).
+  const hidden = new Set(iracingIdentityValues(driver, iracingIds));
+  const aliases = normalizeAliases(driver?.aliases)
+    .filter(a => a.value)
+    .map(a => ({
+      ...a,
+      game_name: a.game_id ? (gameNameById[a.game_id] ?? null) : null,
+      iracing: hidden.has(a.value),
+    }));
 
   return NextResponse.json({
     driver_id: driverId,
     uid: linkedUserId,
     linked: !!(linkedUserId && account),
     aliases,
-    former_names: Array.isArray(driver?.merged_names) ? driver.merged_names : [],
+    // Names a merge folded into this profile. A duplicate created by an iRacing
+    // results import carries the real name, and "Also known as" sits in the
+    // header — so any former name that is the iRacing one is dropped here
+    // rather than published beside the generic one.
+    former_names: (Array.isArray(driver?.merged_names) ? driver.merged_names : [])
+      .filter(n => !isIracingIdentity(driver, n, iracingIds)),
     // The per-game display names, so the career breakdown the client computes
     // can label each game with the name this driver races under THERE ("racing
     // as Ryanbirdman") rather than repeating the overall one.
     game_names: normalizeGameNames(driver?.game_names),
+    // The games that make this profile's iRacing name showable, so the browser
+    // can answer "is iRacing all they play?" the same way the server would.
+    iracing_game_ids: [...iracingIds],
     profile,
   });
 }

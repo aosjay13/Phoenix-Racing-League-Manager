@@ -25,6 +25,10 @@
 
 import { normalizeAliases } from "@/lib/aliases";
 import { normalizeGameNames } from "@/lib/driverNames";
+import {
+  iracingGameIds, iracingIdentityValues, isIracingGameId, PRIVATE_NAME, publicNameFor,
+} from "@/lib/iracingPrivacy";
+import { compactName, normalizeName } from "@/lib/nameKey";
 import { nameSimilarity } from "@/lib/resultsImport";
 
 // How close two names have to be before we say something.
@@ -45,24 +49,11 @@ import { nameSimilarity } from "@/lib/resultsImport";
 export const CONFIDENT_SCORE = 0.82;
 export const POSSIBLE_SCORE = 0.65;
 
-// Comparison form of a name: accents folded, case dropped, punctuation turned
-// into single spaces. "Müller" === "muller", "Doe,  Jane" === "doe jane".
-export function normalizeName(value) {
-  return String(value ?? "")
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-
-// The same, minus the spaces — so "Ryan_Birdman", "ryan birdman" and
-// "RyanBirdman" are one name. Gamertags are written all three ways by the same
-// person on the same day, and treating them as different people is exactly the
-// duplicate this module exists to stop.
-export function compactName(value) {
-  return normalizeName(value).replace(/ /g, "");
-}
+// Comparison forms of a name — accents folded, case dropped, punctuation
+// gone. They live in lib/nameKey.js so the name-privacy rules can share them
+// without the two modules importing each other, and are re-exported here
+// because this is where every caller has always found them.
+export { compactName, normalizeName };
 
 // Names carried over from drivers merged INTO this one (see
 // /api/admin/drivers/merge). Somebody who has already been cleaned up once must
@@ -85,16 +76,28 @@ function formerNames(driver) {
 // `games` optionally maps game_id -> game name, so a match can be explained as
 // "their BeamNG name" rather than "an in-game name". Duplicated values collapse
 // onto the first (most authoritative) source that carries them.
+//
+// Each record also says whether the name is an IRACING one (`iracing: true`) —
+// their real name, which iRacing requires and nowhere else may show. Nothing is
+// dropped here: matching on it is exactly how the app stops one person becoming
+// two profiles, so the record stays and the callers that put a name in front of
+// somebody decide whether they may see it (see `visibleNames` below and
+// lib/iracingPrivacy.js).
 export function driverNames(driver, games = {}) {
   const out = [];
   const seen = new Set();
+  // Flagged by VALUE rather than by which field it was found in. A profile
+  // created by an iRacing results import carries the real name as its pool
+  // name, and a merge folds it in as a former name — so "is this the iRacing
+  // one?" is a question about the string, not about where it is stored.
+  const iracing = new Set(iracingIdentityValues(driver, iracingGameIds(games)).map(compactName));
   const push = (value, source, label, game_id = "") => {
     const v = String(value ?? "").trim();
     if (!v) return;
     const key = compactName(v);
     if (!key || seen.has(key)) return;
     seen.add(key);
-    out.push({ value: v, source, label, game_id });
+    out.push({ value: v, source, label, game_id, iracing: iracing.has(key) });
   };
 
   push(driver?.name, "name", "profile name");
@@ -107,6 +110,21 @@ export function driverNames(driver, games = {}) {
   }
   for (const n of formerNames(driver)) push(n, "former_name", "former name");
   return out;
+}
+
+// The subset of those names a given context may put in front of somebody.
+//
+// A search box is a disclosure: typing a name and being handed a driver tells
+// you that driver answers to it. So outside an iRacing context an iRacing name
+// matches nothing — searching a real name must not surface the BeamNG profile
+// standing behind it. `gameId` is the game being searched within (an iRacing
+// one lifts the restriction, since the name is already on show there) and
+// `privileged` is for the staff screens whose whole job is resolving identity:
+// the merge tool, the results importer, the roster editor.
+export function visibleNames(driver, { games = {}, gameId = null, privileged = false } = {}) {
+  const names = driverNames(driver, games);
+  if (privileged || isIracingGameId(gameId, iracingGameIds(games))) return names;
+  return names.filter(rec => !rec.iracing);
 }
 
 // How well one query ({ name, user_id }) matches ONE driver, and through which
@@ -149,6 +167,7 @@ export function scoreDriver(query, driver, { games = {} } = {}) {
 // near-certain typo of one) or "possible" (close enough to check).
 export function findDriverMatches(pool = [], query = {}, { games = {}, limit = 6, floor = POSSIBLE_SCORE } = {}) {
   const exclude = String(query?.exclude_id ?? "");
+  const iracingIds = iracingGameIds(games);
   const found = [];
   for (const driver of pool) {
     if (!driver || driver.id === undefined || String(driver.id) === exclude) continue;
@@ -157,6 +176,10 @@ export function findDriverMatches(pool = [], query = {}, { games = {}, limit = 6
     found.push({
       driver_id: driver.id,
       name: driver.name,
+      // The same driver, named in a way that is safe to put in front of
+      // anybody: a refusal shown to a player must not answer "who did I
+      // clash with?" with somebody's real iRacing name.
+      public_name: publicNameFor(driver, { iracingIds }) || PRIVATE_NAME,
       user_id: driver.user_id || "",
       score: hit.score,
       via: hit.via,
@@ -179,13 +202,13 @@ export function findDriverMatches(pool = [], query = {}, { games = {}, limit = 6
 // "Ryan Maynard · PSN Username “Ryan_Bird_77”" rather than a name the admin
 // didn't type and can't place. Ranked so the profile name wins over an alias,
 // and the start of a name wins over its middle.
-export function searchDrivers(pool = [], text = "", { games = {}, limit = 8 } = {}) {
+export function searchDrivers(pool = [], text = "", { games = {}, limit = 8, gameId = null, privileged = false } = {}) {
   const needle = compactName(text);
   if (!needle) return [];
   const hits = [];
   for (const driver of pool) {
     let best = null;
-    for (const rec of driverNames(driver, games)) {
+    for (const rec of visibleNames(driver, { games, gameId, privileged })) {
       const hay = compactName(rec.value);
       if (!hay.includes(needle)) continue;
       const rank = (rec.source === "name" ? 0 : 1) + (hay.startsWith(needle) ? 0 : 2);
@@ -237,8 +260,14 @@ export function duplicateReport(pool = [], query = {}, opts = {}) {
 // "PSN Username “Ryanbirdman”", "their BeamNG name “Ryanbirdman”". Written to
 // sit after the driver's name, so the row reads
 // "Ryan Maynard — PSN Username “Ryanbirdman”".
-export function matchReason(match) {
+//
+// A match found through an iRacing name says so only to a privileged caller.
+// The reason is a disclosure in its own right — "their iRacing Name is “Ryan
+// Maynard”" hands over the real name and the fact that it belongs to this
+// profile — so anywhere a player can read it, it degrades to naming no name.
+export function matchReason(match, { privileged = false } = {}) {
   if (!match?.via) return "";
+  if (match.via.iracing && !privileged) return "a name already on file";
   const { source, label, value } = match.via;
   const quoted = `“${value}”`;
   const exact = match.confidence === "exact";
@@ -258,13 +287,21 @@ export function matchReason(match) {
   }
 }
 
+// What to call a matched driver in a message. Staff screens name them as they
+// are stored; anywhere a player can read it uses the name that is safe to show
+// (see findDriverMatches), so a clash never announces somebody's real name.
+export function matchedName(match, privileged = false) {
+  if (!match) return "that driver";
+  return (privileged ? match.name : match.public_name || match.name) || PRIVATE_NAME;
+}
+
 // One line for a whole verdict — the sentence a toast or a warning panel leads
 // with. Deliberately says what WILL happen, not just what was found.
-export function duplicateSummary(report, typedName = "") {
+export function duplicateSummary(report, typedName = "", { privileged = false } = {}) {
   const name = String(typedName ?? "").trim() || "That driver";
   if (!report || report.status === "none") return "";
   if (report.status === "linked") {
-    return `“${name}” is already in the app as ${report.match.name} (${matchReason(report.match)}).`;
+    return `“${name}” is already in the app as ${matchedName(report.match, privileged)} (${matchReason(report.match, { privileged })}).`;
   }
   if (report.status === "ambiguous") {
     return `More than one driver already answers to “${name}” — pick which one this is.`;
