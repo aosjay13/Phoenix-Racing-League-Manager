@@ -88,11 +88,13 @@ export default function MyAccountPage() {
         <p style={{ marginTop: 0, color: "var(--ink-1)", fontSize: "0.85rem", maxWidth: 640 }}>
           One account, one standing per league. You can be an Admin in one and a Player in
           another, and you race under a separate driver profile in each. Switch between them
-          with the League menu in the top bar.
+          with the League menu in the top bar. Standing is granted by each league, so joining
+          another one means asking it — see <Link href="/leagues">Leagues</Link>.
         </p>
         {memberships.length === 0 ? (
           <p style={{ margin: 0, color: "var(--ink-2)", fontSize: "0.88rem" }}>
-            You aren&apos;t recorded in any league yet. Opening one signs you up as a player of it.
+            You aren&apos;t in any league yet. Leagues are joined by asking — pick one on{" "}
+            <Link href="/leagues">Leagues</Link> and its admins will let you in.
           </p>
         ) : (
           <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 8 }}>

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
-import { withUser } from "@/lib/serverAuth";
+import { isLeagueMemberUid, withUser } from "@/lib/serverAuth";
 import { normalizeClassIds } from "@/lib/classFilter";
 import {
   carSelectionSlots, normalizeCarNumber, resolveCarSelection, resolveSignupRules,
@@ -32,6 +32,29 @@ export const dynamic = "force-dynamic";
 // Completed seasons never appear as sign-ups and are marked closed in the list,
 // which is what keeps both actions to seasons that are upcoming or running.
 export const GET = withUser(async (request, ctx, user, leagueId) => {
+  // A stranger to this league has nothing to join in it.
+  //
+  // Membership is granted by a league rather than picked up by looking at one
+  // (see lib/leagueJoin.js), and POST /api/signup-requests refuses a non-member
+  // outright — so offering them a list of this league's open seasons would be
+  // offering a button that cannot work. Answered as an empty screen carrying
+  // `league_member: false`, which is what the Sign-ups page turns into "join the
+  // league first" rather than "nothing to join".
+  if (leagueId && !(await isLeagueMemberUid(user.uid, leagueId, { email: user.email }))) {
+    return NextResponse.json({
+      league_member: false,
+      driver: null,
+      known_aliases: [],
+      known_name: "",
+      denied: [],
+      signup_prefs: {},
+      pending_claim: null,
+      my_seasons: [],
+      open_signups: [],
+      closed_signups: [],
+    });
+  }
+
   // Every one of the three is scoped to the ACTIVE LEAGUE: the driver profile
   // this account races as here, the claim request it has open here, and this
   // league's seasons. An account that races in two leagues sees each league's
@@ -260,6 +283,8 @@ export const GET = withUser(async (request, ctx, user, leagueId) => {
   });
 
   return NextResponse.json({
+    // In this league, so every list below is worth reading.
+    league_member: true,
     // `aliases` seeds the sign-up dialog's Aliases / Connected Accounts editor
     // from what this driver already has, so they confirm rather than retype.
     driver: driver

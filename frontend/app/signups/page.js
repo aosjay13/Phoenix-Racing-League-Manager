@@ -259,7 +259,7 @@ export default function SignupsPage() {
   if (!user) {
     return (
       <section>
-        <div className="page-title"><h2>Sign-ups</h2></div>
+        <div className="page-title"><h2>Series Sign-Ups</h2></div>
         <p className="page-intro">
           This is where you join a series. It takes about a minute.
         </p>
@@ -277,7 +277,7 @@ export default function SignupsPage() {
   if (error && !data) {
     return (
       <section>
-        <div className="page-title"><h2>Sign-ups</h2></div>
+        <div className="page-title"><h2>Series Sign-Ups</h2></div>
         <div className="empty-state">
           <span className="empty-state-icon">⚠</span>
           <p>Couldn&rsquo;t load the sign-up list.</p>
@@ -289,6 +289,26 @@ export default function SignupsPage() {
   }
 
   if (!data) return <div className="skeleton" style={{ height: 280 }} />;
+
+  // Not in this league yet. There is genuinely nothing to sign up for — the API
+  // refuses a non-member's sign-up outright — so say which door to knock on
+  // instead of showing an empty list that reads like a league with no seasons.
+  if (data.league_member === false) {
+    return (
+      <section>
+        <div className="page-title"><h2>Series Sign-Ups</h2></div>
+        <p className="page-intro">
+          A league&rsquo;s series are only open to its own members, and you&rsquo;re not in this
+          one yet.
+        </p>
+        <div className="empty-state">
+          <span className="empty-state-icon">📝</span>
+          <p>Ask to join this league first — once an admin approves you, its series appear here.</p>
+          <Link href="/leagues" className="btn btn-primary">Go to Leagues</Link>
+        </div>
+      </section>
+    );
+  }
 
   const o = signupOverview(data);
   const denials = data.denied || [];
@@ -334,7 +354,7 @@ export default function SignupsPage() {
 
   const header = (
     <div className="page-title">
-      <h2>Sign-ups</h2>
+      <h2>Series Sign-Ups</h2>
       {data.driver && <span className="page-badge">Racing as {data.driver.name}</span>}
     </div>
   );

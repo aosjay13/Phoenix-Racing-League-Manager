@@ -10,6 +10,7 @@ import { roleLevel as levelOf } from "@/lib/roles";
 const AuthContext = createContext({
   user: null, profile: null, isAdmin: false, role: "player", roleLevel: 0,
   leagueId: "", leagueRoles: {}, roleStale: false, isGlobalOwner: false,
+  unaffiliated: false,
   emailVerified: false, loading: true,
 });
 
@@ -138,6 +139,13 @@ export function AuthProvider({ children }) {
       // Owner of the APPLICATION rather than of the league on screen — the only
       // thing that may back up or restore every league's data at once.
       isGlobalOwner: !!profile?.global_owner,
+      // Does this account belong to NO league at all? Membership is granted by
+      // a league rather than picked up by looking at one (see lib/leagueJoin.js),
+      // so this is a real state a new account sits in — and the shell sends
+      // them to /leagues to get out of it. Resolved on the server, because the
+      // client can't see the legacy fallback that makes an empty role map a lie
+      // for an older account.
+      unaffiliated: !!profile?.unaffiliated,
       roleStale,
       emailVerified, loading,
       signOut, refreshProfile, refreshVerification, resendVerification,

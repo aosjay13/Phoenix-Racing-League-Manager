@@ -81,18 +81,27 @@ export default function LoginPage() {
     });
   }
 
-  // Record the new account as a Player of the league it signed up in.
+  // Make sure the new account has a profile, and ask to join the league it
+  // signed up on.
   //
   // This runs BEFORE email verification, which is the whole point: /api/users/me
   // refuses an unverified account, so without it a new player would be invisible
   // to the league whose page they joined from until they had been to their inbox
   // and come back. See app/api/users/join/route.js.
   //
-  // It never fails the sign-up. The account exists either way, and the first
-  // verified visit registers them anyway — this only makes it happen sooner.
-  async function joinActiveLeague(leagueId) {
+  // `request` separates the two reasons we call it. Creating an account on a
+  // league's page IS an application to join that league, so it files a pending
+  // request its staff can approve. Merely SIGNING IN while looking at a league
+  // is not — membership is granted, never assumed — so that call only ensures
+  // the profile exists.
+  //
+  // It never fails the sign-up. The account exists either way.
+  async function joinActiveLeague(leagueId, { request = false } = {}) {
     try {
-      await api("/api/users/join", { method: "POST", body: { league_id: leagueId || "" } });
+      await api("/api/users/join", {
+        method: "POST",
+        body: { league_id: leagueId || "", request_join: request },
+      });
     } catch (err) {
       console.error("Couldn't record the league this account signed up in", err);
     }
@@ -133,7 +142,7 @@ export default function LoginPage() {
         // there is no second step waiting in an inbox.
         try {
           await signInWithEmailAndPassword(clientAuth(), form.email.trim(), form.newPassword);
-          await joinActiveLeague(currentLeagueId());
+          await joinActiveLeague(currentLeagueId());   // profile only, never a join
           router.push("/");
           return;
         } catch (err) {
@@ -162,14 +171,15 @@ export default function LoginPage() {
         // delivers this email; the global VerifyGate blocks the app until then.
         await sendEmailVerification(cred.user);
         try { sessionStorage.setItem("pr_verif_sent", "1"); } catch {}
-        await joinActiveLeague(leagueId);
+        // Creating the account on this league's page is the application to join
+        // it; its admins decide from Approvals ▸ League Join Requests.
+        await joinActiveLeague(leagueId, { request: true });
       } else {
         await signInWithEmailAndPassword(clientAuth(), form.email, form.password);
-        // Signing in while looking at a league they haven't joined makes them a
-        // Player of it, so nobody lands in a league they can see but has no
-        // standing in. /api/users/me does the same on every verified load; doing
-        // it here as well means it has already happened by the time the app
-        // renders, and it works for an account that hasn't verified yet.
+        // Only to make sure the account has a profile document, which an
+        // unverified account otherwise wouldn't get. Signing in while looking at
+        // a league is NOT a request to join it — an account with no standing
+        // here lands on /leagues and asks (see lib/leagueJoin.js).
         await joinActiveLeague(leagueId);
       }
       router.push("/");

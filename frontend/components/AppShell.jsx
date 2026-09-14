@@ -19,6 +19,9 @@ import { useUserAccountsAlerts, alertsTitle } from "@/lib/userAccountsAlerts";
 import {
   APPROVALS_MIN_LEVEL, pendingSignupsTitle, usePendingSignupCount,
 } from "@/lib/pendingSignupAlerts";
+import { joinQueueTitle } from "@/lib/leagueJoin";
+import { useLeagueJoinCount } from "@/lib/leagueJoinAlerts";
+import { LeagueLandingGate } from "@/components/LeagueLandingGate";
 
 // Re-exported for callers that used to import these from the shell; the alert
 // plumbing itself now lives in lib/userAccountsAlerts so the Drivers page can
@@ -27,12 +30,21 @@ export { USERS_SEEN_KEY, USERS_SEEN_EVENT } from "@/lib/userAccountsAlerts";
 
 const publicNav = [
   { href: "/",          label: "Dashboard", icon: "◈" },
+  // Joining a LEAGUE, and joining one of its SERIES. Two different doors, so
+  // two menu items, one above the other and sharing an icon because they are
+  // the same kind of errand: asking somebody to let you in.
+  //
+  // The league one comes first because it comes first in fact — a league's
+  // seasons are nothing to do with you until that league has let you in (see
+  // lib/leagueJoin.js), and an account that belongs to no league lands on this
+  // page rather than on the Dashboard.
+  { href: "/leagues",   label: "Leagues",   title: "Find a league and ask to join it", icon: "📝" },
   // Joining a series — the one thing a brand-new player comes here to do, so it
-  // sits second, above every table they might read. It's a top-level menu of
-  // its own rather than a section of a page because somebody who has never used
-  // the app before shouldn't have to know that "sign-ups" live under anything.
+  // sits above every table they might read. It's a top-level menu of its own
+  // rather than a section of a page because somebody who has never used the app
+  // before shouldn't have to know that "sign-ups" live under anything.
   // Its badge counts what is waiting on THEM (see lib/signupFlow.js).
-  { href: "/signups",   label: "Sign-ups",  title: "Join a series", icon: "📝" },
+  { href: "/signups",   label: "Series Sign-Ups", title: "Join a series", icon: "📝" },
   { href: "/standings", label: "Standings", icon: "🏆" },
   { href: "/stats",     label: "Stats",     icon: "📊" },
   { href: "/records",   label: "Records",   icon: "🏅" },
@@ -236,12 +248,17 @@ function UserChip() {
 
 export function AppShell({ children }) {
   const pathname = usePathname();
-  const { isAdmin, roleLevel } = useAuth();
+  const { isAdmin, roleLevel, leagueRoles, isGlobalOwner, unaffiliated } = useAuth();
   const league = useLeague();
   const userAccountsAlerts = useUserAccountsAlerts(isAdmin);
   // Sign-ups waiting on an approval. The hook makes no API call at all below
   // Moderator, so a player's browser never asks for a count it isn't allowed.
   const pendingSignups = usePendingSignupCount(roleLevel);
+  // Accounts asking to be let into a league. Counted across the leagues this
+  // account RUNS rather than for the league on screen, because that is how the
+  // queue is scoped — a League Admin's badge is about their own league's door.
+  // Nothing is fetched for anybody who runs no league.
+  const leagueJoins = useLeagueJoinCount({ leagueRoles, roleLevel, isGlobalOwner });
   // The player's own side of the same queue: series they could join, and cars
   // they still have to choose. Nothing is fetched for a signed-out visitor.
   const { data: mySignups } = useMySignups();
@@ -267,9 +284,18 @@ export function AppShell({ children }) {
     // replies. Both are people waiting on an admin, and splitting them across
     // two numbers on one link would only make the link harder to read.
     "/approvals": {
-      count: pendingSignups + messageReplies.length,
-      title: [pendingSignupsTitle(pendingSignups), adminInboxTitle(messageReplies)].join(" · "),
+      count: pendingSignups + messageReplies.length + leagueJoins,
+      title: [
+        pendingSignupsTitle(pendingSignups),
+        joinQueueTitle(leagueJoins),
+        adminInboxTitle(messageReplies),
+      ].join(" · "),
     },
+    // A nudge rather than a queue: an account that belongs to no league has
+    // exactly one thing to do, and this is where it is done.
+    "/leagues": unaffiliated
+      ? { count: 1, title: "You haven't joined a league yet — ask to join one" }
+      : 0,
     "/signups": { count: signupBadgeCount(mySignups), title: signupBadgeTitle(mySignups) },
     "/roster": { count: rosterAdditions.length, title: additionsTitle(rosterAdditions) },
   };
@@ -279,6 +305,9 @@ export function AppShell({ children }) {
 
   return (
     <div className="shell">
+      {/* Sends an account that belongs to no league to /leagues, where the one
+          thing it can do is done. Renders nothing. */}
+      <LeagueLandingGate />
       <aside className="sidebar">
         <Link href="/" className="sidebar-logo">
           <img src="/logo-mark.png" alt="Phoenix's Racing League Manager" className="sidebar-logo-img" />

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
-import { getRequestLeagueId, getRequestUser, withUser } from "@/lib/serverAuth";
+import {
+  getRequestLeagueId, getRequestUser, isLeagueMemberUid, withUser,
+} from "@/lib/serverAuth";
 import { normalizeClassIds } from "@/lib/classFilter";
 import {
   NUMBER_TAKEN_MESSAGE, carCapacity, carCounts, carFullMessage, matchCarOption, missingSignupFields,
@@ -165,6 +167,25 @@ const handlePOST = withUser(async (request, ctx, user) => {
       { error: `Season over — sign-ups for ${season.name || "that season"} are done.`, code: "season-over" },
       { status: 400 },
     );
+  }
+
+  // You have to be IN the league before you can join one of its series.
+  //
+  // Membership used to be picked up automatically by looking at a league, so
+  // this was moot — everybody was a member of everywhere. Now that a league
+  // grants its own membership (see lib/leagueJoin.js), a season's league is
+  // resolved from the SEASON rather than from the request header, so this also
+  // refuses a signed-in stranger who posts another league's season_id directly
+  // rather than through its own pages.
+  if (season.league_id) {
+    const member = await isLeagueMemberUid(user.uid, season.league_id, { email: user.email });
+    if (!member) {
+      return NextResponse.json({
+        error: "You're not in this league yet. Ask to join it on the Leagues page — once an admin approves you, you can sign up for its series.",
+        code: "not-in-league",
+        league_id: season.league_id,
+      }, { status: 403 });
+    }
   }
 
   // This league's driver profile for the caller — the season decides which

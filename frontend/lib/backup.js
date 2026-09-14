@@ -37,6 +37,12 @@ export const SCOPED_COLLECTIONS = [
   // anything else: a restore that dropped the queue would silently lose
   // everyone who had signed up but not yet been approved.
   "signup_requests",
+  // Accounts waiting for a league to let them in at all (see lib/leagueJoin.js).
+  // Scoped rather than global even though the account it names is global: the
+  // request is about ONE league, carries its `league_id`, and is that league's
+  // own queue. Losing it in a restore would drop everyone knocking at the door
+  // — with no trace of who they were, since nothing is granted until approval.
+  "league_join_requests",
   // Time Trial sessions and the laps submitted in them (see lib/timeTrials.js).
   // They score no championship points, but they hold track records and they are
   // what a season's placements were decided on — losing them would lose the

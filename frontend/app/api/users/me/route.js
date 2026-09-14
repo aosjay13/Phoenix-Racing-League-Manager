@@ -42,6 +42,16 @@ async function profileAnswer({ uid, data, leagueId, envAdmin, driver }) {
     // Every league this account has standing in, so the UI can say so without a
     // second round trip.
     league_roles: normalizeLeagueRoles(leagueRoles),
+    // Does this account belong to NO league at all? Answered here rather than
+    // inferred from `league_roles` being empty, because the client can't see
+    // the two things that make an empty map a lie: an env-var Owner (Owner
+    // everywhere), and an account written before the map existed, whose
+    // standing lives in its global role and counts inside the legacy league.
+    // The shell reads this to send a brand-new account to /leagues instead of
+    // to a Dashboard full of somebody else's league (see lib/leagueJoin.js).
+    unaffiliated: !envAdmin
+      && Object.keys(normalizeLeagueRoles(leagueRoles)).length === 0
+      && !(!hasLeagueRoles(data) && !!legacy),
     driver_id: driver?.id || null,
     driver_name: driver?.name || null,
   };
@@ -65,12 +75,17 @@ export const GET = withUser(async (request, ctx, user, leagueId) => {
   const driver = await linkedDriver(user.uid, leagueId);
 
   if (!doc.exists) {
-    // A brand-new account joins the league it signed in on as a Player. That
-    // membership is what makes it visible to that league's admins — an account
-    // with no entry for a league is unaffiliated with it and is left off its
-    // roster — so a new signup being manageable at all depends on it.
-    // Reached when an account verified without ever passing through the sign-up
-    // form's join call — an older signup, or one made before this existed.
+    // A brand-new account, reached when somebody verified without passing
+    // through the sign-up form's join call. It gets a profile and NO league
+    // standing: being able to see a league is not being in one, and which
+    // league lets this account in is that league's decision, not a side effect
+    // of the page they happened to open. They land on /leagues to ask (see
+    // lib/leagueJoin.js), and an approval is what writes the membership.
+    //
+    // The map is written as an EMPTY object rather than left off, which matters:
+    // `hasLeagueRoles` keys the legacy fallback on the field being absent, so a
+    // missing map would make this new account inherit the legacy league through
+    // its global role. An empty map says "no standing anywhere", and means it.
     const seedRole = envAdmin ? "owner" : "player";
     const profile = {
       display_name: user.name || user.email?.split("@")[0] || "Driver",
@@ -80,7 +95,9 @@ export const GET = withUser(async (request, ctx, user, leagueId) => {
       country: "",
       number: null,
       role: seedRole,
-      ...(leagueId ? { [LEAGUE_ROLES_FIELD]: { [leagueId]: seedRole } } : {}),
+      // Env-var Owners are Owner everywhere by definition, so recording it for
+      // the league they arrived on grants nothing they didn't already have.
+      [LEAGUE_ROLES_FIELD]: envAdmin && leagueId ? { [leagueId]: "owner" } : {},
       created_at: new Date().toISOString(),
     };
     await ref.set(profile);
@@ -99,32 +116,49 @@ export const GET = withUser(async (request, ctx, user, leagueId) => {
   // nothing changes for them.)
   if (data.signup_pending) updates.signup_pending = false;
 
-  // Register the account in this league if it has no standing here yet. This is
-  // the "membership" the admin roster keys off, and it is deliberately the
-  // LOWEST one: opening a league makes you a Player of it and nothing more.
-  // Staff standing is only ever granted by an admin of that league.
+  // ── Opening a league does NOT join it ────────────────────────────────────
   //
-  // An account that hasn't been migrated at all is left alone. Its legacy global
-  // role still answers inside the legacy league (see lib/leagueRoles.js), and
-  // the containment migration is what writes that down properly — auto-stamping
-  // "player" here would DEMOTE an existing admin who happened to sign in before
-  // the migration was run, which is precisely the lockout this design exists to
-  // avoid.
+  // This route used to register the account as a Player of whatever league the
+  // request named, the moment it had no standing there. It read as harmless —
+  // "you're looking at it, so you're in it" — and it quietly undid the whole
+  // point of per-league roles: every account on the installation drifted into
+  // every league it ever glanced at, so League B's user roster filled up with
+  // League A's players, its driver-link pickers offered strangers, and nobody
+  // had ever decided to let any of them in.
+  //
+  // Membership is now something a league GRANTS. A player asks (POST
+  // /api/league-join-requests), that league's own staff approve, and the
+  // approval is the only thing that writes the key — see
+  // /api/admin/league-join-requests/[id]. An account with no entry for this
+  // league reads as a plain player of it and appears on none of its lists,
+  // which is what being a stranger to a league should look like.
+  //
+  // Env-var Owners are the exception, as they are everywhere: they resolve to
+  // Owner in every league by definition (see isEnvAdmin), so recording it
+  // changes nothing about their access and only keeps the stored map honest
+  // about the account that can always unstick a league.
   const registered = normalizeLeagueRoles(data[LEAGUE_ROLES_FIELD]);
-  const unregistered = !!leagueId
+  const needsEnvOwnerKey = envAdmin
+    && !!leagueId
     && hasLeagueRoles(data)
-    && !Object.prototype.hasOwnProperty.call(registered, leagueId);
-  if (unregistered) {
-    const patch = leagueRolePatch(leagueId, envAdmin ? "owner" : "player");
+    && registered[leagueId] !== "owner";
+  if (needsEnvOwnerKey) {
+    const patch = leagueRolePatch(leagueId, "owner");
     if (patch) Object.assign(updates, patch);
   }
   if (Object.keys(updates).length) await ref.set(updates, { merge: true });
 
-  const merged = {
-    ...data,
-    ...updates,
-    [LEAGUE_ROLES_FIELD]: { ...registered, ...normalizeLeagueRoles(updates[LEAGUE_ROLES_FIELD]) },
-  };
+  // The map is merged in only when there IS one. An account written before
+  // `league_roles` existed has no such field, and that ABSENCE is exactly what
+  // makes its old global role answer inside the legacy league (see
+  // hasLeagueRoles in lib/leagueRoles.js). Writing an empty map in here would
+  // flip the answer to "migrated, and a member of nothing", which reads the
+  // existing league's Owner back as a plain player of their own league — the
+  // lockout the legacy fallback exists to prevent.
+  const mergedRoles = hasLeagueRoles(data) || updates[LEAGUE_ROLES_FIELD]
+    ? { [LEAGUE_ROLES_FIELD]: { ...registered, ...normalizeLeagueRoles(updates[LEAGUE_ROLES_FIELD]) } }
+    : {};
+  const merged = { ...data, ...updates, ...mergedRoles };
   return NextResponse.json(await profileAnswer({ uid: user.uid, data: merged, leagueId, envAdmin, driver }));
 });
 
