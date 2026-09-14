@@ -588,7 +588,9 @@ export function UserAccountsManager() {
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
 
       {requests.length > 0 && (
-        <div className="form-card" style={{ marginTop: 16, borderColor: "var(--accent-amber, #ffb224)" }}>
+        <div className="form-card" style={{
+          marginTop: 16, maxWidth: "100%", borderColor: "var(--accent-amber, #ffb224)",
+        }}>
           <h3 style={{ marginTop: 0, display: "flex", alignItems: "center", gap: 8 }}>
             Pending Driver Requests
             <span className="nav-badge" style={{ position: "static" }}>{requests.length}</span>
@@ -836,7 +838,12 @@ export function UserAccountsManager() {
       )}
 
       {outsiders.length > 0 && (
-        <div className="form-card" style={{ marginTop: 20 }}>
+        // maxWidth 100% on purpose: `.form-card` is sized for a FORM (560px),
+        // and this card holds a table. Left at that width the four columns were
+        // folded into a 560px box that scrolled sideways inside itself, on a
+        // page whose other roster fills the window — so the Status badge and
+        // the "Add as…" picker, the only control here, sat off-screen.
+        <div className="form-card" style={{ marginTop: 20, maxWidth: "100%" }}>
           <h3 style={{ marginTop: 0 }}>Not in {leagueName} yet</h3>
           <p style={{ marginTop: 0, color: "var(--ink-1)", fontSize: "0.85rem", maxWidth: 720 }}>
             Accounts that exist on this installation but belong to no league — almost always
