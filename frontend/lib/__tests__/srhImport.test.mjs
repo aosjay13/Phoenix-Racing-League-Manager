@@ -29,7 +29,7 @@ import { fileURLToPath } from "node:url";
 import {
   isProvisional, looksLikeSrhRef, parseSrhPage, parseSrhRef,
   srhDriverName, srhElapsed, srhEventLabel, srhInterval, srhLapTime,
-  srhPageError, srhSegmentTable, SRH_HEADERS,
+  srhPageError, srhSegmentTable, srhStatus, SRH_HEADERS,
 } from "../srhImport.js";
 import { buildRows, headerToField, mapHeaders, sessionTypeFromName } from "../resultsImport.js";
 import { segmentType } from "../iracingImport.js";
@@ -209,6 +209,17 @@ check("…however many laps", srhInterval({ intv: 1199880, intv_str: "-120L" }),
 check("a lap deficit is still read without the string", srhInterval({ intv: 39996.0001, intv_str: "" }), "4L");
 check("a gap is still read without the string", srhInterval({ intv: "1.5", intv_str: "" }), "+1.500");
 check("no gap at all reads as none", srhInterval({}), "");
+
+// How a session ended is worded so the shared status parser reads it right.
+// SimRacerHub's own wording mostly already does; what it doesn't say is that a
+// driver with no status and no laps never started, which is a DNS here and
+// scores nothing at all.
+check("a finisher is running", srhStatus({ status: "Running", num_laps: "14" }), "Running");
+check("a disconnection keeps saying so", srhStatus({ status: "Disconnected", num_laps: "9" }), "Disconnected");
+check("a driver with no status but laps on the board was running",
+  srhStatus({ status: "", num_laps: "3" }), "Running");
+check("one with neither never started", srhStatus({ status: "", num_laps: "0" }), "DNS");
+check("…and so did one the payload says nothing about at all", srhStatus({}), "DNS");
 
 // SimRacerHub stores the iRacing name last-first; the roster here holds the name
 // the driver actually races under.
