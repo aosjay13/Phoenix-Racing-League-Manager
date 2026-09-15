@@ -499,9 +499,16 @@ ok("…and writes nothing", !/\.(set|update|add|delete|commit)\(/.test(route));
 ok("…and is gated on a staff role", /withAdmin\(/.test(route));
 ok("…and only ever reads with GET", !/export const (POST|PUT|PATCH|DELETE)/.test(route));
 // Where the server is allowed to make a request to is decided by parseSrhRef
-// and nothing else — no second, laxer path to fetch().
+// and nothing else — no second, laxer path to the network.
 ok("…fetching only what parseSrhRef allowed", /for \(const url of ref\.urls\)/.test(route));
-ok("…and nothing else", route.match(/fetch\(/g).length === 1);
+ok("…through the one shared transport", (route.match(/srhFetchText\(/g) || []).length === 1);
+ok("…and never reaching for fetch itself", !/\bfetch\(/.test(route));
+// That transport is deliberately dumb about addresses: keeping the allowlist in
+// the parsers and the timeout/size cap here is what stops a new importer
+// arriving with a laxer guard of its own.
+const transport = read("lib/srhFetch.js");
+ok("the transport decides nothing about where a request may go",
+  !/isSrhHost|SRH_HOSTS|simracerhub\.com"/.test(transport));
 
 ok("the importer's only way into the grid is the review table's Apply", /onApply\(rows/.test(modal));
 ok("…and the statistician is told Save is still theirs to press", /nothing is saved until you click Save/i.test(modal));

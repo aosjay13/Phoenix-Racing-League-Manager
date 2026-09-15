@@ -6,6 +6,8 @@ import { Modal } from "@/components/Modal";
 import { SeasonForm } from "@/components/SeasonForm";
 import { BLANK_SEASON_FORM, seasonFormToBody } from "@/lib/seasonForm";
 import { isBangerDoc } from "@/lib/bangerRacing";
+import { isIracingGame } from "@/lib/signupRequest";
+import { SrhSeasonImportModal } from "@/components/SrhSeasonImportModal";
 
 // Sentinel for the "start a brand new one" choice in the game / series pickers.
 const NEW = "__new__";
@@ -24,8 +26,16 @@ const NEW = "__new__";
 // picked from what already exists or named fresh and created on the way — which
 // is what makes this dialog enough to get a brand new game racing without a
 // detour through League Setup.
+//
+// An iRacing league gets a second way in from here: its season is already built
+// on SimRacerHub, so rather than typing the schedule twice it can be read off
+// that page in one go — the season, every round, its tracks and its distances.
+// Offered only where it could work, which is a league with an iRacing game (see
+// SrhSeasonImportModal, and isIracingGame in lib/signupRequest.js).
 export function SeasonCreateModal({ gameId, games = [], seriesId, seriesName, seriesList = [], onClose, onCreated }) {
   const [form, setForm] = useState(BLANK_SEASON_FORM);
+  // Swapped to the SimRacerHub importer, which creates the season itself.
+  const [fromSrh, setFromSrh] = useState(false);
   const [templates, setTemplates] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -69,6 +79,26 @@ export function SeasonCreateModal({ gameId, games = [], seriesId, seriesName, se
   }, []);
   useEffect(loadTemplates, [loadTemplates]);
 
+  // Is there an iRacing game for a SimRacerHub season to go into? The scope's
+  // own game when it names one, otherwise any of them — the importer asks which
+  // itself, as this dialog does.
+  const iracingHere = gameId
+    ? isIracingGame(games.find(g => g.id === gameId)?.name)
+    : games.some(g => isIracingGame(g.name));
+
+  if (fromSrh) {
+    return (
+      <SrhSeasonImportModal
+        gameId={gameId} games={games}
+        seriesId={seriesId} seriesName={seriesName} seriesList={seriesList}
+        onClose={() => setFromSrh(false)}
+        // The importer answers with what it created; this dialog's caller only
+        // ever wanted the season and where it went.
+        onCreated={(res, scope) => onCreated(res.season, scope)}
+      />
+    );
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     if (!form.name.trim() || !gameReady || !seriesReady) return;
@@ -104,6 +134,18 @@ export function SeasonCreateModal({ gameId, games = [], seriesId, seriesName, se
           You&rsquo;ll be switched into the new season so you can start adding races right away — add
           its classes on League Setup.
         </p>
+        {iracingHere && (
+          <div style={{ border: "1.5px solid var(--border)", borderRadius: 10, padding: "10px 12px", marginBottom: 14, background: "var(--bg-elevated)" }}>
+            <strong style={{ fontSize: "0.85rem" }}>Racing this season on iRacing?</strong>
+            <p style={{ margin: "2px 0 8px", fontSize: "0.78rem", color: "var(--ink-2)" }}>
+              If you&rsquo;ve already built it on SimRacerHub, paste the link instead and the whole schedule comes
+              with it — every round, its date, its track and its distance — rather than being typed in twice.
+            </p>
+            <button className="btn btn-ghost" type="button" style={{ marginTop: 0 }} onClick={() => setFromSrh(true)}>
+              🔗 Import a season from SimRacerHub
+            </button>
+          </div>
+        )}
         {needsGame && (
           <>
             <div className="field">

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { withAdmin } from "@/lib/serverAuth";
+import { srhFetchText } from "@/lib/srhFetch";
 import { parseSrhPage, parseSrhRef, srhPageError, srhSegmentTable } from "@/lib/srhImport";
 
 export const dynamic = "force-dynamic";
@@ -36,50 +37,6 @@ export const dynamic = "force-dynamic";
 //
 // Open to any staff role, Statistician included — this is their job.
 
-// SimRacerHub race pages run ~200 KB. The cap is what stops a redirect to
-// something enormous from being read into memory, not a real page limit.
-const MAX_BYTES = 8 * 1024 * 1024;
-const TIMEOUT_MS = 20000;
-
-const UA = "PhoenixRacingLeagueManager/1.0 (+results importer)";
-
-// Fetch one page as text, refusing to read past MAX_BYTES. Throws with a
-// message worth showing an admin.
-async function fetchPage(url) {
-  let res;
-  try {
-    res = await fetch(url, {
-      redirect: "follow",
-      cache: "no-store",
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-      headers: { "User-Agent": UA, Accept: "text/html,application/xhtml+xml" },
-    });
-  } catch (err) {
-    const timedOut = err?.name === "TimeoutError" || err?.name === "AbortError";
-    throw new Error(timedOut ? "SimRacerHub took too long to answer." : "Could not reach SimRacerHub.");
-  }
-  if (!res.ok) throw new Error(`SimRacerHub answered ${res.status}.`);
-
-  const declared = Number(res.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > MAX_BYTES) throw new Error("That SimRacerHub page is too large to import.");
-
-  if (!res.body) return await res.text();
-  const decoder = new TextDecoder("utf-8");
-  const reader = res.body.getReader();
-  let text = "", bytes = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    bytes += value.byteLength;
-    if (bytes > MAX_BYTES) {
-      await reader.cancel().catch(() => {});
-      throw new Error("That SimRacerHub page is too large to import.");
-    }
-    text += decoder.decode(value, { stream: true });
-  }
-  return text + decoder.decode();
-}
-
 export const GET = withAdmin(async (request) => {
   const { searchParams } = new URL(request.url);
   const input = (searchParams.get("url") || searchParams.get("id") || "").trim();
@@ -96,7 +53,7 @@ export const GET = withAdmin(async (request) => {
   for (const url of ref.urls) {
     let html;
     try {
-      html = await fetchPage(url);
+      html = await srhFetchText(url);
     } catch (err) {
       failure = { error: err.message, status: 502 };
       continue;

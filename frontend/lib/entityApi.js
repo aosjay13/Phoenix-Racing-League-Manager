@@ -81,6 +81,49 @@ function statsChanged(collection, leagueId) {
   if (STATS_COLLECTIONS.includes(collection)) revalidateStats(leagueId);
 }
 
+// A request body → the document a collection stores, validated by the SAME
+// rules a single POST to that collection applies: the spec's field allowlist,
+// its coercions, its required fields, its defaults and its normalize hook, plus
+// the audit and league stamps every row carries.
+//
+// Split out of makeCollectionRoutes so a route that writes MANY rows at once —
+// a whole SimRacerHub season's worth of races, say — validates each of them
+// through exactly this code rather than a hand-rolled copy of it that can drift
+// from the spec. Returns { doc } or { error }.
+export function buildEntityDoc({ spec, body, user, role, leagueId, now = new Date().toISOString() }) {
+  const { parentField, fields, normalize } = spec;
+  // Images are the one thing the four staff roles do NOT share: they cost
+  // storage, so only the Owner may add one. A logo sent by anybody else is
+  // dropped and the rest of the create goes through — refusing the whole
+  // write would stop an Admin creating a season over a field they can't set
+  // anyway. See lib/imagePermissions.js.
+  const mayUpload = canUploadImages(role);
+  const doc = { created_at: now, created_by: user.uid };
+  // Stamp the active league so new rows are partitioned like migrated ones.
+  // Absent header (pre-migration) leaves it unset; a later migration run
+  // backfills it.
+  if (leagueId) doc.league_id = leagueId;
+  if (parentField) {
+    if (!body[parentField]) return { error: `${parentField} required` };
+    doc[parentField] = body[parentField];
+  }
+  for (const [name, opts] of Object.entries(fields)) {
+    if (opts.image && !mayUpload) continue;   // Owner-only; silently left unset
+    const value = body[name];
+    if (opts.required && (value === undefined || value === null || value === "")) {
+      return { error: `${name} required` };
+    }
+    if (value !== undefined) {
+      const coerced = coerceField(opts, value);
+      if (coerced.error) return { error: `${name} ${coerced.error}` };
+      doc[name] = coerced.value;
+    } else if (opts.default !== undefined) doc[name] = opts.default;
+  }
+  // Derived fields the spec keeps in sync (e.g. an entry's class_id/class_ids).
+  if (normalize) Object.assign(doc, normalize(doc) || {});
+  return { doc };
+}
+
 export function makeCollectionRoutes({ collection, parentField, fields, sortField = "created_at", normalize = null, orderDocs = null, guard = null }) {
   async function GET(request) {
     const { searchParams } = new URL(request.url);
@@ -112,40 +155,13 @@ export function makeCollectionRoutes({ collection, parentField, fields, sortFiel
       const refusal = await guard(body, request);
       if (refusal) return refusal;
     }
-    // Images are the one thing the four staff roles do NOT share: they cost
-    // storage, so only the Owner may add one. A logo sent by anybody else is
-    // dropped and the rest of the create goes through — refusing the whole
-    // write would stop an Admin creating a season over a field they can't set
-    // anyway. See lib/imagePermissions.js.
-    const mayUpload = canUploadImages(role);
-    const doc = { created_at: new Date().toISOString(), created_by: user.uid };
-    // Stamp the active league so new rows are partitioned like migrated ones.
-    // Absent header (pre-migration) leaves it unset; a later migration run
-    // backfills it.
-    if (leagueId) doc.league_id = leagueId;
-    if (parentField) {
-      if (!body[parentField]) {
-        return NextResponse.json({ error: `${parentField} required` }, { status: 400 });
-      }
-      doc[parentField] = body[parentField];
-    }
-    for (const [name, opts] of Object.entries(fields)) {
-      if (opts.image && !mayUpload) continue;   // Owner-only; silently left unset
-      const value = body[name];
-      if (opts.required && (value === undefined || value === null || value === "")) {
-        return NextResponse.json({ error: `${name} required` }, { status: 400 });
-      }
-      if (value !== undefined) {
-        const coerced = coerceField(opts, value);
-        if (coerced.error) return NextResponse.json({ error: `${name} ${coerced.error}` }, { status: 400 });
-        doc[name] = coerced.value;
-      } else if (opts.default !== undefined) doc[name] = opts.default;
-    }
-    // Derived fields the spec keeps in sync (e.g. an entry's class_id/class_ids).
-    if (normalize) Object.assign(doc, normalize(doc) || {});
-    const ref = await db().collection(collection).add(doc);
+    const built = buildEntityDoc({
+      spec: { collection, parentField, fields, normalize }, body, user, role, leagueId,
+    });
+    if (built.error) return NextResponse.json({ error: built.error }, { status: 400 });
+    const ref = await db().collection(collection).add(built.doc);
     statsChanged(collection, leagueId);
-    return NextResponse.json({ id: ref.id, ...doc }, { status: 201 });
+    return NextResponse.json({ id: ref.id, ...built.doc }, { status: 201 });
   });
 
   return { GET, POST };

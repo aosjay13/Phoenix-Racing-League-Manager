@@ -43,6 +43,31 @@ import { sessionTypeFromName } from "@/lib/resultsImport";
 // SRH serves the same scoring app on both hosts, with and without /scoring/.
 const SRH_HOSTS = new Set(["simracerhub.com", "www.simracerhub.com"]);
 
+// Where the server is allowed to make a request to. This is the guard the
+// importers are built on, so it lives in one place and every one of them asks
+// the same question — see parseSrhRef below, and parseSrhSeasonRef in
+// lib/srhSchedule.js.
+export const isSrhHost = host => SRH_HOSTS.has(String(host ?? "").toLowerCase());
+
+// A pasted string as a URL, whether or not whoever typed it included the
+// scheme. Null when it isn't one at all.
+export function asUrl(raw) {
+  const text = String(raw ?? "").trim();
+  if (!text) return null;
+  let url;
+  try {
+    url = new URL(/^https?:\/\//i.test(text) ? text : `https://${text}`);
+  } catch {
+    return null;
+  }
+  // A bare word ("nonsense") parses as a host once a scheme is bolted on, and
+  // calling that a link to the wrong site is a confusing way to say "that isn't
+  // a URL". A real host has a dot in it.
+  return url.hostname.includes(".") ? url : null;
+}
+
+export const SRH_SCORING = "https://www.simracerhub.com/scoring";
+
 // The query parameters an SRH race page accepts, in the order a bare number is
 // tried as each. `schedule_id` identifies the event on a season's calendar and
 // is what the URL in an admin's address bar almost always carries; `race_id`
@@ -51,7 +76,7 @@ const SRH_HOSTS = new Set(["simracerhub.com", "www.simracerhub.com"]);
 // recent race, which is a useful shortcut for "import last night's results".
 export const SRH_ID_PARAMS = ["schedule_id", "race_id", "season_id", "series_id"];
 
-export const SRH_PAGE = "https://www.simracerhub.com/scoring/season_race.php";
+export const SRH_PAGE = `${SRH_SCORING}/season_race.php`;
 
 export const srhPageUrl = (param, id) => `${SRH_PAGE}?${param}=${encodeURIComponent(id)}`;
 
@@ -86,18 +111,13 @@ export function parseSrhRef(input) {
     return { ok: true, param, id: fragment[2], urls: [srhPageUrl(param, fragment[2])] };
   }
 
-  let url;
-  try {
-    // A link copied from the browser usually carries its scheme; one typed by
-    // hand ("simracerhub.com/…") does not.
-    url = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
-  } catch {
-    return { ok: false, error: "That doesn't look like a SimRacerHub race URL or race id." };
-  }
+  // A link copied from the browser usually carries its scheme; one typed by
+  // hand ("simracerhub.com/…") does not.
+  const url = asUrl(raw);
+  if (!url) return { ok: false, error: "That doesn't look like a SimRacerHub race URL or race id." };
 
-  const host = url.hostname.toLowerCase();
-  if (!SRH_HOSTS.has(host)) {
-    return { ok: false, error: `Only simracerhub.com links can be imported — that one points at ${host}.` };
+  if (!isSrhHost(url.hostname)) {
+    return { ok: false, error: `Only simracerhub.com links can be imported — that one points at ${url.hostname.toLowerCase()}.` };
   }
 
   for (const param of SRH_ID_PARAMS) {

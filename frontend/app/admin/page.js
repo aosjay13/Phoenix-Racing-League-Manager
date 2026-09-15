@@ -20,6 +20,7 @@ import { TRACK_TYPES } from "@/lib/trackTypes";
 import { listToTableOrZero, normalizedBuiltinTemplates, tableToList } from "@/lib/pointsTemplates";
 import { carForClass } from "@/lib/classFilter";
 import { SeasonForm } from "@/components/SeasonForm";
+import { SrhSeasonImportModal } from "@/components/SrhSeasonImportModal";
 import { BangerBonusFields, PointsFields } from "@/components/PointsFields";
 import { BLANK_SEASON_FORM, scoresNoPoints, seasonFormToBody, seasonToForm } from "@/lib/seasonForm";
 import { isCustomOrdered, seasonDateRangeLabel } from "@/lib/seasonOrder";
@@ -157,6 +158,11 @@ function AdminInner() {
   const isOwner = role === "owner";
   const league = useLeague();
   const { games, seriesList, seasons, gameId, seriesId, seasonId, game, series, season, refresh } = league;
+  // "Import a season from SimRacerHub" — open only for an iRacing game, since
+  // SimRacerHub scores iRacing leagues and nothing else. See
+  // SrhSeasonImportModal; the route refuses any other game whatever this shows.
+  const [srhSeasonOpen, setSrhSeasonOpen] = useState(false);
+  const iracingGame = isIracingGame(game?.name);
   // Demo Derby / Banger Racing can be set at series, season or class level (see
   // lib/bangerRacing.js). `bangerSeries` covers everything under the selected
   // series; `bangerSeason` adds the selected season's own flag. Each form below
@@ -639,6 +645,36 @@ function AdminInner() {
 
         {section === "seasons" && (
         <Panel title="Seasons" step={3} muted={!seriesId} sub={seriesId ? `In ${series?.name}` : "Select a series above first"}>
+          {/* The iRacing shortcut. A league builds its season on SimRacerHub
+              because that is where its scoring lives; this reads the schedule
+              straight off that page rather than having it typed in twice. */}
+          {iracingGame && seriesId && (
+            <div style={{ border: "1.5px solid var(--border)", borderRadius: 10, padding: "10px 12px", marginBottom: 16, background: "var(--bg-elevated)" }}>
+              <strong style={{ fontSize: "0.85rem" }}>Already built this season on SimRacerHub?</strong>
+              <p style={{ margin: "2px 0 8px", fontSize: "0.8rem", color: "var(--ink-2)" }}>
+                Paste its link and the whole schedule comes across — every round with its date, its track and how
+                far it runs — instead of being entered round by round below. You&rsquo;ll see what it found before
+                anything is created.
+              </p>
+              <button className="btn btn-ghost" type="button" style={{ marginTop: 0 }}
+                onClick={() => setSrhSeasonOpen(true)}>
+                🔗 Import a season from SimRacerHub
+              </button>
+            </div>
+          )}
+          {srhSeasonOpen && (
+            <SrhSeasonImportModal
+              gameId={gameId} games={games}
+              seriesId={seriesId} seriesName={series?.name} seriesList={seriesList}
+              onClose={() => setSrhSeasonOpen(false)}
+              onCreated={(res) => {
+                setSrhSeasonOpen(false);
+                refresh();
+                league.setSeasonId(res.season.id);
+                showToast("success", `${res.season.name}: ${res.races} race${res.races === 1 ? "" : "s"} imported${res.tracks_created.length ? `, ${res.tracks_created.length} new track${res.tracks_created.length === 1 ? "" : "s"}` : ""}.`);
+              }}
+            />
+          )}
           <form onSubmit={e => {
             e.preventDefault();
             const body = seasonFormToBody(seasonForm);
