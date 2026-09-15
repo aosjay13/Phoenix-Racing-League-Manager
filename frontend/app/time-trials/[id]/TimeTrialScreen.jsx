@@ -15,6 +15,7 @@ import { PlacementBoard } from "@/components/PlacementBoard";
 import { AutoPlaceModal } from "@/components/AutoPlaceModal";
 import { AddDriverToTrial } from "@/components/AddDriverToTrial";
 import { formatRaceDate } from "@/lib/raceDate";
+import { TIME_INPUT_PROPS } from "@/lib/timeInput";
 import {
   autoAssignClasses, autoAssignClassesWithinSeries, autoAssignSeries, averageLabel,
   normalizeLaps, rankEntries, summarizeEntries,
@@ -873,7 +874,9 @@ export function TimeTrialScreen() {
                   return (
                     <td key={lapIdx} style={{ padding: canEdit ? "4px 6px" : undefined }}>
                       {canEdit ? (
-                        <input value={text} placeholder="—" inputMode="decimal"
+                        // Text, never a numeric keypad: a lap is "1:23.456" and
+                        // no phone keypad has a colon on it. See lib/timeInput.js.
+                        <input {...TIME_INPUT_PROPS} value={text} placeholder="—"
                           style={{
                             width: 82, padding: "4px 6px", textAlign: "right",
                             fontVariantNumeric: "tabular-nums",

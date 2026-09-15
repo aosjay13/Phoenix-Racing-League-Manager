@@ -147,6 +147,37 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   is the sum of the Points column on every session they ran, Qualifying included, so the standings
   can be checked by adding up what's on screen; re-submitting a race overwrites cleanly for
   corrections
+- 🏁 **Race statistics, counted where they can be** — an event carries optional **Caution flags**,
+  **Caution laps** and **Lead changes**, printed at the top of its results page, plus
+  **Different Leaders**, which needs no box at all: it is the number of drivers whose Led column
+  shows at least one lap, worked out from the session on screen so it can never drift from the grid
+  under it. A blank (or a 0) is left off the page rather than printed as a counted figure
+- 📅 **One-click SEASON import from SimRacerHub (iRacing)** — an iRacing league builds next season
+  on SimRacerHub because that is where its scoring lives. Paste that season's link and the whole
+  schedule comes over in one press: the season itself, every round with its **date**, its **track**,
+  its **distance** (laps or a clock), its car, its start times, and which rounds run for no
+  championship points. Venues are matched to the tracks you already have — through the names a
+  merged track remembers, so an import can't re-create one you just tidied away — and anything new
+  is added to your Tracks library. Off weeks are skipped, playoff rounds SimRacerHub leaves
+  unnumbered are numbered in date order, and a league that writes its dates as `17/08/2026` has
+  them read the right way round. You see every round it found, and which venues are new, **before**
+  anything is created. Offered on **League Setup ▸ Seasons** and inside the Schedule's
+  **+ New Season** dialog, for iRacing games only
+- 🔗 **One-click import from SimRacerHub** — paste a race's SimRacerHub URL (or just its id) and
+  the **whole night** comes back in one press: Qualifying, every Heat, the Consolations and the
+  Feature, each a session you can fill its own grid from. The race's own figures come with it —
+  cautions, caution laps and lead changes read off SimRacerHub's summary line — for the grid's Save
+  to put on the event. Times, gaps, laps led, incidents, car
+  numbers and who was a lap down are converted to this app's own formats on the way in, and every
+  name is matched against the roster through each alias a driver answers to. **Points come across
+  too**, as far as they can without fighting your own scoring: a driver SimRacerHub paid without
+  racing arrives in **Provisional Entries** on exactly the points it paid them, and its penalties
+  and any bonus of your league's own invention land in the grid's **Adj** column. Your points
+  structure still scores every finishing position, and the bonuses this app works out itself
+  (fastest lap, led a lap, most laps led, pole) are left to it, so nothing is ever paid twice.
+  Nothing is saved: the import **fills the grid for review**, so a statistician fixes any name the
+  match got wrong and presses Save — which is what scores it. The same importer still takes a
+  pasted table, a CSV, or iRacing's own results JSON
 - 🗓 **Global race calendar** — a month-by-month grid of **every** event in the league, past and
   future, on the day it runs. Each race is a pill carrying its series' abbreviation and the track,
   and clicking one opens that event's page (its results, once it has run). The same **Game ▸
@@ -427,7 +458,10 @@ throwaway key (`openssl genrsa`) — the emulator never checks it.
    the archive — it shows there as **TBD** rather than sitting in Upcoming forever. Admins get
    **+ New Race** here; on the cross-season feed (Season set to "All
    Seasons" with a series picked) there's a **+ New Season** button too, offering every option
-   League Setup does and dropping you onto the new season's empty calendar. **🖼 Share Graphic**
+   League Setup does and dropping you onto the new season's empty calendar. On a league with an
+   **iRacing** game that dialog also offers **🔗 Import a season from SimRacerHub** — paste the
+   season's link and its whole schedule arrives with it, so the calendar you land on isn't empty
+   (see *Importing a season from SimRacerHub* below). **🖼 Share Graphic**
    exports the calendar as an image — the whole season's rounds, or (on the cross-season feed)
    Upcoming and Recent Results as separate posts. Events that have session times set (see the
    Calendar below) show a **Session Times** column right of the race date, in the reader's own
@@ -541,6 +575,9 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
      above them in the Season dropdown and in League Setup. A season with no dated races yet
      (one being set up now) sits at the top. Use the **▲ ▼** arrows in the Seasons list to
      arrange your own order instead; **↺ Sort by race date** hands it back to the dates.
+     On a game named **iRacing** the Seasons panel also carries
+     **🔗 Import a season from SimRacerHub**, which builds the season and its whole schedule from
+     one link — see *Importing a season from SimRacerHub* below.
    - **Classes** *(optional)* — split the season's field into separately-scored groups
      ("Pro"/"Amateur", "GT3"/"LMP2"). Leave it empty for an ordinary single-class season —
      nothing changes. Classes created here fill the **Class** menu in the top bar, which scopes
@@ -884,16 +921,65 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
    stats, and every linked player's profile update immediately. Re-open and re-save a race
    any time to correct results; it overwrites cleanly.
 
-   **Caution flags and lead changes belong to the race, not to a driver.** The **Race Info** tab
-   carries two optional boxes — **Caution flags** and **Lead changes** — filled in after the event
-   has been run. Whatever is entered appears at the **top of that event's results page**, beside the
-   track, the date and the race length, and is offered on its Share Graphic's metadata strip. They
-   count toward nothing: no points, no bonus, no driver stat, no standing. Not every league counts
-   them and not every game reports them, so **anything left blank — or on 0 — is left off the page
-   altogether**: an event with neither reads exactly as it always did, an event with only one shows
-   only that one, and "0 cautions" is never printed as though somebody had counted them. Copying an
-   event carries the two figures **only when its results come across with it**, since they record
-   the race that was run rather than the round it was scheduled as. See `lib/raceStats.js`.
+   **Import a whole night from SimRacerHub in one press.** The **⬆ Import Results** and
+   **🔗 Import from SimRacerHub** buttons above the grid open the same importer, the second one
+   landing you straight in its SimRacerHub box. Paste the race's SimRacerHub URL, or just the id off
+   the end of it, and every session that night held comes back in a single request: Qualifying, each
+   Heat, the Consolations, the Feature, and the Stages of a staged race. Pick which one fills the
+   grid you're on, then do the next session from the same import without fetching it again. Lap
+   times, gaps, elapsed times, laps led, incidents, car numbers and lap-down finishers are all
+   converted into what this app stores, and a driver SimRacerHub paid without them racing arrives
+   ticked for **Provisional Entries** with the points it paid them already in their box.
+   The review table's **Pts** column shows what SimRacerHub paid every driver, to check against
+   what your grid will pay; hovering one reads the total back term by term. A finishing row is
+   scored by **your** points structure and never from that figure, because one event must have one
+   scorer. What does cross over is the part this app has no way to work out for itself: every
+   penalty ("Cause of Caution", "14 incidents") and any bonus of your league's own invention
+   ("No incidents", "Show Up") are netted into the grid's **Adj** column, where they sit on top of
+   the points your structure pays and can be edited like anything else. The bonuses this app
+   derives from the results — fastest lap, led a lap, most laps led, the biggest climb — are left
+   to your own structure so they are never paid twice, and a pole bonus SimRacerHub prints against
+   the race is skipped because this app scores Qualifying on its own line. Stage points come across
+   only when the night didn't run its Stages as sessions of their own; when it did, they are scored
+   on those grids instead. Names are matched against the roster through every name each
+   driver answers to, exactly as the rest of the importer does. And **nothing is saved**: the import
+   fills the grid for you to check and correct, and **Save** is still what scores it. A SimRacerHub
+   link pasted into the paste-a-table box is fetched rather than parsed, so either way in works. See
+   `lib/srhImport.js` and `app/api/import-srh/route.js` — the fetch is server-side because
+   SimRacerHub sends no CORS headers, so a browser cannot read it directly.
+
+   **Race statistics belong to the race, not to a driver.** The **Race Info** tab carries three
+   optional boxes — **Caution flags**, **Caution laps** and **Lead changes** — filled in after the
+   event has been run. Whatever is entered appears at the **top of that event's results page**,
+   beside the track, the date and the race length, and is offered on its Share Graphic's metadata
+   strip. They count toward nothing: no points, no bonus, no driver stat, no standing. Not every
+   league counts them and not every game reports them, so **anything left blank, or on 0, is left
+   off the page altogether**: an event with none reads exactly as it always did, an event with only
+   one shows that one, and "0 cautions" is never printed as though somebody had counted them.
+   Copying an event carries the figures **only when its results come across with it**, since they
+   record the race that was run rather than the round it was scheduled as.
+
+   **Different Leaders is counted for you.** It joins that strip at the top of the results page and
+   has no box to type it in: it is the number of drivers whose **Led** column shows at least one
+   lap, worked out from the session on screen every time the page is drawn. That is deliberate. The
+   results already say who led, so a figure entered by hand could disagree with the grid printed
+   under it, and correcting a Led cell would leave the old count sitting above it. It is counted off
+   the session the reader is actually looking at — a heat with one leader and a feature with five
+   are different answers — and the chip's tooltip names which session it counted. A session whose
+   Led column was never filled in, and a qualifying sheet, which has no laps to lead, show no chip
+   at all, the same rule the recorded figures print by. Provisional entries never count: a driver
+   awarded points without racing led nothing. See `lib/raceStats.js`.
+
+   **Importing a race from SimRacerHub fills the recorded figures in.** SimRacerHub prints each
+   session's own summary above its table — how many drivers led, how many times the lead changed,
+   how many cautions flew and how many laps ran under them — and the importer reads the three this
+   app keeps straight off it, so they never have to be copied across by hand. They show in the
+   importer above the driver rows, with a tick box to leave them out (a heat's cautions are rarely
+   what you want on the event), and again above the grid once applied; the grid's own **Save**
+   writes them onto the event along with the results. Nothing is saved before that. SimRacerHub's
+   leader count is shown for comparison but never stored, because this app counts its own from the
+   Led column — on the 122 real SimRacerHub sessions this was checked against, the two agreed every
+   time.
 
    **Adding a driver mid-entry picks from the drivers you already have.** The
    **＋ Add a driver to this race…** box at the bottom of the grid searches **every name a driver
@@ -965,6 +1051,56 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
    re-entered. A race row with no elapsed time falls back to reconstructing one from the winner's
    time plus its stored interval; a lapped car or a DNF has no comparable time and reads as a dash.
    All of these columns are offered in the Share Graphic exporter too.
+
+### Importing a season from SimRacerHub
+
+*iRacing only.* SimRacerHub is where an iRacing league's scoring lives, so next season gets built
+there first — and then built again here, round by round, with the same tracks, dates and distances
+typed a second time. This is that second half in one link.
+
+**Where it is.** Two doors, both to the same importer, and both only on a game named **iRacing**:
+
+- **League Setup ▸ Seasons**, with the series picked — **🔗 Import a season from SimRacerHub**.
+- The Schedule's **+ New Season** dialog (the one you get with Season on **All Seasons**) —
+  **🔗 Import a season from SimRacerHub**, which is the same thing for a season that needs a series
+  making too.
+
+**What to paste.** Any SimRacerHub link that carries the season, which is all of them: its
+schedule, its standings, its latest results, or just the id off the end. Nothing but
+simracerhub.com is fetched, and a link to a whole *series* is refused rather than having one of its
+seasons picked for you.
+
+**It reads first, then creates.** Pressing **Read schedule** fetches the page and shows what it
+found: which league, series and season SimRacerHub has it under, every round with its date, track
+and distance, how many venues are new, and anything it couldn't make sense of. Nothing is written
+until you press **Create season & N races**. One press would be quicker and would also be a
+season's worth of rows appearing before you'd noticed the wrong link was pasted.
+
+**What comes across.** The season's name (editable — it's the one thing you'll usually want to
+change), its car, and for every round: the round number, the league's own name for the event (or
+the track's, when they don't name their events), the date, the track, the distance as **laps or a
+clock**, whether the round runs for **no championship points**, and the **practice and race start
+times** where SimRacerHub shows them. Tracks are matched against the ones you already have —
+including the former names a merged venue remembers, so an import can't re-create a duplicate you
+just cleaned up — and any genuinely new venue is added to your Tracks library, so those rounds have
+a track page and lap records from the day they're created.
+
+**The messy parts, handled rather than guessed at.** SimRacerHub lets every league pick its own
+columns, so no two schedule pages have the same shape: every cell is found by what its column is
+*called*, never by counting, and a column this doesn't know (Pole, Winner, Weather, Can Drop, Track
+Type) is ignored. **Off weeks** are skipped and counted, so twelve rounds don't arrive as thirty.
+**Round numbers** are kept as the league wrote them unless they can't be — SimRacerHub leaves
+playoff rounds unnumbered and lists the page by date, and this app orders a season by that number
+— in which case the rounds are numbered 1..N in date order and you're told. **Dates** are the last
+trap: a league writing `17/08/2026` means 17 August, and one writing `08/17/2026` means the same
+day. The whole page is resolved together, from evidence (a number above 12 can only be a day; a
+schedule runs forwards), and on the one shape that can't be proved — a monthly series on the 8th —
+it says so instead of quietly choosing.
+
+**What doesn't come across.** Classes, the roster, the points structure and heat-racing setup: a
+schedule doesn't describe them, and they're set up as on any new season. Pole and winner columns
+are ignored too — those are results, and results are imported per race from the same site (see
+*Results entry* above). See `lib/srhSchedule.js` and `app/api/import-srh-season/route.js`.
 
 ### Running a Time Trial or a placement night
 

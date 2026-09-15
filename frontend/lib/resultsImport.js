@@ -257,6 +257,12 @@ const toInt = v => {
   const n = parseInt(String(v ?? "").replace(/[^\d-]/g, ""), 10);
   return Number.isFinite(n) ? n : null;
 };
+// Points, which a league may pay in halves ("12.5"), so this one keeps the
+// decimal where toInt would floor it.
+const toNum = v => {
+  const n = parseFloat(String(v ?? "").replace(/[^\d.-]/g, ""));
+  return Number.isFinite(n) ? n : null;
+};
 const truthyStatus = v => {
   const s = String(v ?? "").toLowerCase();
   if (/dns|did not start/.test(s)) return "dns";
@@ -299,6 +305,16 @@ export function buildRows({ rows }, mapping, entries, opts = {}) {
         || (qualifying ? (fastTime || raceTime) : "")
         || "",
       status: truthyStatus(get(row, "status")),
+      // What the source paid this driver. This app works points out for itself
+      // from the league's own structure (see pointsFor in lib/standings.js), so
+      // a finishing row is never scored FROM this — it's shown in the review
+      // table to be checked against what the grid will pay.
+      //
+      // The one row it IS the answer for is a provisional entry: a driver
+      // awarded points without racing has no finishing position to score off,
+      // so the flat value the source paid them is exactly what this app's
+      // Provisional Entries section holds (see applyImport in SessionEditor).
+      points: toNum(get(row, "points")),
       // The driver's best single lap time as a clock string ("1:23.456"), kept
       // as-is for the results grid's "Best Lap" column. This is separate from
       // the `fastest_lap` boolean (who was quickest overall) computed below —
@@ -378,5 +394,34 @@ export const MAPPABLE_FIELDS = [
   ["qual_time", "Qual Time"],
   ["fastest_lap_time", "Fastest Lap"],
   ["status", "Status"],
-  ["points", "Points (ignored)"],
+  // Shown in the review table rather than scored from — the league's own points
+  // structure pays a finishing row. It fills a PROVISIONAL entry's points,
+  // which have no position to be worked out from. See `points` in buildRows.
+  ["points", "Points (reference)"],
 ];
+
+// ── Session names ─────────────────────────────────────────────────────────
+
+// The app's session type a source's session NAME belongs in: "qualifying" |
+// "practice" | "heat" | "consolation" | "feature" | "race". Matches the session
+// types in components/SessionEditor.jsx, so an imported session lands in the
+// grid it belongs to.
+//
+// This is the one place the vocabulary of a league night is written down. Both
+// multi-session importers read it: iRacing names its simsessions ("HEAT 1",
+// "B-MAIN", "FEATURE") and so does SimRacerHub ("QUALIFY", "CONSOLATION"), and
+// they have no business disagreeing about what a B-Main is.
+//
+// Order matters. A heat is often named for what it decides ("Qualifying Race"),
+// so the race-ish namings are claimed before the plain qualifying check — and
+// the lettered mains (B/C/D-Main, which are consolations) before the generic
+// "Main" that means the feature.
+export function sessionTypeFromName(name) {
+  const n = String(name || "").toUpperCase();
+  if (/HEAT|QUALIFYING RACE|QUAL RACE/.test(n)) return "heat";
+  if (/CONSOLATION|CONSI|LAST CHANCE|LCQ|[B-Z][-\s]?MAIN|SEMI/.test(n)) return "consolation";
+  if (/FEATURE|MAIN|GRAND FINAL/.test(n)) return "feature";
+  if (/QUAL/.test(n)) return "qualifying";
+  if (/PRACTICE|WARM|SHAKEDOWN/.test(n)) return "practice";
+  return "race";
+}

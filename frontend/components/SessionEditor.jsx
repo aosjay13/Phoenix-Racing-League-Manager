@@ -375,6 +375,15 @@ function parseClassCell(text, classes = []) {
 
 const LABELS = { qualifying: "Qualifying", race: "Race", heat: "Heat", consolation: "Consolation", feature: "Feature" };
 
+// The event's race statistics, as the pending-import panel lists them. Same
+// icons and wording the public results page prints them with, so the figures
+// read the same in both places. See lib/raceStats.js.
+const RACE_STATS_CHIPS = [
+  ["caution_flags", "🟡", "Caution Flags"],
+  ["caution_laps", "🟠", "Caution Laps"],
+  ["lead_changes", "🔄", "Lead Changes"],
+];
+
 // Unified results grid for any session type — Qualifying, standard Race
 // sessions, or (for heat-format events) Heats, Consolation, and the Feature.
 // Renders horizontal sub-tabs across the sessions of this type (with an
@@ -427,6 +436,12 @@ export function SessionEditor({
   sessionClass = null, sessionClassName = "",
   isBangerRacing = false, derbyTarget = null, onDerbyPointsSave = null,
   isBracketRacing = false, bracketSize = null, onBracketSizeChange = null,
+  // Writes the event's race statistics (cautions, caution laps, lead changes)
+  // when this grid is saved — the screen that owns the race doc does the PATCH,
+  // the same way it owns the bracket size and the derby rates. Absent on a
+  // screen that doesn't offer it, which simply means an import can't propose
+  // them there.
+  onRaceStatsSave = null,
 }) {
   const names = sessionNames.length ? sessionNames : [LABELS[sessionType] || "Session"];
   const namesKey = names.join("|");
@@ -535,6 +550,14 @@ export function SessionEditor({
   const [overIndex, setOverIndex] = useState(null);
   const [pointsModal, setPointsModal] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  // Race statistics an import proposed for the EVENT — cautions, caution laps,
+  // lead changes — held here until this grid's own Save writes them, so the
+  // import fills them in for review exactly as it fills the rows. Shape:
+  // { stats: { caution_flags, caution_laps, lead_changes }, sessionName }.
+  const [pendingRaceStats, setPendingRaceStats] = useState(null);
+  // Whether Smart Import was opened by the SimRacerHub button beside it, which
+  // only decides where the cursor starts — both buttons open the same importer.
+  const [importSrhFirst, setImportSrhFirst] = useState(false);
   // "Import from Time Trial" — the qualifying tab's other way in (see
   // ImportTimeTrialModal). Qualifying only: a time trial produces a hot lap and
   // an order, which is a qualifying sheet and nothing else.
@@ -1183,7 +1206,15 @@ export function SessionEditor({
   // Provisional Entries section below it instead: flat points, no finishing
   // position, no stats. Qualifying has no such section, so the tick is ignored
   // there.
-  function applyImport(imported) {
+  function applyImport(imported, opts = {}) {
+    // Figures for the event itself, when the source reported them (see
+    // lib/raceStats.js). Replaced — or cleared — by every Apply, because the
+    // last import is what this grid now holds: keeping a previous session's
+    // cautions alive under a grid that has been refilled would save a figure
+    // for a race nobody is looking at.
+    setPendingRaceStats(opts.raceStats
+      ? { stats: opts.raceStats, sessionName: opts.sessionName || session }
+      : null);
     const entryById = new Map(entries.map(e => [e.id ?? e.entry_id, e]));
     const allowProv = sessionType !== "qualifying";
     const byId = new Map();
@@ -1216,6 +1247,18 @@ export function SessionEditor({
         qual_time: im.qual_time || row.qual_time,
         status: im.status || row.status,
         fastest_lap: !!im.fastest_lap,
+        // A per-result adjustment the source carried. From SimRacerHub that's
+        // its penalties ("Cause of Caution", "14 incidents") plus any bonus
+        // this app has no way to work out for itself ("No incidents", "Show
+        // Up") — see srhRowPoints in lib/srhImport.js. The finishing points
+        // themselves are NOT imported: this season's own structure pays those,
+        // off the position in the grid, which is what keeps one scorer.
+        //
+        // An import with no opinion on it (a pasted table, an iRacing file)
+        // leaves the cell alone, so an adjustment typed by hand survives.
+        points_adjustment: im.points_adjustment != null
+          ? String(im.points_adjustment)
+          : row.points_adjustment,
       };
     });
     const sorted = sortByFinish(placed);
@@ -1259,21 +1302,47 @@ export function SessionEditor({
     if (allowProv) {
       setProvRows(prev => {
         const kept = prev.filter(r => !(r.entry_id && byId.has(r.entry_id)));
-        const listed = new Set(kept.map(r => r.entry_id).filter(Boolean));
+        // A driver already listed provisionally keeps their place rather than
+        // being added twice — but takes the points the import carries for them.
+        // Re-importing a race the source has since re-scored is how a
+        // corrected figure arrives, and silently keeping the old one would make
+        // the import look like it had worked.
+        const refreshed = kept.map(r => {
+          const im = r.entry_id ? provById.get(r.entry_id) : null;
+          if (!im || im.points == null) return r;
+          const value = String(im.points);
+          return r.manual_points === value && !r.auto ? r : { ...r, manual_points: value, auto: false };
+        });
+        const listed = new Set(refreshed.map(r => r.entry_id).filter(Boolean));
         const added = [...provById.keys()]
           .filter(id => !listed.has(id))
           .map(id => {
             const e = entryById.get(id);
-            // Points are left on auto, so they fill with the first finishing
-            // position nobody took — same as a hand-added provisional entry.
+            const im = provById.get(id);
+            // A provisional entry's points are the one points figure an import
+            // IS the answer for: the driver never raced, so there's no
+            // finishing position for this season's structure to score, and
+            // what the source paid them is the whole of it. SimRacerHub keeps
+            // it in the same total as everyone else's.
+            //
+            // Sources that say nothing about points leave the row on auto, so
+            // it fills with the first finishing position nobody took, the same
+            // as a hand-added provisional entry. Either way ↺ goes back to
+            // that auto-filled figure.
+            const imported = im?.points != null ? im.points : undefined;
             return makeProvRow({
               entry_id: id,
               driver_name: e?.name ?? "",
               driver_number: e?.number ?? null,
               class_id: pinnedClassId || e?.class_id || "",
+              manual_points: imported,
+              auto: imported == null,
             });
           });
-        return kept.length === prev.length && !added.length ? prev : [...kept, ...added];
+        const touched = refreshed.some((r, i) => r !== kept[i]);
+        return kept.length === prev.length && !added.length && !touched
+          ? prev
+          : [...refreshed, ...added];
       });
     }
 
@@ -1618,9 +1687,29 @@ export function SessionEditor({
           points_template_id: templateId || null, rows: [...filled, ...provPayload],
         },
       });
-      showToast("success", scoped
+      // The event's own figures, if an import proposed some and they weren't
+      // unticked. Written after the results on purpose: the results are what
+      // this screen is for, and a race statistic is worth nothing without them.
+      //
+      // Kept in state if the PATCH fails so pressing Save again retries it —
+      // and said out loud, because the results DID save and silently dropping
+      // three numbers the statistician watched arrive would be the worst of
+      // both.
+      let statsSaved = false;
+      if (pendingRaceStats && onRaceStatsSave) {
+        try {
+          await onRaceStatsSave(pendingRaceStats.stats);
+          setPendingRaceStats(null);
+          statsSaved = true;
+        } catch (err) {
+          return showToast("error",
+            `Results saved, but the race statistics didn't: ${err.message}. They're still listed above — press Save again to retry.`);
+        }
+      }
+      const saved = scoped
         ? `${sessionClassName || "Class"} results saved. Standings and profiles update instantly.`
-        : "Results saved. Standings and profiles update instantly.");
+        : "Results saved. Standings and profiles update instantly.";
+      showToast("success", statsSaved ? `${saved} Race statistics saved to Race Info.` : saved);
     } catch (err) {
       showToast("error", err.message);
     } finally {
@@ -1795,8 +1884,21 @@ export function SessionEditor({
           title={entries.length
             ? "Import results from a CSV export or pasted table"
             : "Import results from a CSV export or pasted table — you can create drivers inline as you resolve each row"}
-          style={{ marginTop: 0, whiteSpace: "nowrap" }} onClick={() => setImportOpen(true)} disabled={!entries.length && !seasonId}>
+          style={{ marginTop: 0, whiteSpace: "nowrap" }}
+          onClick={() => { setImportSrhFirst(false); setImportOpen(true); }}
+          disabled={!entries.length && !seasonId}>
           ⬆ Import Results
+        </button>
+        {/* The one-click path. Same importer, opened on its SimRacerHub box:
+            paste the race's URL and every session of the night — qualifying,
+            heats, consolations, feature — comes back to fill these grids. It
+            still only fills them; Save is what writes. */}
+        <button className="btn btn-ghost" type="button"
+          title="Paste a SimRacerHub race URL and pull every session of that night in for review"
+          style={{ marginTop: 0, whiteSpace: "nowrap" }}
+          onClick={() => { setImportSrhFirst(true); setImportOpen(true); }}
+          disabled={!entries.length && !seasonId}>
+          🔗 Import from SimRacerHub
         </button>
         {/* The other end of the Time Trials bridge. A trial's best laps ARE a
             qualifying sheet — a hot lap and an order — so this sits on the
@@ -1947,6 +2049,38 @@ export function SessionEditor({
           )
         )}
       </div>
+
+      {/* ── Race statistics waiting on Save ─────────────────────────────
+          Cautions, caution laps and lead changes an import read off the source.
+          They belong to the EVENT rather than to a driver, so they print at the
+          top of its results page — and they sit here, above the grid, for the
+          same reason: they describe the race, not a row in it. Nothing is
+          written until this grid's Save, the same contract the rows have. */}
+      {pendingRaceStats && (
+        <div style={{ border: "1.5px solid var(--accent-cyan, #58a6ff)", borderRadius: 10, padding: "10px 12px", marginBottom: 12, background: "rgba(88,166,255,0.06)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+            <strong style={{ fontSize: "0.85rem" }}>
+              Race statistics imported{pendingRaceStats.sessionName ? ` from ${pendingRaceStats.sessionName}` : ""}
+            </strong>
+            <button type="button" className="btn btn-ghost" style={{ marginTop: 0, padding: "2px 10px", fontSize: "0.78rem" }}
+              title="Leave this event's existing figures alone"
+              onClick={() => setPendingRaceStats(null)}>✕ Discard</button>
+          </div>
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", margin: "6px 0 0", fontSize: "0.82rem" }}>
+            {RACE_STATS_CHIPS.map(([field, icon, label]) => (
+              <span key={field}>
+                <span aria-hidden="true">{icon}</span> {label}{" "}
+                <strong>{pendingRaceStats.stats?.[field] == null ? "—" : pendingRaceStats.stats[field]}</strong>
+              </span>
+            ))}
+          </div>
+          <p style={{ margin: "6px 0 0", fontSize: "0.78rem", color: "var(--ink-2)" }}>
+            Saved onto this event — and printed at the top of its results page — when you press Save below. A 0 reads
+            as “not recorded” and is left off the page. <strong>Different Leaders</strong> needs no figure: it is counted
+            from the drivers whose <strong>Led</strong> column shows at least one lap.
+          </p>
+        </div>
+      )}
 
       <p style={{ marginTop: 0, color: "var(--ink-1)", fontSize: "0.85rem" }}>
         {sessionType === "qualifying"
@@ -2244,7 +2378,7 @@ export function SessionEditor({
                       data-prov-points={row.slot_id}
                       title={row.auto
                         ? `Auto-filled with P${lastFinishPos + i + 1} points — the first position nobody finished in. Type over it to set your own.`
-                        : "Your own value — click ↺ to go back to the auto-filled points."}
+                        : "Not the auto-filled figure — typed here, or imported from what the source paid. Click ↺ to go back to the auto-filled points."}
                       onPaste={e => handleColumnPaste(e, "manual_points", i, pasteProvColumn)}
                       onChange={e => updateProvRow(row.slot_id, { manual_points: e.target.value, auto: false })} />
                     {!row.auto && (
@@ -2283,6 +2417,7 @@ export function SessionEditor({
         <ImportResultsModal
           session={session} sessionType={sessionType} entries={entries}
           seasonId={seasonId} seriesName={seriesName} defaultClassId={pinnedClassId}
+          autoFocusSrh={importSrhFirst}
           onDriverCreated={handleDriverAdded}
           onApply={applyImport} onClose={() => setImportOpen(false)}
         />

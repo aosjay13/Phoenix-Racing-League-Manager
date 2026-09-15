@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { parseTable, mapHeaders, buildRows, MAPPABLE_FIELDS } from "@/lib/resultsImport";
 import { parseIracingResults, looksLikeIracingJson, segmentTable, defaultSegment } from "@/lib/iracingImport";
+import { hasSrhSessionStats, looksLikeSrhRef, srhEventLabel, srhPointsSummary } from "@/lib/srhImport";
 import { DriverCreateModal } from "@/components/DriverCreateModal";
 import { aliasValues } from "@/lib/aliases";
 import { displayNameValues } from "@/lib/driverNames";
@@ -17,15 +18,18 @@ const statusChip = {
   unmatched: { bg: "rgba(248,81,73,0.18)", fg: "#f85149", label: "no match" },
 };
 
-// Session-type labels for the iRacing segment picker, so a segment says which
+// Session-type labels for the event session picker, so a session says which
 // grid it belongs in using the same words the editor's tabs do.
 const SEGMENT_TYPE_LABEL = {
   qualifying: "Qualifying", heat: "Heat", consolation: "Consolation",
   feature: "Feature", race: "Race", practice: "Practice",
 };
 
-// Smart results importer. Three sources, one review table:
-//   • paste a results table (SimRacerHub, a spreadsheet, any game)
+// Smart results importer. Four sources, one review table:
+//   • import straight from SimRacerHub — paste the race's URL (or its id) and
+//     the whole night comes back: qualifying, every heat, the consolation and
+//     the feature, each one a session you can fill a grid from
+//   • paste a results table (a spreadsheet, any game)
 //   • upload a CSV export
 //   • upload iRacing's own results JSON — which carries the whole event
 //     (qualifying, heats, B-Main, Feature) in one file, so you pick which
@@ -41,7 +45,10 @@ const SEGMENT_TYPE_LABEL = {
 // `defaultClassId` is the class the grid this import feeds is being entered for
 // (a per-class session, or a "<class> only" round) — a driver created from the
 // review table joins it, the same as one created on the grid itself.
-export function ImportResultsModal({ session, sessionType, entries, seasonId, seriesName, defaultClassId = "", onDriverCreated, onApply, onClose }) {
+// `autoFocusSrh` opens the modal with the cursor already in the SimRacerHub box
+// — what the results screen's own "Import from SimRacerHub" button wants, so
+// that path is paste-and-go rather than paste-after-hunting.
+export function ImportResultsModal({ session, sessionType, entries, seasonId, seriesName, defaultClassId = "", autoFocusSrh = false, onDriverCreated, onApply, onClose }) {
   const [text, setText] = useState("");
   const [parsed, setParsed] = useState(null);      // { headers, rows, delimiter }
   const [mapping, setMapping] = useState({});
@@ -50,9 +57,19 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
   const [extraEntries, setExtraEntries] = useState([]); // drivers created from this modal
   const [createFor, setCreateFor] = useState(null);     // { idx, name } while the create form is open
   const [dragActive, setDragActive] = useState(false);
-  const [iracing, setIracing] = useState(null);    // { event, segments } from an iRacing JSON
-  const [segmentKey, setSegmentKey] = useState("");// which segment of that event is loaded
+  // A whole event and its sessions, from an iRacing JSON or a SimRacerHub race
+  // page: { source: "iracing" | "srh", event, segments }. Both are picked from
+  // one session menu, so the shape they share is the one the UI works in.
+  const [doc, setDoc] = useState(null);
+  const [segmentKey, setSegmentKey] = useState("");// which session of that event is loaded
   const [source, setSource] = useState("");        // what was loaded, for the file chip
+  const [srhRef, setSrhRef] = useState("");        // the SimRacerHub URL / id box
+  const [srhBusy, setSrhBusy] = useState(false);
+  const [srhError, setSrhError] = useState("");
+  // Whether to carry the session's race statistics (cautions, caution laps,
+  // lead changes) onto the event with this import. On by default, because a
+  // source that reports them is the reason not to type them by hand.
+  const [withRaceStats, setWithRaceStats] = useState(true);
   const [aliasesByDriver, setAliasesByDriver] = useState({}); // driver_id -> [alias value strings]
   const fileRef = useRef(null);
 
@@ -108,11 +125,26 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
     [sortedEntries, aliasesByDriver]
   );
 
-  // The iRacing segment currently feeding the review table, if any.
+  // The session of the loaded event currently feeding the review table, if any.
   const selectedSegment = useMemo(
-    () => iracing?.segments.find(s => s.key === segmentKey) || null,
-    [iracing, segmentKey]
+    () => doc?.segments?.find(s => s.key === segmentKey) || null,
+    [doc, segmentKey]
   );
+
+  // What the loaded event is, for the line above the session menu.
+  const docMeta = useMemo(() => {
+    if (!doc) return "";
+    if (doc.source === "srh") return srhEventLabel(doc.event);
+    return [doc.event?.league_name || doc.event?.series_name, doc.event?.track,
+      doc.event?.subsession_id ? `subsession ${doc.event.subsession_id}` : null]
+      .filter(Boolean).join(" · ");
+  }, [doc]);
+
+  // The session's own race statistics, when the source reports them. These
+  // describe the RUNNING of the race rather than any driver in it, so they go on
+  // the event (its Race Info) rather than into a grid row — see lib/raceStats.js.
+  // A qualifying or practice session reports none.
+  const sessionStats = hasSrhSessionStats(selectedSegment?.stats) ? selectedSegment.stats : null;
 
   // Column count + labels for the mapping dropdowns.
   const columns = useMemo(() => {
@@ -129,41 +161,94 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
   );
 
   // Load a parsed table into the review UI, re-deriving the column mapping.
+  //
+  // A source that says which drivers were paid without racing — SimRacerHub
+  // flags them — arrives with those rows already ticked for Provisional
+  // Entries, so the statistician confirms that reading rather than re-entering
+  // it. Everything else starts untouched.
   function loadTable(t) {
     setParsed(t);
     setMapping(mapHeaders(t.headers, t.rows.slice(0, 8)));
     setOverrides({});
-    setProv({});
+    setProv(Object.fromEntries((t?.provisional || []).flatMap((p, i) => (p ? [[i, true]] : []))));
   }
 
   function reset() {
     setText(""); setParsed(null); setMapping({}); setOverrides({}); setProv({});
-    setIracing(null); setSegmentKey(""); setSource("");
+    setDoc(null); setSegmentKey(""); setSource(""); setSrhError("");
+    setWithRaceStats(true);
   }
 
-  // Parse whatever was pasted or dropped. iRacing's results JSON is recognised
-  // first (it holds every segment of the event); anything else goes through the
+  // One session of a loaded event → { headers, rows }. SimRacerHub's sessions
+  // arrive from the API as tables already; an iRacing JSON is turned into one
+  // here, from the segment's own rows.
+  const tableOf = seg => (
+    seg?.headers
+      ? {
+          headers: seg.headers, rows: seg.rows, delimiter: seg.delimiter || "srh",
+          provisional: seg.provisional, points: seg.points,
+        }
+      : segmentTable(seg)
+  );
+
+  // Show a whole event (either source) and open it on the session that belongs
+  // in the grid this importer was opened from.
+  function loadDoc(next, label) {
+    const seg = defaultSegment(next.segments, sessionType, session);
+    setDoc(next);
+    setSegmentKey(seg?.key || "");
+    setSource(label);
+    loadTable(tableOf(seg));
+  }
+
+  // Pull a SimRacerHub race in by URL or id. The fetch is server-side (SRH
+  // sends no CORS headers), and what comes back is every session of the night —
+  // nothing is saved, it only fills the review table below.
+  async function importFromSrh(input) {
+    const ref = String(input ?? "").trim() || srhRef.trim();
+    if (!ref || srhBusy) return;
+    setSrhBusy(true);
+    setSrhError("");
+    try {
+      const res = await api(`/api/import-srh?url=${encodeURIComponent(ref)}`);
+      if (!res?.segments?.length) throw new Error("That SimRacerHub race has no sessions on it yet.");
+      setSrhRef(ref);
+      setText("");
+      loadDoc(
+        { source: "srh", event: res.event, segments: res.segments, source_url: res.source_url },
+        `SimRacerHub · ${srhEventLabel(res.event) || ref}`,
+      );
+    } catch (err) {
+      // Leave anything already loaded alone — a mistyped id shouldn't throw
+      // away a table the admin was part way through reviewing.
+      setSrhError(err.message || "Could not import that SimRacerHub race.");
+    } finally {
+      setSrhBusy(false);
+    }
+  }
+
+  // Parse whatever was pasted or dropped. A SimRacerHub link is fetched rather
+  // than parsed (pasting one into the table box is a request to import that
+  // race, not a one-row table); iRacing's results JSON is recognised next (it
+  // holds every segment of the event); anything else goes through the
   // delimited-text parser.
   function runParse(raw, label = "") {
-    const doc = parseIracingResults(raw);
-    if (doc?.segments?.length) {
-      const seg = defaultSegment(doc.segments, sessionType, session);
-      setIracing(doc);
-      setSegmentKey(seg?.key || "");
-      setSource(label || "iRacing results JSON");
-      loadTable(segmentTable(seg));
+    if (looksLikeSrhRef(raw)) { importFromSrh(raw); return; }
+    const iracingDoc = parseIracingResults(raw);
+    if (iracingDoc?.segments?.length) {
+      loadDoc({ source: "iracing", ...iracingDoc }, label || "iRacing results JSON");
       return;
     }
-    setIracing(null); setSegmentKey(""); setSource(label);
+    setDoc(null); setSegmentKey(""); setSource(label);
     loadTable(parseTable(raw));
   }
 
-  // Switch which segment of a loaded iRacing event fills the review table.
+  // Switch which session of the loaded event fills the review table.
   function selectSegment(key) {
-    const seg = iracing?.segments.find(s => s.key === key);
+    const seg = doc?.segments?.find(s => s.key === key);
     if (!seg) return;
     setSegmentKey(key);
-    loadTable(segmentTable(seg));
+    loadTable(tableOf(seg));
   }
 
   const readAsText = file => new Promise(resolve => {
@@ -225,6 +310,18 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
   // all, so it can't be provisional either.
   const isProv = (row, idx) => allowProvisional && !!prov[idx] && resolvedEntryId(row, idx) != null;
 
+  // SimRacerHub's itemised points for a review row, when the loaded table
+  // carries them — they ride alongside the rows, see srhSegmentTable. Null for
+  // a pasted table or an iRacing file, which say a total and nothing more.
+  const srhPointsFor = idx => parsed?.points?.[idx] || null;
+  // Is any of it worth a column? A table with no points at all shouldn't grow
+  // an empty one.
+  const showPoints = useMemo(
+    () => built.rows.some((r, i) => r.values.points != null || srhPointsFor(i)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [built.rows, parsed]
+  );
+
   // Rows that will actually import (a driver resolved and not skipped).
   const applicable = built.rows
     .map((row, idx) => ({ row, idx, entry_id: resolvedEntryId(row, idx), provisional: isProv(row, idx) }))
@@ -240,7 +337,7 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
   }, [applicable]);
 
   function apply() {
-    const rows = applicable.map(({ row, entry_id, provisional }) => ({
+    const rows = applicable.map(({ row, entry_id, provisional, idx }) => ({
       entry_id,
       // Ticked "Prov": the editor parks this driver in Provisional Entries on
       // flat points rather than giving them a finishing position, so none of
@@ -262,8 +359,25 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
       car_number: row.values.car_number,
       status: row.values.status,
       fastest_lap: row.values.fastest_lap,
+      // What the source paid this driver. A provisional entry's flat points ARE
+      // this number — there's no finishing position to score one off — so the
+      // editor puts it straight in their points box. A finishing row is scored
+      // by the league's own structure instead, and this is only shown.
+      points: row.values.points,
+      // …and, on a SimRacerHub import, the part of that total this app has no
+      // way to work out for itself: its penalties, its own bonuses, its stage
+      // points. That net goes in the grid's Adj column, on top of the points
+      // the structure pays. Null from any other source, which leaves Adj alone.
+      points_adjustment: srhPointsFor(idx)?.carried ?? null,
     }));
-    onApply(rows);
+    // The event's race statistics ride alongside the rows rather than in them:
+    // they belong to the race, so the editor holds them for its own Save to
+    // write onto the event. Left out entirely when the source reported none, or
+    // when the statistician unticked them — importing a heat's cautions onto
+    // the event is rarely what's wanted.
+    onApply(rows, sessionStats && withRaceStats
+      ? { raceStats: sessionStats, sessionName: selectedSegment?.name || "" }
+      : undefined);
   }
 
   const s = built.rows.length
@@ -285,10 +399,42 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
         </div>
 
         <p style={{ margin: "6px 0 10px", fontSize: "0.82rem", color: "var(--ink-1)" }}>
-          Paste a results table (SimRacerHub, a spreadsheet, any game), upload a CSV, or upload iRacing&rsquo;s
-          results JSON — that one file holds every segment of the event, and you pick which to import.
-          Columns and driver names are detected — review and adjust below, then Apply.
+          Import a race straight from SimRacerHub — one URL brings back every session of the night.
+          Or paste a results table (a spreadsheet, any game), upload a CSV, or upload iRacing&rsquo;s
+          results JSON, which likewise holds the whole event. Columns and driver names are detected —
+          review and adjust below, then Apply.
         </p>
+
+        {/* ── Import from SimRacerHub ──────────────────────────────────────
+            The fast path, so it comes first. One URL fetches the whole night:
+            qualifying, the heats, the consolation and the feature all arrive
+            together and each can fill its own grid. */}
+        <div style={{ border: "1.5px solid var(--border)", borderRadius: 10, padding: "10px 12px", marginBottom: 10, background: "var(--bg-elevated)" }}>
+          <strong style={{ fontSize: "0.85rem" }}>Import from SimRacerHub</strong>
+          <p style={{ margin: "2px 0 8px", fontSize: "0.78rem", color: "var(--ink-2)" }}>
+            Paste the race&rsquo;s SimRacerHub URL (or just its id) and every session on it — Qualifying,
+            Heats, Consolations, the Feature — comes back for review.
+          </p>
+          <form
+            style={{ display: "flex", gap: 8, flexWrap: "wrap" }}
+            onSubmit={e => { e.preventDefault(); importFromSrh(srhRef); }}
+          >
+            <input
+              autoFocus={autoFocusSrh}
+              value={srhRef}
+              onChange={e => { setSrhRef(e.target.value); setSrhError(""); }}
+              aria-label="SimRacerHub race URL or id"
+              placeholder="https://www.simracerhub.com/scoring/season_race.php?schedule_id=…"
+              style={{ flex: "1 1 280px", minWidth: 0, padding: "6px 10px", border: "1.5px solid var(--border)", borderRadius: 8, background: "var(--bg-base, var(--bg-elevated))", color: "var(--ink-0)", fontSize: "0.85rem" }}
+            />
+            <button type="submit" className="btn btn-primary" style={{ marginTop: 0, whiteSpace: "nowrap" }} disabled={!srhRef.trim() || srhBusy}>
+              {srhBusy ? "Importing…" : "Import Results"}
+            </button>
+          </form>
+          {srhError && (
+            <p style={{ margin: "8px 0 0", fontSize: "0.8rem", color: "#f85149" }}>⚠ {srhError}</p>
+          )}
+        </div>
 
         <div
           role="button"
@@ -310,7 +456,7 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
             <strong>Drop a CSV or iRacing JSON here</strong> or click to browse
           </div>
           <div style={{ fontSize: "0.76rem", color: "var(--ink-2)", marginTop: 2 }}>
-            SimRacerHub CSV · iRacing results JSON (all segments) — or paste a table below
+            SimRacerHub CSV · iRacing results JSON (all sessions) — or paste a table below
           </div>
           {source && (
             <div style={{ fontSize: "0.76rem", color: "var(--ink-1)", marginTop: 6 }}>
@@ -320,20 +466,16 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
           <input ref={fileRef} type="file" multiple accept=".csv,.tsv,.txt,.json,text/csv,application/json" style={{ display: "none" }} onChange={onFile} />
         </div>
 
-        {iracing && (
+        {doc && (
           <div style={{ border: "1.5px solid var(--border)", borderRadius: 10, padding: "10px 12px", marginBottom: 10, background: "var(--bg-elevated)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "baseline" }}>
-              <strong style={{ fontSize: "0.85rem" }}>iRacing event</strong>
-              <span style={{ fontSize: "0.76rem", color: "var(--ink-2)" }}>
-                {[iracing.event?.league_name || iracing.event?.series_name, iracing.event?.track,
-                  iracing.event?.subsession_id ? `subsession ${iracing.event.subsession_id}` : null]
-                  .filter(Boolean).join(" · ")}
-              </span>
+              <strong style={{ fontSize: "0.85rem" }}>{doc.source === "srh" ? "SimRacerHub event" : "iRacing event"}</strong>
+              <span style={{ fontSize: "0.76rem", color: "var(--ink-2)" }}>{docMeta}</span>
             </div>
             <label style={{ display: "block", fontSize: "0.78rem", color: "var(--ink-1)", marginTop: 8 }}>
-              Race segment to import into <strong>{session}</strong>
+              Session to import into <strong>{session}</strong>
               <select value={segmentKey} onChange={e => selectSegment(e.target.value)} style={{ width: "100%", marginTop: 2 }}>
-                {iracing.segments.map(s => (
+                {doc.segments.map(s => (
                   <option key={s.key} value={s.key}>
                     {s.name} — {SEGMENT_TYPE_LABEL[s.type] || s.type}, {s.driver_count} driver{s.driver_count === 1 ? "" : "s"}
                   </option>
@@ -343,19 +485,20 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
             {selectedSegment && selectedSegment.type !== sessionType && (
               <p style={{ margin: "8px 0 0", fontSize: "0.78rem", color: "var(--accent-amber, #d29922)" }}>
                 ⚠ {selectedSegment.name} is {SEGMENT_TYPE_LABEL[selectedSegment.type] || selectedSegment.type} in
-                iRacing, but you&rsquo;re importing into the {SEGMENT_TYPE_LABEL[sessionType] || sessionType} grid
-                ({session}). Switch segments above if that isn&rsquo;t what you meant.
+                {doc.source === "srh" ? " SimRacerHub" : " iRacing"}, but you&rsquo;re importing into the{" "}
+                {SEGMENT_TYPE_LABEL[sessionType] || sessionType} grid ({session}). Switch sessions above if that
+                isn&rsquo;t what you meant.
               </p>
             )}
             <p style={{ margin: "8px 0 0", fontSize: "0.76rem", color: "var(--ink-2)" }}>
-              One segment at a time — apply and save this one, then reopen Smart Import on the next session and
-              pick its segment from the same file.
+              One session at a time — apply and save this one, then reopen Smart Import on the next session and
+              pick it from the same {doc.source === "srh" ? "race" : "file"}.
             </p>
           </div>
         )}
 
         <label style={{ display: "block", fontSize: "0.8rem", color: "var(--ink-1)", margin: "2px 0 6px" }}>
-          Or paste comma- or tab-separated results (or iRacing results JSON)
+          Or paste comma- or tab-separated results (or an iRacing results JSON, or a SimRacerHub race link)
         </label>
         <textarea
           rows={12}
@@ -393,6 +536,43 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
               <p key={i} style={{ margin: "8px 0 0", fontSize: "0.8rem", color: "var(--accent-amber, #d29922)" }}>⚠ {w}</p>
             ))}
 
+            {/* ── The race's own statistics ────────────────────────────────
+                Cautions, caution laps and lead changes describe the RUNNING of
+                the race rather than any driver in it, so they go on the event
+                and print at the top of its results page — above the drivers,
+                which is where they sit here too. Different Leaders is not
+                offered: this app counts it off the Led column rather than
+                storing a figure that could disagree with the grid. */}
+            {sessionStats && (
+              <div style={{ border: "1.5px solid var(--border)", borderRadius: 10, padding: "10px 12px", marginTop: 12, background: "var(--bg-elevated)" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, margin: 0, fontSize: "0.85rem", cursor: "pointer" }}>
+                  <input type="checkbox" checked={withRaceStats} onChange={e => setWithRaceStats(e.target.checked)}
+                    style={{ width: 16, height: 16, margin: 0 }} />
+                  <strong>Race statistics from {selectedSegment?.name || "this session"}</strong>
+                </label>
+                <div style={{ display: "flex", gap: 14, flexWrap: "wrap", margin: "8px 0 0", fontSize: "0.82rem", opacity: withRaceStats ? 1 : 0.45 }}>
+                  {[["🟡", "Caution Flags", sessionStats.caution_flags],
+                    ["🟠", "Caution Laps", sessionStats.caution_laps],
+                    ["🔄", "Lead Changes", sessionStats.lead_changes]].map(([icon, label, value]) => (
+                    <span key={label}>
+                      <span aria-hidden="true">{icon}</span> {label}{" "}
+                      <strong>{value == null ? "—" : value}</strong>
+                    </span>
+                  ))}
+                </div>
+                <p style={{ margin: "8px 0 0", fontSize: "0.78rem", color: "var(--ink-2)" }}>
+                  These belong to the event, not to a driver, so they go on its <strong>Race Info</strong> and print at the
+                  top of the results page. Nothing is saved until you Save {session} — the figures ride along with it.
+                  {sessionStats.leaders != null && (
+                    <> SimRacerHub also counted <strong>{sessionStats.leaders}</strong>{" "}
+                      {sessionStats.leaders === 1 ? "leader" : "different leaders"}; this app works that out from the Led
+                      column itself, so it isn&rsquo;t stored — the grid below is what decides it.</>
+                  )}
+                  {" "}Untick if you&rsquo;d rather keep the figures this event already has.
+                </p>
+              </div>
+            )}
+
             {/* Preview + driver resolution */}
             <h4 style={{ margin: "16px 0 6px" }}>
               Preview{s && <span style={{ fontWeight: 400, fontSize: "0.8rem", color: "var(--ink-1)" }}> · {s.matched} matched, {s.suggested} to check, {s.unmatched} unresolved of {s.total}{provCount ? `, ${provCount} provisional` : ""}</span>}
@@ -401,6 +581,15 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
               <p style={{ margin: "0 0 8px", fontSize: "0.78rem", color: "var(--ink-2)" }}>
                 Tick <strong>Prov</strong> beside a driver who didn&rsquo;t really race but is still owed points — they go to
                 Provisional Entries at the bottom of the results screen on flat points instead of taking a finishing position.
+              </p>
+            )}
+            {showPoints && (
+              <p style={{ margin: "0 0 8px", fontSize: "0.78rem", color: "var(--ink-2)" }}>
+                <strong>Pts</strong> is what the source paid, to check against your own — a finishing row is scored by
+                <em> your</em> points structure, never from this. What does come across is the part this app can&rsquo;t work
+                out for itself: a penalty, or a bonus of your league&rsquo;s own, lands in the grid&rsquo;s <strong>Adj</strong>{" "}
+                column (hover a figure for the breakdown), and a <strong>provisional</strong> entry takes the figure as its
+                flat points.
               </p>
             )}
             <div style={{ overflowX: "auto" }}>
@@ -419,6 +608,11 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
                     {sessionType === "qualifying"
                       ? <th>Qual Time</th>
                       : <><th>Laps</th><th>Led</th><th>Inc</th><th>FL</th><th>Status</th></>}
+                    {showPoints && (
+                      <th title="What the source paid this driver. A finishing row is scored by your own points structure, so this is here to check against it — hover a figure for the breakdown. A provisional entry's points are taken from it.">
+                        Pts
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -487,6 +681,7 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
                             <td style={statStyle}>{row.values.status}</td>
                           </>
                         )}
+                        {showPoints && <PointsCell row={row} points={srhPointsFor(idx)} provisional={provRow} />}
                       </tr>
                     );
                   })}
@@ -525,5 +720,41 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
         />
       )}
     </div>
+  );
+}
+
+// The review table's Pts cell: what the source paid this driver, and which part
+// of it the grid is about to take.
+//
+// A finishing row is scored by the league's own points structure, off the
+// position the grid holds, so the total here is for CHECKING against it rather
+// than something the import writes. What the import does write is the Adj
+// figure beside it: the penalties and the bonuses this app has no way to derive
+// for itself (see srhRowPoints in lib/srhImport.js). A provisional entry is the
+// other way round — the total IS its points, because a driver who didn't race
+// has no finishing position to be paid for.
+function PointsCell({ row, points, provisional }) {
+  const total = points?.total ?? row.values.points;
+  if (total == null) return <td />;
+  const carried = provisional ? 0 : Number(points?.carried || 0);
+  const round = v => (Number.isInteger(v) ? v : Number(Number(v).toFixed(3)));
+  return (
+    <td title={srhPointsSummary(points, { provisional }) || undefined} style={{ whiteSpace: "nowrap" }}>
+      {round(total)}
+      {carried !== 0 && (
+        <span
+          style={{
+            marginLeft: 6, padding: "1px 6px", borderRadius: 10, fontSize: "0.68rem",
+            background: carried < 0 ? "rgba(248,81,73,0.18)" : "rgba(46,160,67,0.18)",
+            color: carried < 0 ? "#f85149" : "#3fb950",
+          }}
+        >
+          Adj {carried > 0 ? "+" : ""}{round(carried)}
+        </span>
+      )}
+      {provisional && (
+        <span style={{ marginLeft: 6, fontSize: "0.68rem", color: "var(--ink-2)" }}>flat</span>
+      )}
+    </td>
   );
 }

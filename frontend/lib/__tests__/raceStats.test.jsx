@@ -1,5 +1,12 @@
-// Caution flags and lead changes: a RACE statistic, not a driver one, and one
-// that most events simply don't have.
+// Race statistics: figures about the RACE rather than any driver in it, and
+// ones most events simply don't have.
+//
+// Three are recorded — caution flags, caution laps, lead changes — and one is
+// worked out: Different Leaders, the count of drivers whose Led column shows at
+// least one lap. That one is deliberately NOT stored and has no box to type it
+// in: the results already say who led, so a second figure entered by hand could
+// disagree with the grid it is printed above. What has to hold is that it never
+// becomes a saved field by accident.
 //
 // The whole rule is the hiding. Not every league counts these, and not every
 // game reports them, so a blank box has to read as "this event doesn't have
@@ -19,7 +26,8 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
-  RACE_STAT_FIELDS, cautionFlags, hasRaceStats, leadChanges,
+  RACE_STAT_FIELDS, cautionFlags, cautionLaps, differentLeaders,
+  differentLeadersStat, hasRaceStats, leadChanges,
   raceStats, raceStatValue, raceStatsBody, raceStatsForm,
 } from "@/lib/raceStats";
 import { COPIED_RACE_FIELDS, copyRaceDoc } from "@/lib/raceCopy";
@@ -31,9 +39,10 @@ const eq = (label, got, want) => { n++; assert.deepStrictEqual(got, want, `${lab
 
 // ── 1. One figure off a race doc ──────────────────────────────────────────
 
-const run = { name: "Round 4", track: "Bristol", caution_flags: 6, lead_changes: 14 };
+const run = { name: "Round 4", track: "Bristol", caution_flags: 6, caution_laps: 33, lead_changes: 14 };
 
 eq("a recorded caution count reads back", cautionFlags(run), 6);
+eq("so do the laps run under them", cautionLaps(run), 33);
 eq("so does a lead change count", leadChanges(run), 14);
 eq("one of each is enough", cautionFlags({ caution_flags: 1 }), 1);
 
@@ -53,9 +62,9 @@ eq("an unknown field is never a stat", raceStatValue(run, "total_laps"), null);
 
 // ── 2. What the page is handed ────────────────────────────────────────────
 
-eq("both stats print, cautions first",
+eq("every stat prints, cautions first",
   raceStats(run).map(s => [s.label, s.value]),
-  [["Caution Flags", 6], ["Lead Changes", 14]]);
+  [["Caution Flags", 6], ["Caution Laps", 33], ["Lead Changes", 14]]);
 eq("an event with only cautions prints only cautions",
   raceStats({ caution_flags: 6 }).map(s => s.label), ["Caution Flags"]);
 eq("an event with only lead changes prints only those",
@@ -72,29 +81,96 @@ ok("an event with one figure has stats", hasRaceStats({ lead_changes: 2 }));
 ok("an event with none does not", !hasRaceStats({ caution_flags: 0, name: "Round 5" }));
 ok("nor does no event at all", !hasRaceStats());
 
+// ── 2b. Different Leaders — counted, never typed ──────────────────────────
+
+const led = [
+  { entry_id: "e1", laps_led: 40 },
+  { entry_id: "e2", laps_led: 1 },
+  { entry_id: "e3", laps_led: 0 },
+  { entry_id: "e4" },
+];
+eq("every driver who led a lap is counted", differentLeaders(led), 2);
+eq("leading exactly one lap counts", differentLeaders([{ entry_id: "e1", laps_led: 1 }]), 1);
+eq("a stored string still counts", differentLeaders([{ entry_id: "e1", laps_led: "7" }]), 1);
+// The same rule the stored stats print by: no figure rather than a 0.
+eq("a race where the leader's laps were never entered has no figure",
+  differentLeaders([{ entry_id: "e1", laps_led: 0 }, { entry_id: "e2" }]), null);
+eq("a qualifying sheet has nothing to lead", differentLeaders([{ entry_id: "e1", qual_time: "1:30.224" }]), null);
+eq("no session at all has no figure", differentLeaders(), null);
+eq("neither does an empty one", differentLeaders([]), null);
+// A driver awarded points without racing led nothing.
+eq("a provisional entry is never a leader",
+  differentLeaders([{ entry_id: "e1", laps_led: 12, provisional: true }, { entry_id: "e2", laps_led: 3 }]), 1);
+// Different LEADERS, not leading rows — the same driver twice is one leader.
+eq("one driver on two rows is one leader",
+  differentLeaders([{ entry_id: "e1", laps_led: 5 }, { entry_id: "e1", laps_led: 2 }]), 1);
+eq("rows with no id at all are still counted",
+  differentLeaders([{ laps_led: 5 }, { laps_led: 2 }]), 2);
+
+// It joins the strip when the session is handed over, and names the session it
+// counted so a figure that changes between a heat and the feature says why.
+const withLeaders = raceStats(run, { results: led, sessionLabel: "A-Main Feature" });
+eq("it prints last, after the recorded figures",
+  withLeaders.map(s => s.label),
+  ["Caution Flags", "Caution Laps", "Lead Changes", "Different Leaders"]);
+eq("…with the count it worked out", withLeaders.at(-1).value, 2);
+ok("…naming the session it counted", /A-Main Feature/.test(withLeaders.at(-1).title));
+ok("…and marked as derived rather than recorded", withLeaders.at(-1).derived === true);
+eq("a session nobody led adds no chip",
+  raceStats(run, { results: [{ entry_id: "e1", laps_led: 0 }] }).map(s => s.label),
+  ["Caution Flags", "Caution Laps", "Lead Changes"]);
+eq("an event with no recorded figures still shows its leaders",
+  raceStats({ name: "Round 5" }, { results: led }).map(s => [s.label, s.value]),
+  [["Different Leaders", 2]]);
+ok("an event with nothing recorded but a leader has stats",
+  hasRaceStats({ name: "Round 5" }, { results: led }));
+// Called with the race alone — as every caller that only knows the event does —
+// nothing changes.
+eq("no session handed over means no leader chip", raceStats(run).map(s => s.label),
+  ["Caution Flags", "Caution Laps", "Lead Changes"]);
+eq("the chip on its own is null when there is none", differentLeadersStat([]), null);
+
+// THE rule for this stat: it is worked out, so it must never become a stored
+// field. Nothing writes it, nothing offers a box for it, and nothing reads it
+// off the race doc.
+ok("it is not one of the event's stored stats", !RACE_STAT_FIELDS.includes("different_leaders"));
+ok("a save body never carries it",
+  !Object.keys(raceStatsBody({ different_leaders: "4", caution_flags: "6" })).includes("different_leaders"));
+ok("a form never offers it", !Object.keys(raceStatsForm({ different_leaders: 4 })).includes("different_leaders"));
+// And a figure that somehow reached the race doc is still ignored: the only
+// Different Leaders chip there is comes from counting the session.
+eq("a figure stored on the event is never printed",
+  raceStats({ ...run, different_leaders: 99 }).map(s => s.label),
+  ["Caution Flags", "Caution Laps", "Lead Changes"]);
+eq("…not even when a session is handed over too",
+  raceStats({ ...run, different_leaders: 99 }, { results: led }).at(-1).value, 2);
+
 // ── 3. Form ↔ doc ─────────────────────────────────────────────────────────
 
-eq("a saved event fills both boxes", raceStatsForm(run), { caution_flags: "6", lead_changes: "14" });
-eq("an event that recorded neither opens blank, not on 0",
-  raceStatsForm({ name: "Round 5" }), { caution_flags: "", lead_changes: "" });
-eq("a stored 0 opens blank", raceStatsForm({ caution_flags: 0, lead_changes: 0 }), { caution_flags: "", lead_changes: "" });
-eq("no race at all is blank", raceStatsForm(), { caution_flags: "", lead_changes: "" });
+const BLANK_FORM = { caution_flags: "", caution_laps: "", lead_changes: "" };
+const UNSET_BODY = { caution_flags: 0, caution_laps: 0, lead_changes: 0 };
+
+eq("a saved event fills every box", raceStatsForm(run), { caution_flags: "6", caution_laps: "33", lead_changes: "14" });
+eq("an event that recorded none opens blank, not on 0",
+  raceStatsForm({ name: "Round 5" }), BLANK_FORM);
+eq("a stored 0 opens blank", raceStatsForm({ caution_flags: 0, caution_laps: 0, lead_changes: 0 }), BLANK_FORM);
+eq("no race at all is blank", raceStatsForm(), BLANK_FORM);
 
 eq("typed figures are written as numbers",
-  raceStatsBody({ caution_flags: "6", lead_changes: "14" }), { caution_flags: 6, lead_changes: 14 });
-eq("blanks are written back as unset",
-  raceStatsBody({ caution_flags: "", lead_changes: "" }), { caution_flags: 0, lead_changes: 0 });
-eq("clearing a figure really clears it", raceStatsBody({ caution_flags: "0" }), { caution_flags: 0, lead_changes: 0 });
-eq("a negative is not a count", raceStatsBody({ caution_flags: "-3" }), { caution_flags: 0, lead_changes: 0 });
-eq("nonsense is unset", raceStatsBody({ caution_flags: "six" }), { caution_flags: 0, lead_changes: 0 });
-eq("nothing typed at all is unset", raceStatsBody(), { caution_flags: 0, lead_changes: 0 });
-eq("the body carries these two fields and nothing else",
+  raceStatsBody({ caution_flags: "6", caution_laps: "33", lead_changes: "14" }),
+  { caution_flags: 6, caution_laps: 33, lead_changes: 14 });
+eq("blanks are written back as unset", raceStatsBody(BLANK_FORM), UNSET_BODY);
+eq("clearing a figure really clears it", raceStatsBody({ caution_flags: "0" }), UNSET_BODY);
+eq("a negative is not a count", raceStatsBody({ caution_flags: "-3" }), UNSET_BODY);
+eq("nonsense is unset", raceStatsBody({ caution_flags: "six" }), UNSET_BODY);
+eq("nothing typed at all is unset", raceStatsBody(), UNSET_BODY);
+eq("the body carries these fields and nothing else",
   Object.keys(raceStatsBody({ caution_flags: "6", name: "Round 4" })), RACE_STAT_FIELDS);
 
 // The round trip an admin actually performs: open the event, change nothing,
 // save. Both figures must come back exactly as they went in.
 eq("open → save with no edit leaves the event untouched",
-  raceStatsBody(raceStatsForm(run)), { caution_flags: 6, lead_changes: 14 });
+  raceStatsBody(raceStatsForm(run)), { caution_flags: 6, caution_laps: 33, lead_changes: 14 });
 
 // ── 4. The form fields ────────────────────────────────────────────────────
 
@@ -102,15 +178,22 @@ const form = renderToStaticMarkup(
   <RaceStatsFields value={raceStatsForm(run)} onPatch={() => {}} idPrefix="t" />
 );
 ok("a caution flags box is rendered", form.includes('id="t_caution_flags"'));
+ok("a caution laps box is rendered", form.includes('id="t_caution_laps"'));
 ok("a lead changes box is rendered", form.includes('id="t_lead_changes"'));
-ok("both are numeric", (form.match(/type="number"/g) || []).length === 2);
-ok("both are optional, and say so", (form.match(/\(optional\)/g) || []).length === 2);
+ok("every box is numeric", (form.match(/type="number"/g) || []).length === RACE_STAT_FIELDS.length);
+ok("every box is optional, and says so", (form.match(/\(optional\)/g) || []).length === RACE_STAT_FIELDS.length);
 ok("the saved caution count shows", form.includes('value="6"'));
+ok("the saved caution laps show", form.includes('value="33"'));
 ok("the saved lead change count shows", form.includes('value="14"'));
 ok("the fields say a blank is left off the page", /left off the page/i.test(form.replace(/<[^>]+>/g, " ")));
+// The derived stat has no box, and the form says why rather than leaving an
+// admin hunting for one.
+ok("there is no box for Different Leaders", !form.includes("different_leaders"));
+ok("…and the form says it is counted for them",
+  /Different Leaders/.test(form) && /Led column/i.test(form.replace(/<[^>]+>/g, " ")));
 const blank = renderToStaticMarkup(<RaceStatsFields value={{}} onPatch={() => {}} idPrefix="t" />);
-ok("an event with nothing recorded still offers both boxes, empty",
-  blank.includes('id="t_caution_flags"') && blank.includes('id="t_lead_changes"') && !blank.includes('value="0"'));
+ok("an event with nothing recorded still offers every box, empty",
+  RACE_STAT_FIELDS.every(f => blank.includes(`id="t_${f}"`)) && !blank.includes('value="0"'));
 
 // ── 5. Where they are, and are not, read ──────────────────────────────────
 
@@ -125,7 +208,9 @@ const strip = src => src
 // The public results page: the strip is rendered off the FILTERED list, so an
 // event with no figures (or a 0) renders no strip at all.
 const viewer = strip(read("app/races/[id]/RaceResultsScreen.jsx"));
-ok("the results header builds its stats through raceStats()", /const eventStats = raceStats\(event\)/.test(viewer));
+ok("the results header builds its stats through raceStats()", /const eventStats = raceStats\(event, \{/.test(viewer));
+ok("…counting Different Leaders off the session on screen, not the race doc",
+  /raceStats\(event, \{ results: finishers, sessionLabel: scopedName \}\)/.test(viewer));
 ok("the strip is rendered only when there is something in it", /eventStats\.length > 0 &&/.test(viewer));
 ok("the header never reads a raw caution count off the race doc", !/event\.caution_flags/.test(viewer));
 ok("nor a raw lead change count", !/event\.lead_changes/.test(viewer));
@@ -171,6 +256,7 @@ for (const field of RACE_STAT_FIELDS) {
 const copyArgs = { season_id: "s2", round_number: 3 };
 const withResults = copyRaceDoc(run, { ...copyArgs, include_results: true });
 eq("a copy that brings the results brings the cautions", withResults.caution_flags, 6);
+eq("…and the laps under them", withResults.caution_laps, 33);
 eq("…and the lead changes", withResults.lead_changes, 14);
 
 const empty = copyRaceDoc(run, { ...copyArgs, include_results: false });
