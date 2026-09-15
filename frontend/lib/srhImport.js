@@ -26,8 +26,9 @@
 //
 // so the numbers are read from that payload rather than scraped back out of
 // table cells. No HTML parser (cheerio and friends) is needed for the results
-// themselves: the only markup this reads is the session NAME beside each table,
-// which SRH puts in its tab buttons and in an <h2> per session. That keeps this
+// themselves: the only markup this reads is what SRH prints AROUND each table —
+// the session's NAME (in its tab button and an <h2>) and the line of race
+// statistics under it (cautions, caution laps, lead changes). That keeps this
 // module dependency-free and pure, which is what lets it be unit-tested with
 // bare `node` like the rest of lib/.
 //
@@ -183,8 +184,11 @@ const decode = s => String(s ?? "")
 //
 // The tab buttons are then read as a fallback for any session whose heading
 // wasn't found, being the other place the same names are written.
+// The stats block between a session's heading and its table also gives up the
+// race statistics this app keeps on the event: see srhSessionStats.
 function sessionNames(html) {
   const names = new Map();
+  const stats = new Map();
 
   const headings = /heading-session-name[^>]*>([^<]*)</g;
   let m;
@@ -194,7 +198,11 @@ function sessionNames(html) {
     const table = /driver_table_(\d+)/g;
     table.lastIndex = m.index;
     const found = table.exec(html);
-    if (found && !names.has(found[1])) names.set(found[1], name);
+    if (!found || names.has(found[1])) continue;
+    names.set(found[1], name);
+    // Everything between the heading and the table, which is where SimRacerHub
+    // prints the session's own summary line.
+    stats.set(found[1], srhSessionStats(html.slice(m.index, found.index)));
   }
 
   const tabs = /data-bs-target\s*=\s*['"]#tab_(\d+)['"][^>]*>([^<]*)</g;
@@ -203,8 +211,59 @@ function sessionNames(html) {
     if (name && !names.has(m[1])) names.set(m[1], name);
   }
 
-  return names;
+  return { names, stats };
 }
+
+// The race statistics out of a session's summary line.
+//
+// SimRacerHub heads each session's table with a line of its own figures, in one
+// consistent shape:
+//
+//   1h 9m · 200 laps · 4 Leaders · 5 Lead Changes · 8 cautions (33 laps)
+//
+// Three of those are figures this app keeps on the race itself — how many
+// caution flags flew, how many laps ran under them, and how many times the lead
+// changed hands (see lib/raceStats.js) — and they are exactly the ones a
+// statistician would otherwise be reading off SimRacerHub and typing in by
+// hand. The leader count comes back too, but only as something to check
+// against: this app counts its own leaders off the Led column rather than
+// storing a figure that could disagree with the grid.
+//
+// A qualifying or practice session prints only its duration and lap count, so
+// nothing is found and nothing is proposed — which is right, since cautions are
+// not a qualifying idea.
+//
+// Singulars are real ("1 caution (0 laps)", "1 Leader", "1 Lead Change"), and
+// so is a caution count with no lap figure at all ("0 cautions"), so every
+// plural is optional and every part is read on its own.
+export function srhSessionStats(html) {
+  const text = decode(String(html || "").replace(/<[^>]*>/g, " "));
+  const int = re => {
+    const m = text.match(re);
+    if (!m) return null;
+    const n = Number(m[1]);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  };
+  // The lap figure is only ever the one in brackets after the caution count —
+  // the session's own distance ("200 laps") is written without them.
+  const cautions = text.match(/(\d+)\s+cautions?(?:\s*\(\s*(\d+)\s+laps?\s*\))?/i);
+  const cautionLaps = cautions?.[2] != null ? Number(cautions[2]) : null;
+  const stats = {
+    caution_flags: cautions ? Number(cautions[1]) : null,
+    caution_laps: Number.isFinite(cautionLaps) ? cautionLaps : null,
+    lead_changes: int(/(\d+)\s+lead\s+changes?/i),
+    // Not stored — see above.
+    leaders: int(/(\d+)\s+leaders?/i),
+  };
+  return Object.values(stats).some(v => v != null) ? stats : null;
+}
+
+// Are any of a session's stats worth proposing? A line that said nothing but
+// "0 cautions" is a real answer (no cautions flew), but it's also what an
+// unraced session looks like, so the importer only offers a set with at least
+// one figure of one in it — the same rule the results page prints them by.
+export const hasSrhSessionStats = stats =>
+  !!stats && ["caution_flags", "caution_laps", "lead_changes"].some(k => Number(stats[k] || 0) >= 1);
 
 // The order SRH ran the sessions in. Its `race_id` script variable lists them
 // newest-first (FEATURE, CONSOLATION, HEAT 1), so reversing gives the running
@@ -253,7 +312,7 @@ export function parseSrhPage(html) {
 
   const drivers = Object.assign({}, ...jsonProps(text, "drivers").filter(d => d && !Array.isArray(d)));
   const schedule = jsonProps(text, "schedule").find(s => s && !Array.isArray(s)) || {};
-  const names = sessionNames(text);
+  const { names, stats } = sessionNames(text);
 
   // Grouped by race id, and deduplicated on the id SRH gives each driver's
   // entry in a session: a multi-class event renders a table per class as well
@@ -312,6 +371,9 @@ export function parseSrhPage(html) {
       results: byRace.get(id),
       drivers,
       stages_scored_separately: stagesScoredSeparately,
+      // The session's own caution / lead-change figures, for the event's race
+      // statistics. Null on a session that prints none (qualifying, practice).
+      stats: stats.get(id) || null,
     };
   });
 

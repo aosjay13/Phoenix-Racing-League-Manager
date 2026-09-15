@@ -147,9 +147,16 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   is the sum of the Points column on every session they ran, Qualifying included, so the standings
   can be checked by adding up what's on screen; re-submitting a race overwrites cleanly for
   corrections
+- 🏁 **Race statistics, counted where they can be** — an event carries optional **Caution flags**,
+  **Caution laps** and **Lead changes**, printed at the top of its results page, plus
+  **Different Leaders**, which needs no box at all: it is the number of drivers whose Led column
+  shows at least one lap, worked out from the session on screen so it can never drift from the grid
+  under it. A blank (or a 0) is left off the page rather than printed as a counted figure
 - 🔗 **One-click import from SimRacerHub** — paste a race's SimRacerHub URL (or just its id) and
   the **whole night** comes back in one press: Qualifying, every Heat, the Consolations and the
-  Feature, each a session you can fill its own grid from. Times, gaps, laps led, incidents, car
+  Feature, each a session you can fill its own grid from. The race's own figures come with it —
+  cautions, caution laps and lead changes read off SimRacerHub's summary line — for the grid's Save
+  to put on the event. Times, gaps, laps led, incidents, car
   numbers and who was a lap down are converted to this app's own formats on the way in, and every
   name is matched against the roster through each alias a driver answers to. **Points come across
   too**, as far as they can without fighting your own scoring: a driver SimRacerHub paid without
@@ -923,16 +930,38 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
    `lib/srhImport.js` and `app/api/import-srh/route.js` — the fetch is server-side because
    SimRacerHub sends no CORS headers, so a browser cannot read it directly.
 
-   **Caution flags and lead changes belong to the race, not to a driver.** The **Race Info** tab
-   carries two optional boxes — **Caution flags** and **Lead changes** — filled in after the event
-   has been run. Whatever is entered appears at the **top of that event's results page**, beside the
-   track, the date and the race length, and is offered on its Share Graphic's metadata strip. They
-   count toward nothing: no points, no bonus, no driver stat, no standing. Not every league counts
-   them and not every game reports them, so **anything left blank — or on 0 — is left off the page
-   altogether**: an event with neither reads exactly as it always did, an event with only one shows
-   only that one, and "0 cautions" is never printed as though somebody had counted them. Copying an
-   event carries the two figures **only when its results come across with it**, since they record
-   the race that was run rather than the round it was scheduled as. See `lib/raceStats.js`.
+   **Race statistics belong to the race, not to a driver.** The **Race Info** tab carries three
+   optional boxes — **Caution flags**, **Caution laps** and **Lead changes** — filled in after the
+   event has been run. Whatever is entered appears at the **top of that event's results page**,
+   beside the track, the date and the race length, and is offered on its Share Graphic's metadata
+   strip. They count toward nothing: no points, no bonus, no driver stat, no standing. Not every
+   league counts them and not every game reports them, so **anything left blank, or on 0, is left
+   off the page altogether**: an event with none reads exactly as it always did, an event with only
+   one shows that one, and "0 cautions" is never printed as though somebody had counted them.
+   Copying an event carries the figures **only when its results come across with it**, since they
+   record the race that was run rather than the round it was scheduled as.
+
+   **Different Leaders is counted for you.** It joins that strip at the top of the results page and
+   has no box to type it in: it is the number of drivers whose **Led** column shows at least one
+   lap, worked out from the session on screen every time the page is drawn. That is deliberate. The
+   results already say who led, so a figure entered by hand could disagree with the grid printed
+   under it, and correcting a Led cell would leave the old count sitting above it. It is counted off
+   the session the reader is actually looking at — a heat with one leader and a feature with five
+   are different answers — and the chip's tooltip names which session it counted. A session whose
+   Led column was never filled in, and a qualifying sheet, which has no laps to lead, show no chip
+   at all, the same rule the recorded figures print by. Provisional entries never count: a driver
+   awarded points without racing led nothing. See `lib/raceStats.js`.
+
+   **Importing a race from SimRacerHub fills the recorded figures in.** SimRacerHub prints each
+   session's own summary above its table — how many drivers led, how many times the lead changed,
+   how many cautions flew and how many laps ran under them — and the importer reads the three this
+   app keeps straight off it, so they never have to be copied across by hand. They show in the
+   importer above the driver rows, with a tick box to leave them out (a heat's cautions are rarely
+   what you want on the event), and again above the grid once applied; the grid's own **Save**
+   writes them onto the event along with the results. Nothing is saved before that. SimRacerHub's
+   leader count is shown for comparison but never stored, because this app counts its own from the
+   Led column — on the 122 real SimRacerHub sessions this was checked against, the two agreed every
+   time.
 
    **Adding a driver mid-entry picks from the drivers you already have.** The
    **＋ Add a driver to this race…** box at the bottom of the grid searches **every name a driver

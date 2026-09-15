@@ -2,8 +2,13 @@
 
 import { RACE_STAT_FIELDS } from "@/lib/raceStats";
 
-// Caution Flags & Lead Changes — the two OPTIONAL race statistics an event can
-// carry, entered on its Race Info tab once the race has been run.
+// Caution Flags, Caution Laps & Lead Changes — the OPTIONAL race statistics an
+// event can carry, entered on its Race Info tab once the race has been run.
+//
+// There is deliberately no box for Different Leaders: the results already say
+// who led a lap, so it is counted off them rather than typed (see
+// differentLeaders in lib/raceStats.js). A figure entered by hand here could
+// disagree with the grid it is printed above.
 //
 // They describe the race itself rather than any driver in it, which is why they
 // sit here with the event's name, track and distance rather than as two more
@@ -17,6 +22,8 @@ import { RACE_STAT_FIELDS } from "@/lib/raceStats";
 const ROWS = {
   caution_flags: ["Caution flags (optional)", "e.g. 6",
     "How many caution flags flew during this race."],
+  caution_laps: ["Caution laps (optional)", "e.g. 33",
+    "How many laps of this race ran under caution."],
   lead_changes: ["Lead changes (optional)", "e.g. 14",
     "How many times the race lead changed hands."],
 };
@@ -39,7 +46,10 @@ export function RaceStatsFields({ value, onPatch, disabled = false, idPrefix = "
       <p style={{ fontSize: "0.78rem", color: "var(--ink-2)", margin: "-2px 0 10px" }}>
         Race statistics, not driver ones — they appear at the <strong>top of this event&rsquo;s
         results page</strong>, beside the track and the date, and count toward nothing. Leave
-        either blank (or on 0) and it is left off the page altogether.
+        any of them blank (or on 0) and it is left off the page altogether.
+        <strong> Different Leaders</strong> is printed up there too and needs no box: it is
+        counted from the drivers whose Led column shows at least one lap. Importing a race from
+        SimRacerHub fills these figures in for you.
       </p>
     </>
   );

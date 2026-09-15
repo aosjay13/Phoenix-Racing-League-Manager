@@ -1,25 +1,30 @@
 // Race statistics — figures that describe the RUNNING of an event rather than
-// any one driver's day: how many caution flags flew, and how many times the
-// lead changed hands. They belong to the race, so they live on the race doc
-// (`caution_flags`, `lead_changes`) beside its distance and its date, not on a
-// results row, and nothing in the points or stats engines reads them.
+// any one driver's day: how many caution flags flew, how many laps ran under
+// them, and how many times the lead changed hands. They belong to the race, so
+// they live on the race doc (`caution_flags`, `caution_laps`, `lead_changes`)
+// beside its distance and its date, not on a results row, and nothing in the
+// points or stats engines reads them.
 //
-// Both are OPTIONAL and both default to unset, because not every league has
-// them to hand: a game that reports neither, or a statistician who didn't count
-// them, leaves the boxes empty and the event reads on every screen exactly as it
-// did before these existed. That is also the display rule everywhere they're
-// printed — a stat is shown only when there is at least ONE of it. Zero cautions
-// and no cautions recorded are indistinguishable in a blank box, so a "0" is
-// never printed as if it were a counted figure.
+// All of them are OPTIONAL and all default to unset, because not every league
+// has them to hand: a game that reports none, or a statistician who didn't
+// count them, leaves the boxes empty and the event reads on every screen
+// exactly as it did before these existed. That is also the display rule
+// everywhere they're printed — a stat is shown only when there is at least ONE
+// of it. Zero cautions and no cautions recorded are indistinguishable in a
+// blank box, so a "0" is never printed as if it were a counted figure.
 //
 // Stored as numbers (0 = unset, the same convention `total_laps` uses) so a
 // blank box and a zero both read back as "this event doesn't have one".
+//
+// Different Leaders is the odd one out and is NOT stored — see below.
 
-// The two stats, in the order they're printed. `icon` fronts the chip on the
+// The stored stats, in the order they're printed. `icon` fronts the chip on the
 // results page; `title` is its tooltip.
 const RACE_STATS = [
   { field: "caution_flags", label: "Caution Flags", icon: "🟡",
     title: "Caution flags shown during this race" },
+  { field: "caution_laps", label: "Caution Laps", icon: "🟠",
+    title: "Laps run under caution in this race" },
   { field: "lead_changes", label: "Lead Changes", icon: "🔄",
     title: "Times the race lead changed hands" },
 ];
@@ -36,20 +41,76 @@ export function raceStatValue(race, field) {
 }
 
 export const cautionFlags = race => raceStatValue(race, "caution_flags");
+export const cautionLaps = race => raceStatValue(race, "caution_laps");
 export const leadChanges = race => raceStatValue(race, "lead_changes");
 
+// ── Different Leaders — worked out, never typed ────────────────────────────
+
+// How many different drivers led at least one lap of a session.
+//
+// Unlike the stored stats above, this one is NOT entered and NOT saved: the
+// results already say who led, so asking a statistician to count them again
+// would be asking for a second figure that can disagree with the grid it sits
+// above. It's derived from the session every time the page is drawn, which is
+// also why correcting a Led cell shows up here immediately.
+//
+// Counted by driver rather than by row, and provisional entries never count —
+// a driver awarded points without racing led nothing. Null when nobody is
+// recorded as having led (a Led column never filled in, or a qualifying sheet,
+// which has no laps to lead), so the same display rule as the stored stats
+// applies: no figure rather than a 0.
+export function differentLeaders(results) {
+  const rows = (Array.isArray(results) ? results : [])
+    .filter(r => r && !r.provisional && Number(r.laps_led || 0) >= 1);
+  const ids = new Set();
+  let unkeyed = 0;
+  for (const r of rows) {
+    const id = r.entry_id ?? r.driver_id ?? null;
+    if (id == null) unkeyed += 1;
+    else ids.add(id);
+  }
+  const total = ids.size + unkeyed;
+  return total >= 1 ? total : null;
+}
+
+// The chip Different Leaders is printed as, or null when there isn't one.
+// `sessionLabel` names the session it was counted from, so a figure that
+// changes as the reader moves between a heat and the feature says why.
+export function differentLeadersStat(results, sessionLabel = "") {
+  const value = differentLeaders(results);
+  if (value == null) return null;
+  return {
+    key: "different_leaders",
+    label: "Different Leaders",
+    icon: "👑",
+    title: `Drivers who led at least one lap${sessionLabel ? ` of ${sessionLabel}` : ""}`,
+    value,
+    // Marks it as worked out from the results rather than recorded on the
+    // event — the results screen has no reason to care, but a reader of this
+    // list shouldn't have to guess which stats are typed in.
+    derived: true,
+  };
+}
+
 // The stats this event actually has, ready to print: { key, label, icon, title,
-// value }. An event with neither returns an empty list, which is what keeps the
+// value }. An event with none returns an empty list, which is what keeps the
 // whole strip off the page rather than showing a row of dashes.
-export function raceStats(race) {
-  return RACE_STATS
+//
+// Pass the session on screen as `results` and Different Leaders is counted off
+// it and appended. Called with the race alone — as the places that only know
+// about the event do — the stored stats are all that come back, exactly as
+// before this existed.
+export function raceStats(race, { results = null, sessionLabel = "" } = {}) {
+  const stored = RACE_STATS
     .map(s => ({ key: s.field, label: s.label, icon: s.icon, title: s.title, value: raceStatValue(race, s.field) }))
     .filter(s => s.value != null);
+  const leaders = results == null ? null : differentLeadersStat(results, sessionLabel);
+  return leaders ? [...stored, leaders] : stored;
 }
 
 // True when there is at least one stat to show for this event.
-export function hasRaceStats(race) {
-  return raceStats(race).length > 0;
+export function hasRaceStats(race, opts) {
+  return raceStats(race, opts).length > 0;
 }
 
 // ── Form ↔ doc ─────────────────────────────────────────────────────────────

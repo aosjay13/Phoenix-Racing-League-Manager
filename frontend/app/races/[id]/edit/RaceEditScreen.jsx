@@ -14,7 +14,7 @@ import { HeatPointsDefaultFields } from "@/components/HeatPointsDefaultFields";
 import { SessionLapsFields } from "@/components/SessionLapsFields";
 import { RaceStatsFields } from "@/components/RaceStatsFields";
 import { LENGTH_LAPS, raceLengthBody, raceLengthForm, sessionLapsBody, sessionLapsForm } from "@/lib/raceLength";
-import { raceStatsBody, raceStatsForm } from "@/lib/raceStats";
+import { RACE_STAT_FIELDS, raceStatsBody, raceStatsForm } from "@/lib/raceStats";
 import { normalizedBuiltinTemplates } from "@/lib/pointsTemplates";
 import { carForRace, racePerClassResults, sessionClassScopes } from "@/lib/classFilter";
 import { gameNameFor } from "@/lib/driverNames";
@@ -35,10 +35,12 @@ const BLANK_INFO = {
   // auto-count laps off these instead of off the Feature's total_laps. Optional,
   // and read by the results grid alone. See lib/raceLength.js.
   heat_laps: "", consolation_laps: "",
-  // Race statistics — the caution flags and lead changes this event ran to.
-  // Optional, entered after the race, and printed at the top of the public
-  // results page. See lib/raceStats.js.
-  caution_flags: "", lead_changes: "",
+  // Race statistics — the caution flags, caution laps and lead changes this
+  // event ran to. Optional, entered after the race (or filled in by a
+  // SimRacerHub import), and printed at the top of the public results page.
+  // Different Leaders is printed there too and counted off the results rather
+  // than stored. See lib/raceStats.js.
+  caution_flags: "", caution_laps: "", lead_changes: "",
   car: "", heat_format: false, heats: "", consolations: "", feature_name: "A-Main Feature",
   // Default points template for every heat / every consolation of this event.
   // Blank = they score on the season's (or class's) points structure.
@@ -485,6 +487,25 @@ function UnifiedEditInner() {
     setRace(r => ({ ...r, ...updated }));
   }, [race]);
 
+  // The event's race statistics (cautions, caution laps, lead changes), written
+  // when a results grid that imported them is saved. The PATCH lives here for
+  // the same reason the bracket size's does: this screen owns the race doc, and
+  // updating it in place is what keeps the Race Info tab showing the figures
+  // that were just written rather than the ones it loaded with.
+  //
+  // Only the figures offered are touched — a source that reported cautions but
+  // no lead changes leaves the lead changes alone.
+  const saveRaceStats = useCallback(async (stats) => {
+    const body = {};
+    for (const field of RACE_STAT_FIELDS) {
+      const n = Number(stats?.[field]);
+      if (Number.isFinite(n) && n >= 0) body[field] = Math.round(n);
+    }
+    if (!Object.keys(body).length) return;
+    const updated = await api(`/api/races/${race.id}`, { method: "PATCH", body });
+    setRace(r => ({ ...r, ...updated }));
+  }, [race]);
+
   // Props every SessionEditor on this screen shares: null scope = the combined
   // grid this screen has always shown.
   const classProps = {
@@ -537,6 +558,7 @@ function UnifiedEditInner() {
     // and a 16 the next.
     bracketSize: race?.bracket_size ?? null,
     onBracketSizeChange: saveBracketSize,
+    onRaceStatsSave: saveRaceStats,
   };
 
   const heatFormat = !!race?.heat_format;

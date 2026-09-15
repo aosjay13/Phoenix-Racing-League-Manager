@@ -271,11 +271,18 @@ export function RaceResultsScreen() {
   const qualGaps = gapColumns(qualRows.map(r => parseTime(r.qual_time)));
   const raceGaps = gapColumns(raceTimesInOrder(finishers));
 
-  // Caution flags / lead changes, if this event recorded any. They describe the
+  // Caution flags / caution laps / lead changes, if this event recorded any,
+  // plus Different Leaders counted off the session on screen. They describe the
   // race rather than any driver in it, so they sit in the header beside the
-  // track and the date — and an event that recorded neither (the usual case)
-  // gets an empty list here and no strip on the page at all. See lib/raceStats.js.
-  const eventStats = raceStats(event);
+  // track and the date — and an event that recorded none and whose session had
+  // no lap leaders (the usual case) gets an empty list here and no strip on the
+  // page at all.
+  //
+  // The leader count comes from the session being viewed rather than the event,
+  // because that is the field the reader is looking at: a heat with one leader
+  // and a feature with five are different answers, and the chip's tooltip names
+  // which session it counted. See lib/raceStats.js.
+  const eventStats = raceStats(event, { results: finishers, sessionLabel: scopedName });
 
   // Shareable graphic for the currently-viewed session (Qualifying or a race).
   const eventDate = event.date ? formatRaceDate(event.date, "long", null) : null;
@@ -341,8 +348,9 @@ export function RaceResultsScreen() {
     { label: "Series", value: [game?.name, series?.name].filter(Boolean).join(" · "), wide: true },
     { label: "Season", value: season?.name },
     { label: "Length", value: raceLengthLabel(event) },
-    // Only the stats this event actually recorded — the strip drops a fact with
-    // no value, so an event with neither carries neither.
+    // Only the stats this event actually has — the recorded ones plus Different
+    // Leaders, counted off the session being exported. The strip drops a fact
+    // with no value, so an event with none carries none.
     ...eventStats.map(s => ({ label: s.label, value: s.value })),
     { label: "Class", value: activeClass?.label },
     { label: "Session", value: tabName },

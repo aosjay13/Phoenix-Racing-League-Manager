@@ -140,6 +140,11 @@ export const GET = withAdmin(async (request) => {
           // penalty, a bonus of its own) into the Adj column. The league's own
           // structure still scores every finishing position.
           points,
+          // The session's own race statistics — cautions, caution laps, lead
+          // changes — which this app keeps on the event rather than on a
+          // results row (see lib/raceStats.js). Null for a qualifying or
+          // practice session, which SimRacerHub prints none for.
+          stats: segment.stats,
         };
       }),
     });

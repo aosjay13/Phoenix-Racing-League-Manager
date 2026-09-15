@@ -1,6 +1,6 @@
 // Getting a night of racing out of SimRacerHub used to be a table selection, a
 // paste, and then the same again for every heat. One button now does it, which
-// puts a lot of weight on this module being right about seven things:
+// puts a lot of weight on this module being right about eight things:
 //
 //   1. where to fetch from — and, just as much, where NOT to. The only thing
 //      standing between "paste a link" and the server fetching whatever it's
@@ -24,7 +24,10 @@
 //      from the league's own structure, so which parts cross over is the whole
 //      question: a penalty must, a bonus this app derives must not, and a
 //      provisional entry's flat value has no other source;
-//   7. and none of it may reach Firestore on its own. An import fills the grid
+//   7. the race's own figures — its cautions, the laps run under them, its lead
+//      changes — which SimRacerHub prints in a line above each table and this
+//      app keeps on the event rather than on a driver;
+//   8. and none of it may reach Firestore on its own. An import fills the grid
 //      for review — Save is still the statistician's to press.
 import assert from "node:assert";
 import { readFileSync } from "node:fs";
@@ -33,8 +36,8 @@ import { fileURLToPath } from "node:url";
 import {
   isDerivedBonus, isProvisional, looksLikeSrhRef, parseSrhPage, parseSrhRef,
   srhDriverName, srhElapsed, srhEventLabel, srhInterval, srhLapTime,
-  srhPageError, srhPointsSummary, srhRowPoints, srhSegmentTable, srhStatus,
-  SRH_HEADERS,
+  hasSrhSessionStats, srhPageError, srhPointsSummary, srhRowPoints,
+  srhSegmentTable, srhSessionStats, srhStatus, SRH_HEADERS,
 } from "../srhImport.js";
 import { buildRows, headerToField, mapHeaders, sessionTypeFromName } from "../resultsImport.js";
 import { segmentType } from "../iracingImport.js";
@@ -401,7 +404,82 @@ check("a provisional entry's points are what the source paid them",
 ok("…and the review table says that's where it's going",
   /provisional entry's points: 10/.test(srhPointsSummary(featurePoints.points[2], { provisional: true })));
 
-// ── 7. The import fills the grid; Save is what writes ─────────────────────
+// ── 7. The race's own figures ─────────────────────────────────────────────
+//
+// SimRacerHub heads every session's table with a line of its own summary, and
+// three of those figures are ones this app keeps on the EVENT: how many caution
+// flags flew, how many laps ran under them, and how many times the lead changed
+// hands. They are exactly what a statistician would otherwise read off
+// SimRacerHub and type in by hand.
+//
+// The leader count on that line is read too, but only to show: this app counts
+// its own leaders off the Led column (see differentLeaders in lib/raceStats.js)
+// rather than storing a figure that could disagree with the grid.
+
+// The line as SimRacerHub really writes it, in every shape it takes.
+const statsOf = text => srhSessionStats(`<div class='session-details'>${text}</div>`);
+
+check("a race line gives up every figure",
+  statsOf("1h 9m &#183; 200 laps &#183; 4 Leaders &#183; 5 Lead Changes &#183; 8 cautions (33 laps)"),
+  { caution_flags: 8, caution_laps: 33, lead_changes: 5, leaders: 4 });
+// Singulars are real, and so is a caution with no laps behind it.
+check("one of each reads as one",
+  statsOf("0h 26m &#183; 45 laps &#183; 1 Leader &#183; 1 Lead Change &#183; 1 caution (0 laps)"),
+  { caution_flags: 1, caution_laps: 0, lead_changes: 1, leaders: 1 });
+check("a clean race has no lap figure at all",
+  statsOf("0h 38m &#183; 43 laps &#183; 3 Leaders &#183; 3 Lead Changes &#183; 0 cautions"),
+  { caution_flags: 0, caution_laps: null, lead_changes: 3, leaders: 3 });
+// THE trap: the session's own distance is a lap count too, and taking it for
+// the caution laps would put "200 caution laps" on a race that had 33.
+check("the session's distance is never mistaken for caution laps",
+  statsOf("1h 9m &#183; 200 laps &#183; 4 Leaders &#183; 5 Lead Changes &#183; 0 cautions").caution_laps, null);
+// Weather follows on the same line, and it is full of numbers.
+check("the weather that follows is not a figure",
+  statsOf("0h 44m &#183; 80 laps &#183; 3 Leaders &#183; 3 Lead Changes &#183; 3 cautions (9 laps) Partly Cloudy &#183; 77&deg;F &#183; 63% &#183; 11 MPH &#183; 0.00in"),
+  { caution_flags: 3, caution_laps: 9, lead_changes: 3, leaders: 3 });
+// Qualifying and practice print a duration and a lap count and nothing else,
+// which is right — a caution is not a qualifying idea.
+check("a qualifying line reports nothing", statsOf("0h 1m &#183; 4 laps"), null);
+check("neither does a practice line", statsOf("0h 13m"), null);
+check("nor does an empty one", srhSessionStats(""), null);
+
+// What the importer will actually offer. A line of nothing but zeroes is a real
+// answer, but it reads the same as a session nobody scored, so it is not
+// proposed — the same rule the results page prints these figures by.
+ok("a race with figures is offered",
+  hasSrhSessionStats({ caution_flags: 3, caution_laps: 9, lead_changes: 2 }));
+ok("…and so is one with only lead changes", hasSrhSessionStats({ caution_flags: 0, caution_laps: null, lead_changes: 3 }));
+ok("a line of zeroes is not", !hasSrhSessionStats({ caution_flags: 0, caution_laps: null, lead_changes: 0, leaders: 1 }));
+ok("nor is nothing at all", !hasSrhSessionStats(null));
+// The leader count alone is never a reason to write to the event — this app
+// counts its own.
+ok("a leader count on its own is not offered", !hasSrhSessionStats({ leaders: 4 }));
+
+// And on a real page, each session carries its own.
+const statsPage = `<html><body>
+<script language='javascript'>race_id=["7002","7001"];</script>
+<div id='tab_7002'><h2 class='heading-session-name'>FEATURE</h2>
+<div class='session-details'>0h 19m &#183; 14 laps &#183; 5 Leaders &#183; 7 Lead Changes &#183; 2 cautions (6 laps)</div>
+<div id='driver_table_7002'></div>
+<script>ReactDOM.createRoot(document.getElementById('driver_table_7002')).render(React.createElement(ResultsTable, {
+  rps: [{"race_participant_id":"1","race_id":"7002","driver_id":"31","finish_pos":"1","num_laps":"14","laps_led":"9","incidents":"0","status":"Running","intv":"0","intv_str":"-","provisional":"N","tpts":50,"name":"Rose, Mia"}],
+  schedule: {"league_name":"Kiwi Sim Racing","series_name":"Kiwi Cup","track_name":"Adelaide","race_date":"2026-09-15"}, race_id: 7002 }));</script></div>
+<div id='tab_7001'><h2 class='heading-session-name'>QUALIFY</h2>
+<div class='session-details'>0h 2m &#183; 2 laps</div>
+<div id='driver_table_7001'></div>
+<script>ReactDOM.createRoot(document.getElementById('driver_table_7001')).render(React.createElement(ResultsTable, {
+  rps: [{"race_participant_id":"2","race_id":"7001","driver_id":"31","finish_pos":"1","num_laps":"2","laps_led":"0","incidents":"0","status":"Running","intv":"0","intv_str":"-","provisional":"N","qualify_time":"89.8","tpts":0,"name":"Rose, Mia"}],
+  race_id: 7001 }));</script></div>
+</body></html>`;
+
+const statsDoc = parseSrhPage(statsPage);
+check("the race's figures are read off its own session",
+  statsDoc.segments.find(s => s.name === "Feature").stats,
+  { caution_flags: 2, caution_laps: 6, lead_changes: 7, leaders: 5 });
+check("…and the qualifying session proposes none",
+  statsDoc.segments.find(s => s.name === "Qualify").stats, null);
+
+// ── 8. The import fills the grid; Save is what writes ─────────────────────
 //
 // The workflow rule, and the reason the route exists at all: an import must
 // never put results in Firestore behind the statistician's back. Every points,
@@ -425,7 +503,7 @@ ok("…and only ever reads with GET", !/export const (POST|PUT|PATCH|DELETE)/.te
 ok("…fetching only what parseSrhRef allowed", /for \(const url of ref\.urls\)/.test(route));
 ok("…and nothing else", route.match(/fetch\(/g).length === 1);
 
-ok("the importer's only way into the grid is the review table's Apply", /onApply\(rows\)/.test(modal));
+ok("the importer's only way into the grid is the review table's Apply", /onApply\(rows/.test(modal));
 ok("…and the statistician is told Save is still theirs to press", /nothing is saved until you click Save/i.test(modal));
 ok("the SimRacerHub box is on the importer", /Import from SimRacerHub/.test(modal));
 ok("…with somewhere to paste the race", /aria-label="SimRacerHub race URL or id"/.test(modal));
@@ -461,5 +539,29 @@ ok("the provisional list is the only place manual points are set",
   !/manual_points/.test(applyImport.slice(0, provisionalBlock))
   && /manual_points/.test(applyImport.slice(provisionalBlock)));
 ok("…so the league's own structure still scores every finish", /pointsFor\(scoreRow\(row\), configForRow\(row\)\)/.test(editor));
+
+// The race's own figures take the same route as the rows: proposed by the
+// review table, held by the grid, written by the grid's Save and by nothing
+// else. They are not results, so they ride ALONGSIDE the rows rather than in
+// them, and land on the event.
+ok("the review table offers them with the rows", /raceStats: sessionStats/.test(modal));
+ok("…only when the source reported some", /sessionStats && withRaceStats/.test(modal));
+ok("…and they can be unticked", /setWithRaceStats/.test(modal));
+ok("the grid holds what an import proposed", /setPendingRaceStats\(opts\.raceStats/.test(editor));
+ok("…shows it above the grid, where a race statistic belongs", /Race statistics imported/.test(editor));
+ok("…lets it be discarded", /onClick=\{\(\) => setPendingRaceStats\(null\)\}/.test(editor));
+ok("…and writes it only from Save", /await onRaceStatsSave\(pendingRaceStats\.stats\)/.test(editor));
+// The one thing that must not happen: the figures reaching Firestore on Apply.
+// Nothing in applyImport may write, and the only writer is the save path.
+ok("applying proposes and writes nothing", !/api\(/.test(applyImport));
+// The screen that owns the race doc is what patches it, the way it already
+// owns the bracket size.
+const raceScreen = read("app/races/[id]/edit/RaceEditScreen.jsx");
+ok("the race screen writes the figures", /const saveRaceStats = useCallback/.test(raceScreen));
+ok("…onto the race itself", /method: "PATCH", body \}\)/.test(raceScreen));
+ok("…and hands the grid the writer", /onRaceStatsSave: saveRaceStats/.test(raceScreen));
+// Only the figures offered are touched, so a source that reported cautions but
+// no lead changes can't blank the lead changes an admin typed.
+ok("…touching only the figures it was given", /if \(!Object\.keys\(body\)\.length\) return;/.test(raceScreen));
 
 console.log(`srhImport: ${n} assertions passed`);

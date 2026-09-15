@@ -375,6 +375,15 @@ function parseClassCell(text, classes = []) {
 
 const LABELS = { qualifying: "Qualifying", race: "Race", heat: "Heat", consolation: "Consolation", feature: "Feature" };
 
+// The event's race statistics, as the pending-import panel lists them. Same
+// icons and wording the public results page prints them with, so the figures
+// read the same in both places. See lib/raceStats.js.
+const RACE_STATS_CHIPS = [
+  ["caution_flags", "🟡", "Caution Flags"],
+  ["caution_laps", "🟠", "Caution Laps"],
+  ["lead_changes", "🔄", "Lead Changes"],
+];
+
 // Unified results grid for any session type — Qualifying, standard Race
 // sessions, or (for heat-format events) Heats, Consolation, and the Feature.
 // Renders horizontal sub-tabs across the sessions of this type (with an
@@ -427,6 +436,12 @@ export function SessionEditor({
   sessionClass = null, sessionClassName = "",
   isBangerRacing = false, derbyTarget = null, onDerbyPointsSave = null,
   isBracketRacing = false, bracketSize = null, onBracketSizeChange = null,
+  // Writes the event's race statistics (cautions, caution laps, lead changes)
+  // when this grid is saved — the screen that owns the race doc does the PATCH,
+  // the same way it owns the bracket size and the derby rates. Absent on a
+  // screen that doesn't offer it, which simply means an import can't propose
+  // them there.
+  onRaceStatsSave = null,
 }) {
   const names = sessionNames.length ? sessionNames : [LABELS[sessionType] || "Session"];
   const namesKey = names.join("|");
@@ -535,6 +550,11 @@ export function SessionEditor({
   const [overIndex, setOverIndex] = useState(null);
   const [pointsModal, setPointsModal] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  // Race statistics an import proposed for the EVENT — cautions, caution laps,
+  // lead changes — held here until this grid's own Save writes them, so the
+  // import fills them in for review exactly as it fills the rows. Shape:
+  // { stats: { caution_flags, caution_laps, lead_changes }, sessionName }.
+  const [pendingRaceStats, setPendingRaceStats] = useState(null);
   // Whether Smart Import was opened by the SimRacerHub button beside it, which
   // only decides where the cursor starts — both buttons open the same importer.
   const [importSrhFirst, setImportSrhFirst] = useState(false);
@@ -1186,7 +1206,15 @@ export function SessionEditor({
   // Provisional Entries section below it instead: flat points, no finishing
   // position, no stats. Qualifying has no such section, so the tick is ignored
   // there.
-  function applyImport(imported) {
+  function applyImport(imported, opts = {}) {
+    // Figures for the event itself, when the source reported them (see
+    // lib/raceStats.js). Replaced — or cleared — by every Apply, because the
+    // last import is what this grid now holds: keeping a previous session's
+    // cautions alive under a grid that has been refilled would save a figure
+    // for a race nobody is looking at.
+    setPendingRaceStats(opts.raceStats
+      ? { stats: opts.raceStats, sessionName: opts.sessionName || session }
+      : null);
     const entryById = new Map(entries.map(e => [e.id ?? e.entry_id, e]));
     const allowProv = sessionType !== "qualifying";
     const byId = new Map();
@@ -1659,9 +1687,29 @@ export function SessionEditor({
           points_template_id: templateId || null, rows: [...filled, ...provPayload],
         },
       });
-      showToast("success", scoped
+      // The event's own figures, if an import proposed some and they weren't
+      // unticked. Written after the results on purpose: the results are what
+      // this screen is for, and a race statistic is worth nothing without them.
+      //
+      // Kept in state if the PATCH fails so pressing Save again retries it —
+      // and said out loud, because the results DID save and silently dropping
+      // three numbers the statistician watched arrive would be the worst of
+      // both.
+      let statsSaved = false;
+      if (pendingRaceStats && onRaceStatsSave) {
+        try {
+          await onRaceStatsSave(pendingRaceStats.stats);
+          setPendingRaceStats(null);
+          statsSaved = true;
+        } catch (err) {
+          return showToast("error",
+            `Results saved, but the race statistics didn't: ${err.message}. They're still listed above — press Save again to retry.`);
+        }
+      }
+      const saved = scoped
         ? `${sessionClassName || "Class"} results saved. Standings and profiles update instantly.`
-        : "Results saved. Standings and profiles update instantly.");
+        : "Results saved. Standings and profiles update instantly.";
+      showToast("success", statsSaved ? `${saved} Race statistics saved to Race Info.` : saved);
     } catch (err) {
       showToast("error", err.message);
     } finally {
@@ -2001,6 +2049,38 @@ export function SessionEditor({
           )
         )}
       </div>
+
+      {/* ── Race statistics waiting on Save ─────────────────────────────
+          Cautions, caution laps and lead changes an import read off the source.
+          They belong to the EVENT rather than to a driver, so they print at the
+          top of its results page — and they sit here, above the grid, for the
+          same reason: they describe the race, not a row in it. Nothing is
+          written until this grid's Save, the same contract the rows have. */}
+      {pendingRaceStats && (
+        <div style={{ border: "1.5px solid var(--accent-cyan, #58a6ff)", borderRadius: 10, padding: "10px 12px", marginBottom: 12, background: "rgba(88,166,255,0.06)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+            <strong style={{ fontSize: "0.85rem" }}>
+              Race statistics imported{pendingRaceStats.sessionName ? ` from ${pendingRaceStats.sessionName}` : ""}
+            </strong>
+            <button type="button" className="btn btn-ghost" style={{ marginTop: 0, padding: "2px 10px", fontSize: "0.78rem" }}
+              title="Leave this event's existing figures alone"
+              onClick={() => setPendingRaceStats(null)}>✕ Discard</button>
+          </div>
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", margin: "6px 0 0", fontSize: "0.82rem" }}>
+            {RACE_STATS_CHIPS.map(([field, icon, label]) => (
+              <span key={field}>
+                <span aria-hidden="true">{icon}</span> {label}{" "}
+                <strong>{pendingRaceStats.stats?.[field] == null ? "—" : pendingRaceStats.stats[field]}</strong>
+              </span>
+            ))}
+          </div>
+          <p style={{ margin: "6px 0 0", fontSize: "0.78rem", color: "var(--ink-2)" }}>
+            Saved onto this event — and printed at the top of its results page — when you press Save below. A 0 reads
+            as “not recorded” and is left off the page. <strong>Different Leaders</strong> needs no figure: it is counted
+            from the drivers whose <strong>Led</strong> column shows at least one lap.
+          </p>
+        </div>
+      )}
 
       <p style={{ marginTop: 0, color: "var(--ink-1)", fontSize: "0.85rem" }}>
         {sessionType === "qualifying"

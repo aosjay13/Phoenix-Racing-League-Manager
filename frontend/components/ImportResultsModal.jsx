@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { parseTable, mapHeaders, buildRows, MAPPABLE_FIELDS } from "@/lib/resultsImport";
 import { parseIracingResults, looksLikeIracingJson, segmentTable, defaultSegment } from "@/lib/iracingImport";
-import { looksLikeSrhRef, srhEventLabel, srhPointsSummary } from "@/lib/srhImport";
+import { hasSrhSessionStats, looksLikeSrhRef, srhEventLabel, srhPointsSummary } from "@/lib/srhImport";
 import { DriverCreateModal } from "@/components/DriverCreateModal";
 import { aliasValues } from "@/lib/aliases";
 import { displayNameValues } from "@/lib/driverNames";
@@ -66,6 +66,10 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
   const [srhRef, setSrhRef] = useState("");        // the SimRacerHub URL / id box
   const [srhBusy, setSrhBusy] = useState(false);
   const [srhError, setSrhError] = useState("");
+  // Whether to carry the session's race statistics (cautions, caution laps,
+  // lead changes) onto the event with this import. On by default, because a
+  // source that reports them is the reason not to type them by hand.
+  const [withRaceStats, setWithRaceStats] = useState(true);
   const [aliasesByDriver, setAliasesByDriver] = useState({}); // driver_id -> [alias value strings]
   const fileRef = useRef(null);
 
@@ -136,6 +140,12 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
       .filter(Boolean).join(" · ");
   }, [doc]);
 
+  // The session's own race statistics, when the source reports them. These
+  // describe the RUNNING of the race rather than any driver in it, so they go on
+  // the event (its Race Info) rather than into a grid row — see lib/raceStats.js.
+  // A qualifying or practice session reports none.
+  const sessionStats = hasSrhSessionStats(selectedSegment?.stats) ? selectedSegment.stats : null;
+
   // Column count + labels for the mapping dropdowns.
   const columns = useMemo(() => {
     if (!parsed) return [];
@@ -166,6 +176,7 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
   function reset() {
     setText(""); setParsed(null); setMapping({}); setOverrides({}); setProv({});
     setDoc(null); setSegmentKey(""); setSource(""); setSrhError("");
+    setWithRaceStats(true);
   }
 
   // One session of a loaded event → { headers, rows }. SimRacerHub's sessions
@@ -359,7 +370,14 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
       // the structure pays. Null from any other source, which leaves Adj alone.
       points_adjustment: srhPointsFor(idx)?.carried ?? null,
     }));
-    onApply(rows);
+    // The event's race statistics ride alongside the rows rather than in them:
+    // they belong to the race, so the editor holds them for its own Save to
+    // write onto the event. Left out entirely when the source reported none, or
+    // when the statistician unticked them — importing a heat's cautions onto
+    // the event is rarely what's wanted.
+    onApply(rows, sessionStats && withRaceStats
+      ? { raceStats: sessionStats, sessionName: selectedSegment?.name || "" }
+      : undefined);
   }
 
   const s = built.rows.length
@@ -517,6 +535,43 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
             {built.warnings.map((w, i) => (
               <p key={i} style={{ margin: "8px 0 0", fontSize: "0.8rem", color: "var(--accent-amber, #d29922)" }}>⚠ {w}</p>
             ))}
+
+            {/* ── The race's own statistics ────────────────────────────────
+                Cautions, caution laps and lead changes describe the RUNNING of
+                the race rather than any driver in it, so they go on the event
+                and print at the top of its results page — above the drivers,
+                which is where they sit here too. Different Leaders is not
+                offered: this app counts it off the Led column rather than
+                storing a figure that could disagree with the grid. */}
+            {sessionStats && (
+              <div style={{ border: "1.5px solid var(--border)", borderRadius: 10, padding: "10px 12px", marginTop: 12, background: "var(--bg-elevated)" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, margin: 0, fontSize: "0.85rem", cursor: "pointer" }}>
+                  <input type="checkbox" checked={withRaceStats} onChange={e => setWithRaceStats(e.target.checked)}
+                    style={{ width: 16, height: 16, margin: 0 }} />
+                  <strong>Race statistics from {selectedSegment?.name || "this session"}</strong>
+                </label>
+                <div style={{ display: "flex", gap: 14, flexWrap: "wrap", margin: "8px 0 0", fontSize: "0.82rem", opacity: withRaceStats ? 1 : 0.45 }}>
+                  {[["🟡", "Caution Flags", sessionStats.caution_flags],
+                    ["🟠", "Caution Laps", sessionStats.caution_laps],
+                    ["🔄", "Lead Changes", sessionStats.lead_changes]].map(([icon, label, value]) => (
+                    <span key={label}>
+                      <span aria-hidden="true">{icon}</span> {label}{" "}
+                      <strong>{value == null ? "—" : value}</strong>
+                    </span>
+                  ))}
+                </div>
+                <p style={{ margin: "8px 0 0", fontSize: "0.78rem", color: "var(--ink-2)" }}>
+                  These belong to the event, not to a driver, so they go on its <strong>Race Info</strong> and print at the
+                  top of the results page. Nothing is saved until you Save {session} — the figures ride along with it.
+                  {sessionStats.leaders != null && (
+                    <> SimRacerHub also counted <strong>{sessionStats.leaders}</strong>{" "}
+                      {sessionStats.leaders === 1 ? "leader" : "different leaders"}; this app works that out from the Led
+                      column itself, so it isn&rsquo;t stored — the grid below is what decides it.</>
+                  )}
+                  {" "}Untick if you&rsquo;d rather keep the figures this event already has.
+                </p>
+              </div>
+            )}
 
             {/* Preview + driver resolution */}
             <h4 style={{ margin: "16px 0 6px" }}>
