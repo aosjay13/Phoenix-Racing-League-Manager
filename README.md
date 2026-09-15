@@ -318,9 +318,10 @@ throwaway key (`openssl genrsa`) — the emulator never checks it.
      steps, in Discord's own colour, linking straight to the league's invite. Signing up here is
      only half of it — you also have to be in the Discord and pick the correct roles in the
      channels, or nobody knows who you are. It's repeated on the confirmation, worded as the next
-     thing to do, because that's the moment it's actionable. The invite lives in one constant,
-     `DISCORD_INVITE_URL` in `components/DiscordCallout.jsx` — change it there and every place it
-     appears follows.
+     thing to do, because that's the moment it's actionable. **Each league has its own invite**,
+     set by its own Admin or Owner in *League Setup ▸ League Settings*; a league that hasn't set
+     one shows no card at all rather than pointing its players at another league's server. See
+     `lib/discordInvite.js`.
    - **The badge on the menu** counts what is waiting on **you**: series you could join, plus
      cars you still have to choose. Sign-ups already sent are deliberately not counted — those
      are waiting on somebody else, and a number that only falls when an admin acts is nagging

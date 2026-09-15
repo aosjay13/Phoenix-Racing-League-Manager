@@ -1,15 +1,24 @@
 "use client";
 
-// The league's Discord invite. Hard-coded rather than stored per league,
-// because there is one league running this and one invite — change it HERE and
-// every place it appears follows. (It's linked from the Sign-ups screen; the
-// sign-up form separately requires each player's Discord NAME, which is a
-// different thing: that's how the league finds them once they're in.)
+import { useLeague } from "@/components/LeagueProvider";
+
+// The ACTIVE league's Discord invite, or "" when it hasn't got one.
 //
-// https rather than the http the invite is usually written as: discord.gg
-// redirects to https anyway, and there's no reason to send a player through a
-// plaintext hop first.
-export const DISCORD_INVITE_URL = "https://discord.gg/pra";
+// This used to be a constant in this file, on the reasoning that there was one
+// league running the app and one invite. Now that leagues are separate
+// environments each one has its own server, so the link comes off the league
+// document — set by its own staff in League Setup ▸ League Settings, resolved
+// by GET /api/leagues, and answered here from whichever league is on screen.
+// See lib/discordInvite.js for the rules, including why only the oldest league
+// still inherits the invite that used to be hard-coded.
+//
+// (It's linked from the Sign-ups screen; the sign-up form separately requires
+// each player's Discord NAME, which is a different thing: that's how the league
+// finds them once they're in.)
+export function useDiscordInvite() {
+  const league = useLeague();
+  return league?.league?.discord_url || "";
+}
 
 // Discord's own mark, inline so it needs no asset and follows the text colour.
 function DiscordMark() {
@@ -31,7 +40,14 @@ function DiscordMark() {
 //
 // `variant="next"` phrases it as the next step rather than as a prerequisite —
 // same link, same requirement, but by then they've already signed up.
+//
+// A league with no invite set renders NOTHING. The card's whole content is one
+// sentence calling Discord mandatory and one button to go there, so without a
+// link there is nothing left of it that's true — and the alternative, falling
+// back to another league's server, is worse than silence.
 export function DiscordCallout({ variant = "before" }) {
+  const invite = useDiscordInvite();
+  if (!invite) return null;
   return (
     <section className="discord-callout" aria-labelledby="discord-callout-title">
       <span className="discord-callout-mark" aria-hidden="true"><DiscordMark /></span>
@@ -45,7 +61,7 @@ export function DiscordCallout({ variant = "before" }) {
                 roles in the channels to get signed up.</>}
         </span>
       </div>
-      <a className="btn discord-callout-btn" href={DISCORD_INVITE_URL}
+      <a className="btn discord-callout-btn" href={invite}
         target="_blank" rel="noopener noreferrer">
         Open our Discord
         {/* Says it leaves the app, for anyone who'd rather not lose the form. */}

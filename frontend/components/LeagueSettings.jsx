@@ -5,6 +5,9 @@ import { useAuth } from "@/components/AuthProvider";
 import { useLeague } from "@/components/LeagueProvider";
 import { ImageUpload } from "@/components/ImageUpload";
 import { api } from "@/lib/api";
+import {
+  canEditDiscordUrl, discordLabel, discordUrlProblem, normalizeDiscordUrl,
+} from "@/lib/discordInvite";
 
 // League Settings + Create League. Lives at the top of League Setup (/admin).
 // Renaming/creating/migrating are Owner-only both here (UI gating) and on the
@@ -15,6 +18,11 @@ import { api } from "@/lib/api";
 export function LeagueSettings() {
   const { role } = useAuth();
   const isOwner = role === "owner";
+  // The Discord invite is the one setting here an Admin may change without
+  // being the Owner — it expires and gets regenerated, and the banner calling it
+  // mandatory shouldn't be able to go stale waiting on one person. See
+  // lib/discordInvite.js.
+  const canSetDiscord = canEditDiscordUrl(role);
   const league = useLeague();
   const { leagues, leagueId, league: active, switchLeague, reloadLeagues } = league || {};
 
@@ -136,6 +144,12 @@ export function LeagueSettings() {
               <div className="field"><label>League Name</label>
                 <input value={active?.name || ""} disabled readOnly /></div>
             )}
+
+            {/* Outside the form above, not nested in it: the two have different
+                floors (Owner vs Admin) and so need their own save buttons, and
+                a form inside a form is invalid markup anyway. */}
+            <DiscordInviteField league={active} canEdit={canSetDiscord}
+              onSaved={reloadLeagues} onResult={flash} />
           </div>
 
           {/* Create a new league (Owner-only) */}
@@ -162,5 +176,106 @@ export function LeagueSettings() {
         </div>
       )}
     </div>
+  );
+}
+
+// ── One league's Discord invite ────────────────────────────────────────────
+//
+// The link behind "Discord is mandatory to race in this league" on the Sign-ups
+// screen, and behind the Join the Discord button on a player's message board.
+// It used to be a constant in the code, which meant every league on the
+// installation invited its players into the first league's server. It is a
+// per-league setting now, and this is where it is set.
+//
+// Admin and up, rather than Owner like the name and logo above it: an invite
+// expires and gets regenerated, so the person who can fix a dead link should be
+// anybody who runs the league. Everyone else sees the current link, read-only —
+// worth showing rather than hiding, because "which Discord does this league
+// point at?" is a fair question for a Moderator to be able to answer.
+//
+// Clearing the box is a real answer, not a no-op: it stores "no Discord", and
+// the callout and the button then disappear rather than pointing somewhere
+// wrong. The one thing it must not do is silently fall back to another league's
+// server — see lib/discordInvite.js.
+function DiscordInviteField({ league, canEdit, onSaved, onResult }) {
+  const saved = league?.discord_url || "";
+  const [value, setValue] = useState(saved);
+  const [busy, setBusy] = useState(false);
+
+  // Re-seed when the active league changes, or after a save lands.
+  useEffect(() => { setValue(saved); }, [league?.id, saved]);
+
+  const problem = discordUrlProblem(value);
+  // A save is only worth offering when it would actually change something.
+  const dirty = normalizeDiscordUrl(value) !== normalizeDiscordUrl(saved)
+    || (!value.trim() && !!saved);
+
+  async function save(e) {
+    e.preventDefault();
+    if (!league?.id || problem) return;
+    setBusy(true);
+    try {
+      await api(`/api/leagues/${league.id}`, {
+        method: "PATCH",
+        body: { discord_url: value.trim() },
+      });
+      await onSaved?.();
+      onResult?.("success", value.trim()
+        ? `Discord invite saved for ${league.name || "this league"}.`
+        : `Discord invite cleared — ${league.name || "this league"} no longer shows a Discord link.`);
+    } catch (err) {
+      onResult?.("error", err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!canEdit) {
+    return (
+      <div className="field" style={{ marginTop: 18 }}>
+        <label>Discord Invite</label>
+        {saved ? (
+          <a href={saved} target="_blank" rel="noopener noreferrer"
+            style={{ color: "var(--accent-cyan)", fontWeight: 600, fontSize: "0.9rem" }}>
+            {discordLabel(saved)} ↗
+          </a>
+        ) : (
+          <p style={{ margin: 0, color: "var(--ink-2)", fontSize: "0.85rem" }}>
+            No Discord set for this league.
+          </p>
+        )}
+        <p style={{ margin: "4px 0 0", color: "var(--ink-2)", fontSize: "0.8rem" }}>
+          An Admin or the Owner of this league can change this.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={save} style={{ marginTop: 18, borderTop: "1px solid var(--border)", paddingTop: 14 }}>
+      <div className="field" style={{ marginTop: 0 }}>
+        <label htmlFor="league-discord">Discord Invite</label>
+        <input
+          id="league-discord"
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          placeholder="https://discord.gg/your-invite"
+          aria-invalid={problem ? "true" : undefined}
+        />
+        <p style={{ margin: "2px 0 0", color: problem ? "var(--accent-red)" : "var(--ink-2)", fontSize: "0.8rem" }}>
+          {problem || (
+            <>
+              This league&rsquo;s own Discord. It&rsquo;s the link behind &ldquo;Discord is mandatory
+              to race in this league&rdquo; on Sign-ups and the Join the Discord button on a
+              player&rsquo;s messages. Leave it empty and neither appears —
+              better than sending your players to another league&rsquo;s server.
+            </>
+          )}
+        </p>
+      </div>
+      <button className="btn btn-primary" type="submit" disabled={busy || !!problem || !dirty}>
+        {busy ? "Saving…" : "Save Discord Invite"}
+      </button>
+    </form>
   );
 }

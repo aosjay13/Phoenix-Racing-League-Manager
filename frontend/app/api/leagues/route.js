@@ -1,15 +1,28 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
-import { forgetLegacyLeague, withOwner } from "@/lib/serverAuth";
+import { forgetLegacyLeague, legacyLeagueId, withOwner } from "@/lib/serverAuth";
 import { leagueRolePatch } from "@/lib/leagueRoles";
+import { leagueDiscordUrl } from "@/lib/discordInvite";
 
 export const dynamic = "force-dynamic";
 
 // GET: every league, oldest first. Reads are public (like the rest of the
 // hierarchy) so the League Switcher can populate for any visitor.
+//
+// `discord_url` is RESOLVED here rather than passed through raw. Each league has
+// its own invite, and which link a league shows involves one thing only the
+// server knows — which league is the legacy (oldest) one, the only league that
+// inherits the invite this app used to hard-code (see lib/discordInvite.js). So
+// the answer is settled once, here, and every caller just reads the field.
 export async function GET() {
-  const snap = await db().collection("leagues").get();
-  const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const [snap, legacy] = await Promise.all([
+    db().collection("leagues").get(),
+    legacyLeagueId(),
+  ]);
+  const docs = snap.docs.map(d => {
+    const league = { id: d.id, ...d.data() };
+    return { ...league, discord_url: leagueDiscordUrl(league, { legacyLeagueId: legacy }) };
+  });
   docs.sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
   return NextResponse.json(docs);
 }
