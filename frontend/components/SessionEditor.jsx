@@ -535,6 +535,9 @@ export function SessionEditor({
   const [overIndex, setOverIndex] = useState(null);
   const [pointsModal, setPointsModal] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  // Whether Smart Import was opened by the SimRacerHub button beside it, which
+  // only decides where the cursor starts — both buttons open the same importer.
+  const [importSrhFirst, setImportSrhFirst] = useState(false);
   // "Import from Time Trial" — the qualifying tab's other way in (see
   // ImportTimeTrialModal). Qualifying only: a time trial produces a hot lap and
   // an order, which is a qualifying sheet and nothing else.
@@ -1795,8 +1798,21 @@ export function SessionEditor({
           title={entries.length
             ? "Import results from a CSV export or pasted table"
             : "Import results from a CSV export or pasted table — you can create drivers inline as you resolve each row"}
-          style={{ marginTop: 0, whiteSpace: "nowrap" }} onClick={() => setImportOpen(true)} disabled={!entries.length && !seasonId}>
+          style={{ marginTop: 0, whiteSpace: "nowrap" }}
+          onClick={() => { setImportSrhFirst(false); setImportOpen(true); }}
+          disabled={!entries.length && !seasonId}>
           ⬆ Import Results
+        </button>
+        {/* The one-click path. Same importer, opened on its SimRacerHub box:
+            paste the race's URL and every session of the night — qualifying,
+            heats, consolations, feature — comes back to fill these grids. It
+            still only fills them; Save is what writes. */}
+        <button className="btn btn-ghost" type="button"
+          title="Paste a SimRacerHub race URL and pull every session of that night in for review"
+          style={{ marginTop: 0, whiteSpace: "nowrap" }}
+          onClick={() => { setImportSrhFirst(true); setImportOpen(true); }}
+          disabled={!entries.length && !seasonId}>
+          🔗 Import from SimRacerHub
         </button>
         {/* The other end of the Time Trials bridge. A trial's best laps ARE a
             qualifying sheet — a hot lap and an order — so this sits on the
@@ -2283,6 +2299,7 @@ export function SessionEditor({
         <ImportResultsModal
           session={session} sessionType={sessionType} entries={entries}
           seasonId={seasonId} seriesName={seriesName} defaultClassId={pinnedClassId}
+          autoFocusSrh={importSrhFirst}
           onDriverCreated={handleDriverAdded}
           onApply={applyImport} onClose={() => setImportOpen(false)}
         />

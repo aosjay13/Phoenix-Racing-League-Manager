@@ -147,6 +147,15 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   is the sum of the Points column on every session they ran, Qualifying included, so the standings
   can be checked by adding up what's on screen; re-submitting a race overwrites cleanly for
   corrections
+- 🔗 **One-click import from SimRacerHub** — paste a race's SimRacerHub URL (or just its id) and
+  the **whole night** comes back in one press: Qualifying, every Heat, the Consolations and the
+  Feature, each a session you can fill its own grid from. Times, gaps, laps led, incidents, car
+  numbers and who was a lap down are converted to this app's own formats on the way in, drivers
+  SimRacerHub paid without them racing arrive ticked for **Provisional Entries**, and every name is
+  matched against the roster through each alias a driver answers to. Nothing is saved: the import
+  **fills the grid for review**, so a statistician fixes any name the match got wrong and presses
+  Save — which is what scores it. The same importer still takes a pasted table, a CSV, or iRacing's
+  own results JSON
 - 🗓 **Global race calendar** — a month-by-month grid of **every** event in the league, past and
   future, on the day it runs. Each race is a pill carrying its series' abbreviation and the track,
   and clicking one opens that event's page (its results, once it has run). The same **Game ▸
@@ -882,6 +891,21 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
    driver: finishing position, laps led, incidents, DNF/DNS status) and save — standings,
    stats, and every linked player's profile update immediately. Re-open and re-save a race
    any time to correct results; it overwrites cleanly.
+
+   **Import a whole night from SimRacerHub in one press.** The **⬆ Import Results** and
+   **🔗 Import from SimRacerHub** buttons above the grid open the same importer, the second one
+   landing you straight in its SimRacerHub box. Paste the race's SimRacerHub URL, or just the id off
+   the end of it, and every session that night held comes back in a single request: Qualifying, each
+   Heat, the Consolations, the Feature, and the Stages of a staged race. Pick which one fills the
+   grid you're on, then do the next session from the same import without fetching it again. Lap
+   times, gaps, elapsed times, laps led, incidents, car numbers and lap-down finishers are all
+   converted into what this app stores, and a driver SimRacerHub paid without them racing arrives
+   ticked for **Provisional Entries**. Names are matched against the roster through every name each
+   driver answers to, exactly as the rest of the importer does. And **nothing is saved**: the import
+   fills the grid for you to check and correct, and **Save** is still what scores it. A SimRacerHub
+   link pasted into the paste-a-table box is fetched rather than parsed, so either way in works. See
+   `lib/srhImport.js` and `app/api/import-srh/route.js` — the fetch is server-side because
+   SimRacerHub sends no CORS headers, so a browser cannot read it directly.
 
    **Caution flags and lead changes belong to the race, not to a driver.** The **Race Info** tab
    carries two optional boxes — **Caution flags** and **Lead changes** — filled in after the event

@@ -380,3 +380,29 @@ export const MAPPABLE_FIELDS = [
   ["status", "Status"],
   ["points", "Points (ignored)"],
 ];
+
+// ── Session names ─────────────────────────────────────────────────────────
+
+// The app's session type a source's session NAME belongs in: "qualifying" |
+// "practice" | "heat" | "consolation" | "feature" | "race". Matches the session
+// types in components/SessionEditor.jsx, so an imported session lands in the
+// grid it belongs to.
+//
+// This is the one place the vocabulary of a league night is written down. Both
+// multi-session importers read it: iRacing names its simsessions ("HEAT 1",
+// "B-MAIN", "FEATURE") and so does SimRacerHub ("QUALIFY", "CONSOLATION"), and
+// they have no business disagreeing about what a B-Main is.
+//
+// Order matters. A heat is often named for what it decides ("Qualifying Race"),
+// so the race-ish namings are claimed before the plain qualifying check — and
+// the lettered mains (B/C/D-Main, which are consolations) before the generic
+// "Main" that means the feature.
+export function sessionTypeFromName(name) {
+  const n = String(name || "").toUpperCase();
+  if (/HEAT|QUALIFYING RACE|QUAL RACE/.test(n)) return "heat";
+  if (/CONSOLATION|CONSI|LAST CHANCE|LCQ|[B-Z][-\s]?MAIN|SEMI/.test(n)) return "consolation";
+  if (/FEATURE|MAIN|GRAND FINAL/.test(n)) return "feature";
+  if (/QUAL/.test(n)) return "qualifying";
+  if (/PRACTICE|WARM|SHAKEDOWN/.test(n)) return "practice";
+  return "race";
+}

@@ -17,6 +17,7 @@
 // never throws: an unrecognised file just yields null.
 
 import { formatTime, formatGap } from "@/lib/raceTime";
+import { sessionTypeFromName } from "@/lib/resultsImport";
 
 // ── Units ─────────────────────────────────────────────────────────────────
 
@@ -45,18 +46,20 @@ const QUAL_TYPES = new Set([4, 5]);
 // The app's session type a segment belongs in: "qualifying" | "heat" |
 // "consolation" | "feature" | "race" | "practice". Matches the session types in
 // components/SessionEditor.jsx, so a segment lands in the grid it belongs to.
+//
+// iRacing states the broad kind in `simsession_type`, which settles practice
+// and qualifying outright. Telling the three race-ish types apart is a question
+// about the NAME — a B-Main and a feature are both simsession_type 6 — so that
+// half is the shared vocabulary in lib/resultsImport.js, which the SimRacerHub
+// importer reads too. A race session whose name reads as qualifying or practice
+// ("Qualifying", no "Race" in it) is still a race here: iRacing already said so.
 export function segmentType(simsession) {
   const type = Number(simsession?.simsession_type);
   const name = String(simsession?.simsession_name || "").toUpperCase();
   if (QUAL_TYPES.has(type)) return "qualifying";
   if (!RACE_TYPES.has(type)) return "practice";
-  if (/HEAT|QUALIFYING RACE|QUAL RACE/.test(name)) return "heat";
-  // B/C/D-Main, the LCQ and the semis are consolation races; the A-Main (or a
-  // lone "Main") is the feature. Consolation is tested first so the lettered
-  // mains are claimed before the generic "MAIN" fallback below.
-  if (/CONSOLATION|CONSI|LAST CHANCE|LCQ|[B-Z][-\s]?MAIN|SEMI/.test(name)) return "consolation";
-  if (/FEATURE|MAIN|GRAND FINAL/.test(name)) return "feature";
-  return "race";
+  const byName = sessionTypeFromName(name);
+  return byName === "qualifying" || byName === "practice" ? "race" : byName;
 }
 
 // Tidy display label for a segment. iRacing shouts its session names
