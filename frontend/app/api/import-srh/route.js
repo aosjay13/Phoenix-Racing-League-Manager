@@ -124,7 +124,7 @@ export const GET = withAdmin(async (request) => {
       // column mapping falls out of these headers (see mapHeaders), and
       // `provisional` marks the drivers SimRacerHub paid without them racing.
       segments: doc.segments.map(segment => {
-        const { headers, rows, provisional } = srhSegmentTable(segment);
+        const { headers, rows, provisional, points } = srhSegmentTable(segment);
         return {
           key: segment.key,
           race_id: segment.race_id,
@@ -135,6 +135,11 @@ export const GET = withAdmin(async (request) => {
           headers,
           rows,
           provisional,
+          // What SimRacerHub paid each row, itemised, so the review table can
+          // show it and the grid can take the part this app cannot derive (a
+          // penalty, a bonus of its own) into the Adj column. The league's own
+          // structure still scores every finishing position.
+          points,
         };
       }),
     });

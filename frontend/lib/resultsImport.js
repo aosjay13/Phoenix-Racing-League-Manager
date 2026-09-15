@@ -257,6 +257,12 @@ const toInt = v => {
   const n = parseInt(String(v ?? "").replace(/[^\d-]/g, ""), 10);
   return Number.isFinite(n) ? n : null;
 };
+// Points, which a league may pay in halves ("12.5"), so this one keeps the
+// decimal where toInt would floor it.
+const toNum = v => {
+  const n = parseFloat(String(v ?? "").replace(/[^\d.-]/g, ""));
+  return Number.isFinite(n) ? n : null;
+};
 const truthyStatus = v => {
   const s = String(v ?? "").toLowerCase();
   if (/dns|did not start/.test(s)) return "dns";
@@ -299,6 +305,16 @@ export function buildRows({ rows }, mapping, entries, opts = {}) {
         || (qualifying ? (fastTime || raceTime) : "")
         || "",
       status: truthyStatus(get(row, "status")),
+      // What the source paid this driver. This app works points out for itself
+      // from the league's own structure (see pointsFor in lib/standings.js), so
+      // a finishing row is never scored FROM this — it's shown in the review
+      // table to be checked against what the grid will pay.
+      //
+      // The one row it IS the answer for is a provisional entry: a driver
+      // awarded points without racing has no finishing position to score off,
+      // so the flat value the source paid them is exactly what this app's
+      // Provisional Entries section holds (see applyImport in SessionEditor).
+      points: toNum(get(row, "points")),
       // The driver's best single lap time as a clock string ("1:23.456"), kept
       // as-is for the results grid's "Best Lap" column. This is separate from
       // the `fastest_lap` boolean (who was quickest overall) computed below —
@@ -378,7 +394,10 @@ export const MAPPABLE_FIELDS = [
   ["qual_time", "Qual Time"],
   ["fastest_lap_time", "Fastest Lap"],
   ["status", "Status"],
-  ["points", "Points (ignored)"],
+  // Shown in the review table rather than scored from — the league's own points
+  // structure pays a finishing row. It fills a PROVISIONAL entry's points,
+  // which have no position to be worked out from. See `points` in buildRows.
+  ["points", "Points (reference)"],
 ];
 
 // ── Session names ─────────────────────────────────────────────────────────

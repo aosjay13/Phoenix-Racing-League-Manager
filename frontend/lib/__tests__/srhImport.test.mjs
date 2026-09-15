@@ -1,6 +1,6 @@
 // Getting a night of racing out of SimRacerHub used to be a table selection, a
 // paste, and then the same again for every heat. One button now does it, which
-// puts a lot of weight on this module being right about six things:
+// puts a lot of weight on this module being right about seven things:
 //
 //   1. where to fetch from — and, just as much, where NOT to. The only thing
 //      standing between "paste a link" and the server fetching whatever it's
@@ -20,16 +20,21 @@
 //      already had: same headers, same column mapping, same fuzzy matching of a
 //      name against every alias a driver answers to. A header this module
 //      spells differently is a column that silently imports as nothing;
-//   6. and none of it may reach Firestore on its own. An import fills the grid
+//   6. the points. SimRacerHub pays in four parts and this app pays for itself
+//      from the league's own structure, so which parts cross over is the whole
+//      question: a penalty must, a bonus this app derives must not, and a
+//      provisional entry's flat value has no other source;
+//   7. and none of it may reach Firestore on its own. An import fills the grid
 //      for review — Save is still the statistician's to press.
 import assert from "node:assert";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  isProvisional, looksLikeSrhRef, parseSrhPage, parseSrhRef,
+  isDerivedBonus, isProvisional, looksLikeSrhRef, parseSrhPage, parseSrhRef,
   srhDriverName, srhElapsed, srhEventLabel, srhInterval, srhLapTime,
-  srhPageError, srhSegmentTable, srhStatus, SRH_HEADERS,
+  srhPageError, srhPointsSummary, srhRowPoints, srhSegmentTable, srhStatus,
+  SRH_HEADERS,
 } from "../srhImport.js";
 import { buildRows, headerToField, mapHeaders, sessionTypeFromName } from "../resultsImport.js";
 import { segmentType } from "../iracingImport.js";
@@ -287,7 +292,116 @@ check("…and every driver's lap in Qual Time", qualTable.rows.map(r => r[10]), 
 const qualBuilt = buildRows(qualTable, mapHeaders(qualTable.headers), roster, { sessionType: "qualifying" });
 check("pole is the quickest lap", [qualBuilt.rows[0].values.qual_time, qualBuilt.rows[0].values.fastest_lap], ["1:29.538", true]);
 
-// ── 6. The import fills the grid; Save is what writes ─────────────────────
+// ── 6. Points: what comes across, and what must not ───────────────────────
+//
+// SimRacerHub pays a driver in four parts and its total is their sum:
+// position points, bonuses (itemised), penalties (itemised, subtracted) and
+// stage points. The rule this section pins is which of those this app takes:
+//
+//   • never the finishing points. This season's own structure pays those, off
+//     the position in the grid. An import that wrote SimRacerHub's total over
+//     them would be a second scorer disagreeing with the first;
+//   • never a bonus this app works out for itself. The fastest lap, leading a
+//     lap, leading the most laps, the biggest climb and pole are all already
+//     in the grid's Points column, so carrying SimRacerHub's copy would pay
+//     the same bonus twice and inflate the championship;
+//   • always the rest — every penalty, and any bonus of the league's own
+//     invention — because nothing here can derive those. They go in the Adj
+//     column, which exists for precisely that;
+//   • stage points only when the page didn't score the stages as sessions in
+//     their own right. When it did, they're paid on those grids instead;
+//   • and always a provisional entry's flat value, which is the one points
+//     figure an import IS the answer for.
+
+// Every bonus wording seen across the real race pages this was built against,
+// on the side it belongs.
+for (const descr of [
+  "Fastest race lap", "Fast Lap", "Led one or more laps", "Led the most laps",
+  "Most positions gained (9)", "Blue Chew Hard Charger (17)", "Halfway leader",
+  "Pole position", "Qualified P2",
+]) {
+  ok(`“${descr}” is this app's own to pay`, isDerivedBonus(descr));
+}
+for (const descr of [
+  "No incidents", "Show Up", "Finished race", "Finished race with 0 incidents",
+  "Chase Reset Bonus", "Race winner", "Stage Winner", "",
+]) {
+  ok(`“${descr}” is the league's own and comes across`, !isDerivedBonus(descr));
+}
+
+// A row carrying one of each: a bonus this app derives, a bonus it can't, and
+// a penalty.
+const mixed = {
+  rpts: 34, bpts: 6, ppts: 40, spts: 0, tpts: 0,
+  bonus_rows: [{ points: 1, descr: "Fastest race lap" }, { points: 5, descr: "No incidents" }],
+  penalty_rows: [{ points: 40, descr: "pro pen" }],
+};
+const mixedPoints = srhRowPoints(mixed);
+check("SimRacerHub's own total is kept as it paid it", mixedPoints.total, 0);
+check("…with every part of it read", [mixedPoints.race, mixedPoints.bonus, mixedPoints.penalty], [34, 6, 40]);
+check("the bonus this app derives is left to it", mixedPoints.derived.map(b => b.descr), ["Fastest race lap"]);
+check("the one it can't is carried", mixedPoints.extras.map(b => b.descr), ["No incidents"]);
+check("the penalty is carried", mixedPoints.penalties.map(p => p.descr), ["pro pen"]);
+check("…and the Adj column gets their net, not the total", mixedPoints.carried, 5 - 40);
+
+// Nothing to carry is nothing to carry: a clean row leaves Adj alone rather
+// than writing a 0 over an adjustment somebody typed.
+const clean = srhRowPoints({ rpts: 43, bpts: 2, ppts: 0, tpts: 45, bonus_rows: [{ points: 2, descr: "Led one or more laps" }] });
+check("a row whose only bonus this app pays itself carries nothing", clean.carried, 0);
+check("…and says so", srhPointsSummary(clean).includes("Nothing carried"), true);
+ok("…while still naming what it left behind", /Led one or more laps/.test(srhPointsSummary(clean)));
+
+// Stage points: the same number, and two different right answers.
+const staged = { rpts: 55, bpts: 0, ppts: 0, spts: "13", tpts: 68, bonus_rows: [], penalty_rows: [] };
+check("stage points come across when nothing else scored them",
+  srhRowPoints(staged, { stagesScoredSeparately: false }).carried, 13);
+check("…and do not when the night ran the stages as their own sessions",
+  srhRowPoints(staged, { stagesScoredSeparately: true }).carried, 0);
+ok("…which the review table says out loud",
+  /scored on this event's own Stage sessions/.test(srhPointsSummary(srhRowPoints(staged, { stagesScoredSeparately: true }))));
+
+// A staged night, as SimRacerHub lays one out: the stages get their own tab and
+// their points are ALSO rolled into the race total.
+const stagedPage = `<html><body>
+<script language='javascript'>race_id=["8002","8001"];</script>
+<ul class='nav nav-tabs'>
+<li><button data-bs-toggle='tab' data-bs-target='#tab_8002'>RACE</button></li>
+<li><button data-bs-toggle='tab' data-bs-target='#tab_8001'>STAGE 1</button></li>
+</ul>
+<div id='tab_8002'><h2 class='heading-session-name'>RACE</h2><div id='driver_table_8002'></div>
+<script>ReactDOM.createRoot(document.getElementById('driver_table_8002')).render(React.createElement(ResultsTable, {
+  rps: [{"race_participant_id":"1","race_id":"8002","driver_id":"21","driver_number":"16","finish_pos":"1","qualify_pos":"2","num_laps":"200","laps_led":"74","incidents":"6","status":"Running","intv":"0","intv_str":"-","fastest_lap_time":"15.227","qualify_time":"15.177","provisional":"N","elapsed_time":"40298010","rpts":55,"bpts":0,"ppts":0,"spts":"13","tpts":68,"bonus_rows":[],"penalty_rows":[],"name":"Duda, Jim"}],
+  schedule: {"league_name":"American Motorsports Association","series_name":"AMA Truck","track_name":"Bristol","race_date":"2026-09-04"}, race_id: 8002 }));</script></div>
+<div id='tab_8001'><h2 class='heading-session-name'>STAGE 1</h2><div id='driver_table_8001'></div>
+<script>ReactDOM.createRoot(document.getElementById('driver_table_8001')).render(React.createElement(ResultsTable, {
+  rps: [{"race_participant_id":"2","race_id":"8001","driver_id":"21","driver_number":"16","finish_pos":"3","qualify_pos":"2","num_laps":"65","laps_led":"0","incidents":"2","status":"Running","intv":"1.5","intv_str":"-1.500","fastest_lap_time":"15.3","qualify_time":"15.177","provisional":"N","elapsed_time":"9950000","rpts":13,"bpts":0,"ppts":0,"spts":0,"tpts":13,"bonus_rows":[],"penalty_rows":[],"name":"Duda, Jim"}],
+  race_id: 8001 }));</script></div>
+</body></html>`;
+
+const stagedDoc = parseSrhPage(stagedPage);
+check("a staged night's sessions are both found", stagedDoc.segments.map(s => s.name), ["Stage 1", "Race"]);
+ok("…and every session knows the stages were scored on their own",
+  stagedDoc.segments.every(s => s.stages_scored_separately));
+const stagedRace = srhSegmentTable(stagedDoc.segments.find(s => s.name === "Race"));
+check("so the race carries no stage points on top", stagedRace.points[0].carried, 0);
+check("…though it still shows what SimRacerHub paid in total", stagedRace.points[0].total, 68);
+
+// The total reaches the review table through the shared pipeline, as a figure
+// to check against — never as one to score from.
+const featurePoints = srhSegmentTable(feature);
+const pointsBuilt = buildRows(featurePoints, mapHeaders(featurePoints.headers), roster, { sessionType: "feature" });
+check("the Points column is read", pointsBuilt.rows.map(r => r.values.points), [75, 70, 10]);
+check("…and a half-point league keeps its halves",
+  buildRows({ rows: [["1", "Jane Doe", "12.5"]] }, { finish_pos: 0, driver: 1, points: 2 }, []).rows[0].values.points, 12.5);
+
+// The provisional driver on that feature: SimRacerHub paid them 10 without
+// their racing, and that is the whole of their points.
+check("a provisional entry's points are what the source paid them",
+  [featurePoints.provisional[2], pointsBuilt.rows[2].values.points], [true, 10]);
+ok("…and the review table says that's where it's going",
+  /provisional entry's points: 10/.test(srhPointsSummary(featurePoints.points[2], { provisional: true })));
+
+// ── 7. The import fills the grid; Save is what writes ─────────────────────
 //
 // The workflow rule, and the reason the route exists at all: an import must
 // never put results in Firestore behind the statistician's back. Every points,
@@ -321,5 +435,31 @@ ok("…which asks the server, because SimRacerHub sends no CORS headers", /\/api
 ok("the results screen offers it directly too", /🔗 Import from SimRacerHub/.test(editor));
 ok("…opening the same importer on that box", /autoFocusSrh=\{importSrhFirst\}/.test(editor));
 ok("…and what comes back fills the grid rather than saving it", /onApply=\{applyImport\}/.test(editor));
+
+// The points wiring, which is the one place an import could quietly become a
+// second scorer. The review table hands over the source's total and the net to
+// adjust by; the editor puts the total on a PROVISIONAL row's points box and
+// the net in the Adj column, and computes every finishing row's points itself.
+ok("the review table hands over what the source paid", /points: row\.values\.points/.test(modal));
+ok("…and the part of it this app can't derive", /points_adjustment: srhPointsFor\(idx\)\?\.carried/.test(modal));
+ok("a provisional entry's points box takes the source's figure", /manual_points: imported/.test(editor));
+ok("…and comes off auto so the auto-fill can't overwrite it", /auto: imported == null/.test(editor));
+ok("the Adj column takes the carried net", /points_adjustment: im\.points_adjustment != null/.test(editor));
+// The negative that matters, read off applyImport itself: `manual_points` is
+// the only field this app scores a row FROM instead of computing (and only
+// when the row is provisional — see pointsFor), so an import may set it on a
+// provisional row and nowhere else. A finishing row getting one would be the
+// import overriding the league's points structure.
+const applyImport = editor.slice(editor.indexOf("function applyImport("), editor.indexOf("setImportOpen(false)"));
+ok("applyImport is where the import lands", applyImport.length > 500);
+const placed = applyImport.slice(applyImport.indexOf("const placed"), applyImport.indexOf("const sorted"));
+ok("a finishing row is never given manual points by an import", !/manual_points/.test(placed));
+// …and nothing else in applyImport touches the field either, outside the block
+// that builds the provisional list.
+const provisionalBlock = applyImport.indexOf("if (allowProv)");
+ok("the provisional list is the only place manual points are set",
+  !/manual_points/.test(applyImport.slice(0, provisionalBlock))
+  && /manual_points/.test(applyImport.slice(provisionalBlock)));
+ok("…so the league's own structure still scores every finish", /pointsFor\(scoreRow\(row\), configForRow\(row\)\)/.test(editor));
 
 console.log(`srhImport: ${n} assertions passed`);

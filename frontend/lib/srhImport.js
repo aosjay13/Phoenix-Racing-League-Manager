@@ -293,6 +293,12 @@ export function parseSrhPage(html) {
     ? [...declared.filter(id => byRace.has(id)), ...[...byRace.keys()].filter(id => !declared.includes(id))]
     : [...byRace.keys()];
 
+  // Did this night run its stages as sessions of their own? SimRacerHub scores
+  // a stage separately AND rolls its points into the race total, so whether
+  // those points are already accounted for depends on the page. See
+  // srhRowPoints.
+  const stagesScoredSeparately = [...names.values()].some(name => /\bSTAGE\b/i.test(name));
+
   const segments = ordered.map(id => {
     const rawName = names.get(id) || "";
     return {
@@ -305,6 +311,7 @@ export function parseSrhPage(html) {
       driver_count: byRace.get(id).length,
       results: byRace.get(id),
       drivers,
+      stages_scored_separately: stagesScoredSeparately,
     };
   });
 
@@ -394,6 +401,101 @@ export function srhDriverName(row, drivers = {}) {
 // this app calls a provisional entry.
 export const isProvisional = row => /^y/i.test(String(row?.provisional ?? ""));
 
+// ── Points ────────────────────────────────────────────────────────────────
+//
+// SimRacerHub keeps a driver's points for a session in four parts, and its
+// official total is exactly their sum:
+//
+//   rpts  position points for the session
+//   bpts  bonuses, itemised in bonus_rows ("Led one or more laps", +1)
+//   ppts  penalties, itemised in penalty_rows ("Cause of Caution", 5) — a
+//         positive magnitude, subtracted
+//   spts  stage points, rolled into a staged race's total
+//   tpts  = rpts + bpts - ppts + spts
+//
+// That formula held on every row of every real race page this was built
+// against, as did bonus_rows summing to bpts and penalty_rows to ppts.
+//
+// None of it overrides this app's own scoring. A finishing row is paid by the
+// league's points structure here (pointsFor in lib/standings.js), off the
+// position the grid holds, and an import that wrote SimRacerHub's total over
+// that would be a second scorer disagreeing with the first. What DOES come
+// across is the part this app can never work out for itself — see below — plus
+// a provisional entry's flat value, which has no position to be derived from.
+
+const num = v => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+// Bonuses this app derives from the results themselves, by the words
+// SimRacerHub describes them with. These are deliberately NOT carried into an
+// imported row: whatever the season's own structure pays for the fastest lap,
+// for leading a lap, for leading the most laps and for the biggest climb is
+// already in the grid's Points column, worked out from the flags and the
+// numbers the import just filled in. Carrying SimRacerHub's copy as well would
+// pay the same bonus twice and inflate the championship.
+//
+// Pole is here for the same reason from the other end: this app scores
+// Qualifying as its own session on its own line (see pointsFor), so a pole or
+// grid-slot bonus SimRacerHub prints against the race is paid on the
+// Qualifying grid instead.
+const DERIVED_BONUS = [
+  /FAST(EST)?\s*(RACE\s*)?LAP/,
+  /LED\s+THE\s+MOST|MOST\s+LAPS?\s+LED/,
+  /LED\s+(ONE|1|A)\b|LED\s+\d+\s+OR\s+MORE/,
+  /HARD\s*CHARGER|MOST\s+POSITIONS?\s+GAINED/,
+  /HALF\s*-?\s*WAY|HALFWAY/,
+  /POLE\b|QUALIFIED\s*P?\s*\d/,
+];
+
+// Does this app pay for the thing a bonus row describes?
+export const isDerivedBonus = descr => {
+  const d = String(descr ?? "").toUpperCase();
+  return DERIVED_BONUS.some(re => re.test(d));
+};
+
+const pointRows = list => (Array.isArray(list) ? list : [])
+  .map(r => ({ points: num(r?.points), descr: String(r?.descr ?? "").trim() }))
+  .filter(r => r.points || r.descr);
+
+const sumPoints = list => list.reduce((t, r) => t + r.points, 0);
+
+// One driver's points as SimRacerHub paid them, split into what this app works
+// out for itself and what it cannot.
+//
+// `carried` is the net that belongs in the results grid's **Adj** column, a
+// per-result adjustment applied on top of the scored points and documented for
+// exactly this: a penalty or a correction that doesn't touch the finishing
+// position.
+//
+//   + bonuses this app has no way to derive  ("No incidents", "Show Up")
+//   − every penalty                          ("Cause of Caution", "14 incidents")
+//   + stage points, but only when the page didn't score the stages as sessions
+//     of their own. When it did, the statistician imports Stage 1 and Stage 2
+//     into their own grids and this app pays them there, so rolling them into
+//     the race as well would count them twice. `stagesScoredSeparately` says
+//     which case this is; parseSrhPage works it out from the page's sessions.
+export function srhRowPoints(row, { stagesScoredSeparately = false } = {}) {
+  const bonuses = pointRows(row?.bonus_rows);
+  const penalties = pointRows(row?.penalty_rows);
+  const extras = bonuses.filter(b => !isDerivedBonus(b.descr));
+  const stage = num(row?.spts);
+  const stageCarried = !stagesScoredSeparately && stage !== 0;
+  return {
+    total: num(row?.tpts),
+    race: num(row?.rpts),
+    bonus: num(row?.bpts),
+    penalty: num(row?.ppts),
+    stage,
+    derived: bonuses.filter(b => isDerivedBonus(b.descr)),
+    extras,
+    penalties,
+    stage_carried: stageCarried,
+    carried: sumPoints(extras) - sumPoints(penalties) + (stageCarried ? stage : 0),
+  };
+}
+
 // One session → { headers, rows } in the shape parseTable() returns, ready for
 // mapHeaders() + buildRows(). Rows come out in finishing order.
 //
@@ -446,7 +548,55 @@ export function srhSegmentTable(segment) {
     rows,
     delimiter: "srh",
     provisional: results.map(isProvisional),
+    // The points SimRacerHub paid each row, itemised, aligned with `rows`. The
+    // Points column above carries the total for the review table to show and
+    // for a provisional entry's flat value; this is what says which part of it
+    // this app has no way to work out for itself. See srhRowPoints.
+    points: results.map(r => srhRowPoints(r, {
+      stagesScoredSeparately: !!segment?.stages_scored_separately,
+    })),
   };
+}
+
+// The Pts cell's hover text in the review table: what SimRacerHub paid, term by
+// term, and which terms this app will and will not take. Written so a total
+// that looks off on the grid afterwards can be read rather than reverse-
+// engineered — the same courtesy the grid's own Points cell does with
+// explainPoints (see lib/standings.js).
+export function srhPointsSummary(points, { provisional = false } = {}) {
+  if (!points) return "";
+  const n = v => (Number.isInteger(v) ? String(v) : String(Number(Number(v).toFixed(3))));
+  const lines = [`SimRacerHub paid ${n(points.total)}`];
+  const parts = [`position ${n(points.race)}`];
+  if (points.bonus) parts.push(`bonus ${n(points.bonus)}`);
+  if (points.penalty) parts.push(`penalty -${n(points.penalty)}`);
+  if (points.stage) parts.push(`stage ${n(points.stage)}`);
+  lines.push(parts.join(" · "));
+
+  // A provisional entry has no finishing position to be scored off, so the
+  // total is the whole answer for it.
+  if (provisional) {
+    lines.push("", `Imported as this provisional entry's points: ${n(points.total)}`);
+    return lines.join("\n");
+  }
+
+  lines.push("");
+  if (points.carried) {
+    lines.push(`Carried to the grid's Adj column: ${points.carried > 0 ? "+" : ""}${n(points.carried)}`);
+    for (const b of points.extras) lines.push(`  + ${b.descr || "bonus"} ${n(b.points)}`);
+    for (const p of points.penalties) lines.push(`  - ${p.descr || "penalty"} ${n(p.points)}`);
+    if (points.stage_carried) lines.push(`  + stage points ${n(points.stage)}`);
+  } else {
+    lines.push("Nothing carried — your own points structure scores this row.");
+  }
+  if (points.derived.length) {
+    lines.push("", "Left to your own structure, which pays for these itself:");
+    for (const b of points.derived) lines.push(`  · ${b.descr} ${n(b.points)}`);
+  }
+  if (points.stage && !points.stage_carried) {
+    lines.push("", `Stage points (${n(points.stage)}) are scored on this event's own Stage sessions.`);
+  }
+  return lines.join("\n");
 }
 
 // The line of event detail the importer shows above its session picker.

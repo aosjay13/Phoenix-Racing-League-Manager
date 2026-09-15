@@ -1219,6 +1219,18 @@ export function SessionEditor({
         qual_time: im.qual_time || row.qual_time,
         status: im.status || row.status,
         fastest_lap: !!im.fastest_lap,
+        // A per-result adjustment the source carried. From SimRacerHub that's
+        // its penalties ("Cause of Caution", "14 incidents") plus any bonus
+        // this app has no way to work out for itself ("No incidents", "Show
+        // Up") — see srhRowPoints in lib/srhImport.js. The finishing points
+        // themselves are NOT imported: this season's own structure pays those,
+        // off the position in the grid, which is what keeps one scorer.
+        //
+        // An import with no opinion on it (a pasted table, an iRacing file)
+        // leaves the cell alone, so an adjustment typed by hand survives.
+        points_adjustment: im.points_adjustment != null
+          ? String(im.points_adjustment)
+          : row.points_adjustment,
       };
     });
     const sorted = sortByFinish(placed);
@@ -1262,21 +1274,47 @@ export function SessionEditor({
     if (allowProv) {
       setProvRows(prev => {
         const kept = prev.filter(r => !(r.entry_id && byId.has(r.entry_id)));
-        const listed = new Set(kept.map(r => r.entry_id).filter(Boolean));
+        // A driver already listed provisionally keeps their place rather than
+        // being added twice — but takes the points the import carries for them.
+        // Re-importing a race the source has since re-scored is how a
+        // corrected figure arrives, and silently keeping the old one would make
+        // the import look like it had worked.
+        const refreshed = kept.map(r => {
+          const im = r.entry_id ? provById.get(r.entry_id) : null;
+          if (!im || im.points == null) return r;
+          const value = String(im.points);
+          return r.manual_points === value && !r.auto ? r : { ...r, manual_points: value, auto: false };
+        });
+        const listed = new Set(refreshed.map(r => r.entry_id).filter(Boolean));
         const added = [...provById.keys()]
           .filter(id => !listed.has(id))
           .map(id => {
             const e = entryById.get(id);
-            // Points are left on auto, so they fill with the first finishing
-            // position nobody took — same as a hand-added provisional entry.
+            const im = provById.get(id);
+            // A provisional entry's points are the one points figure an import
+            // IS the answer for: the driver never raced, so there's no
+            // finishing position for this season's structure to score, and
+            // what the source paid them is the whole of it. SimRacerHub keeps
+            // it in the same total as everyone else's.
+            //
+            // Sources that say nothing about points leave the row on auto, so
+            // it fills with the first finishing position nobody took, the same
+            // as a hand-added provisional entry. Either way ↺ goes back to
+            // that auto-filled figure.
+            const imported = im?.points != null ? im.points : undefined;
             return makeProvRow({
               entry_id: id,
               driver_name: e?.name ?? "",
               driver_number: e?.number ?? null,
               class_id: pinnedClassId || e?.class_id || "",
+              manual_points: imported,
+              auto: imported == null,
             });
           });
-        return kept.length === prev.length && !added.length ? prev : [...kept, ...added];
+        const touched = refreshed.some((r, i) => r !== kept[i]);
+        return kept.length === prev.length && !added.length && !touched
+          ? prev
+          : [...refreshed, ...added];
       });
     }
 
@@ -2260,7 +2298,7 @@ export function SessionEditor({
                       data-prov-points={row.slot_id}
                       title={row.auto
                         ? `Auto-filled with P${lastFinishPos + i + 1} points — the first position nobody finished in. Type over it to set your own.`
-                        : "Your own value — click ↺ to go back to the auto-filled points."}
+                        : "Not the auto-filled figure — typed here, or imported from what the source paid. Click ↺ to go back to the auto-filled points."}
                       onPaste={e => handleColumnPaste(e, "manual_points", i, pasteProvColumn)}
                       onChange={e => updateProvRow(row.slot_id, { manual_points: e.target.value, auto: false })} />
                     {!row.auto && (
