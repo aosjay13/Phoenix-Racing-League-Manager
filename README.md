@@ -2421,7 +2421,7 @@ a column no screen could attribute and no input could clear. The scorer refuses 
 
 ### Where points are configured
 
-    series (the league default) → season → class → the session's points template
+    series (the league default) → season → class → the session's points template (or its own one-off structure)
 
 Each level overrides only what it actually sets, so a league configures its points **once** on the
 series and adjusts a season or a class only where they genuinely differ. A series that sets nothing
@@ -2776,6 +2776,37 @@ On an event whose classes run separate sessions, the per-session assignment is p
 re-scoring Pro's Feature leaves Amateur's alone, and clearing it hands that class back to the
 event-wide assignment rather than to nothing. A class's Qualifying is resolved the same way, so its
 qualifying points are scored under *that class's* Qualifying structure.
+
+**One session can score on points typed for it alone — with no template saved.** Every other points
+system in the app is a reusable thing with a name, which is the right shape for how a league normally
+scores and the wrong shape for the night it doesn't: a rain-shortened feature paying half points, a
+one-off invitational, a double-points finale. Saving a template for a scale that will be used once
+clutters the library for every season afterwards.
+
+So the **Points system** picker beside every Qualifying and Race grid (and every Heat, Consolation and
+Feature) carries **✏️ Custom points — this session only**. Pick it and the points editor opens on the
+numbers this session currently scores on — the season's, the class's, whatever template it inherits —
+as a starting point to type over. **Apply to &lt;session&gt; only** saves them, and nothing else
+changes: no template is created, none is edited, and no other session or event moves. The picker then
+reads *Custom points — this session only (in use)*, and **⚙ Edit Points Structure** reopens on those
+numbers whenever they need another change. Picking anything else from the dropdown hands the session
+back to a shared points system, and the custom structure — now unused — is dropped in the same write.
+
+The editor offers both paths at once: the same edits can still be saved as a template (or back onto
+the one selected) for a scale the league *will* use again. It is the one-off that no longer forces the
+decision.
+
+Under the hood a custom structure lives on the race document — `races.custom_points["custom-…"] = {
+name, race_points, qual_points, bonus_points }`, the same shape a points template has — and the
+session names its id through `session_points` exactly as it names a template's. Nothing downstream
+tells the two apart: the id is stamped onto the session's results and resolved through the same
+`templatesById` lookup (`lib/rawIndex.js`), so the standings, the class championships, career and team
+profiles, the event page and the live Points column all score it with no notion that it exists. It is
+per class on a split event like any other assignment, it obeys the same layering rules (a custom
+structure picked for ONE class sits on top of that class's own points; one picked for the event is the
+event's default), and it dies with the event: copying the round to another season brings the numbers
+across under **fresh ids**, so editing the copy can never re-score the round it was copied from. The
+rules live in `lib/customPoints.js` and are asserted in `lib/__tests__/customPoints.test.mjs`.
 
 **Heats and consolations score on a default, set once — per season, per class or per event.** A heat
 weekend is the one shape where the per-session dropdown becomes a chore: eight heats and two B-Mains

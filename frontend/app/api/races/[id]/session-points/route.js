@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { withAdmin } from "@/lib/serverAuth";
 import { classIdForScope, classOfResult, isClassScoped } from "@/lib/classServer";
+import {
+  customPointsName, isCustomPointsId, newCustomPointsId, prunedCustomPoints, sanitizeCustomPoints,
+} from "@/lib/customPoints";
 import { withStatsRefresh } from "@/lib/statsCache";
 
 const SESSION_TYPES = ["qualifying", "race", "heat", "consolation", "feature"];
@@ -11,8 +14,18 @@ const SESSION_TYPES = ["qualifying", "race", "heat", "consolation", "feature"];
 // that session — so changing the points structure after results are entered
 // immediately re-scores that session everywhere (results screens, event
 // pages, championship standings), with no re-save of the results needed.
-// body: { session_type, session, template_id, session_class? } — template_id
-// "" or null clears the override; "none" awards 0 points.
+// body: { session_type, session, template_id, session_class?, custom_points? }
+// — template_id "" or null clears the override; "none" awards 0 points.
+//
+// `custom_points` is the other way to answer the same question: instead of
+// naming a points system that already exists, it sends the structure itself —
+// `{ race_points, qual_points, bonus_points }` — for THIS session alone. It's
+// stored on the race under `races.custom_points`, keyed by a minted id the
+// session then points at like any other, so a scale typed for one night scores
+// through exactly the same path a template does without ever joining the
+// template library (see lib/customPoints.js). Sending it again for a session
+// that already has one edits that structure in place rather than piling up a
+// new one, and `template_id` is ignored while it is present.
 //
 // `session_class` scopes the assignment to ONE class of a split event, where
 // each class runs its own Qualifying and Race: it's stored under
@@ -25,7 +38,7 @@ const SESSION_TYPES = ["qualifying", "race", "heat", "consolation", "feature"];
 // event's drops to whatever the class — or, failing that, the season — scores
 // on (see classScoresOwnPoints in lib/standings.js).
 const handlePOST = withAdmin(async (request, { params }) => {
-  const { session_type, session, template_id, session_class } = await request.json();
+  const { session_type, session, template_id, session_class, custom_points, class_label } = await request.json();
   const type = SESSION_TYPES.includes(session_type) ? session_type : "race";
   if (!session) {
     return NextResponse.json({ error: "session required" }, { status: 400 });
@@ -38,17 +51,37 @@ const handlePOST = withAdmin(async (request, { params }) => {
 
   const scoped = isClassScoped(session_class);
   const raceUpdates = {};
+
+  // A structure sent for this session alone. It's written first, because the
+  // assignment below is simply the id it was written under — from there on it
+  // behaves as any template id does.
+  const custom = sanitizeCustomPoints(custom_points, {
+    name: customPointsName(session, scoped ? String(class_label || "").trim() : ""),
+  });
+  const assignedBefore = scoped
+    ? (race.session_points_by_class?.[session_class]?.[session] || "")
+    : (race.session_points?.[session] || "");
+  let assignedId = template_id || "";
+  if (custom) {
+    // Editing a session that already scores on a custom structure updates that
+    // structure in place: its id is already stamped on every result of the
+    // session, so re-pointing them isn't needed and a second entry would just
+    // be an orphan.
+    assignedId = isCustomPointsId(assignedBefore) ? assignedBefore : newCustomPointsId();
+    raceUpdates.custom_points = { ...(race.custom_points || {}), [assignedId]: custom };
+  }
+
   if (scoped) {
     const byClass = { ...(race.session_points_by_class || {}) };
     const forClass = { ...(byClass[session_class] || {}) };
-    if (template_id) forClass[session] = template_id;
+    if (assignedId) forClass[session] = assignedId;
     else delete forClass[session];
     if (Object.keys(forClass).length) byClass[session_class] = forClass;
     else delete byClass[session_class];
     raceUpdates.session_points_by_class = byClass;
   } else {
     const sp = { ...(race.session_points || {}) };
-    if (template_id) sp[session] = template_id;
+    if (assignedId) sp[session] = assignedId;
     else delete sp[session];
     raceUpdates.session_points = sp;
   }
@@ -56,7 +89,7 @@ const handlePOST = withAdmin(async (request, { params }) => {
   // What the affected results should now point at. Clearing a class's override
   // hands its results back to the event-wide assignment rather than blanking
   // them, which would silently drop a template the event set for everyone.
-  const effective = template_id || (scoped ? (race.session_points?.[session] || null) : null);
+  const effective = assignedId || (scoped ? (race.session_points?.[session] || null) : null);
 
   // A class-scoped cascade needs to know which class each result belongs to.
   // Results save their class, but ones written before classes existed resolve
@@ -73,15 +106,27 @@ const handlePOST = withAdmin(async (request, { params }) => {
   const resultsSnap = await db().collection("results").where("race_id", "==", params.id).get();
   const batch = db().batch();
   let rescored = 0;
+  // What this event's results point at once the cascade below has run — the
+  // other half of "is this custom structure still in use?".
+  const resultTemplateIds = [];
   for (const doc of resultsSnap.docs) {
     const d = doc.data();
     const docType = d.session_type || "race";
     const docSession = d.session || firstStd;
-    if (docType !== type || docSession !== session) continue;
-    if (scoped && (classOfResult(d, entriesById) || "") !== wantedClass) continue;
+    const mine = docType === type && docSession === session
+      && (!scoped || (classOfResult(d, entriesById) || "") === wantedClass);
+    if (!mine) { resultTemplateIds.push(d.points_template_id); continue; }
     batch.update(doc.ref, { points_template_id: effective });
+    resultTemplateIds.push(effective);
     rescored += 1;
   }
+
+  // A custom structure nothing points at any more is dead weight on the race
+  // document — a session switched from custom to a template, or back to the
+  // default, leaves one behind. Dropped in the same write that orphaned it.
+  const pruned = prunedCustomPoints({ ...race, ...raceUpdates }, resultTemplateIds);
+  if (pruned) raceUpdates.custom_points = pruned;
+
   batch.update(raceRef, raceUpdates);
   await batch.commit();
 

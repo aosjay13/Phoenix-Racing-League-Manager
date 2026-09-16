@@ -13,6 +13,7 @@
 
 import { buildTeamIndex } from "@/lib/teams";
 import { normalizedBuiltinTemplates, NONE_TEMPLATE } from "@/lib/pointsTemplates";
+import { customTemplatesById } from "@/lib/customPoints";
 import {
   contextNames, iracingGameIds, isIracingGameId, isIracingIdentity, racesOnlyIracing,
 } from "@/lib/iracingPrivacy";
@@ -42,13 +43,20 @@ export function bareResults(results = []) {
 
 // Every points system a session can name, keyed by id: the builtins (pure code,
 // already in the bundle the browser downloaded), the "none" pseudo-template,
-// and the league's own saved templates on top. The client-side twin of
-// fetchTemplatesById.
+// the league's own saved templates, and the one-off structures individual
+// sessions carry on their own race document (lib/customPoints.js). The
+// client-side twin of fetchTemplatesById.
+//
+// A custom structure resolves here rather than anywhere special because that is
+// the whole idea: a session that scores on numbers typed for that night alone
+// is scored by the same code that scores a session on a saved template, so the
+// standings, the stats engine and the event page need no notion of it at all.
 export function templatesById(bundle) {
   return {
     ...Object.fromEntries(normalizedBuiltinTemplates().map(t => [t.id, t])),
     [NONE_TEMPLATE.id]: NONE_TEMPLATE,
     ...Object.fromEntries((bundle.points_templates || []).map(({ id, ...data }) => [id, data])),
+    ...customTemplatesById(bundle.races || []),
   };
 }
 

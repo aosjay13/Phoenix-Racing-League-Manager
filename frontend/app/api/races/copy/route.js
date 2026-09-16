@@ -5,7 +5,7 @@ import { recalcGameSkillRatings, gameIdForSeason } from "@/lib/skillRatingServer
 import { entryClassIds } from "@/lib/classFilter";
 import {
   mapClassesByName, mapClassId, planEntryMap, newEntryForDriver,
-  copyRaceDoc, copyResultDocs, nextRoundNumber,
+  copyRaceDoc, copyResultDocs, customPointsIdMap, nextRoundNumber,
 } from "@/lib/raceCopy";
 import { withStatsRefresh } from "@/lib/statsCache";
 
@@ -187,6 +187,11 @@ const handlePOST = withAdmin(async (request, ctx, user) => {
   const stamp = { created_at: now, created_by: user.uid, ...(leagueId ? { league_id: leagueId } : {}) };
 
   // ── The race itself ──────────────────────────────────────────────────────
+  // Points structures typed for a single session live on the race document, so
+  // the copy gets its own ids for them — otherwise the two events would share
+  // one structure and editing either would re-score the other. Empty unless the
+  // source event actually carries one.
+  const customPointsMap = customPointsIdMap(race);
   const raceRef = db().collection("races").doc();
   const newRace = {
     ...copyRaceDoc(race, {
@@ -203,6 +208,7 @@ const handlePOST = withAdmin(async (request, ctx, user) => {
       // The event's caution flags / lead changes describe the race that was
       // run, so they come across only when its results do.
       include_results,
+      customPointsMap,
     }),
     copied_from_race_id: race.id,
     copied_from_season_id: fromSeasonId,
@@ -231,7 +237,7 @@ const handlePOST = withAdmin(async (request, ctx, user) => {
   }
 
   const { rows, skipped } = copyResultDocs(results, {
-    race_id: raceRef.id, season_id: to_season_id, entryMap, classMap,
+    race_id: raceRef.id, season_id: to_season_id, entryMap, classMap, customPointsMap,
   });
 
   await commitAll([

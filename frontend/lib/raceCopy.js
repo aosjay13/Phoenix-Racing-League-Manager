@@ -18,6 +18,7 @@ import { UNCLASSIFIED } from "@/lib/classFilter";
 import { BANGER_RESULT_FIELDS } from "@/lib/bangerRacing";
 import { toDateOnly } from "@/lib/raceDate";
 import { RACE_STAT_FIELDS } from "@/lib/raceStats";
+import { isCustomPointsId, newCustomPointsId } from "@/lib/customPoints";
 
 // Race fields that describe the EVENT and so carry over to the copy: what it's
 // called, where and how long it runs, its session structure and which points
@@ -51,6 +52,12 @@ export const COPIED_RACE_FIELDS = [
   "heat_laps", "consolation_laps",
   "heat_format", "heats", "consolations", "feature_name",
   "session_points", "session_stats", "session_points_enabled",
+  // A session scoring on points typed for it alone (races.custom_points — see
+  // lib/customPoints.js) carries them into the copy for the same reason its
+  // template assignments carry: they describe how this weekend scores. Unlike a
+  // template, though, the structure itself lives on the race, so the copy is
+  // given its own ids — see customPointsIdMap below.
+  "custom_points",
   // The heat/consolation default points templates travel with the event for the
   // same reason its per-session assignments do: they describe how this weekend
   // scores, and a copy that dropped them would score its heats differently to
@@ -147,6 +154,34 @@ export function newEntryForDriver(entry, classIds = []) {
   };
 }
 
+// Fresh ids for the one-off points structures this event carries, as
+// { [sourceId]: [copyId] }.
+//
+// A custom structure lives on the race document rather than in the shared
+// template library, so a copy that kept its ids would have two events holding
+// two structures under one id — and editing either would silently re-score the
+// other, since every points system in the app is resolved from a single map
+// keyed by id (templatesById). Minting new ids is what keeps the copy's points
+// the copy's own. Empty for the vast majority of events, which carry none.
+export function customPointsIdMap(race = {}) {
+  const map = race.custom_points;
+  if (!map || typeof map !== "object") return {};
+  return Object.fromEntries(
+    Object.keys(map).filter(isCustomPointsId).map(id => [id, newCustomPointsId()]));
+}
+
+// Translate one points system id through that map: a custom id becomes the
+// copy's own, and a template id (league-wide, so still valid in the target
+// season) passes straight through.
+export function mapTemplateId(id, idMap = {}) {
+  return id && idMap[id] ? idMap[id] : id;
+}
+
+function remapSessionPoints(sessions, idMap) {
+  return Object.fromEntries(
+    Object.entries(sessions || {}).map(([name, id]) => [name, mapTemplateId(id, idMap)]));
+}
+
 // The copy's own race document: the source event's describing fields, plus the
 // target season and whatever the admin retitled/redated/renumbered it to.
 //
@@ -161,7 +196,15 @@ export function newEntryForDriver(entry, classIds = []) {
 // stats (caution flags, lead changes) follow it: they record what happened in
 // the running of the race, so they belong to the copy exactly when its results
 // do. A copy taken as an empty calendar entry gets neither.
-export function copyRaceDoc(race, { season_id, round_number, name, date, class_id = "", classMap = {}, include_results = false } = {}) {
+export function copyRaceDoc(race, {
+  season_id, round_number, name, date, class_id = "", classMap = {}, include_results = false,
+  customPointsMap = null,
+} = {}) {
+  // A caller that copies the results too passes the id map in, so the results
+  // and the race agree on it (see copyResultDocs). One that doesn't still gets
+  // a self-consistent event rather than a second race sharing the original's
+  // structure ids, which is the one thing that must never happen.
+  const idMap = customPointsMap || customPointsIdMap(race);
   const doc = { season_id, round_number: Number(round_number) || 1 };
   for (const field of COPIED_RACE_FIELDS) {
     if (race[field] !== undefined) doc[field] = race[field];
@@ -186,10 +229,23 @@ export function copyRaceDoc(race, { season_id, round_number, name, date, class_i
     const remapped = {};
     for (const [scope, sessions] of Object.entries(byClass)) {
       const target = scope === UNCLASSIFIED ? UNCLASSIFIED : classMap[scope];
-      if (target) remapped[target] = sessions;
+      if (target) remapped[target] = remapSessionPoints(sessions, idMap);
     }
     if (Object.keys(remapped).length) doc.session_points_by_class = remapped;
     else delete doc.session_points_by_class;
+  }
+
+  // Everything that names a one-off structure follows it to its new id: the
+  // structures themselves, and the assignments pointing at them.
+  if (Object.keys(idMap).length) {
+    doc.custom_points = Object.fromEntries(
+      Object.entries(race.custom_points || {})
+        .filter(([id]) => idMap[id])
+        .map(([id, body]) => [idMap[id], body]));
+    if (doc.session_points) doc.session_points = remapSessionPoints(doc.session_points, idMap);
+    for (const field of ["heat_points_template_id", "consolation_points_template_id"]) {
+      if (doc[field]) doc[field] = mapTemplateId(doc[field], idMap);
+    }
   }
   return doc;
 }
@@ -218,7 +274,14 @@ export const COPIED_RESULT_FIELDS = [
 // Skill Rating fields are deliberately not in COPIED_RESULT_FIELDS: sr_delta
 // and the ratings around it are derived by replaying a game's whole timeline,
 // so the copy earns its own on the next recalc.
-export function copyResultDocs(results = [], { race_id, season_id, entryMap = {}, classMap = {} } = {}) {
+//
+// `customPointsMap` is the source event's one-off structures mapped to the ids
+// the copy stores them under (customPointsIdMap): a result stamped with one has
+// to follow it, or it would score off the structure still sitting on the ORIGINAL
+// race. A result on a league-wide template is untouched — those ids stay valid.
+export function copyResultDocs(results = [], {
+  race_id, season_id, entryMap = {}, classMap = {}, customPointsMap = {},
+} = {}) {
   const rows = [];
   const skipped = [];
   for (const r of results) {
@@ -228,6 +291,7 @@ export function copyResultDocs(results = [], { race_id, season_id, entryMap = {}
     for (const field of COPIED_RESULT_FIELDS) {
       if (r[field] !== undefined) doc[field] = r[field];
     }
+    if (doc.points_template_id) doc.points_template_id = mapTemplateId(doc.points_template_id, customPointsMap);
     rows.push(doc);
   }
   return { rows, skipped };

@@ -631,6 +631,16 @@ export const SPECS = {
                        // points (see resolveSessionFlags in lib/standings.js for the defaults).
                        heat_format: {}, heats: {}, consolations: {}, feature_name: { default: "A-Main Feature" },
                        session_points: {}, session_points_by_class: {}, session_stats: {}, session_points_enabled: {},
+                       // `custom_points` holds the one-off points structures sessions of
+                       // THIS event score on — `{ "custom-…": { name, race_points,
+                       // qual_points, bonus_points } }`, the same shape a points template
+                       // has. A session names one through `session_points` exactly as it
+                       // names a template, so nothing downstream tells them apart; what
+                       // makes it custom is that it lives here rather than in the shared
+                       // library, so a scale typed for one night never joins the template
+                       // list. Written by the session-points route, which also drops
+                       // structures nothing points at any more. See lib/customPoints.js.
+                       custom_points: {},
                        // The event's DEFAULT points template for its heats and for its
                        // consolations (B-/C-Mains) — points_templates ids, set once on the
                        // Race Info form instead of once per session, which is the whole

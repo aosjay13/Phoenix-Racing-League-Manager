@@ -9,6 +9,7 @@ import { PointsEditorModal } from "@/components/PointsEditorModal";
 import { ImportResultsModal } from "@/components/ImportResultsModal";
 import { ImportTimeTrialModal } from "@/components/ImportTimeTrialModal";
 import { NONE_TEMPLATE, isNoPointsTemplate } from "@/lib/pointsTemplates";
+import { CUSTOM_POINTS_OPTION, customTemplatesOf, isCustomPointsId } from "@/lib/customPoints";
 import { classIdForScope, classOfResult, entriesEligibleForRace, entriesInSessionClass, isClassScoped, resultInSessionClass } from "@/lib/classFilter";
 import { pointsFor, pointsBreakdown, classConfigs, classScoresOwnPoints, configForClass, configForTemplate, inheritedSessionTemplate, isPreliminarySession, resolveSeasonConfig, defaultSessionFlags } from "@/lib/standings";
 import { AUTO_FLAG_FIELDS, applyAutoFlags, detectFlagLocks, autoMostLapsLedSlot } from "@/lib/autoFlags";
@@ -554,7 +555,11 @@ export function SessionEditor({
   const [renameValue, setRenameValue] = useState("");
   const [dragIndex, setDragIndex] = useState(null);
   const [overIndex, setOverIndex] = useState(null);
+  // The points editor, and whether it was opened straight onto a structure of
+  // this session's own (the dropdown's custom option) rather than on the
+  // system currently assigned.
   const [pointsModal, setPointsModal] = useState(false);
+  const [pointsModalCustom, setPointsModalCustom] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   // Race statistics an import proposed for the EVENT — cautions, caution laps,
   // lead changes — held here until this grid's own Save writes them, so the
@@ -1437,7 +1442,15 @@ export function SessionEditor({
   const templateId = (scoped && session in classSessionPoints)
     ? (classSessionPoints[session] || "")
     : (sessionPoints[session] || "");
-  const templateFor = id => (id === NONE_TEMPLATE.id ? NONE_TEMPLATE : templates.find(t => t.id === id));
+  // The one-off structures THIS event carries — points typed for a single
+  // session and stored on the race rather than in the template library (see
+  // lib/customPoints.js). They resolve alongside the templates because that is
+  // all they are to everything downstream: a points system with an id.
+  const customTemplates = useMemo(() => customTemplatesOf(race), [race]);
+  const templateFor = id => (
+    id === NONE_TEMPLATE.id ? NONE_TEMPLATE
+      : isCustomPointsId(id) ? customTemplates.find(t => t.id === id)
+        : templates.find(t => t.id === id));
   // The DEFAULT template for this session TYPE — "every heat scores on this",
   // named by the event (Race Info), by one class, or by the season, most
   // specific first. A session with an assignment of its own still overrides it;
@@ -1452,9 +1465,12 @@ export function SessionEditor({
   });
   const inherited = inheritedFor(pointsClassId || "");
   const typeDefaultId = inherited?.id || "";
-  const typeDefault = useMemo(() => templateFor(typeDefaultId), [templates, typeDefaultId]);
+  const typeDefault = useMemo(() => templateFor(typeDefaultId), [templates, customTemplates, typeDefaultId]);
   const effectiveTemplateId = templateId || typeDefaultId;
-  const template = useMemo(() => templateFor(effectiveTemplateId), [templates, effectiveTemplateId]);
+  const template = useMemo(() => templateFor(effectiveTemplateId), [templates, customTemplates, effectiveTemplateId]);
+  // The structure this session scores on that belongs to it alone, if it has
+  // one — what the editor reopens on, and what the dropdown names.
+  const customTemplate = isCustomPointsId(templateId) ? templateFor(templateId) : null;
   // A points system that no longer resolves — a template deleted after it was
   // picked here, or named as a heat/consolation default. Everything downstream
   // falls back to the class/season structure when a template is missing, so
@@ -1544,6 +1560,13 @@ export function SessionEditor({
   // re-point the class next door.
   const assignSessionPoints = (name, id, type) =>
     onSessionPointsChange(name, id, type, scoped ? sessionClass : null);
+
+  // Score this session on numbers typed for it alone. Same call, same scoping —
+  // the structure travels instead of an id, and the server mints the id it is
+  // stored under (see lib/customPoints.js and the session-points route). Nothing
+  // is added to the template library, which is the whole point of it.
+  const assignCustomPoints = (name, structure, type) =>
+    onSessionPointsChange(name, "", type, scoped ? sessionClass : null, structure, scoped ? pointsClassName : "");
 
   // Per-session eligibility toggles, falling back to the session-type default
   // until an admin explicitly flips a switch. The stats toggle applies to every
@@ -1942,18 +1965,36 @@ export function SessionEditor({
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
             <div className="field" style={{ maxWidth: 280, margin: 0 }}>
               <label>Points system · {scopeClass ? `${pointsClassName} · ` : ""}{session}</label>
-              <select value={templateId}
-                onChange={e => Promise.resolve(assignSessionPoints(session, e.target.value, sessionType)).catch(err => showToast("error", err.message))}>
+              <select value={isCustomPointsId(templateId) ? CUSTOM_POINTS_OPTION : templateId}
+                onChange={e => {
+                  // The custom entry isn't a points system to assign — it opens
+                  // the editor on this session's own numbers, which is where
+                  // they're typed and applied.
+                  if (e.target.value === CUSTOM_POINTS_OPTION) { setPointsModalCustom(true); setPointsModal(true); return; }
+                  Promise.resolve(assignSessionPoints(session, e.target.value, sessionType)).catch(err => showToast("error", err.message));
+                }}>
                 <option value="">{defaultLabel}</option>
                 <option value={NONE_TEMPLATE.id}>{NONE_TEMPLATE.name}</option>
+                {/* A structure for this session and nothing else — edited right
+                    here, never saved to the template library. */}
+                <option value={CUSTOM_POINTS_OPTION}>
+                  ✏️ Custom points — this session only{customTemplate ? " (in use)" : "…"}
+                </option>
                 {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                 {/* Keep a deleted template's id selectable rather than letting
                     the box snap to the first option, which would read as
                     "scoring the default" while nothing had been changed. */}
-                {missingTemplateId === templateId && templateId && (
+                {missingTemplateId === templateId && templateId && !isCustomPointsId(templateId) && (
                   <option value={templateId}>⚠ Deleted points system</option>
                 )}
               </select>
+              {customTemplate && (
+                <span style={{ fontSize: "0.75rem", color: "var(--ink-2)" }}>
+                  Scoring on points typed for this session alone — nothing else at this event or in
+                  your template list uses them. <strong>⚙ Edit Points Structure</strong> changes them;
+                  picking anything else above goes back to a shared points system.
+                </span>
+              )}
               {missingTemplateId && (
                 <span style={{ fontSize: "0.75rem", color: "var(--accent-gold, #e2b714)" }}>
                   ⚠ The points system {templateId ? "picked for this session" : `set as this event's ${(LABELS[sessionType] || "session").toLowerCase()} default`} no
@@ -1978,7 +2019,8 @@ export function SessionEditor({
               )}
             </div>
             <button className="btn btn-ghost" type="button" title="View, edit, or create the points structure for this session"
-              style={{ marginTop: 0, whiteSpace: "nowrap" }} onClick={() => setPointsModal(true)}>
+              style={{ marginTop: 0, whiteSpace: "nowrap" }}
+              onClick={() => { setPointsModalCustom(false); setPointsModal(true); }}>
               ⚙ Edit Points Structure
             </button>
           </div>
@@ -2415,7 +2457,9 @@ export function SessionEditor({
           templates={templates} baseConfig={defaultConfig} baseLabel={defaultLabel}
           classLabel={scopeClass ? pointsClassName : ""} banger={isBangerRacing}
           onAssign={assignSessionPoints} onTemplatesChanged={onTemplatesChanged}
-          onClose={() => setPointsModal(false)}
+          onAssignCustom={assignCustomPoints} customTemplate={customTemplate}
+          startCustom={pointsModalCustom}
+          onClose={() => { setPointsModal(false); setPointsModalCustom(false); }}
         />
       )}
 

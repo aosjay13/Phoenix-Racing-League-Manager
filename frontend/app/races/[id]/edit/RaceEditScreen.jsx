@@ -600,14 +600,23 @@ function UnifiedEditInner() {
   // results for that session, so points re-score everywhere immediately.
   // `sessionClass` is set on a split event, where the assignment belongs to ONE
   // class's session rather than the event's — see the session-points route.
+  //
+  // `customPoints` is the other thing the picker can send: a points structure
+  // typed for THIS session alone rather than the id of one that already exists.
+  // The route stores it on the race and assigns the id it minted, so from the
+  // response onwards it is an assignment like any other — which is why one call
+  // covers both (see lib/customPoints.js). `classLabel` only names the structure
+  // on a split event, where "Custom — Race" would say too little.
   const sessionPoints = race?.session_points || {};
   const sessionPointsByClass = race?.session_points_by_class || {};
-  const saveSessionPoints = useCallback(async (name, templateId, sessionType = "race", sessionClass = null) => {
+  const saveSessionPoints = useCallback(async (name, templateId, sessionType = "race", sessionClass = null,
+    customPoints = null, classLabel = "") => {
     const updated = await api(`/api/races/${race.id}/session-points`, {
       method: "POST",
       body: {
         session: name, template_id: templateId || "", session_type: sessionType,
         ...(sessionClass ? { session_class: sessionClass } : {}),
+        ...(customPoints ? { custom_points: customPoints, class_label: classLabel || "" } : {}),
       },
     });
     setRace(r => ({ ...r, ...updated }));
