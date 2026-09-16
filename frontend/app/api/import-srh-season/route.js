@@ -5,8 +5,11 @@ import { buildEntityDoc, SPECS } from "@/lib/entityApi";
 import { withStatsRefresh } from "@/lib/statsCache";
 import { normalizeName } from "@/lib/nameKey";
 import { isIracingGame } from "@/lib/signupRequest";
-import { srhCarName, srhFetchText } from "@/lib/srhFetch";
-import { parseSrhSchedule, parseSrhSeasonRef, srhSchedulePlan } from "@/lib/srhSchedule";
+import { srhCarName, srhFetchText, srhTrackDirectoryHtml } from "@/lib/srhFetch";
+import {
+  parseSrhSchedule, parseSrhSeasonRef, parseSrhTrackDirectory, srhSchedulePlan, srhTrackInfo,
+} from "@/lib/srhSchedule";
+import { applyTrackDecisions, planTrackImport, trackNames } from "@/lib/trackMatch";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +18,7 @@ export const dynamic = "force-dynamic";
 //   POST { url, preview: true }        → read that season's schedule and say
 //                                        what importing it WOULD create,
 //                                        writing nothing
-//   POST { url, series_id, season_name? }
+//   POST { url, series_id, season_name?, track_decisions? }
 //                                      → create the season, its races, and any
 //                                        track it races at that this league
 //                                        doesn't have yet
@@ -34,6 +37,23 @@ export const dynamic = "force-dynamic";
 // this writes a season's worth of rows in one press and an admin should see
 // what they are about to get. The parsing itself is in lib/srhSchedule.js,
 // where it can be tested without a database.
+//
+// VENUES get the same treatment drivers get in the results importer, and for
+// the same reason: an importer that doesn't check fills the Tracks library with
+// duplicates. Every layout a schedule races at is matched against the tracks
+// this league already has — through every name each of them answers to — and
+// `track_decisions` is the admin's answer for the ones that need one, keyed by
+// the name SimRacerHub used:
+//
+//   { "Charlotte Motor Speedway Roval 2025": { action: "use", track_id } }
+//   { "Lime Rock Park Grand Prix": { action: "create", name: "Lime Rock",
+//                                    track_type: "Road Course" } }
+//
+// A track the admin points an import at RECORDS the name the source used (in
+// `merged_names`, which the track profile prints as "Also raced as"), so a
+// venue named whatever the league calls it is an exact match next season and
+// there is nothing to review. That is what stops SimRacerHub's naming becoming
+// this app's naming. See lib/trackMatch.js.
 
 // A schedule with more rounds than this is not a schedule.
 const MAX_RACES = 120;
@@ -41,24 +61,14 @@ const MAX_RACES = 120;
 // handful of them looks them up and a season somehow listing dozens doesn't.
 const MAX_CAR_LOOKUPS = 8;
 
-// The league's tracks, indexed by every name each of them answers to — its own
-// and any it was merged from, which is what stops an import re-creating a
-// venue an admin has just tidied away (see the track merge tool).
+// Every track this league has, for the matcher to check a schedule against.
+// Names are indexed by lib/trackMatch.js rather than here, so the importer and
+// the review table agree on what a venue answers to.
 async function loadTracks(leagueId) {
   let query = db().collection("tracks");
   if (leagueId) query = query.where("league_id", "==", leagueId);
   const snap = await query.get();
-  const byName = new Map();
-  const docs = [];
-  for (const d of snap.docs) {
-    const data = { id: d.id, ...d.data() };
-    docs.push(data);
-    for (const name of [data.name, ...(data.merged_names || [])]) {
-      const key = normalizeName(name);
-      if (key && !byName.has(key)) byName.set(key, data);
-    }
-  }
-  return { byName, docs };
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
 const handlePOST = withAdmin(async (request, ctx, user, role, leagueId) => {
@@ -138,8 +148,20 @@ const handlePOST = withAdmin(async (request, ctx, user, role, leagueId) => {
     return NextResponse.json({ error: `That schedule lists ${plan.races.length} rounds, which is more than this can import at once.` }, { status: 400 });
   }
 
-  const { byName: tracksByName } = await loadTracks(leagueId);
-  const matched = plan.tracks.map(name => ({ name, track: tracksByName.get(normalizeName(name)) || null }));
+  // ── The venues ─────────────────────────────────────────────────────────
+  //
+  // SimRacerHub's own track directory turns each round's layout name into the
+  // venue behind it ("Lime Rock Park Grand Prix" → Lime Rock Park) and carries
+  // iRacing's logo for it, so a venue created here arrives looking like the
+  // place rather than like a blank row. One request, and the import survives
+  // without it — the matching runs on names either way.
+  const directoryHtml = await srhTrackDirectoryHtml();
+  const directory = directoryHtml ? parseSrhTrackDirectory(directoryHtml) : [];
+  const trackInfo = srhTrackInfo(plan.tracks, directory);
+  const baseNames = directory.map(t => t.name);
+
+  const leagueTracks = await loadTracks(leagueId);
+  const trackPlan = planTrackImport(plan.tracks, leagueTracks, { info: trackInfo, baseNames });
 
   if (preview) {
     return NextResponse.json({
@@ -153,13 +175,18 @@ const handlePOST = withAdmin(async (request, ctx, user, role, leagueId) => {
       off_weeks: plan.off_weeks,
       warnings: plan.warnings,
       cars: plan.cars,
-      // Which venues this league already has and which it would gain — the one
-      // thing an import like this can add that an admin didn't ask for by name.
-      tracks: matched.map(({ name, track }) => ({
-        name,
-        existing: track ? { id: track.id, name: track.name } : null,
-      })),
-      new_tracks: matched.filter(m => !m.track).length,
+      // Every venue this schedule races at, checked against the ones this
+      // league already has: what matched, what merely resembles something (with
+      // the reason, so an admin can tell an Oval from a Roval), and what would
+      // be created — named as the admin likes rather than as SimRacerHub does.
+      tracks: trackPlan.rows,
+      track_summary: trackPlan.summary,
+      // Every track in the league, for the review table's dropdown: an admin
+      // settling a doubtful venue may want one this matcher never offered.
+      league_tracks: leagueTracks
+        .map(t => ({ id: t.id, name: t.name, track_type: t.track_type || "", names: trackNames(t) }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+      new_tracks: trackPlan.summary.new,
     });
   }
 
@@ -167,20 +194,68 @@ const handlePOST = withAdmin(async (request, ctx, user, role, leagueId) => {
   const now = new Date().toISOString();
   if (!plan.season.name) return NextResponse.json({ error: "season_name required" }, { status: 400 });
 
-  // 1. Tracks this league doesn't have yet. Created first, so every race can be
-  //    linked to a real venue rather than carrying its name as loose text —
-  //    which is what gives the season's rounds a track page, lap records and a
-  //    history from the day they're created.
+  // 1. The venues, settled first so every race can be linked to a real track
+  //    rather than carrying its name as loose text — which is what gives the
+  //    season's rounds a track page, lap records and a history from the day
+  //    they're created.
+  //
+  //    The admin's answers decide; an unanswered suggestion creates the venue
+  //    rather than pointing a season's races at a layout nobody confirmed (see
+  //    applyTrackDecisions).
+  const decided = applyTrackDecisions(trackPlan.rows, body.track_decisions || {});
+  if (decided.errors.length) {
+    return NextResponse.json({ error: decided.errors[0], track_errors: decided.errors }, { status: 400 });
+  }
+
+  const byId = new Map(leagueTracks.map(t => [t.id, t]));
   const trackIdByName = new Map();
   const created = [];
-  for (const { name, track } of matched) {
-    if (track) { trackIdByName.set(name, track); continue; }
-    const built = buildEntityDoc({ spec: SPECS.tracks, body: { name }, user, role, leagueId, now });
+  const aliased = [];
+
+  //    a) Venues the league already has. The name the source used is recorded
+  //       on the one the admin pointed at, unless it already answers to it —
+  //       that recording is what makes next season's import an exact match, and
+  //       what lets a league call a venue whatever it likes.
+  for (const { raw, track_id } of decided.use) {
+    const track = byId.get(track_id);
+    if (!track) return NextResponse.json({ error: `That track no longer exists (${raw}).` }, { status: 404 });
+    trackIdByName.set(raw, track);
+    const known = new Set(trackNames(track).map(normalizeName));
+    if (!known.has(normalizeName(raw))) {
+      const merged = [...(Array.isArray(track.merged_names) ? track.merged_names : []), raw];
+      await db().collection("tracks").doc(track.id).update({ merged_names: merged });
+      track.merged_names = merged;
+      aliased.push({ track: track.name, name: raw });
+    }
+  }
+
+  //    b) Venues this league doesn't have yet, under the name the admin chose,
+  //       with the surface its name implies and iRacing's own logo where the
+  //       directory had one. The logo is an image field, so buildEntityDoc
+  //       leaves it off for anyone but the Owner — the same rule every other
+  //       logo follows (see lib/imagePermissions.js).
+  for (const { raw, name, track_type, logo_url } of decided.create) {
+    const built = buildEntityDoc({
+      spec: SPECS.tracks,
+      body: {
+        name,
+        ...(track_type ? { track_type } : {}),
+        ...(logo_url ? { logo_url } : {}),
+        // The source's own name for it, when the admin called it something
+        // else. Printed on the track's page as "Also raced as", and matched on
+        // by every later import.
+        ...(normalizeName(name) === normalizeName(raw) ? {} : { merged_names: [raw] }),
+      },
+      user, role, leagueId, now,
+    });
     if (built.error) return NextResponse.json({ error: built.error }, { status: 400 });
-    const ref2 = await db().collection("tracks").add(built.doc);
-    const doc = { id: ref2.id, ...built.doc };
-    trackIdByName.set(name, doc);
-    created.push(doc);
+    // `merged_names` isn't one of the tracks spec's writable fields (the merge
+    // tool owns it), so it's set alongside the built doc rather than through it.
+    const doc = normalizeName(name) === normalizeName(raw) ? built.doc : { ...built.doc, merged_names: [raw] };
+    const ref2 = await db().collection("tracks").add(doc);
+    const saved = { id: ref2.id, ...doc };
+    trackIdByName.set(raw, saved);
+    created.push(saved);
   }
 
   // 2. The season.
@@ -227,7 +302,10 @@ const handlePOST = withAdmin(async (request, ctx, user, role, leagueId) => {
     season,
     races: raceDocs.length,
     tracks_created: created.map(t => t.name),
-    tracks_matched: matched.length - created.length,
+    tracks_matched: decided.use.length,
+    // Venues that learned what SimRacerHub calls them, so the next import of
+    // this series needs no review at all.
+    tracks_aliased: aliased,
     off_weeks: plan.off_weeks,
     warnings: plan.warnings,
   });
