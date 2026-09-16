@@ -8,6 +8,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { RaceCreateModal } from "@/components/RaceCreateModal";
 import { RaceCopyModal } from "@/components/RaceCopyModal";
 import { SeasonCreateModal } from "@/components/SeasonCreateModal";
+import { SrhSeasonResultsModal } from "@/components/SrhSeasonResultsModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ShareGraphicButton, ShareGraphicModal } from "@/components/ShareGraphicModal";
 import { leagueLogos, specToGraphicTable } from "@/lib/shareGraphic";
@@ -19,6 +20,7 @@ import { splitScheduleFeed } from "@/lib/scheduleFeed";
 import { racePerClassResults } from "@/lib/classFilter";
 import { lapsAreSecondary } from "@/lib/raceLength";
 import { hasSessionTimes, localZoneLabel, raceSessionTimes, sessionTimeLine } from "@/lib/raceTimes";
+import { isIracingGame } from "@/lib/signupRequest";
 
 // A driver cell that links to the profile when we can resolve one, else plain
 // text. Falls back to an em-dash for events with no recorded pole/winner yet.
@@ -365,6 +367,7 @@ function SeasonSchedule() {
   const [sharing, setSharing] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [showCopy, setShowCopy] = useState(false);
+  const [showSrhResults, setShowSrhResults] = useState(false); // whole-season SimRacerHub results import
   const [toDelete, setToDelete] = useState(null); // race pending delete confirmation
   const [toggleComplete, setToggleComplete] = useState(false); // season completion pending confirmation
 
@@ -406,6 +409,10 @@ function SeasonSchedule() {
   const ordered = [...races].sort((a, b) => (Number(a.round_number) || 0) - (Number(b.round_number) || 0));
   const nextRound = races.reduce((m, r) => Math.max(m, Number(r.round_number) || 0), 0) + 1;
   const perClassSchedules = !!season?.per_class_schedules;
+  // SimRacerHub is where an iRacing league's scoring lives, and it scores
+  // nothing else — so the season-wide results import is offered on iRacing
+  // seasons that actually have rounds to import into.
+  const srhImportable = isAdmin && isIracingGame(game?.name) && races.length > 0;
   // Does this event run each class's sessions separately? Resolved per event,
   // falling back to the season default.
   const splitResults = r => racePerClassResults(r, season);
@@ -479,6 +486,19 @@ function SeasonSchedule() {
               onClick={() => setShowCopy(true)}>
               ⧉ Copy Race
             </button>
+            {/* iRacing only, because SimRacerHub scores iRacing leagues and
+                nothing else — the route refuses any other game whatever this
+                shows. Sits beside Copy Race as the other way a whole season's
+                worth of results arrives at once. */}
+            {srhImportable && (
+              <button
+                className="btn btn-ghost"
+                style={{ marginTop: 0 }}
+                title="Paste each round's SimRacerHub link and import the whole season's results — qualifying, heats, consolations and features"
+                onClick={() => setShowSrhResults(true)}>
+                📥 Import Season Results
+              </button>
+            )}
             <button className="btn btn-primary" style={{ marginTop: 0 }} onClick={() => setShowCreate(true)}>
               + New Race
             </button>
@@ -511,6 +531,8 @@ function SeasonSchedule() {
           races, heats and points), <strong>✎</strong> edits the event itself — name, date, track, sessions
           and heat racing — and <strong>🗑</strong> deletes it. <strong>⧉ Copy Race</strong> above brings an
           event and its results across from another season, in this series or a different one.
+          {srhImportable ? <> <strong>📥 Import Season Results</strong> fills the whole calendar in at once
+          from SimRacerHub — one link per round, every session on it.</> : null}
         </p>
       )}
 
@@ -542,6 +564,19 @@ function SeasonSchedule() {
           heatFormat={!!season?.heat_format}
           onClose={() => setShowCreate(false)}
           onCreated={() => { setShowCreate(false); loadRaces(); }}
+        />
+      )}
+
+      {showSrhResults && (
+        <SrhSeasonResultsModal
+          seasonId={seasonId}
+          seasonName={season?.name || ""}
+          races={ordered}
+          onClose={() => setShowSrhResults(false)}
+          // Each round writes as it goes, so the calendar is reloaded while the
+          // dialog is still open — pole, winner and field size fill in behind
+          // it, which is the whole point of having imported them.
+          onImported={() => loadRaces()}
         />
       )}
 

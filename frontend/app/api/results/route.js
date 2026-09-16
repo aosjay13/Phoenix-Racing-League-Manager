@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { withAdmin, getRequestLeagueId } from "@/lib/serverAuth";
 import { recalcGameSkillRatings, gameIdForSeason } from "@/lib/skillRatingServer";
-import { classIdForScope, isClassScoped, primaryClassId, resultInSessionClass } from "@/lib/classFilter";
-import { bangerFieldsForSave } from "@/lib/bangerRacing";
+import { isClassScoped } from "@/lib/classFilter";
 import { withStatsRefresh } from "@/lib/statsCache";
+import {
+  classByEntryForSeason, matchesSession, rowsError, sessionContext, sessionTypeOf, stageSessionWrite,
+} from "@/lib/resultsWrite";
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -19,51 +21,6 @@ export async function GET(request) {
   return NextResponse.json(snap.docs.map(d => ({ id: d.id, ...d.data() })));
 }
 
-const SESSION_TYPES = ["qualifying", "race", "heat", "consolation", "feature"];
-
-// Session-list metadata used to resolve which stored docs belong to the
-// session being written: legacy docs may lack the session field, in which
-// case they're treated as the event's first standard session.
-async function sessionContext(raceId) {
-  const raceDoc = await db().collection("races").doc(raceId).get();
-  const data = raceDoc.exists ? raceDoc.data() : {};
-  const sessions = Array.isArray(data.sessions) && data.sessions.length ? data.sessions : ["Race"];
-  // `raceClassId` is the "<class> only" round set on Race Info — the class the
-  // whole event is run in, and so the class of every result written for it that
-  // doesn't name one of its own.
-  return { firstSession: sessions[0], seasonId: data.season_id || null, raceClassId: data.class_id || "" };
-}
-
-// class_id per roster entry, used to resolve the class of a result saved before
-// classes existed (or before this driver was classified) — the same fallback
-// classOfResult applies everywhere else. A driver entered in several classes
-// falls back to their primary one; a combined session's Class dropdown on the
-// row is how the other class gets recorded.
-async function classByEntryForSeason(seasonId) {
-  if (!seasonId) return {};
-  const snap = await db().collection("entries").where("season_id", "==", seasonId).get();
-  return Object.fromEntries(snap.docs.map(d => [d.id, { class_id: primaryClassId(d.data()) || "" }]));
-}
-
-// Docs that count as "this session". Qualifying is isolated by type, but all
-// race-like types (race/heat/consolation/feature) match each other by session
-// name: the event page merges them by name, so a leftover set saved under
-// another type (e.g. before the event was switched to heat format) would
-// render as duplicate finishing positions.
-//
-// `sessionClass` narrows that to ONE class's slice of the session (see
-// lib/classFilter.js): a per-class save replaces only its own class's rows and
-// leaves the other classes racing the same event untouched. Left unset — the
-// combined mode every event used before per-class sessions existed — the whole
-// session is replaced regardless of class.
-function matchesSession(data, sessionType, savingSession, firstSession, sessionClass, entriesById) {
-  const docType = data.session_type || "race";
-  const docSession = data.session || firstSession;
-  if (docSession !== savingSession) return false;
-  if (!resultInSessionClass(data, sessionClass, entriesById)) return false;
-  return sessionType === "qualifying" ? docType === "qualifying" : docType !== "qualifying";
-}
-
 // Bulk save: replaces all results for the race session so admins can
 // re-submit corrections without hitting duplicate errors. Events with
 // multiple races (or, for heat-format events, multiple heats/consolations)
@@ -71,17 +28,18 @@ function matchesSession(data, sessionType, savingSession, firstSession, sessionC
 // the points system this session was scored under, so standings/stats stay
 // correct even if the season's default or another session's template later
 // changes — see lib/standings.js configForTemplate().
+//
+// What a row becomes, and which stored rows it replaces, is lib/resultsWrite.js
+// — shared with the season-wide SimRacerHub importer so a night typed in by
+// hand and a night imported in bulk store the same documents.
 const handlePOST = withAdmin(async (request, ctx, user) => {
   const { race_id, season_id, session = "", session_type, session_class, points_template_id, rows } = await request.json();
-  const sessionType = SESSION_TYPES.includes(session_type) ? session_type : "race";
+  const sessionType = sessionTypeOf(session_type);
   if (!race_id || !season_id || !Array.isArray(rows)) {
     return NextResponse.json({ error: "race_id, season_id, rows[] required" }, { status: 400 });
   }
-  for (const row of rows) {
-    if (!row.entry_id || !row.finish_pos) {
-      return NextResponse.json({ error: "each row needs entry_id and finish_pos" }, { status: 400 });
-    }
-  }
+  const bad = rowsError(rows);
+  if (bad) return NextResponse.json({ error: bad }, { status: 400 });
 
   const { firstSession, raceClassId } = await sessionContext(race_id);
   const savingSession = session || firstSession;
@@ -89,91 +47,16 @@ const handlePOST = withAdmin(async (request, ctx, user) => {
 
   // Record the class each driver ran in on the result itself, so a class
   // championship stays historically correct even if the driver is later moved
-  // to another class (or the roster entry is re-used). An explicit class on the
-  // row wins (the results grid's Class dropdown); then the class the ROUND is
-  // run in, when it's a "<class> only" event — that's the whole event's class,
-  // so it beats a roster guess for a driver who races several; otherwise it's
-  // taken from the driver's current roster entry. Blank = unclassified.
+  // to another class (or the roster entry is re-used).
   const entriesById = await classByEntryForSeason(season_id);
-  const classByEntry = Object.fromEntries(Object.entries(entriesById).map(([id, e]) => [id, e.class_id]));
-  // A per-class save is that class's session: every row it writes belongs to
-  // the class being entered, whatever the roster or the row's own Class cell
-  // says, so a mis-set dropdown can't leak a driver into another class's grid.
-  const scoped = isClassScoped(session_class);
-  const scopeClassId = classIdForScope(session_class);
 
-  const col = db().collection("results");
-  const existing = await col.where("race_id", "==", race_id).get();
+  const existing = await db().collection("results").where("race_id", "==", race_id).get();
   const batch = db().batch();
-  // Replace this session's existing rows — or, for a per-class save, only this
-  // class's slice of them. SR is recomputed from scratch below (a full
-  // chronological replay of the game), so no per-session reversal is needed —
-  // corrections and re-saves are handled by the recalc.
-  existing.docs
-    .filter(d => matchesSession(d.data(), sessionType, savingSession, firstSession, session_class, entriesById))
-    .forEach(d => batch.delete(d.ref));
-
-  const saved = [];
-  const now = new Date().toISOString();
-  for (const row of rows) {
-    const ref = col.doc();
-    const doc = {
-      race_id,
-      season_id,
-      ...(leagueId ? { league_id: leagueId } : {}),
-      session: savingSession,
-      session_type: sessionType,
-      entry_id: row.entry_id,
-      class_id: scoped
-        ? scopeClassId
-        : ((row.class_id != null && row.class_id !== "")
-          ? row.class_id
-          : (raceClassId || classByEntry[row.entry_id] || "")),
-      finish_pos: Number(row.finish_pos),
-      start_pos: row.start_pos === "" || row.start_pos == null ? null : Number(row.start_pos),
-      qual_time: row.qual_time || null,
-      race_time: row.race_time || null,
-      interval: row.interval || null,
-      laps: Number(row.laps || 0),
-      laps_led: Number(row.laps_led || 0),
-      incidents: Number(row.incidents || 0),
-      fastest_lap: !!row.fastest_lap,
-      // Driver's best single lap time for this session, as a clock string
-      // ("1:23.456"). Independent of the `fastest_lap` flag (which just marks
-      // who set the session's quickest lap): the fastest of these across every
-      // race at a venue is that track's lap record. See lib/trackCompute.js.
-      fastest_lap_time: row.fastest_lap_time || null,
-      halfway_leader: !!row.halfway_leader,
-      hard_charger: !!row.hard_charger,
-      // Who led the most laps. Derived in the grid from the Led column and
-      // ticked automatically, but stored rather than re-derived at read time so
-      // an admin's override survives — see lib/autoFlags.js and
-      // decorateRaceBonuses(), which falls back to deriving it for results
-      // saved before this field existed.
-      most_laps_led: !!row.most_laps_led,
-      provisional: !!row.provisional,
-      // Demo Derby / Banger Racing stats (takedowns, survival bonus, most
-      // lethal). Written for every result — zeros/falses outside a banger
-      // series, which score nothing and aggregate to nothing — so the stats
-      // engine never has to ask what kind of series a result came from. See
-      // lib/bangerRacing.js.
-      ...bangerFieldsForSave(row),
-      bonus_points: Number(row.bonus_points || 0),
-      penalty_points: Number(row.penalty_points || 0),
-      // Signed per-result adjustment (penalties/corrections), applied on top of
-      // scored points without changing the finishing position. Negative docks.
-      points_adjustment: Number(row.points_adjustment || 0),
-      // Flat, admin-entered points for a provisional entry (a driver who didn't
-      // make the race). Overrides position-based scoring; null for normal rows.
-      manual_points: row.manual_points === "" || row.manual_points == null ? null : Number(row.manual_points),
-      status: row.status || "finished",
-      points_template_id: points_template_id || null,
-      created_at: now,
-      created_by: user.uid,
-    };
-    batch.set(ref, doc);
-    saved.push({ id: ref.id, ...doc });
-  }
+  const saved = stageSessionWrite({
+    batch, existing: existing.docs, race_id, season_id, leagueId,
+    session: savingSession, sessionType, session_class, points_template_id, rows,
+    firstSession, raceClassId, entriesById, uid: user.uid,
+  });
   await batch.commit();
 
   // Recompute this game's Skill Ratings from scratch, chronologically. This
@@ -201,8 +84,7 @@ const handleDELETE = withAdmin(async (request) => {
   const { searchParams } = new URL(request.url);
   const raceId = searchParams.get("race_id");
   const session = searchParams.get("session") || "";
-  const typeParam = searchParams.get("session_type");
-  const sessionType = SESSION_TYPES.includes(typeParam) ? typeParam : "race";
+  const sessionType = sessionTypeOf(searchParams.get("session_type"));
   // Absent param = the whole session; present (including the Unclassified
   // sentinel) = that one class.
   const sessionClass = searchParams.has("session_class") ? searchParams.get("session_class") : null;
