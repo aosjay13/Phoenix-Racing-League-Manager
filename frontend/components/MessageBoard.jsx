@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useLeague } from "@/components/LeagueProvider";
-import { DISCORD_INVITE_URL } from "@/components/DiscordCallout";
+import { useDiscordInvite } from "@/components/DiscordCallout";
 import { messagesChanged, useMessages } from "@/components/MessagesProvider";
 import { api } from "@/lib/api";
 import {
@@ -112,6 +112,8 @@ function MessageCard({ msg, reload, unread = false, waiting = false }) {
   const actions = messageActions(msg);
   const isWelcome = kind === "signup_approved";
   const leagueName = league?.league?.name || "the league";
+  // This league's own Discord, which may be nothing at all.
+  const discordInvite = useDiscordInvite();
   // The season this card is about, for the buttons that open a scoped page.
   // Null when it names no season, in which case those buttons stay plain links.
   const scope = messageScope(msg);
@@ -173,10 +175,15 @@ function MessageCard({ msg, reload, unread = false, waiting = false }) {
         {actions.length > 0 && (
           <div className="msg-actions">
             {actions.map(a => (a === "discord" ? (
-              <a key="discord" className="btn msg-discord" href={DISCORD_INVITE_URL}
-                target="_blank" rel="noopener noreferrer">
-                Join the Discord ↗<span className="sr-only"> (opens in a new tab)</span>
-              </a>
+              // Omitted entirely for a league that hasn't set an invite — a
+              // button labelled "Join the Discord" has to lead to THIS league's
+              // Discord or nowhere. See lib/discordInvite.js.
+              discordInvite ? (
+                <a key="discord" className="btn msg-discord" href={discordInvite}
+                  target="_blank" rel="noopener noreferrer">
+                  Join the Discord ↗<span className="sr-only"> (opens in a new tab)</span>
+                </a>
+              ) : null
             ) : ACTIONS[a] ? (
               <MessageAction key={a} action={ACTIONS[a]} scope={scope}
                 leagueId={String(msg.league_id ?? "")} league={league} />
@@ -186,8 +193,13 @@ function MessageCard({ msg, reload, unread = false, waiting = false }) {
 
         {isWelcome && (
           <p className="msg-foot">
-            Join the Discord if you haven&rsquo;t already — that&rsquo;s where race nights are
-            called. Enjoy your time at {leagueName}!
+            {/* Only mentions the Discord when this league has one. Telling
+                somebody to join a server the league never named is an
+                instruction they can't follow. */}
+            {discordInvite
+              ? <>Join the Discord if you haven&rsquo;t already — that&rsquo;s where race nights are
+                  called. Enjoy your time at {leagueName}!</>
+              : <>Enjoy your time at {leagueName}!</>}
           </p>
         )}
 
