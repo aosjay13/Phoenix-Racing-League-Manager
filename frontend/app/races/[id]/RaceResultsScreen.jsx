@@ -12,7 +12,7 @@ import { leagueLogos, driverDisplayName } from "@/lib/shareGraphic";
 import { formatRaceDate } from "@/lib/raceDate";
 import { raceLengthLabel } from "@/lib/raceLength";
 import { raceStats } from "@/lib/raceStats";
-import { gapColumns, formatDelta, parseTime, parseLapsDown } from "@/lib/raceTime";
+import { gapColumns, formatDelta, lapSeconds, parseTime, parseLapsDown } from "@/lib/raceTime";
 import { carForRace, carsByClassForRace, classIdForScope, sessionClassScopes, soleCarForRace } from "@/lib/classFilter";
 import { bracketRoundFor, bracketSizeLabel, normalizeBracketSize } from "@/lib/bracketRacing";
 import { BANGER_STATS } from "@/lib/bangerRacing";
@@ -268,7 +268,11 @@ export function RaceResultsScreen() {
   // Gap columns, worked out from the times on the results themselves — so every
   // session already in the database gets them without being re-entered.
   const qualRows = inClass(qualifying);
-  const qualGaps = gapColumns(qualRows.map(r => parseTime(r.qual_time)));
+  // Read as laps, not as bare clock strings: a "0:00.000" on the sheet is a
+  // driver who never set a time, and taken literally it would become the pole
+  // time every other gap on the page is measured against. It gets no gaps of
+  // its own and is skipped in the chain, exactly like an empty cell.
+  const qualGaps = gapColumns(qualRows.map(r => lapSeconds(r.qual_time)));
   const raceGaps = gapColumns(raceTimesInOrder(finishers));
 
   // Caution flags / caution laps / lead changes, if this event recorded any,

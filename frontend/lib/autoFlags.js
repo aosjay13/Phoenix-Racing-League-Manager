@@ -21,7 +21,7 @@
 // grid stops moving it (see detectFlagLocks / applyAutoFlags below). Locks are
 // per-flag, so hand-placing the Hard Charger doesn't freeze Fastest Lap.
 
-import { parseTime } from "@/lib/raceTime";
+import { lapSeconds } from "@/lib/raceTime";
 import { autoMostLethalSlot } from "@/lib/bangerRacing";
 
 //   • Most Lethal — the Demo Derby / Banger Racing counterpart: whoever
@@ -40,11 +40,15 @@ const laps = r => Number(r.laps_led || 0) || 0;
 
 // Slot that set the quickest Best Lap time. Ties go to the row listed first
 // (the better finishing position). Null when no lap times are entered.
+//
+// "Quickest" is over real laps only — a "0:00.000" in the column (what a timing
+// export prints for a driver who never set one) is not a lap anybody turned, so
+// it can't be the fastest one. See lapSeconds in lib/raceTime.js.
 export function autoFastestLapSlot(rows) {
   let best = null;
   for (const r of filled(rows)) {
-    const t = parseTime(r.fastest_lap_time);
-    if (t == null || t <= 0) continue;
+    const t = lapSeconds(r.fastest_lap_time);
+    if (t == null) continue;
     if (best == null || t < best.t) best = { t, slot_id: r.slot_id };
   }
   return best?.slot_id ?? null;

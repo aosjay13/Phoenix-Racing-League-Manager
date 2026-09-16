@@ -2871,6 +2871,24 @@ Season 3 and "GT3" in Season 4 are different ids for the same category, while a 
 seasons — the name is the only identity that survives that. An unclassified lap files under its game
 only, so a season without classes doesn't produce an "Unclassified" row duplicating the game record.
 
+**A lap time of zero is not a lap, anywhere in the app.** `0:00.000` is what timing exports print for
+a driver who never set a time, and it's what a slip of the keyboard leaves in an empty cell — but it
+parses as cleanly as a real lap does, and zero beats every lap anybody has ever turned. Counted once,
+it takes a venue's track record permanently and takes the Fastest Lap bonus with it, and that bonus
+is the "Best Laps" / "Most Fastest Laps" figure on every stats, records, profile and team screen.
+
+`lapSeconds()` in `lib/raceTime.js` is the single rule: a lap is a finite time *greater than zero*.
+Everything that ranks or records a lap reads a cell through it rather than through the permissive
+clock parser beside it — the venue record books (`lib/trackCompute.js`), the Fastest Lap the results
+grid ticks for itself (`lib/autoFlags.js`), the one a pasted or imported file claims
+(`lib/resultsImport.js`), a time trial's Best Time and Best Average (`lib/timeTrials.js`), and the
+qualifying gap columns on the results page and in the editor, so a zero is never the pole time every
+other car is measured against. `keepFastest()` refuses a zero outright as well, so no future caller
+can file one. Covered end to end by `lib/__tests__/zeroLapTimes.test.mjs`.
+
+Nothing is rewritten or thrown away: the cell keeps exactly what was entered, on the sheet, where an
+admin can see it and correct it. It simply counts toward nothing.
+
 **The Share Graphic exporter** builds its own DOM node rather than screenshotting the live page, so
 an export never picks up the sidebar, edit buttons or any other UI furniture — only the headline,
 branding, event metadata and data table are drawn, at a fixed 1080px for a consistent feed-friendly

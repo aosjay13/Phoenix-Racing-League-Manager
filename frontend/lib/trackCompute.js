@@ -20,7 +20,7 @@ import {
   resolveSeasonConfig,
 } from "@/lib/standings";
 import { raceDateSortKey } from "@/lib/raceDate";
-import { parseTime, formatTime } from "@/lib/raceTime";
+import { lapSeconds, formatTime } from "@/lib/raceTime";
 import { finalSessionName, indexResultsByRace, summarizeRace } from "@/lib/raceSummaryServer";
 import { carForClass, classIdSet, classIdsInSeason, classOfResult } from "@/lib/classFilter";
 import { classRecordKey, gameRecordKey, keepFastest } from "@/lib/trackRecords";
@@ -113,7 +113,12 @@ export function buildTrackProfile(index, { trackId, trackName, scope = {} }) {
   // `gameId` is the game the season belongs to; `className` is blank for an
   // unclassified driver or a season that doesn't run classes.
   const considerLap = (r, entry, race, seasonId, seasonName, gameId, inFullScope, className) => {
-    const secs = isQualifying(r) ? parseTime(r.qual_time) : parseTime(r.fastest_lap_time);
+    // Read through lapSeconds, never the bare clock parser: a "0:00.000" in the
+    // Best Lap or Qual Time cell — what a timing export prints for a driver who
+    // never set one, and what a slip of the keyboard leaves behind — parses to a
+    // perfectly good zero, and a zero would stand here as the venue's record for
+    // ever. It is not a lap, so it is not a candidate. See lib/raceTime.js.
+    const secs = isQualifying(r) ? lapSeconds(r.qual_time) : lapSeconds(r.fastest_lap_time);
     if (secs == null) return;
     const mk = () => ({
       seconds: secs,
