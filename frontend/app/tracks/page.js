@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
 import { TrackCreateModal } from "@/components/TrackCreateModal";
 import { TrackMergeModal } from "@/components/TrackMergeModal";
+import { TrackDuplicateScanner } from "@/components/TrackDuplicateScanner";
 import { DirectoryRow } from "@/components/DirectoryRow";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { TRACK_TYPES } from "@/lib/trackTypes";
@@ -24,6 +25,7 @@ export default function TracksPage() {
   const [editing, setEditing] = useState(null);   // track being edited
   const [deleting, setDeleting] = useState(null); // track being deleted
   const [merging, setMerging] = useState(null);   // surviving track duplicates fold into
+  const [scanning, setScanning] = useState(false); // the duplicate eliminator is open
   const [toast, setToast] = useState(null);
   const [collapsed, setCollapsed] = useState({}); // type -> true when hidden
   const [typeFilter, setTypeFilter] = useState(""); // "" = every type
@@ -73,6 +75,18 @@ export default function TracksPage() {
     setMerging(null);
     const races = res.races_moved;
     showToast("success", `Merged ${res.tracks_merged} track${res.tracks_merged === 1 ? "" : "s"} into “${merged.name}” — ${races} race${races === 1 ? "" : "s"} moved across.`);
+  }
+
+  // The duplicate eliminator folds a whole circuit's copies together, and can do
+  // it several times before it is closed. Each merge lands here as it happens,
+  // so the grid behind the dialog is already right when it closes.
+  function handleScanMerged(res) {
+    const merged = res.track;
+    const gone = new Set(res.merged_ids || []);
+    setTracks(prev => (prev || [])
+      .filter(t => t.id === merged.id || !gone.has(t.id))
+      .map(t => (t.id === merged.id ? { ...t, ...merged } : t))
+      .sort((a, b) => String(a.name).localeCompare(String(b.name))));
   }
 
   async function deleteTrack(track) {
@@ -129,9 +143,16 @@ export default function TracksPage() {
         <h2>Tracks</h2>
         <span className="page-badge">{tracks.length} Track{tracks.length === 1 ? "" : "s"}</span>
         {isAdmin && (
-          <button className="btn btn-primary" style={{ marginTop: 0, marginLeft: "auto" }} onClick={() => setCreating(true)}>
-            ＋ Add Track
-          </button>
+          <>
+            <button className="btn btn-ghost" style={{ marginTop: 0, marginLeft: "auto" }}
+              title="Find circuits that are in the pool more than once and fold them back into one"
+              onClick={() => setScanning(true)}>
+              ⧉ Find Duplicates
+            </button>
+            <button className="btn btn-primary" style={{ marginTop: 0 }} onClick={() => setCreating(true)}>
+              ＋ Add Track
+            </button>
+          </>
         )}
       </div>
       <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.9rem" }}>
@@ -206,6 +227,9 @@ export default function TracksPage() {
 
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
 
+      {scanning && (
+        <TrackDuplicateScanner onClose={() => setScanning(false)} onMerged={handleScanMerged} />
+      )}
       {creating && <TrackCreateModal onClose={() => setCreating(false)} onCreated={handleCreated} />}
       {editing && <TrackCreateModal track={editing} onClose={() => setEditing(null)} onSaved={handleSaved} />}
       {merging && (

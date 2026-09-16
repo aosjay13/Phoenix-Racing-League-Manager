@@ -12,6 +12,7 @@ import { RaceLengthField } from "@/components/RaceLengthField";
 import { HeatPointsDefaultFields } from "@/components/HeatPointsDefaultFields";
 import { SessionLapsFields } from "@/components/SessionLapsFields";
 import { TrackMergeModal } from "@/components/TrackMergeModal";
+import { TrackDuplicateScanner } from "@/components/TrackDuplicateScanner";
 import { DriverMergeTool } from "@/components/DriverMergeTool";
 import { LENGTH_LAPS, raceLengthBody, raceLengthForm, sessionLapsBody, sessionLapsForm } from "@/lib/raceLength";
 import { api } from "@/lib/api";
@@ -331,6 +332,7 @@ function AdminInner() {
   const [tracks, setTracks] = useState([]);
   // The venue duplicates get folded INTO, while the merge dialog is open.
   const [mergingTrack, setMergingTrack] = useState(null);
+  const [scanningTracks, setScanningTracks] = useState(false);
   const loadTracks = useCallback(() => {
     api("/api/tracks").then(rows => setTracks(rows.sort((a, b) => String(a.name).localeCompare(String(b.name))))).catch(() => setTracks([]));
   }, []);
@@ -1102,6 +1104,24 @@ function AdminInner() {
 
         {section === "tracks" && (
         <Panel title="Tracks" sub="Venue database shared across every game & season">
+          {/* The pool is typed in by hand, a round at a time, so the same
+              circuit lands in it two or three times and its history splits
+              across them. This reads the whole pool, groups the copies, and
+              folds each circuit back into one venue once an admin has checked
+              them — see components/TrackDuplicateScanner.jsx. */}
+          <div className="bonus-panel" style={{ marginBottom: 16 }}>
+            <div className="bonus-panel-title">Is a circuit in here twice?</div>
+            <p className="bonus-panel-note" style={{ marginTop: 4 }}>
+              “Daytona”, “Daytona Intl Speedway” and “DAYTONA INTERNATIONAL SPEEDWAY” are three
+              venues as far as the app is concerned, so one circuit’s wins, records and per-track
+              stats get split three ways. This finds them and folds them back into one, keeping
+              every race.
+            </p>
+            <button className="btn btn-primary" type="button" style={{ marginTop: 10 }}
+              onClick={() => setScanningTracks(true)}>
+              ⧉ Find Duplicate Tracks
+            </button>
+          </div>
           <form onSubmit={async e => {
             e.preventDefault();
             const body = { ...trackForm };
@@ -1164,6 +1184,18 @@ function AdminInner() {
               }} />)}
           </div>
         </Panel>
+        )}
+
+        {scanningTracks && (
+          <TrackDuplicateScanner
+            onClose={() => setScanningTracks(false)}
+            // Several circuits can be folded together in one sitting, and a
+            // merged-away venue could be the one open in the edit form.
+            onMerged={res => {
+              loadTracks();
+              if (res.merged_ids?.includes(editIds.track)) { setEditId("track", null); setTrackForm(blankTrack); }
+            }}
+          />
         )}
 
         {mergingTrack && (
