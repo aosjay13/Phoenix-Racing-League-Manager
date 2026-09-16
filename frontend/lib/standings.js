@@ -2,6 +2,26 @@ import { classOfResult } from "@/lib/classFilter";
 import { BANGER_BONUS_TYPES, BANGER_STATS, BANGER_STAT_KEYS, bangerPoints, bangerStatLine, blankBangerTotals } from "@/lib/bangerRacing";
 import { isNoPointsTemplate } from "@/lib/pointsTemplates";
 
+// Every figure that goes into a points sum, read as a number that cannot be
+// NaN.
+//
+// `Number(value || 0)` — which this used to do everywhere — is 0 for a blank,
+// a null and an empty string, and NaN for a non-empty string that isn't a
+// number. Nothing in the app can type one: the Adj box is a number input, and
+// bonus_points / penalty_points have no box at all. The API and a restored
+// backup can, and one NaN does not stay where it lands — it spreads through
+// the driver's session total, their championship row, the team table and the
+// gap to the leader, turning a whole column into "NaN" with no screen able to
+// say which row caused it and no input able to clear it.
+//
+// So a figure that isn't a number reads as nothing, which is the same answer a
+// blank gives and the only safe one for a scorer. Identical to the old
+// arithmetic for every value that was ever finite.
+const num = (raw, fallback = 0) => {
+  const n = Number(raw == null || raw === "" ? fallback : raw);
+  return Number.isFinite(n) ? n : fallback;
+};
+
 // Default points tables mirror the PRA spreadsheet:
 // race: P1 350, P2 320, P3 300, P4 280, P5 260, then -10 per position (min 10)
 // qual: P1 35, P2 32, P3 30, P4 28, P5 26, then 31-pos (min 1)
@@ -563,13 +583,13 @@ export function pointsFor(result, config) {
   // A per-result adjustment (penalties/corrections) is applied on top of the
   // scored points in every case — an admin can dock or add points without
   // touching the driver's finishing position. Negative = penalty.
-  const adjustment = Number(result.points_adjustment || 0);
+  const adjustment = num(result.points_adjustment);
 
   // Provisional entries (drivers who didn't make the race) score a flat,
   // admin-entered value instead of position-based points — see the Provisional
   // section of the results editor. They're also excluded from stats (statLine).
   if (result.provisional && result.manual_points != null && result.manual_points !== "") {
-    return Number(result.manual_points || 0) + adjustment;
+    return num(result.manual_points) + adjustment;
   }
 
   const { racePoints, bonuses } = config;
@@ -580,26 +600,26 @@ export function pointsFor(result, config) {
   // there is no fastest lap of a qualifying session to pay for, no laps led and
   // no hard charger, so an admin ticking one on a race can't leak into it.
   if (isQualifying(result)) {
-    return Number(config.qualPoints[result.finish_pos] ?? 0)
-      + Number(result.bonus_points || 0) - Number(result.penalty_points || 0)
+    return num(config.qualPoints[result.finish_pos])
+      + num(result.bonus_points) - num(result.penalty_points)
       + adjustment;
   }
 
-  let pts = Number(racePoints[result.finish_pos] ?? 0);
-  if (result.fastest_lap) pts += Number(bonuses.best_lap || 0);
+  let pts = num(racePoints[result.finish_pos]);
+  if (result.fastest_lap) pts += num(bonuses.best_lap);
   // Scored results carry the derived is_most_laps_led (decorateRaceBonuses);
   // the results editor's live rows only have the ticked most_laps_led box, so
   // fall through to it — otherwise the grid's Points column never adds MLL.
-  if (result.is_most_laps_led ?? result.most_laps_led) pts += Number(bonuses.most_laps_led || 0);
-  if (Number(result.laps_led || 0) > 0) pts += Number(bonuses.lead_a_lap || 0);
-  if (result.halfway_leader) pts += Number(bonuses.halfway_point || 0);
-  if (result.hard_charger) pts += Number(bonuses.hard_charger || 0);
+  if (result.is_most_laps_led ?? result.most_laps_led) pts += num(bonuses.most_laps_led);
+  if (num(result.laps_led) > 0) pts += num(bonuses.lead_a_lap);
+  if (result.halfway_leader) pts += num(bonuses.halfway_point);
+  if (result.hard_charger) pts += num(bonuses.hard_charger);
   // Demo Derby / Banger Racing bonuses: takedowns paid per car put out, plus
   // the survival and most-lethal flags. Zero for an ordinary racing result —
   // those bonuses default to 0 and the fields to 0/false — so this costs a
   // traditional series nothing and needs no knowledge of the series here.
   pts += bangerPoints(result, bonuses);
-  pts += Number(result.bonus_points || 0) - Number(result.penalty_points || 0);
+  pts += num(result.bonus_points) - num(result.penalty_points);
   pts += adjustment;
   return pts;
 }
@@ -612,17 +632,17 @@ export function pointsFor(result, config) {
 export function explainPoints(result, config) {
   if (isDidNotStart(result)) return [{ label: "DNS — did not start", value: 0 }];
   const parts = [];
-  const adjustment = Number(result.points_adjustment || 0);
+  const adjustment = num(result.points_adjustment);
   const tail = () => {
-    const extra = Number(result.bonus_points || 0);
-    const penalty = Number(result.penalty_points || 0);
+    const extra = num(result.bonus_points);
+    const penalty = num(result.penalty_points);
     if (extra) parts.push({ label: "Bonus points", value: extra });
     if (penalty) parts.push({ label: "Penalty points", value: -penalty });
     if (adjustment) parts.push({ label: "Adjustment", value: adjustment });
     return parts;
   };
   if (result.provisional && result.manual_points != null && result.manual_points !== "") {
-    parts.push({ label: "Provisional entry", value: Number(result.manual_points || 0) });
+    parts.push({ label: "Provisional entry", value: num(result.manual_points) });
     if (adjustment) parts.push({ label: "Adjustment", value: adjustment });
     return parts;
   }
@@ -633,28 +653,28 @@ export function explainPoints(result, config) {
     const pos = Number(result.finish_pos);
     parts.push({
       label: pos === 1 ? "Pole position" : `Qualified P${result.finish_pos || "—"}`,
-      value: Number(config.qualPoints[result.finish_pos] ?? 0),
+      value: num(config.qualPoints[result.finish_pos]),
     });
     return tail();
   }
-  const finish = Number(racePoints[result.finish_pos] ?? 0);
+  const finish = num(racePoints[result.finish_pos]);
   parts.push({ label: `P${result.finish_pos || "—"} finish`, value: finish });
   const flag = (on, label, key) => {
-    const value = Number(bonuses[key] || 0);
+    const value = num(bonuses[key]);
     if (on && value) parts.push({ label, value });
   };
   flag(result.fastest_lap, "Fastest lap", "best_lap");
   flag(result.is_most_laps_led ?? result.most_laps_led, "Most laps led", "most_laps_led");
-  flag(Number(result.laps_led || 0) > 0, "Led a lap", "lead_a_lap");
+  flag(num(result.laps_led) > 0, "Led a lap", "lead_a_lap");
   flag(result.halfway_leader, "Halfway leader", "halfway_point");
   flag(result.hard_charger, "Hard charger", "hard_charger");
   for (const stat of BANGER_STATS) {
-    const rate = Number(bonuses[stat.bonus.key] || 0);
+    const rate = num(bonuses[stat.bonus.key]);
     if (stat.type === "bool") {
       if (result[stat.key] && rate) parts.push({ label: stat.name, value: rate });
       continue;
     }
-    const count = Number(result[stat.key] || 0);
+    const count = num(result[stat.key]);
     if (!count) continue;
     parts.push({
       label: rate ? `${stat.name} ${count} x ${rate}` : `${stat.name} ${count} x 0 — no rate set`,
@@ -1024,7 +1044,7 @@ export function calculateStandings(results, entries, teams = [], config, templat
     }
 
     // Manual admin override for corrections (penalties, import mistakes, …).
-    const adjustment = Number(entry.points_adjustment || 0);
+    const adjustment = num(entry.points_adjustment);
 
     rows.push({
       entry_id: entryId,

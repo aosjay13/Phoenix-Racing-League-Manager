@@ -266,11 +266,18 @@ export function derbyPointsTarget({ season = null } = {}) {
 // fields default to 0/false — which is what lets pointsFor add this
 // unconditionally instead of having to know what kind of series it's scoring.
 export function bangerPoints(result = {}, bonuses = {}) {
+  // A rate or a count that isn't a number reads as nothing rather than as NaN
+  // — one NaN here spreads through the driver's total and the whole
+  // championship column. Same reasoning as `num` in lib/standings.js.
+  const num = raw => {
+    const n = Number(raw == null || raw === "" ? 0 : raw);
+    return Number.isFinite(n) ? n : 0;
+  };
   let pts = 0;
   for (const s of BANGER_STATS) {
-    const rate = Number(bonuses[s.bonus.key] || 0);
+    const rate = num(bonuses[s.bonus.key]);
     if (!rate) continue;
-    pts += s.type === "bool" ? (result[s.key] ? rate : 0) : Number(result[s.key] || 0) * rate;
+    pts += s.type === "bool" ? (result[s.key] ? rate : 0) : num(result[s.key]) * rate;
   }
   return pts;
 }

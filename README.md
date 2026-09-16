@@ -2366,6 +2366,34 @@ lock-in screen, and the approval step seats a driver **without** a car (saying s
 the one they asked for filled up while they waited — the same way it already handles a car number
 being taken. Being on the roster matters more than the car, which they can pick again.
 
+### Bonuses, penalties and corrections
+
+Five things can move a result off its finishing points, and each is paid once:
+
+| | where it comes from |
+|---|---|
+| **Flag bonuses** — fastest lap, most laps led, led a lap, halfway leader, hard charger | ticked on the grid (or derived from the numbers), paid at whatever rate the series, season, class or session template sets |
+| **Bonus points** | a free figure on the row |
+| **Penalty points** | the same, subtracted |
+| **Adjustment** (the grid's **Adj** column) | the signed per-result correction — what a SimRacerHub import carries a penalty or an unmodellable bonus across in |
+| The **entry's** own adjustment | a season-long correction, applied once to the championship total rather than to any one race |
+
+Two rows score differently on purpose. A **DNS** scores nothing at all — no position points, no
+bonus, no penalty and no adjustment; a no-show that still has to cost somebody something is an
+entry-level adjustment, not a scored result. A **provisional entry** has no finishing position to be
+scored off, so its flat figure *is* its points, plus an adjustment. A DNF is not either of these: they
+raced, they are classified, and everything they earned counts.
+
+The rule that keeps it checkable: **the itemised breakdown on a grid's Points cell adds up to the
+number the standings hold**, and a driver's championship total is the sum of the Points column on
+every session they ran. Both are asserted row by row in `lib/__tests__/bonusPenalty.test.mjs`, which
+also pins the guard that matters most — a figure that is not a number reads as nothing rather than
+as `NaN`. Nothing in the app can type one (the Adj box is a number input, and bonus/penalty points
+have no box at all), but the API and a restored backup can, and a single `NaN` would otherwise spread
+through the driver's total, their championship row, the team table and the gap to the leader, leaving
+a column no screen could attribute and no input could clear. The scorer refuses to read one
+(`lib/standings.js`) and the writer refuses to store one (`lib/resultsWrite.js`).
+
 ### Where points are configured
 
     series (the league default) → season → class → the session's points template

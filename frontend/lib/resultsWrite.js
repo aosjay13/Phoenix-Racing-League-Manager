@@ -27,6 +27,16 @@ import { db } from "@/lib/firebase";
 import { classIdForScope, isClassScoped, primaryClassId, resultInSessionClass } from "@/lib/classFilter";
 import { bangerFieldsForSave } from "@/lib/bangerRacing";
 
+// A stored figure that isn't a number would be NaN, and a NaN in a points
+// field spreads through the driver's total and the whole championship column
+// with no screen able to say which row caused it. The scorer refuses to read
+// one (see `num` in lib/standings.js); this refuses to write one, so it can
+// never get in from an API call or a restored backup in the first place.
+const num = (raw, fallback = 0) => {
+  const n = Number(raw == null || raw === "" ? fallback : raw);
+  return Number.isFinite(n) ? n : fallback;
+};
+
 export const SESSION_TYPES = ["qualifying", "race", "heat", "consolation", "feature"];
 
 // The session type a request asked for, or "race" when it named nothing this
@@ -111,14 +121,14 @@ export function resultDoc(row, {
       : ((row.class_id != null && row.class_id !== "")
         ? row.class_id
         : (raceClassId || classByEntry[row.entry_id] || "")),
-    finish_pos: Number(row.finish_pos),
-    start_pos: row.start_pos === "" || row.start_pos == null ? null : Number(row.start_pos),
+    finish_pos: num(row.finish_pos),
+    start_pos: row.start_pos === "" || row.start_pos == null ? null : num(row.start_pos, null),
     qual_time: row.qual_time || null,
     race_time: row.race_time || null,
     interval: row.interval || null,
-    laps: Number(row.laps || 0),
-    laps_led: Number(row.laps_led || 0),
-    incidents: Number(row.incidents || 0),
+    laps: num(row.laps),
+    laps_led: num(row.laps_led),
+    incidents: num(row.incidents),
     fastest_lap: !!row.fastest_lap,
     // Driver's best single lap time for this session, as a clock string
     // ("1:23.456"). Independent of the `fastest_lap` flag (which just marks
@@ -140,14 +150,14 @@ export function resultDoc(row, {
     // engine never has to ask what kind of series a result came from. See
     // lib/bangerRacing.js.
     ...bangerFieldsForSave(row),
-    bonus_points: Number(row.bonus_points || 0),
-    penalty_points: Number(row.penalty_points || 0),
+    bonus_points: num(row.bonus_points),
+    penalty_points: num(row.penalty_points),
     // Signed per-result adjustment (penalties/corrections), applied on top of
     // scored points without changing the finishing position. Negative docks.
-    points_adjustment: Number(row.points_adjustment || 0),
+    points_adjustment: num(row.points_adjustment),
     // Flat, admin-entered points for a provisional entry (a driver who didn't
     // make the race). Overrides position-based scoring; null for normal rows.
-    manual_points: row.manual_points === "" || row.manual_points == null ? null : Number(row.manual_points),
+    manual_points: row.manual_points === "" || row.manual_points == null ? null : num(row.manual_points, null),
     status: row.status || "finished",
     points_template_id: points_template_id || null,
     created_at: now,
