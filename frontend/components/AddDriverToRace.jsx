@@ -31,6 +31,15 @@ import { DuplicateDriverPrompt } from "@/components/DuplicateDriverPrompt";
 // class's own session, so a driver added mid-entry lands in the class whose
 // grid is open instead of unclassified (where that grid wouldn't show them).
 //
+// `initialQuery`, `placeholder` and `emptyLabel` are what let the SEASON
+// RESULTS importer use this same box (see SrhUnmatchedDrivers). There, the
+// question isn't "who do you want to add" but "who is this name SimRacerHub
+// printed" — so the box arrives with that name already in it and the list one
+// click away, and the wording is the season's roster rather than this race's.
+// Everything else is identical on purpose: resolving who a driver is has one
+// answer in this app, and a second search box with its own idea of which names
+// count would be the thing that splits a driver's history in two.
+//
 // Keyboard-first, because adding a field is a dozen drivers in a row and
 // reaching for the mouse between each one is the slow part: ↓/↑ move the
 // highlight, Enter takes the highlighted row (the top match by default, so
@@ -45,11 +54,13 @@ import { DuplicateDriverPrompt } from "@/components/DuplicateDriverPrompt";
 // name it recognised them through.
 export function AddDriverToRace({
   seasonId, seriesName, existingNames, defaultClassId = "", onCreated, onError, onNotice = () => {},
+  initialQuery = "", placeholder = "+ Add a driver to this race…", emptyLabel = "Already in this race.",
+  clearOnAdd = true, style,
 }) {
   const [drivers, setDrivers] = useState([]);   // the global driver pool
   const [accounts, setAccounts] = useState([]); // player accounts with no driver profile yet
   const [games, setGames] = useState({});       // game_id -> name, to label an in-game match
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -198,7 +209,7 @@ export function AddDriverToRace({
           ? `Added ${known.name} from the driver database${candidate.via ? ` — matched on their ${candidate.via.label}` : ""}. Their results all stay on that one profile.`
           : `${candidate.name} is new to the league — a driver profile was created for them.`);
       }
-      setQuery("");
+      if (clearOnAdd) setQuery("");
       setOpen(false);
       setDupe(null);
     } catch (err) {
@@ -230,7 +241,7 @@ export function AddDriverToRace({
       };
       if (candidate.user_id) body.user_id = candidate.user_id;
       onCreated(await api("/api/entries", { method: "POST", body }));
-      setQuery("");
+      if (clearOnAdd) setQuery("");
       setOpen(false);
     } catch (err) { onError(err.message); }
     finally {
@@ -241,17 +252,17 @@ export function AddDriverToRace({
 
   function handleCreated(entry) {
     setCreateModalName(null);
-    setQuery("");
+    if (clearOnAdd) setQuery("");
     setOpen(false);
     onCreated(entry);
     setTimeout(() => inputRef.current?.focus(), 0);
   }
 
   return (
-    <div style={{ position: "relative", maxWidth: 320, marginTop: 12 }}>
+    <div style={{ position: "relative", maxWidth: 320, marginTop: 12, ...style }}>
       <input
         ref={inputRef}
-        placeholder="+ Add a driver to this race…"
+        placeholder={placeholder}
         title="Type any name they race under — profile name, in-game name, PSN/Xbox/Discord — then press Enter to add the highlighted driver. ↑ / ↓ to pick another, Esc to close."
         value={query}
         disabled={busy || !seasonId}
@@ -298,7 +309,7 @@ export function AddDriverToRace({
             </button>
           ))}
           {matches.length === 0 && exactExists && (
-            <div style={{ padding: 8, fontSize: "0.8rem", color: "var(--ink-2)" }}>Already in this race.</div>
+            <div style={{ padding: 8, fontSize: "0.8rem", color: "var(--ink-2)" }}>{emptyLabel}</div>
           )}
         </div>
       )}

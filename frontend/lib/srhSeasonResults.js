@@ -384,3 +384,41 @@ export function matchScheduleToRaces(races = [], rows = []) {
   for (let i = 0; i < races.length && i < withId.length; i++) paired[races[i].id] = url(withId[i]);
   return paired;
 }
+
+// ── 5. The names the roster doesn't have ──────────────────────────────────
+
+// Every driver on the season's pages that no roster place could be found for,
+// gathered across the rounds they appeared on.
+//
+// The importer leaves those rows out rather than guessing at them, which is
+// right — but "3 drivers not on the roster" on each of eleven rounds is the
+// same handful of people said eleven times, and an admin fixing it needs the
+// people, not the repetitions. So this folds the per-round lists into one list
+// of names, each carrying the rounds it was seen on.
+//
+// Ordered by how much is riding on each: the driver missing from nine rounds
+// is nine rounds of results going nowhere, and is what to resolve first.
+// Compared case-insensitively, because SimRacerHub is not consistent about it,
+// and the first spelling seen is the one shown.
+//
+// `rounds` are { race_id, label } as the dialog knows them, so a name can be
+// traced back to the rounds it will fix.
+export function unmatchedRoster(reports = []) {
+  const byKey = new Map();
+  for (const report of reports) {
+    if (!report) continue;
+    for (const raw of report.unmatched || []) {
+      const name = String(raw ?? "").trim();
+      if (!name) continue;
+      const key = name.toLowerCase();
+      if (!byKey.has(key)) byKey.set(key, { name, rounds: [] });
+      const seen = byKey.get(key);
+      if (!seen.rounds.some(r => r.race_id === report.race_id)) {
+        seen.rounds.push({ race_id: report.race_id, label: report.label || "" });
+      }
+    }
+  }
+  return [...byKey.values()].sort(
+    (a, b) => b.rounds.length - a.rounds.length || a.name.localeCompare(b.name),
+  );
+}
