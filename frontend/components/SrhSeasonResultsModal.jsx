@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { matchScheduleToRaces, unmatchedRoster } from "@/lib/srhSeasonResults";
 import { SrhUnmatchedDrivers } from "@/components/SrhUnmatchedDrivers";
+import { SrhScaleMismatch } from "@/components/SrhScaleMismatch";
+import { scaleReport } from "@/lib/srhPointsScale";
 import { formatRaceDate } from "@/lib/raceDate";
 
 // Import a whole season's RESULTS from SimRacerHub — one round per line, one
@@ -30,6 +32,14 @@ import { formatRaceDate } from "@/lib/raceDate";
 // their name said out loud, which on its own is a dead end — so the names come
 // with the results screen's own driver picker (see SrhUnmatchedDrivers), and
 // the rounds they were missing from can be re-run without leaving the dialog.
+//
+// The other thing an import can be quietly wrong about is the SCALE. Finishing
+// points are never brought across — your own structure pays for every position
+// — so a season SimRacerHub scored on a different scale imports looking fine
+// and scores a championship nobody recognises. The two scales are compared per
+// session and any disagreement is flagged with the decision attached (see
+// SrhScaleMismatch), for that round or, when most of the season is scored that
+// way, for all of them at once.
 //
 // Nothing here decides anything. Which session a SimRacerHub session belongs
 // in, which roster place each driver is and what a row becomes are all
@@ -118,6 +128,11 @@ export function SrhSeasonResultsModal({ seasonId, seasonName, seriesName = "", r
   // before it must survive the remount.
   const [resolvedDrivers, setResolvedDrivers] = useState({});
   const [ignoredDrivers, setIgnoredDrivers] = useState({});
+  // The points structure chosen for a session whose scale disagreed with
+  // SimRacerHub's: race id -> session name -> points_templates id. Held here
+  // rather than in the panel for the same reason the driver answers are — the
+  // panel comes down while a re-import runs.
+  const [sessionTemplates, setSessionTemplates] = useState({});
 
   const filled = ordered.filter(r => (urls[r.id] || "").trim());
   const running = !!busy;
@@ -152,6 +167,33 @@ export function SrhSeasonResultsModal({ seasonId, seasonName, seriesName = "", r
     const ids = new Set(unmatched.flatMap(u => u.rounds.map(r => r.race_id)));
     return filled.filter(r => ids.has(r.id));
   }, [unmatched, filled]);
+
+  // Where SimRacerHub's own scale disagrees with the one that will score the
+  // session here, across every round read so far.
+  const scales = useMemo(
+    () => ({
+      ...scaleReport(
+        Object.entries(state)
+          .filter(([, v]) => v?.report?.sessions?.length)
+          .map(([id, v]) => ({ race_id: id, label: labelFor(id), sessions: v.report.sessions })),
+      ),
+      season_name: seasonName,
+    }),
+    [state, labelFor, seasonName],
+  );
+
+  const chooseTemplate = (raceId, session, templateId) =>
+    setSessionTemplates(t => ({ ...t, [raceId]: { ...(t[raceId] || {}), [session]: templateId } }));
+  // One answer for every round flagged — what a season scored on another scale
+  // needs, rather than the same dropdown twelve times.
+  const chooseTemplateForAll = templateId => setSessionTemplates(t => {
+    const next = { ...t };
+    for (const round of scales.flagged) {
+      next[round.race_id] = { ...(next[round.race_id] || {}) };
+      for (const s of [...round.sessions, ...round.unscored]) next[round.race_id][s.session] = templateId;
+    }
+    return next;
+  });
 
   const setUrl = (id, value) => {
     setUrls(u => ({ ...u, [id]: value }));
@@ -206,7 +248,7 @@ export function SrhSeasonResultsModal({ seasonId, seasonName, seriesName = "", r
     setNotice("");
     setAt(0);
 
-    let ok = 0, failed = 0, rows = 0;
+    let ok = 0, failed = 0, rows = 0, structures = 0;
     let lastWrote = false;
     for (let i = 0; i < list.length; i++) {
       const race = list[i];
@@ -219,6 +261,10 @@ export function SrhSeasonResultsModal({ seasonId, seasonName, seriesName = "", r
             race_id: race.id,
             url: (urls[race.id] || "").trim(),
             preview,
+            // The points structures named for this round's sessions, where
+            // SimRacerHub's scale disagreed with ours. Left out of a preview,
+            // which writes nothing.
+            ...(preview ? {} : { session_templates: sessionTemplates[race.id] || {} }),
             // Skill Ratings are replayed from scratch across the whole game, so
             // the season pays for it once, on the last round in.
             recalc: !preview && i === list.length - 1,
@@ -227,6 +273,7 @@ export function SrhSeasonResultsModal({ seasonId, seasonName, seriesName = "", r
         setState(s => ({ ...s, [race.id]: { status: preview ? "read" : "done", report: res } }));
         ok += 1;
         rows += res.rows_total || 0;
+        structures += res.written?.points_structures || 0;
         lastWrote = true;
       } catch (err) {
         setState(s => ({ ...s, [race.id]: { status: "error", error: err.message, report: err.data } }));
@@ -248,7 +295,7 @@ export function SrhSeasonResultsModal({ seasonId, seasonName, seriesName = "", r
     }
 
     setBusy("");
-    setSummary({ preview, ok, failed, rows, partial: !!(only && only.length) });
+    setSummary({ preview, ok, failed, rows, structures, partial: !!(only && only.length) });
     if (!preview && ok) onImported?.();
   }
 
@@ -339,6 +386,7 @@ export function SrhSeasonResultsModal({ seasonId, seasonName, seriesName = "", r
                 : `Imported ${summary.ok} round${summary.ok === 1 ? "" : "s"} · ${summary.rows} rows written`}
               {summary.failed ? ` · ${summary.failed} failed` : ""}
               {summary.partial ? " · the rounds that were short of drivers" : ""}
+              {summary.structures ? ` · ${summary.structures} session${summary.structures === 1 ? "" : "s"} scored on a chosen structure` : ""}
             </div>
             {unmatched.length > 0 && (
               <p style={{ margin: "6px 0 0", fontSize: "0.78rem", color: "var(--accent-amber, #d29922)" }}>
@@ -355,6 +403,20 @@ export function SrhSeasonResultsModal({ seasonId, seasonName, seriesName = "", r
               </p>
             )}
           </div>
+        )}
+
+        {/* Where SimRacerHub paid a different scale from the one that will
+            score the session here. Flagged with the decision attached: name the
+            structure that round should score on, or all of them at once when
+            most of the season is scored that way. */}
+        {!running && scales.flagged.length > 0 && (
+          <SrhScaleMismatch
+            report={scales}
+            choices={sessionTemplates}
+            onChoose={chooseTemplate}
+            onChooseAll={chooseTemplateForAll}
+            onError={setError}
+          />
         )}
 
         {/* The drivers the rounds couldn't place, with the results screen's own

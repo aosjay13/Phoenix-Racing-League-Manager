@@ -9,6 +9,11 @@ import { hasSrhSessionStats, parseSrhPage, parseSrhRef, srhPageError, srhSegment
 import { planRace } from "@/lib/srhSeasonResults";
 import { classByEntryForSeason, sessionContext, stageSessionWrite } from "@/lib/resultsWrite";
 import { racePerClassResults } from "@/lib/classFilter";
+import {
+  configForTemplate, resolveSeasonConfig, resolveSessionFlags, sessionTemplateFor,
+} from "@/lib/standings";
+import { appScale, compareScales, srhScale } from "@/lib/srhPointsScale";
+import { fetchTemplatesById } from "@/lib/pointsTemplatesServer";
 import { aliasValues } from "@/lib/aliases";
 import { displayNameValues, gameNameFor } from "@/lib/driverNames";
 
@@ -79,6 +84,34 @@ async function loadMatchEntries(seasonId, gameId, leagueId) {
   });
 }
 
+// The points scale that will score one session of this event, resolved the way
+// the standings resolve it: the season's own structure (under its series), with
+// whatever template the session inherits or has been assigned laid over it.
+//
+// This is the "my default" half of the comparison the importer flags on. It has
+// to be the REAL answer rather than the season's bare scale, or every heat on a
+// league that names a heat structure would be reported as a disagreement with a
+// scale that was never going to score it.
+//
+// Classes are left out on purpose: an event whose classes run their own
+// sessions is refused by this route entirely (see below), so every session here
+// is scored by one structure and there is no per-class answer to give.
+function scaleResolver({ season, series, race, templatesById }) {
+  const base = resolveSeasonConfig(season, series);
+  const racesById = { [race.id]: race };
+  const scopes = { race, cls: null, season, classId: "" };
+  return (session, sessionType) => {
+    const asResult = { race_id: race.id, session, session_type: sessionType };
+    const templateId = sessionTemplateFor(asResult, scopes)?.id || null;
+    const config = templateId ? configForTemplate(base, templatesById[templateId] || null) : base;
+    // Whether this session counts toward the championship AT ALL. A heat and a
+    // consolation score nothing until a points structure is named for them, so
+    // a scale comparison on one would quote a number it is never going to pay.
+    const { counts_points } = resolveSessionFlags(asResult, racesById, scopes);
+    return { scale: appScale(config, sessionType), template_id: templateId, counts_points };
+  };
+}
+
 // Fetch a round's SimRacerHub page and read every session on it. Returns
 // { doc, url } or { error, status }.
 async function readRacePage(input) {
@@ -115,7 +148,7 @@ async function readRacePage(input) {
 
 const handlePOST = withAdmin(async (request, ctx, user) => {
   const body = await request.json().catch(() => ({}));
-  const { season_id, race_id, url, preview = false, recalc = true } = body;
+  const { season_id, race_id, url, preview = false, recalc = true, session_templates = null } = body;
   const leagueId = getRequestLeagueId(request);
 
   if (!season_id) return NextResponse.json({ error: "season_id required" }, { status: 400 });
@@ -184,6 +217,36 @@ const handlePOST = withAdmin(async (request, ctx, user) => {
 
   const plan = planRace(race, doc, entries);
 
+  // ── Does SimRacerHub score this the way we do? ─────────────────────────
+  //
+  // The importer never brings finishing points across — this season's own
+  // structure pays for every position, which is what keeps one scorer. That is
+  // right and it is also silent, so the two scales are compared and the
+  // disagreement reported. Nothing acts on it here: naming the structure a
+  // round should score on is the admin's call, and `session_templates` below is
+  // where their answer comes back in.
+  const [seriesDoc, templatesById] = await Promise.all([
+    season.series_id ? db().collection("series").doc(season.series_id).get() : null,
+    // The saved structures, the built-in ones (NASCAR, IMSA, F1…) and the
+    // score-nothing pseudo-template — every id a session can name. Loaded
+    // through the shared helper so a session already scoring on a built-in is
+    // compared against the built-in, not against the season scale underneath
+    // it, which would report a disagreement that isn't one.
+    fetchTemplatesById(),
+  ]);
+  const series = seriesDoc?.exists ? { id: seriesDoc.id, ...seriesDoc.data() } : null;
+  const resolveScale = scaleResolver({ season, series, race, templatesById });
+  const segmentByKey = new Map((doc.segments || []).map(seg => [seg.key, seg]));
+
+  const scaleFor = s => {
+    const theirs = srhScale(segmentByKey.get(s.key));
+    const { scale: ours, template_id, counts_points } = resolveScale(s.session, s.session_type);
+    return {
+      ...compareScales(theirs, ours, { countsPoints: counts_points }),
+      srh_scale: theirs, template_id, counts_points,
+    };
+  };
+
   // What the preview and the import both report, so the dialog renders one
   // shape either way and an admin sees the same round twice.
   const report = {
@@ -201,6 +264,9 @@ const handlePOST = withAdmin(async (request, ctx, user) => {
       provisional: s.provisional,
       unmatched: s.unmatched.length,
       warnings: s.warnings,
+      // What SimRacerHub paid for a position against what will score it here,
+      // and which points structure that answer came from.
+      scale: scaleFor(s),
     })),
     skipped: plan.skipped,
     unmatched: plan.unmatched,
@@ -225,10 +291,29 @@ const handlePOST = withAdmin(async (request, ctx, user) => {
 
   // ── Write it ───────────────────────────────────────────────────────────
   //
-  // 1. The sessions the event doesn't have yet. Written first, so the rows
-  //    below land in sessions the results screen actually shows a tab for.
-  if (plan.race_update) {
-    await db().collection("races").doc(race_id).update(plan.race_update);
+  // 1. The sessions the event doesn't have yet, and the points structures the
+  //    admin named for them. Written first, so the rows below land in sessions
+  //    the results screen shows a tab for, scoring on the scale that was
+  //    chosen.
+  //
+  //    `session_templates` is the answer to the scale disagreement reported
+  //    above: session name -> points_templates id, or "" to clear one. It is
+  //    stored on the event exactly as the results screen's own points picker
+  //    stores it (session_points; see api/races/[id]/session-points), so the
+  //    round keeps scoring on it if the results are ever re-saved, and changing
+  //    it afterwards from that screen works as it does on any other event.
+  const wantedTemplates = session_templates && typeof session_templates === "object" ? session_templates : {};
+  const raceUpdate = { ...(plan.race_update || {}) };
+  if (Object.keys(wantedTemplates).length) {
+    const sessionPoints = { ...(race.session_points || {}) };
+    for (const [session, templateId] of Object.entries(wantedTemplates)) {
+      if (templateId) sessionPoints[session] = templateId;
+      else delete sessionPoints[session];
+    }
+    raceUpdate.session_points = sessionPoints;
+  }
+  if (Object.keys(raceUpdate).length) {
+    await db().collection("races").doc(race_id).update(raceUpdate);
   }
 
   // 2. Every session's rows, in one batch. The race's existing results are read
@@ -244,10 +329,13 @@ const handlePOST = withAdmin(async (request, ctx, user) => {
     stageSessionWrite({
       batch, existing: existing.docs, race_id, season_id, leagueId,
       session: s.session, sessionType: s.session_type, rows: s.rows,
-      // The event's own points structures decide what each session pays, as on
-      // any session saved without one picked (see resolveTemplateId in
-      // lib/standings.js). An import must not pin a template nobody chose.
-      points_template_id: null,
+      // A structure the admin named for this session is stamped on its rows,
+      // the same stamp the results screen's points picker writes. Anything
+      // they didn't name is left unstamped so the event's, the class's or the
+      // season's own default keeps scoring it and keeps being a DEFAULT — see
+      // resolveTemplateId in lib/standings.js. An import must never pin a
+      // template nobody chose.
+      points_template_id: wantedTemplates[s.session] || null,
       firstSession,
       raceClassId: race.class_id || "",
       entriesById, uid: user.uid,
@@ -280,7 +368,10 @@ const handlePOST = withAdmin(async (request, ctx, user) => {
   return NextResponse.json({
     ...report,
     preview: false,
-    written: { sessions: written, rows: plan.rows_total, stats: statsSaved },
+    written: {
+      sessions: written, rows: plan.rows_total, stats: statsSaved,
+      points_structures: Object.keys(wantedTemplates).filter(k => wantedTemplates[k]).length,
+    },
   });
 });
 

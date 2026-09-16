@@ -181,7 +181,10 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   name that is **not on your roster**, whose rows are left out rather than guessed at. Those names
   come with **the results screen's own driver picker** against each one, so a driver the roster
   hasn't got is found in the driver database (under any name they answer to) or created on the spot,
-  and **↻ Re-import the rounds with missing drivers** runs just those rounds again. A round that
+  and **↻ Re-import the rounds with missing drivers** runs just those rounds again. It also **flags a
+  points scale that disagrees with yours** — *P1 75 vs 100* — and lets you name the structure that
+  round, or the whole season, should score on, with **＋ Use SimRacerHub's own scale** to save theirs
+  as a structure if you haven't got it. A round that
   fails doesn't stop the rest, and **Check first** reads the lot without writing anything. Your own
   points structure still scores every finishing position, exactly as it does for a night typed in
   by hand — it is the same writer underneath
@@ -1207,6 +1210,25 @@ Resolving a name puts them on the roster; **↻ Re-import the rounds with missin
 only those rounds, which is when their results actually land. Re-importing a round replaces what it
 wrote, so running it twice is safe.
 
+**And it says when SimRacerHub scored the season differently from you.** Finishing points are never
+imported — your own structure pays for every position, which is what keeps one scorer — so a season
+SimRacerHub scored on a different scale would otherwise import looking fine and produce a
+championship nobody recognises. The two scales are compared per session and the disagreement is
+flagged with the decision attached: **P1 75 vs 100**, and a picker naming the points structure that
+round should score on. One round differing is that round's business; when **most** of the season is
+scored that way you get one control that answers all of them at once. Two other cases are called out
+by name rather than dressed up as a scale difference — a round SimRacerHub paid *nothing* for (it ran
+for no championship points), and a session that counts toward **nothing here**, which is every heat
+and consolation until a structure is named for one.
+
+If the right structure isn't in your list — the usual case for a league whose SimRacerHub scale this
+app has never been told about — **＋ Use SimRacerHub's own scale** saves what it actually paid as a
+points structure and picks it, instead of sending you off to type thirty positions in by hand. Only
+the position scale is taken; bonus rates are never invented from one night's rows. Whatever you
+choose is stored on the event as `session_points`, exactly as the results screen's own points picker
+stores it, so it keeps scoring that way and can be changed from that screen afterwards like any other
+event's.
+
 **Your scoring is still yours.** The rows are written by the same code the results grid's own Save
 writes through, so a season imported in one press and a night typed in by hand store identical
 documents and score identically. Your points structure pays every finishing position; a driver
@@ -1226,6 +1248,9 @@ first** runs the whole list as a read-only pass and writes nothing.
 a SimRacerHub page says which class a driver is in only by which of its tables they appear in, and
 that one field written into a class's grid would put every class's drivers in it. Those rounds are
 entered class by class on the results screen, as before. See `lib/srhSeasonResults.js`,
+`lib/srhPointsScale.js` (the scale comparison, covered by
+`lib/__tests__/srhPointsScale.test.mjs` — which leads with the false-flag cases, since an importer
+that cries wolf on every round teaches you to click past the one that mattered),
 `lib/resultsWrite.js`, `app/api/import-srh-season-results/route.js` and
 `components/SrhUnmatchedDrivers.jsx` (which reuses `components/AddDriverToRace.jsx` rather than
 growing a second idea of who a driver is).
