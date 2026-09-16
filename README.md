@@ -163,6 +163,21 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   them read the right way round. You see every round it found, and which venues are new, **before**
   anything is created. Offered on **League Setup ▸ Seasons** and inside the Schedule's
   **+ New Season** dialog, for iRacing games only
+- 📥 **Import Season Results — a whole season from SimRacerHub in one press (iRacing)** — the
+  schedule import above builds a season's calendar from one link; this is the other half, for a
+  season that has already been raced. **Schedule ▸ 📥 Import Season Results** opens the season's own
+  calendar in round order — *Race 1 — Daytona*, a **SimRacerHub URL** bar under it, and the same
+  again for every round — and one press works down the list. **Every session on each page comes
+  with it**: Qualifying, every Heat, the Consolations and the Feature, each landing in the grid of
+  its own kind, and an event that ran heats it hasn't been set up for grows them under the names
+  SimRacerHub uses. Each round's cautions, caution laps and lead changes go onto the event, read
+  off the session that decided the night. Paste the **season's** schedule link at the top and it
+  fills in every round's results link for you, so a twelve-round season is one link and one press.
+  Every round reports as it goes — which sessions it found, how many drivers it matched, and every
+  name that is **not on your roster**, whose rows are left out rather than guessed at. A round that
+  fails doesn't stop the rest, and **Check first** reads the lot without writing anything. Your own
+  points structure still scores every finishing position, exactly as it does for a night typed in
+  by hand — it is the same writer underneath
 - 🔗 **One-click import from SimRacerHub** — paste a race's SimRacerHub URL (or just its id) and
   the **whole night** comes back in one press: Qualifying, every Heat, the Consolations and the
   Feature, each a session you can fill its own grid from. The race's own figures come with it —
@@ -1099,8 +1114,76 @@ it says so instead of quietly choosing.
 
 **What doesn't come across.** Classes, the roster, the points structure and heat-racing setup: a
 schedule doesn't describe them, and they're set up as on any new season. Pole and winner columns
-are ignored too — those are results, and results are imported per race from the same site (see
-*Results entry* above). See `lib/srhSchedule.js` and `app/api/import-srh-season/route.js`.
+are ignored too — those are results, and results are imported per race from the same site — or a
+whole season of them at once, see *Importing a whole season's results from SimRacerHub* below.
+See `lib/srhSchedule.js` and `app/api/import-srh-season/route.js`.
+
+### Importing a whole season's results from SimRacerHub
+
+*iRacing only.* The schedule import above is for a season about to be raced. This is for one that
+already has been — a season built here round by round, or imported here, whose results are sitting
+on twelve SimRacerHub pages. Entering them through Smart Import is a session at a time: five
+sessions a night across twelve rounds is sixty passes through a dialog, which is how a season ends
+up half entered.
+
+**Where it is.** **Schedule**, with a season selected — **📥 Import Season Results**, beside
+**⧉ Copy Race**. Admins only, and only on a season under an iRacing game.
+
+**What it looks like.** The season's own calendar, in round order, with a bar under each round:
+
+```
+Race 1 — Season Opener              Daytona · 14 Feb 2026
+SimRacerHub URL:  [                                                    ]
+
+Race 2 — Thunder Valley 200         Bristol · 21 Feb 2026
+SimRacerHub URL:  [                                                    ]
+```
+
+Paste each round's SimRacerHub race link and press **Import**. Or paste the **season's** schedule
+link in the box at the top and press **Fill in links**: the schedule page carries an id for every
+round, which is exactly what each round's results page is addressed by, so a twelve-round season
+becomes one link and one press. Rounds are paired by round number where the two numberings agree,
+and down the page — date order on both sides — where they don't. A round with no partner is left
+empty for you to paste into rather than pointed at somebody else's results.
+
+**Every session on a page comes across.** Qualifying, every Heat, the Consolations and the Feature,
+each landing in the grid of its own kind: SimRacerHub's second heat is this event's second heat,
+whatever either of them calls it, so your own session names are kept. An event that ran heats it
+hasn't been set up for here **grows them** — it is switched into heat format and gains the heats
+and consolations under SimRacerHub's own names, so every session has a tab to be seen in. An event
+that simply calls its one race `FEATURE` is left a plain event with a plain Race session; nothing
+is turned into a heat weekend over a capital letter. Practice is skipped — this app stores none.
+
+**The night's own figures** — cautions, caution laps and lead changes — are read off the session
+that decided it (the Feature, or the race) and written onto the event, where the results page
+prints them. A heat's cautions are not the night's, so they are not used.
+
+**Nothing is guessed at.** Every driver is matched against the roster through each name they answer
+to — their profile name, the name they race under in iRacing, and every connected account. A name
+that matches nobody is **left out and named**, both on its round and in the summary at the end, so
+you can add them to the roster and run it again. Re-importing a round replaces what it wrote, so
+running it twice is safe.
+
+**Your scoring is still yours.** The rows are written by the same code the results grid's own Save
+writes through, so a season imported in one press and a night typed in by hand store identical
+documents and score identically. Your points structure pays every finishing position; a driver
+SimRacerHub paid without racing lands in **Provisional Entries** on exactly the points it paid
+them; and only what this app can't work out for itself — a SimRacerHub penalty, a bonus of your
+league's own invention — rides across in the **Adj** column. Fastest Lap comes from the page; Hard
+Charger and Most Laps Led are worked out from the numbers exactly as the grid works them out while
+you type.
+
+**As it runs.** Each round is a request of its own, worked through one at a time — twelve
+SimRacerHub pages in one request is one timeout away from a half-imported season with nothing to
+say about which half. Each round reports for itself: the sessions it found, the rows it wrote, any
+it skipped and why, and anyone off the roster. A round that fails doesn't stop the rest. **Check
+first** runs the whole list as a read-only pass and writes nothing.
+
+**What it won't do.** An event whose classes run their own Qualifying and Race is refused by name:
+a SimRacerHub page says which class a driver is in only by which of its tables they appear in, and
+that one field written into a class's grid would put every class's drivers in it. Those rounds are
+entered class by class on the results screen, as before. See `lib/srhSeasonResults.js`,
+`lib/resultsWrite.js` and `app/api/import-srh-season-results/route.js`.
 
 ### Running a Time Trial or a placement night
 
@@ -1242,7 +1325,9 @@ frontend/
     page.js         ← Dashboard (per selected season)
     standings/      ← Driver + team points tables
     stats/          ← Scoped driver stats (season/series/game/league), sortable
-    schedule/       ← Season calendar (admin: ⏱ enter results, ✎ edit event, 🗑 delete)
+    schedule/       ← Season calendar (admin: ⏱ enter results, ✎ edit event, 🗑 delete,
+                      ⧉ Copy Race, and 📥 Import Season Results on an iRacing season —
+                      a URL bar per round, one press for the whole season's results)
     calendar/       ← Global month-by-month calendar of every event in the league,
                       filtered by Game ▸ Series (lib/calendar.js holds its arithmetic)
     admin/          ← Admin: League Setup — build games/series/seasons/races, the shared Tracks

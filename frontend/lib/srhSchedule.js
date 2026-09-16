@@ -586,6 +586,11 @@ export function srhSchedulePlan(parsed, { carNames = {}, seasonName = "" } = {})
     rows: races.map(({ race, round, warnings }) => ({
       round_number: race.round_number,
       name: race.name,
+      // SimRacerHub's own id for this round, which is what its results page is
+      // addressed by. Carried so the season RESULTS importer can offer to fill
+      // in every round's link from the schedule, instead of an admin opening
+      // twelve pages and copying twelve URLs. See srhPageUrl in lib/srhImport.
+      schedule_id: round.schedule_id,
       date: race.date,
       date_text: round.date_text,
       track: race.track,
