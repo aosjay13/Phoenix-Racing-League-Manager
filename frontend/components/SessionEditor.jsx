@@ -1603,6 +1603,19 @@ export function SessionEditor({
   const rowPointsTitle = row => (!row.entry_id ? undefined
     : pointsBreakdown(scoreRow(row), configForRow(row)));
 
+  // Does any row on this grid carry a points figure OF ITS OWN? That is what a
+  // SimRacerHub import writes so the two championships agree (see
+  // `manual_points` in pointsFor), and once one row has one the whole column
+  // becomes editable — which is what makes "import it, then edit it" true.
+  // Emptying a cell hands that row back to the league's points structure.
+  //
+  // Nothing appears for a session nobody imported that way, so a grid filled in
+  // by hand reads exactly as it always has.
+  const pointsEditable = useMemo(
+    () => rows.some(r => r.entry_id && r.manual_points !== "" && r.manual_points != null),
+    [rows],
+  );
+
   // ── Provisional points auto-fill ─────────────────────────────────────────
   //
   // A provisional entry is saved just behind the field (handleSave parks them
@@ -2353,6 +2366,7 @@ export function SessionEditor({
             {["", "Pos", "Driver", ...(hasClasses ? ["Class"] : []), "Qual Time", "To Lead", "Gap", ...bangerHeaders, pointsLabel, ""].map((h, i) => <span className="grid-header" key={h || i}>{h}</span>)}
             {rows.map((row, idx) => (
               <QualRow key={row.slot_id} row={row} idx={idx} updateRow={updateRow} updateFlag={updateFlag} onGapBlur={normalizeQualGaps} autoFocus={row.entry_id === justAddedId} points={rowPoints(row)}
+                pointsTitle={rowPointsTitle(row)} pointsEditable={pointsEditable}
                 classes={classes} hasClasses={hasClasses} isBangerRacing={isBangerRacing}
                 bracketRound={bracketLayout ? bracketRoundFor(activeBracketSize, row.finish_pos) : null}
                 dragging={dragIndex === idx} dragOver={overIndex === idx && dragIndex !== idx}
@@ -2372,6 +2386,7 @@ export function SessionEditor({
               <RowInputs key={row.slot_id} row={row} idx={idx} updateRow={updateRow} updateFlag={updateFlag}
                 updateRaceTime={updateRaceTime} updateInterval={updateInterval} updateStatus={updateStatus}
                 autoFocus={row.entry_id === justAddedId} points={rowPoints(row)} pointsTitle={rowPointsTitle(row)}
+                pointsEditable={pointsEditable}
                 classes={classes} hasClasses={hasClasses} isBangerRacing={isBangerRacing}
                 bracketRound={bracketLayout ? bracketRoundFor(activeBracketSize, row.finish_pos) : null}
                 dragging={dragIndex === idx} dragOver={overIndex === idx && dragIndex !== idx}
@@ -2829,7 +2844,7 @@ function BangerCells({ row, idx, updateRow, updateFlag, gridProps, pickerProps }
   );
 }
 
-function RowInputs({ row, idx, updateRow, updateFlag, updateRaceTime, updateInterval, updateStatus, autoFocus, points, pointsTitle, classes = [], hasClasses, isBangerRacing, bracketRound = null, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, available, onAssign, onClear, onRequestCreate, onPasteColumn }) {
+function RowInputs({ row, idx, updateRow, updateFlag, updateRaceTime, updateInterval, updateStatus, autoFocus, points, pointsTitle, pointsEditable, classes = [], hasClasses, isBangerRacing, bracketRound = null, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, available, onAssign, onClear, onRequestCreate, onPasteColumn }) {
   const hasDriver = !!row.entry_id;
   const isLeader = Number(row.finish_pos) === 1;
   // Shared per-cell wiring: column/row tags, Enter-to-next-row, and column
@@ -2885,13 +2900,46 @@ function RowInputs({ row, idx, updateRow, updateFlag, updateRaceTime, updateInte
         <option value="dns">DNS</option>
         <option value="dq">DQ</option>
       </select>
-      <div className="points-cell" title={pointsTitle} style={{ textAlign: "center", fontWeight: 600, cursor: pointsTitle ? "help" : undefined }}>{points}</div>
+      <PointsCell row={row} idx={idx} points={points} pointsTitle={pointsTitle}
+        editable={pointsEditable} hasDriver={hasDriver} updateRow={updateRow} gridProps={gridProps} />
       <RemoveButton row={row} onRemove={onRemove} />
     </>
   );
 }
 
-function QualRow({ row, idx, updateRow, updateFlag, onGapBlur, autoFocus, points, classes = [], hasClasses, isBangerRacing, bracketRound = null, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, available, onAssign, onClear, onRequestCreate, onPasteColumn }) {
+// The Points cell.
+//
+// Normally it is the championship's own arithmetic on this row, read-only,
+// with the terms behind it on hover. On a session whose rows carry POINTS OF
+// THEIR OWN — what a SimRacerHub import writes so the two championships agree —
+// it is the figure itself, and typing in it is how "then I can edit them
+// afterwards" actually works. Emptying a cell hands that row back to the
+// league's points structure, which is the way out of an import that took a
+// number you didn't want.
+//
+// It only turns into an input where such a row exists, so a league that never
+// imports one keeps the plain bold number it has always had.
+function PointsCell({ row, idx, points, pointsTitle, editable, hasDriver, updateRow, gridProps }) {
+  if (!editable) {
+    return (
+      <div className="points-cell" title={pointsTitle}
+        style={{ textAlign: "center", fontWeight: 600, cursor: pointsTitle ? "help" : undefined }}>{points}</div>
+    );
+  }
+  const own = row.manual_points !== "" && row.manual_points != null;
+  return (
+    <input type="number" className="points-cell" value={row.manual_points ?? ""} disabled={!hasDriver}
+      placeholder={hasDriver ? String(points) : ""}
+      title={own
+        ? `This row scores ${row.manual_points} because that figure is set on it. Clear the cell to score it from your points structure instead.\n\n${pointsTitle || ""}`
+        : pointsTitle}
+      {...gridProps("manual_points")}
+      onChange={e => updateRow(idx, "manual_points", e.target.value)}
+      style={{ textAlign: "center", fontWeight: own ? 600 : 400 }} />
+  );
+}
+
+function QualRow({ row, idx, updateRow, updateFlag, onGapBlur, autoFocus, points, pointsTitle, pointsEditable, classes = [], hasClasses, isBangerRacing, bracketRound = null, dragging, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, available, onAssign, onClear, onRequestCreate, onPasteColumn }) {
   const hasDriver = !!row.entry_id;
   const isPole = Number(row.finish_pos) === 1;
   const gridProps = (field, opts) => ({
@@ -2919,7 +2967,8 @@ function QualRow({ row, idx, updateRow, updateFlag, onGapBlur, autoFocus, points
         title="Gap to the car one position up. Type it and the lap time fills itself from that car's time."
         {...gridProps("qual_gap")} onBlur={onGapBlur} onChange={e => updateRow(idx, "qual_gap", e.target.value)} />
       {isBangerRacing && <BangerCells row={row} idx={idx} updateRow={updateRow} updateFlag={updateFlag} gridProps={gridProps} pickerProps={pickerProps} />}
-      <div className="points-cell" style={{ textAlign: "center", fontWeight: 600 }}>{points}</div>
+      <PointsCell row={row} idx={idx} points={points} pointsTitle={pointsTitle}
+        editable={pointsEditable} hasDriver={hasDriver} updateRow={updateRow} gridProps={gridProps} />
       <RemoveButton row={row} onRemove={onRemove} />
     </>
   );

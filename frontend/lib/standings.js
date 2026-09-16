@@ -585,10 +585,28 @@ export function pointsFor(result, config) {
   // touching the driver's finishing position. Negative = penalty.
   const adjustment = num(result.points_adjustment);
 
-  // Provisional entries (drivers who didn't make the race) score a flat,
-  // admin-entered value instead of position-based points — see the Provisional
-  // section of the results editor. They're also excluded from stats (statLine).
-  if (result.provisional && result.manual_points != null && result.manual_points !== "") {
+  // A points figure ON THE ROW wins over the structure entirely.
+  //
+  // Two things arrive this way. A PROVISIONAL entry always has: a driver who
+  // didn't make the race has no finishing position to be scored off, so the
+  // flat value an admin typed is the whole answer (see the Provisional section
+  // of the results editor; they're also excluded from stats — see statLine).
+  //
+  // And a session IMPORTED WITH ITS SOURCE'S OWN POINTS. A league scored on
+  // SimRacerHub has a championship table there already, and the only way for
+  // this app's table to agree with it row for row is to take the number
+  // SimRacerHub paid rather than re-derive one: its scale, its bonuses, its
+  // penalties and its stage points are one figure per driver that no structure
+  // here can reproduce. So the importer can write that figure onto the row (see
+  // lib/srhSeasonResults.js), and this is what makes it score.
+  //
+  // It stays editable afterwards, cell by cell, and clearing a cell hands the
+  // row back to the league's own structure — which is why this is a value on
+  // the result rather than a mode the season is put into.
+  //
+  // An adjustment still applies on top either way: docking a driver after the
+  // fact is a separate statement from what they scored on the day.
+  if (result.manual_points != null && result.manual_points !== "") {
     return num(result.manual_points) + adjustment;
   }
 
@@ -641,8 +659,11 @@ export function explainPoints(result, config) {
     if (adjustment) parts.push({ label: "Adjustment", value: adjustment });
     return parts;
   };
-  if (result.provisional && result.manual_points != null && result.manual_points !== "") {
-    parts.push({ label: "Provisional entry", value: num(result.manual_points) });
+  if (result.manual_points != null && result.manual_points !== "") {
+    parts.push({
+      label: result.provisional ? "Provisional entry" : "Points set on this row",
+      value: num(result.manual_points),
+    });
     if (adjustment) parts.push({ label: "Adjustment", value: adjustment });
     return parts;
   }

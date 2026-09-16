@@ -176,6 +176,49 @@ check("…and not the finishing points it never earned",
   pointsFor(race({ provisional: true, manual_points: 10, fastest_lap: true }), config), 10);
 agrees("a provisional entry", race({ provisional: true, manual_points: 10, points_adjustment: -4 }));
 
+// ── 3b. A points figure set on the row wins over the structure ────────────
+//
+// This is how a season imported from SimRacerHub gets a championship table
+// here that agrees with the one already on that site: its scale, its bonuses,
+// its penalties and its stage points are one figure per driver that no
+// structure here can reproduce, so the figure itself is written onto the row.
+// Same mechanism a provisional entry has always used, no longer gated on being
+// one.
+check("a figure set on the row is what the row scores",
+  pointsFor(race({ manual_points: 75 }), config), 75);
+check("…whatever the structure would have paid for that position",
+  pointsFor(race({ finish_pos: 1, manual_points: 75 }), config), 75);
+check("…and whatever bonuses are ticked on it",
+  pointsFor(race({ manual_points: 75, fastest_lap: true, laps_led: 40, hard_charger: true }), config), 75);
+check("…with a later adjustment still applying on top",
+  pointsFor(race({ manual_points: 75, points_adjustment: -10 }), config), 65);
+check("a figure of zero is a figure, not a blank",
+  pointsFor(race({ manual_points: 0 }), config), 0);
+// Clearing the cell is the way back: an empty string is no figure at all, and
+// the row returns to being scored by the league's own structure.
+check("clearing it hands the row back to the structure",
+  pointsFor(race({ manual_points: "" }), config), 90);
+check("…and so does never having had one", pointsFor(race({ manual_points: null }), config), 90);
+// Qualifying takes one too — SimRacerHub pays for a grid slot and that has to
+// come across as readily as a race result.
+check("a qualifying row takes one as well", pointsFor(qual({ manual_points: 4 }), config), 4);
+// A DNS still scores nothing: they never took the green flag, and no figure on
+// the row changes that.
+check("a DNS scores nothing even with a figure on it",
+  pointsFor(race({ status: "dns", manual_points: 75 }), config), 0);
+// The breakdown says where the number came from, and says it differently for
+// the two things that arrive this way.
+check("the breakdown names an imported figure",
+  explainPoints(race({ manual_points: 75 }), config).map(p => p.label), ["Points set on this row"]);
+check("…and still calls a provisional entry what it is",
+  explainPoints(race({ provisional: true, manual_points: 10 }), config).map(p => p.label), ["Provisional entry"]);
+agrees("a row scored on its own figure", race({ manual_points: 75 }));
+agrees("…with an adjustment", race({ manual_points: 75, points_adjustment: -10 }));
+agrees("…on a qualifying row", qual({ manual_points: 4, points_adjustment: 1 }));
+// Junk in that field must not become NaN any more than in the others.
+check("junk in the figure reads as nothing",
+  pointsFor(race({ manual_points: "x" }), config), 0);
+
 // ── 4. The breakdown adds up to the total, on every shape of row ──────────
 //
 // The grid shows a driver WHY they got a number. If the itemisation and the

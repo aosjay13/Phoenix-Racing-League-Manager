@@ -133,6 +133,12 @@ export function SrhSeasonResultsModal({ seasonId, seasonName, seriesName = "", r
   // rather than in the panel for the same reason the driver answers are — the
   // panel comes down while a re-import runs.
   const [sessionTemplates, setSessionTemplates] = useState({});
+  // Take what SimRacerHub paid each driver as that row's points. On by default:
+  // a league scored there wants a table here that agrees with the one they
+  // already have, and no points structure can reproduce its per-driver bonuses,
+  // penalties and stage points. Turned off, this season's own structure scores
+  // every position as it always did.
+  const [takeSrhPoints, setTakeSrhPoints] = useState(true);
 
   const filled = ordered.filter(r => (urls[r.id] || "").trim());
   const running = !!busy;
@@ -248,7 +254,7 @@ export function SrhSeasonResultsModal({ seasonId, seasonName, seriesName = "", r
     setNotice("");
     setAt(0);
 
-    let ok = 0, failed = 0, rows = 0, structures = 0;
+    let ok = 0, failed = 0, rows = 0, structures = 0, srhPoints = false;
     let lastWrote = false;
     for (let i = 0; i < list.length; i++) {
       const race = list[i];
@@ -265,6 +271,7 @@ export function SrhSeasonResultsModal({ seasonId, seasonName, seriesName = "", r
             // SimRacerHub's scale disagreed with ours. Left out of a preview,
             // which writes nothing.
             ...(preview ? {} : { session_templates: sessionTemplates[race.id] || {} }),
+            take_srh_points: takeSrhPoints,
             // Skill Ratings are replayed from scratch across the whole game, so
             // the season pays for it once, on the last round in.
             recalc: !preview && i === list.length - 1,
@@ -274,6 +281,7 @@ export function SrhSeasonResultsModal({ seasonId, seasonName, seriesName = "", r
         ok += 1;
         rows += res.rows_total || 0;
         structures += res.written?.points_structures || 0;
+        srhPoints = srhPoints || !!res.written?.srh_points;
         lastWrote = true;
       } catch (err) {
         setState(s => ({ ...s, [race.id]: { status: "error", error: err.message, report: err.data } }));
@@ -295,7 +303,7 @@ export function SrhSeasonResultsModal({ seasonId, seasonName, seriesName = "", r
     }
 
     setBusy("");
-    setSummary({ preview, ok, failed, rows, structures, partial: !!(only && only.length) });
+    setSummary({ preview, ok, failed, rows, structures, srhPoints, partial: !!(only && only.length) });
     if (!preview && ok) onImported?.();
   }
 
@@ -317,6 +325,20 @@ export function SrhSeasonResultsModal({ seasonId, seasonName, seriesName = "", r
           scores every finishing position; only what it can&rsquo;t work out for itself (a SimRacerHub penalty
           or bonus) rides across in the Adj column.
         </p>
+
+        {/* The one switch that decides whether the two championships agree. */}
+        <div className="check-row" style={{ marginBottom: 12 }}>
+          <input id="srh_take_points" type="checkbox" checked={takeSrhPoints}
+            disabled={running} onChange={e => setTakeSrhPoints(e.target.checked)} />
+          <label htmlFor="srh_take_points" style={{ fontSize: "0.82rem" }}>
+            <strong>Score every driver on the points SimRacerHub paid them</strong>
+            <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.78rem", marginTop: 2 }}>
+              {takeSrhPoints
+                ? "Each row is imported holding SimRacerHub's own figure — its scale, its bonuses, its penalties and its stage points — so this season's standings match SimRacerHub's exactly, with nothing to edit. Every figure is still editable per row on the results screen afterwards, and clearing one hands that row back to your own points structure."
+                : "Your own points structure scores every finishing position instead, and only what it can't work out for itself (a SimRacerHub penalty or bonus) rides across in the Adj column. The standings here will differ from SimRacerHub's wherever the two scales do."}
+            </span>
+          </label>
+        </div>
 
         {/* One link instead of twelve. The season's schedule page carries an id
             for every round, which is exactly what each round's results page is
@@ -387,6 +409,7 @@ export function SrhSeasonResultsModal({ seasonId, seasonName, seriesName = "", r
               {summary.failed ? ` · ${summary.failed} failed` : ""}
               {summary.partial ? " · the rounds that were short of drivers" : ""}
               {summary.structures ? ` · ${summary.structures} session${summary.structures === 1 ? "" : "s"} scored on a chosen structure` : ""}
+              {!summary.preview && summary.srhPoints ? " · scored on SimRacerHub's own points" : ""}
             </div>
             {unmatched.length > 0 && (
               <p style={{ margin: "6px 0 0", fontSize: "0.78rem", color: "var(--accent-amber, #d29922)" }}>
@@ -409,7 +432,7 @@ export function SrhSeasonResultsModal({ seasonId, seasonName, seriesName = "", r
             score the session here. Flagged with the decision attached: name the
             structure that round should score on, or all of them at once when
             most of the season is scored that way. */}
-        {!running && scales.flagged.length > 0 && (
+        {!running && !takeSrhPoints && scales.flagged.length > 0 && (
           <SrhScaleMismatch
             report={scales}
             choices={sessionTemplates}

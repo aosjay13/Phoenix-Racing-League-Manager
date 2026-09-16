@@ -181,13 +181,14 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   name that is **not on your roster**, whose rows are left out rather than guessed at. Those names
   come with **the results screen's own driver picker** against each one, so a driver the roster
   hasn't got is found in the driver database (under any name they answer to) or created on the spot,
-  and **↻ Re-import the rounds with missing drivers** runs just those rounds again. It also **flags a
-  points scale that disagrees with yours** — *P1 75 vs 100* — and lets you name the structure that
-  round, or the whole season, should score on, with **＋ Use SimRacerHub's own scale** to save theirs
-  as a structure if you haven't got it. A round that
-  fails doesn't stop the rest, and **Check first** reads the lot without writing anything. Your own
-  points structure still scores every finishing position, exactly as it does for a night typed in
-  by hand — it is the same writer underneath
+  and **↻ Re-import the rounds with missing drivers** runs just those rounds again. A round that
+  fails doesn't stop the rest, and **Check first** reads the lot without writing anything.
+  **Every driver is scored on the points SimRacerHub paid them**, so the standings here match the
+  ones on SimRacerHub with nothing to edit — and each figure is editable per row on the results
+  screen afterwards, or clearable back to your own structure. Untick that and your own points
+  structure scores every position instead, in which case the importer **flags where the two scales
+  disagree** — *P1 75 vs 100* — and lets you name the structure that round, or the whole season,
+  should score on
 - 🔗 **One-click import from SimRacerHub** — paste a race's SimRacerHub URL (or just its id) and
   the **whole night** comes back in one press: Qualifying, every Heat, the Consolations and the
   Feature, each a session you can fill its own grid from. The race's own figures come with it —
@@ -1210,24 +1211,40 @@ Resolving a name puts them on the roster; **↻ Re-import the rounds with missin
 only those rounds, which is when their results actually land. Re-importing a round replaces what it
 wrote, so running it twice is safe.
 
-**And it says when SimRacerHub scored the season differently from you.** Finishing points are never
-imported — your own structure pays for every position, which is what keeps one scorer — so a season
-SimRacerHub scored on a different scale would otherwise import looking fine and produce a
-championship nobody recognises. The two scales are compared per session and the disagreement is
-flagged with the decision attached: **P1 75 vs 100**, and a picker naming the points structure that
-round should score on. One round differing is that round's business; when **most** of the season is
-scored that way you get one control that answers all of them at once. Two other cases are called out
-by name rather than dressed up as a scale difference — a round SimRacerHub paid *nothing* for (it ran
-for no championship points), and a session that counts toward **nothing here**, which is every heat
-and consolation until a structure is named for one.
+**By default it scores every driver on the points SimRacerHub paid them**, which is what makes the
+two championships agree. A league already scored on SimRacerHub has a table there; re-deriving a
+figure here from your own structure guarantees the two disagree, because SimRacerHub's scale, its
+bonuses, its penalties and its stage points come to one number per driver that no structure can
+reproduce. So the number itself is written onto the row and that is what it scores — the same
+mechanism a provisional entry has always used. Import a season in one press and the standings match,
+with nothing to edit.
 
-If the right structure isn't in your list — the usual case for a league whose SimRacerHub scale this
-app has never been told about — **＋ Use SimRacerHub's own scale** saves what it actually paid as a
-points structure and picks it, instead of sending you off to type thirty positions in by hand. Only
-the position scale is taken; bonus rates are never invented from one night's rows. Whatever you
-choose is stored on the event as `session_points`, exactly as the results screen's own points picker
-stores it, so it keeps scoring that way and can be changed from that screen afterwards like any other
-event's.
+Every figure stays editable afterwards. On a session imported this way the results grid's **Points**
+column becomes a set of boxes: type over one to change what that driver scored, or **clear it** to
+hand that row back to your own points structure. A grid nobody imported that way is untouched — it
+keeps the plain computed number it has always had. Taking SimRacerHub's points also switches
+championship points **on** for any session it actually paid for, since a heat and a consolation award
+nothing here until told otherwise, and a heat night would otherwise import its figures and still pay
+the field nothing. It only ever turns points on, so a session you deliberately silenced stays
+silenced.
+
+**Untick it and the older rule applies:** your own structure pays for every position and only what it
+can't work out for itself (a SimRacerHub penalty or bonus) rides across in the **Adj** column. A row
+never carries both — a total that already contains a penalty must not carry it in Adj as well, or the
+penalty lands twice.
+
+With it unticked, the importer instead **flags where SimRacerHub scored the season differently from
+you**, since that is when the disagreement matters. The two scales are compared per session and
+reported as **P1 75 vs 100**, with a picker naming the points structure that round should score on.
+One round differing is that round's business; when **most** of the season is scored that way you get
+one control that answers all of them at once. Two other cases are called out by name rather than
+dressed up as a scale difference — a round SimRacerHub paid *nothing* for (it ran for no championship
+points), and a session that counts toward **nothing here**, which is every heat and consolation until
+a structure is named for one. If the right structure isn't in your list, **＋ Use SimRacerHub's own
+scale** saves what it actually paid as a points structure and picks it, instead of sending you off to
+type thirty positions in by hand. Only the position scale is taken; bonus rates are never invented
+from one night's rows. Whatever you choose is stored on the event as `session_points`, exactly as the
+results screen's own points picker stores it.
 
 **Your scoring is still yours.** The rows are written by the same code the results grid's own Save
 writes through, so a season imported in one press and a night typed in by hand store identical
@@ -2400,14 +2417,15 @@ Five things can move a result off its finishing points, and each is paid once:
 | **Flag bonuses** — fastest lap, most laps led, led a lap, halfway leader, hard charger | ticked on the grid (or derived from the numbers), paid at whatever rate the series, season, class or session template sets |
 | **Bonus points** | a free figure on the row |
 | **Penalty points** | the same, subtracted |
-| **Adjustment** (the grid's **Adj** column) | the signed per-result correction — what a SimRacerHub import carries a penalty or an unmodellable bonus across in |
+| **Adjustment** (the grid's **Adj** column) | the signed per-result correction — what a SimRacerHub import carries a penalty or an unmodellable bonus across in, when it isn't taking that source's points outright |
+| **A figure set on the row** | overrides the structure entirely: what a provisional entry has always scored, and what a SimRacerHub import writes so the two championships agree. Editable in the grid's Points column, and clearing it hands the row back to the structure |
 | The **entry's** own adjustment | a season-long correction, applied once to the championship total rather than to any one race |
 
 Two rows score differently on purpose. A **DNS** scores nothing at all — no position points, no
-bonus, no penalty and no adjustment; a no-show that still has to cost somebody something is an
-entry-level adjustment, not a scored result. A **provisional entry** has no finishing position to be
-scored off, so its flat figure *is* its points, plus an adjustment. A DNF is not either of these: they
-raced, they are classified, and everything they earned counts.
+bonus, no penalty, no adjustment, and no figure set on the row either; a no-show that still has to
+cost somebody something is an entry-level adjustment, not a scored result. A **provisional entry** has
+no finishing position to be scored off, so its flat figure *is* its points, plus an adjustment. A DNF
+is not either of these: they raced, they are classified, and everything they earned counts.
 
 The rule that keeps it checkable: **the itemised breakdown on a grid's Points cell adds up to the
 number the standings hold**, and a driver's championship total is the sum of the Points column on

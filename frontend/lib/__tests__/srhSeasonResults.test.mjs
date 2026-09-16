@@ -174,6 +174,48 @@ check("…and is parked behind the field", prov.finish_pos, 3);
 check("…having raced nothing", [prov.laps, prov.laps_led, prov.incidents], [0, 0, 0]);
 check("the session says how many there were", [built.matched, built.provisional], [3, 1]);
 
+// ── 3b. Taking SimRacerHub's own points ────────────────────────────────────
+//
+// A league already scored on SimRacerHub has a championship table there, and
+// the only way this app's table agrees with it row for row is to take the
+// figure it paid rather than re-derive one. Its scale, its bonuses, its
+// penalties and its stage points are one number per driver that no structure
+// here can reproduce.
+{
+  const taken = sessionRows(srhSegmentTable(featureSeg), roster, { sessionType: "feature", takeSrhPoints: true });
+  const winner2 = taken.rows.find(r => r.entry_id === "eA");
+  check("the row carries what SimRacerHub paid", winner2.manual_points, 75);
+  check("…and the driver behind carries theirs", taken.rows.find(r => r.entry_id === "eB").manual_points, 70);
+  // THE double-count. SimRacerHub's total already contains its penalties and
+  // its own bonuses, so carrying them into Adj as well would pay every penalty
+  // twice — the one mistake that would make the two tables disagree in the
+  // very rounds this was meant to fix.
+  check("and nothing goes to Adj as well", winner2.points_adjustment, 0);
+  ok("…on every row", taken.rows.every(r => !r.points_adjustment));
+  // The finishing order, the laps and the flags are all still imported: taking
+  // the points doesn't make it a points-only import.
+  check("the rest of the row is imported as always",
+    [winner2.finish_pos, winner2.laps, winner2.laps_led], [1, 14, 10]);
+
+  // Off — the default for the library, since the route is what turns it on —
+  // the older rule applies: the league's structure scores the position and
+  // only what it cannot derive rides across in Adj.
+  const derived = sessionRows(srhSegmentTable(featureSeg), roster, { sessionType: "feature" });
+  check("left off, no figure is written", derived.rows.find(r => r.entry_id === "eA").manual_points, undefined);
+  check("…and Adj carries what it always did", derived.rows.find(r => r.entry_id === "eA").points_adjustment, 0);
+
+  // A provisional entry was always scored this way, and still is — its flat
+  // figure is what SimRacerHub paid it either way.
+  check("a provisional entry is unaffected",
+    taken.rows.find(r => r.provisional).manual_points,
+    derived.rows.find(r => r.provisional).manual_points);
+
+  // Qualifying too: SimRacerHub pays for a grid slot and it has to come across.
+  const takenQual = sessionRows(srhSegmentTable({ ...featureSeg, type: "qualifying" }), roster,
+    { sessionType: "qualifying", takeSrhPoints: true });
+  check("a qualifying row carries its figure", takenQual.rows.find(r => r.entry_id === "eA").manual_points, 75);
+}
+
 // ── 4. The flags ───────────────────────────────────────────────────────────
 //
 // Fastest Lap comes from the source. Hard Charger and Most Laps Led are worked
@@ -260,6 +302,17 @@ check("…and counts what it will write", plan.rows_total, 5);
 check("the event grows the sessions to hold it", [plan.race_update.heat_format, plan.race_update.heats, plan.race_update.consolations],
   [true, ["Heat 1"], ["Consolation"]]);
 check("nobody on this page is off the roster", plan.unmatched, []);
+
+// The whole-night plan threads the choice down to every session on it.
+{
+  const takenPlan = planRace({ id: "r1" }, doc, roster, { takeSrhPoints: true });
+  const every = takenPlan.sessions.flatMap(s => s.rows);
+  ok("every row of every session carries what SimRacerHub paid",
+    every.length > 0 && every.every(r => r.manual_points != null));
+  ok("…and none of them carries it in Adj as well", every.every(r => !r.points_adjustment));
+  ok("left off, none of them does", planRace({ id: "r1" }, doc, roster)
+    .sessions.flatMap(s => s.rows).every(r => r.manual_points == null));
+}
 
 // The night's own figures belong to the event, not to a driver — and a heat's
 // cautions are not the night's, so they come off the session that decided it.

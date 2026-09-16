@@ -31,9 +31,19 @@
 //     second heat, whatever either calls it.
 //   • A driver SimRacerHub paid without racing is a Provisional Entry here,
 //     carrying the flat points it paid them and no finishing position.
-//   • Finishing points are never imported. This season's own structure pays
-//     those; only the part it cannot work out for itself — a penalty, a bonus
-//     of SimRacerHub's own — rides across in the Adj column. One scorer.
+//   • What a driver SCORED can be taken from SimRacerHub outright, which is
+//     the only way a league already scored there gets a table here that agrees
+//     with it row for row. Its scale, its bonuses, its penalties and its stage
+//     points are one figure per driver that no structure here can reproduce, so
+//     re-deriving one guarantees the two tables disagree. See `takeSrhPoints`
+//     in sessionRows, and `manual_points` in pointsFor.
+//
+//     Turned off, the older rule applies instead: this season's own structure
+//     pays for every position and only the part it cannot work out for itself
+//     — a penalty, a bonus of SimRacerHub's own — rides across in the Adj
+//     column. Either way it is one figure per row, never two: a row carrying
+//     SimRacerHub's total must not also carry its penalty in Adj, or the
+//     penalty lands twice.
 
 import { mapHeaders, buildRows } from "@/lib/resultsImport";
 import { srhPageUrl } from "@/lib/srhImport";
@@ -190,7 +200,7 @@ export function planSessions(race = {}, segments = []) {
 // Returns { rows, matched, unmatched, provisional, warnings }. `unmatched` is
 // the names no roster place could be found for: they are NOT written, and the
 // preview lists them so they can be added to the roster and the import re-run.
-export function sessionRows(table, entries = [], { sessionType = "race" } = {}) {
+export function sessionRows(table, entries = [], { sessionType = "race", takeSrhPoints = false } = {}) {
   const parsed = { headers: table?.headers || [], rows: table?.rows || [], delimiter: "srh" };
   const mapping = mapHeaders(parsed.headers, parsed.rows);
   const built = buildRows(parsed, mapping, entries, { sessionType });
@@ -231,8 +241,16 @@ export function sessionRows(table, entries = [], { sessionType = "race" } = {}) 
       return;
     }
 
+    // What SimRacerHub paid this driver, taken as the row's points outright.
+    // The total already contains its penalties and its own bonuses, so nothing
+    // goes to Adj as well — that is the double-count this pairing exists to
+    // avoid.
+    const paid = points[idx]?.total ?? row.values.points;
+    const override = takeSrhPoints && paid != null ? Number(paid) : null;
+
     placed.push({
       entry_id: entryId,
+      ...(override != null ? { manual_points: override } : {}),
       finish_pos: row.values.finish_pos,
       start_pos: row.values.start_pos,
       laps: row.values.laps,
@@ -247,7 +265,10 @@ export function sessionRows(table, entries = [], { sessionType = "race" } = {}) 
       // What this app cannot work out for itself — SimRacerHub's penalties and
       // its own bonuses — on top of the points this season's structure pays for
       // the finishing position. Never the finishing points themselves.
-      points_adjustment: points[idx]?.carried ?? 0,
+      //
+      // Zero when the row already carries SimRacerHub's total, which includes
+      // them: carrying both would pay every penalty twice.
+      points_adjustment: override != null ? 0 : (points[idx]?.carried ?? 0),
     });
   });
 
@@ -293,14 +314,14 @@ const isRaceSession = s => s.session_type !== "qualifying";
 // `table` (see the route). Sessions with nothing to write — every driver in
 // them unmatched — are still reported, because "nobody in this heat is on your
 // roster" is the single most useful thing a preview can say.
-export function planRace(race, doc, entries = []) {
+export function planRace(race, doc, entries = [], { takeSrhPoints = false } = {}) {
   const plan = planSessions(race, doc?.segments || []);
   const byKey = new Map((doc?.segments || []).map(s => [s.key, s]));
 
   const unmatched = new Set();
   const sessions = plan.sessions.map(s => {
     const segment = byKey.get(s.key);
-    const built = sessionRows(segment?.table, entries, { sessionType: s.session_type });
+    const built = sessionRows(segment?.table, entries, { sessionType: s.session_type, takeSrhPoints });
     for (const name of built.unmatched) unmatched.add(name);
     return {
       ...s,

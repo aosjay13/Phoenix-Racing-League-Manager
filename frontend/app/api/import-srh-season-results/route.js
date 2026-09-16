@@ -148,7 +148,15 @@ async function readRacePage(input) {
 
 const handlePOST = withAdmin(async (request, ctx, user) => {
   const body = await request.json().catch(() => ({}));
-  const { season_id, race_id, url, preview = false, recalc = true, session_templates = null } = body;
+  const {
+    season_id, race_id, url, preview = false, recalc = true, session_templates = null,
+    // Take what SimRacerHub paid each driver as that row's points, rather than
+    // re-deriving a figure from this season's structure. On by default: a
+    // league scored on SimRacerHub wants a table here that agrees with the one
+    // they already have, and no structure can reproduce its per-driver
+    // bonuses, penalties and stage points. See `manual_points` in pointsFor.
+    take_srh_points: takeSrhPoints = true,
+  } = body;
   const leagueId = getRequestLeagueId(request);
 
   if (!season_id) return NextResponse.json({ error: "season_id required" }, { status: 400 });
@@ -215,7 +223,7 @@ const handlePOST = withAdmin(async (request, ctx, user) => {
     );
   }
 
-  const plan = planRace(race, doc, entries);
+  const plan = planRace(race, doc, entries, { takeSrhPoints });
 
   // ── Does SimRacerHub score this the way we do? ─────────────────────────
   //
@@ -275,6 +283,10 @@ const handlePOST = withAdmin(async (request, ctx, user) => {
     rows_total: plan.rows_total,
     stats: hasSrhSessionStats(plan.stats) ? plan.stats : null,
     stats_session: plan.stats_session,
+    // Echoed so the dialog reports the round the way it was actually read: with
+    // SimRacerHub's own points, the scale comparison above is moot and saying
+    // so is better than showing a disagreement nobody now has to act on.
+    took_srh_points: takeSrhPoints,
   };
 
   if (!plan.rows_total) {
@@ -304,6 +316,28 @@ const handlePOST = withAdmin(async (request, ctx, user) => {
   //    it afterwards from that screen works as it does on any other event.
   const wantedTemplates = session_templates && typeof session_templates === "object" ? session_templates : {};
   const raceUpdate = { ...(plan.race_update || {}) };
+
+  //    Taking SimRacerHub's points also means taking its word on which sessions
+  //    COUNT. A heat and a consolation award nothing here until somebody says
+  //    otherwise (see defaultSessionFlags in lib/standings.js), so a heat night
+  //    imported with SimRacerHub's own figures would carry them on every row
+  //    and still pay the field nothing — the standings would disagree with
+  //    SimRacerHub on exactly the sessions this was meant to fix. So a session
+  //    SimRacerHub actually paid for is switched on, by name, on the event.
+  //    Anything it paid nothing for is left alone: this turns points on, never
+  //    off, so a session an admin has deliberately silenced stays silenced.
+  if (takeSrhPoints) {
+    const enabled = { ...(race.session_points_enabled || {}) };
+    let changed = false;
+    for (const s of plan.sessions) {
+      const paid = s.rows.some(r => Number(r.manual_points || 0) !== 0);
+      if (!paid || enabled[s.session] === true) continue;
+      enabled[s.session] = true;
+      changed = true;
+    }
+    if (changed) raceUpdate.session_points_enabled = enabled;
+  }
+
   if (Object.keys(wantedTemplates).length) {
     const sessionPoints = { ...(race.session_points || {}) };
     for (const [session, templateId] of Object.entries(wantedTemplates)) {
@@ -371,6 +405,7 @@ const handlePOST = withAdmin(async (request, ctx, user) => {
     written: {
       sessions: written, rows: plan.rows_total, stats: statsSaved,
       points_structures: Object.keys(wantedTemplates).filter(k => wantedTemplates[k]).length,
+      srh_points: takeSrhPoints,
     },
   });
 });
