@@ -26,9 +26,12 @@
 //      imported in bulk scores identically to the same session entered by hand.
 //   5. THE LINKS. One season link fills in a link per round, paired by round
 //      number where the numbering agrees and down the page where it doesn't.
+//   6. THE PEOPLE THE ROSTER HASN'T GOT. The same driver missing from nine
+//      rounds is ONE person to put right, not nine warnings — and which rounds
+//      they were missing from is what says which rounds to run again.
 import assert from "node:assert";
 import { parseSrhPage, srhSegmentTable } from "../srhImport.js";
-import { matchScheduleToRaces, planRace, planSessions, sessionRows } from "../srhSeasonResults.js";
+import { matchScheduleToRaces, planRace, planSessions, sessionRows, unmatchedRoster } from "../srhSeasonResults.js";
 
 let n = 0;
 const check = (label, got, want) => { n++; assert.deepStrictEqual(got, want, `${label}: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`); };
@@ -292,5 +295,33 @@ check("…in order", paired.r2, "https://www.simracerhub.com/scoring/season_race
 const short = matchScheduleToRaces(races, [{ round_number: 1, schedule_id: "301" }, { round_number: 3, schedule_id: "303" }]);
 check("a round the schedule has no partner for is left empty", Object.keys(short).sort(), ["r1", "r3"]);
 check("nothing to pair with fills nothing in", matchScheduleToRaces(races, []), {});
+
+// ── 6. The drivers the roster hasn't got ───────────────────────────────────
+
+const missing = unmatchedRoster([
+  { race_id: "r1", label: "Race 1 — Opener", unmatched: ["Ghost, Casper", "Newman, Alice"] },
+  { race_id: "r2", label: "Race 2 — Bristol", unmatched: ["ghost, casper"] },
+  { race_id: "r3", label: "Race 3 — Dover", unmatched: ["Ghost, Casper", "Late, Gary"] },
+]);
+check("one person, however many rounds they went missing from", missing.map(u => u.name),
+  ["Ghost, Casper", "Late, Gary", "Newman, Alice"]);
+check("…ordered by how much is riding on each", missing[0].rounds.length, 3);
+check("…and carrying the rounds that will fix",
+  missing[0].rounds.map(r => r.race_id), ["r1", "r2", "r3"]);
+check("…by the name they can be found under", missing[0].rounds[0].label, "Race 1 — Opener");
+// SimRacerHub is not consistent about case, and two spellings of one person is
+// the duplicate this panel exists to stop being created.
+check("a name spelled two ways is still one person", missing.length, 3);
+
+check("a round that placed everybody asks for nothing",
+  unmatchedRoster([{ race_id: "r1", label: "Race 1", unmatched: [] }]), []);
+check("neither does a page that failed", unmatchedRoster([null, undefined, {}]), []);
+check("and a blank name is not a person", unmatchedRoster([{ race_id: "r1", unmatched: ["", "   "] }]), []);
+// The same round read twice (a check, then an import) is still one round.
+check("a round read twice is listed once",
+  unmatchedRoster([
+    { race_id: "r1", label: "Race 1", unmatched: ["Ghost, Casper"] },
+    { race_id: "r1", label: "Race 1", unmatched: ["Ghost, Casper"] },
+  ])[0].rounds.length, 1);
 
 console.log(`srhSeasonResults: ${n} checks passed`);

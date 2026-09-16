@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
-import { matchScheduleToRaces } from "@/lib/srhSeasonResults";
+import { matchScheduleToRaces, unmatchedRoster } from "@/lib/srhSeasonResults";
+import { SrhUnmatchedDrivers } from "@/components/SrhUnmatchedDrivers";
 import { formatRaceDate } from "@/lib/raceDate";
 
 // Import a whole season's RESULTS from SimRacerHub — one round per line, one
@@ -24,6 +25,11 @@ import { formatRaceDate } from "@/lib/raceDate";
 // Every round is a request of its own (see the route): twelve SimRacerHub pages
 // in one request is one timeout away from a half-imported season with nothing
 // to say about which half.
+//
+// A driver no roster place could be found for has their rows left out and
+// their name said out loud, which on its own is a dead end — so the names come
+// with the results screen's own driver picker (see SrhUnmatchedDrivers), and
+// the rounds they were missing from can be re-run without leaving the dialog.
 //
 // Nothing here decides anything. Which session a SimRacerHub session belongs
 // in, which roster place each driver is and what a row becomes are all
@@ -88,7 +94,7 @@ function RoundReport({ state }) {
   );
 }
 
-export function SrhSeasonResultsModal({ seasonId, seasonName, races = [], onClose, onImported }) {
+export function SrhSeasonResultsModal({ seasonId, seasonName, seriesName = "", races = [], onClose, onImported }) {
   const ordered = useMemo(
     () => [...races].sort((a, b) => (Number(a.round_number) || 0) - (Number(b.round_number) || 0)),
     [races],
@@ -103,9 +109,49 @@ export function SrhSeasonResultsModal({ seasonId, seasonName, races = [], onClos
   const [at, setAt] = useState(0);             // rounds handled this run
   const [error, setError] = useState(null);
   const [summary, setSummary] = useState(null);
+  // The season roster, so the driver picker below doesn't offer somebody who
+  // is already on it. Reloaded after every add.
+  const [entries, setEntries] = useState([]);
+  const [notice, setNotice] = useState("");
+  // The answers given to the missing drivers, held here rather than in the
+  // panel: the panel comes down while a re-import runs, and a decision made
+  // before it must survive the remount.
+  const [resolvedDrivers, setResolvedDrivers] = useState({});
+  const [ignoredDrivers, setIgnoredDrivers] = useState({});
 
   const filled = ordered.filter(r => (urls[r.id] || "").trim());
   const running = !!busy;
+
+  const loadEntries = useCallback(() => {
+    if (!seasonId) return;
+    api(`/api/entries?season_id=${seasonId}`).then(setEntries).catch(() => {});
+  }, [seasonId]);
+  useEffect(() => { loadEntries(); }, [loadEntries]);
+
+  // Every name the rounds read so far couldn't place, folded into one list of
+  // people — the same driver missing from nine rounds is one person to resolve,
+  // not nine warnings. See unmatchedRoster.
+  const labelFor = useCallback(
+    id => {
+      const race = ordered.find(r => r.id === id);
+      return race ? `Race ${race.round_number ?? "?"} — ${race.name}` : "";
+    },
+    [ordered],
+  );
+  const unmatched = useMemo(
+    () => unmatchedRoster(
+      Object.entries(state)
+        .filter(([, v]) => v?.report?.unmatched?.length)
+        .map(([id, v]) => ({ race_id: id, label: labelFor(id), unmatched: v.report.unmatched })),
+    ),
+    [state, labelFor],
+  );
+  // The rounds those drivers were missing from — the ones worth running again
+  // once the roster has them.
+  const affected = useMemo(() => {
+    const ids = new Set(unmatched.flatMap(u => u.rounds.map(r => r.race_id)));
+    return filled.filter(r => ids.has(r.id));
+  }, [unmatched, filled]);
 
   const setUrl = (id, value) => {
     setUrls(u => ({ ...u, [id]: value }));
@@ -148,17 +194,22 @@ export function SrhSeasonResultsModal({ seasonId, seasonName, races = [], onClos
   // Work down the list, one round at a time. Sequential on purpose: these are
   // requests to SimRacerHub, and firing twelve of them at once is how you get
   // throttled into half-sent pages.
-  async function run(preview) {
-    if (!filled.length) return;
+  // `only` runs a subset — the rounds that were missing drivers, after the
+  // roster has been given them. Everything else about the pass is the same, so
+  // re-importing a round replaces exactly what it wrote the first time.
+  async function run(preview, only = null) {
+    const list = only && only.length ? only : filled;
+    if (!list.length) return;
     setBusy(preview ? "checking" : "importing");
     setError(null);
     setSummary(null);
+    setNotice("");
     setAt(0);
 
-    let ok = 0, failed = 0, rows = 0, unmatched = new Set();
+    let ok = 0, failed = 0, rows = 0;
     let lastWrote = false;
-    for (let i = 0; i < filled.length; i++) {
-      const race = filled[i];
+    for (let i = 0; i < list.length; i++) {
+      const race = list[i];
       setState(s => ({ ...s, [race.id]: { status: "busy" } }));
       try {
         const res = await api("/api/import-srh-season-results", {
@@ -170,14 +221,13 @@ export function SrhSeasonResultsModal({ seasonId, seasonName, races = [], onClos
             preview,
             // Skill Ratings are replayed from scratch across the whole game, so
             // the season pays for it once, on the last round in.
-            recalc: !preview && i === filled.length - 1,
+            recalc: !preview && i === list.length - 1,
           },
         });
         setState(s => ({ ...s, [race.id]: { status: preview ? "read" : "done", report: res } }));
         ok += 1;
         rows += res.rows_total || 0;
         lastWrote = true;
-        for (const name of res.unmatched || []) unmatched.add(name);
       } catch (err) {
         setState(s => ({ ...s, [race.id]: { status: "error", error: err.message, report: err.data } }));
         failed += 1;
@@ -198,7 +248,7 @@ export function SrhSeasonResultsModal({ seasonId, seasonName, races = [], onClos
     }
 
     setBusy("");
-    setSummary({ preview, ok, failed, rows, unmatched: [...unmatched] });
+    setSummary({ preview, ok, failed, rows, partial: !!(only && only.length) });
     if (!preview && ok) onImported?.();
   }
 
@@ -288,15 +338,15 @@ export function SrhSeasonResultsModal({ seasonId, seasonName, races = [], onClos
                 ? `Read ${summary.ok} round${summary.ok === 1 ? "" : "s"} · ${summary.rows} rows ready`
                 : `Imported ${summary.ok} round${summary.ok === 1 ? "" : "s"} · ${summary.rows} rows written`}
               {summary.failed ? ` · ${summary.failed} failed` : ""}
+              {summary.partial ? " · the rounds that were short of drivers" : ""}
             </div>
-            {summary.unmatched.length > 0 && (
+            {unmatched.length > 0 && (
               <p style={{ margin: "6px 0 0", fontSize: "0.78rem", color: "var(--accent-amber, #d29922)" }}>
-                ⚠ {summary.unmatched.length} driver{summary.unmatched.length === 1 ? "" : "s"} on those pages
-                {summary.unmatched.length === 1 ? " is" : " are"} not on this season&rsquo;s roster, so
-                {summary.unmatched.length === 1 ? " their row" : " their rows"} went nowhere:{" "}
-                {summary.unmatched.slice(0, 12).join(", ")}
-                {summary.unmatched.length > 12 ? `, and ${summary.unmatched.length - 12} more` : ""}.
-                Add them to the roster and run this again — re-importing a round replaces what it wrote.
+                ⚠ {unmatched.length} driver{unmatched.length === 1 ? "" : "s"} on those pages
+                {unmatched.length === 1 ? " is" : " are"} not on this season&rsquo;s roster, so
+                {unmatched.length === 1 ? " their row" : " their rows"} went nowhere. Put
+                {unmatched.length === 1 ? " them" : " each of them"} right below, then re-import the rounds
+                they were missing from.
               </p>
             )}
             {!summary.preview && summary.ok > 0 && (
@@ -307,17 +357,47 @@ export function SrhSeasonResultsModal({ seasonId, seasonName, races = [], onClos
           </div>
         )}
 
+        {/* The drivers the rounds couldn't place, with the results screen's own
+            picker against each one. Resolving them writes roster entries; the
+            rounds they were missing from are then run again, which is when
+            their rows actually land. */}
+        {!running && unmatched.length > 0 && (
+          <SrhUnmatchedDrivers
+            seasonId={seasonId}
+            seriesName={seriesName}
+            unmatched={unmatched}
+            entries={entries}
+            done={resolvedDrivers}
+            onDone={(key, entry) => setResolvedDrivers(d => ({ ...d, [key]: entry }))}
+            ignored={ignoredDrivers}
+            onIgnore={(key, on) => setIgnoredDrivers(g => ({ ...g, [key]: on }))}
+            onRosterChanged={() => loadEntries()}
+            onNotice={setNotice}
+            onError={setError}
+          />
+        )}
+        {notice && (
+          <p style={{ margin: "0 0 8px", fontSize: "0.78rem", color: "#3fb950" }}>{notice}</p>
+        )}
+
         <div style={{ marginTop: 16, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <button className="btn btn-primary" type="button" style={{ marginTop: 0 }}
             disabled={running || !filled.length} onClick={() => run(false)}>
             {busy === "importing"
-              ? `Importing ${at + 1} of ${filled.length}…`
+              ? `Importing ${at + 1}…`
               : `Import ${filled.length || ""} round${filled.length === 1 ? "" : "s"}`}
           </button>
           <button className="btn btn-ghost" type="button" style={{ marginTop: 0 }}
             disabled={running || !filled.length} onClick={() => run(true)}>
-            {busy === "checking" ? `Checking ${at + 1} of ${filled.length}…` : "Check first"}
+            {busy === "checking" ? `Checking ${at + 1}…` : "Check first"}
           </button>
+          {affected.length > 0 && (
+            <button className="btn btn-ghost" type="button" style={{ marginTop: 0 }}
+              title="Run only the rounds that had drivers off the roster — the rest are already in, and a round re-imported replaces exactly what it wrote"
+              disabled={running} onClick={() => run(false, affected)}>
+              ↻ Re-import {affected.length} round{affected.length === 1 ? "" : "s"} with missing drivers
+            </button>
+          )}
           <button className="btn btn-ghost" type="button" style={{ marginTop: 0 }} disabled={running} onClick={onClose}>
             {summary && !summary.preview ? "Done" : "Cancel"}
           </button>

@@ -571,6 +571,7 @@ function SeasonSchedule() {
         <SrhSeasonResultsModal
           seasonId={seasonId}
           seasonName={season?.name || ""}
+          seriesName={series?.name || ""}
           races={ordered}
           onClose={() => setShowSrhResults(false)}
           // Each round writes as it goes, so the calendar is reloaded while the

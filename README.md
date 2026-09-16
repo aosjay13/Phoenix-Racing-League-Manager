@@ -178,7 +178,10 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   off the session that decided the night. Paste the **season's** schedule link at the top and it
   fills in every round's results link for you, so a twelve-round season is one link and one press.
   Every round reports as it goes — which sessions it found, how many drivers it matched, and every
-  name that is **not on your roster**, whose rows are left out rather than guessed at. A round that
+  name that is **not on your roster**, whose rows are left out rather than guessed at. Those names
+  come with **the results screen's own driver picker** against each one, so a driver the roster
+  hasn't got is found in the driver database (under any name they answer to) or created on the spot,
+  and **↻ Re-import the rounds with missing drivers** runs just those rounds again. A round that
   fails doesn't stop the rest, and **Check first** reads the lot without writing anything. Your own
   points structure still scores every finishing position, exactly as it does for a night typed in
   by hand — it is the same writer underneath
@@ -1188,11 +1191,21 @@ is turned into a heat weekend over a capital letter. Practice is skipped — thi
 that decided it (the Feature, or the race) and written onto the event, where the results page
 prints them. A heat's cautions are not the night's, so they are not used.
 
-**Nothing is guessed at.** Every driver is matched against the roster through each name they answer
-to — their profile name, the name they race under in iRacing, and every connected account. A name
-that matches nobody is **left out and named**, both on its round and in the summary at the end, so
-you can add them to the roster and run it again. Re-importing a round replaces what it wrote, so
-running it twice is safe.
+**Nothing is guessed at, and nothing is a dead end.** Every driver is matched against the roster
+through each name they answer to — their profile name, the name they race under in iRacing, and
+every connected account. A name that matches nobody is **left out and named** rather than guessed
+at. Those names then come with the means to fix them, in the dialog: each one gets **the same driver
+picker the results screen uses to add a driver mid-entry**, seeded with the name SimRacerHub
+printed. It searches every name a driver answers to, so "Anderson, Nathan" finds the Nathan Anderson
+who has raced here for three seasons instead of starting a second one; creating somebody genuinely
+new opens the full driver form and still asks first when the name resembles someone already in the
+app. A season with classes asks once which class they join. Each name says how many rounds it is
+missing from, so the driver worth resolving first is the obvious one, and **Leave them off** is a
+real answer for a one-round guest.
+
+Resolving a name puts them on the roster; **↻ Re-import the rounds with missing drivers** then runs
+only those rounds, which is when their results actually land. Re-importing a round replaces what it
+wrote, so running it twice is safe.
 
 **Your scoring is still yours.** The rows are written by the same code the results grid's own Save
 writes through, so a season imported in one press and a night typed in by hand store identical
@@ -1213,7 +1226,9 @@ first** runs the whole list as a read-only pass and writes nothing.
 a SimRacerHub page says which class a driver is in only by which of its tables they appear in, and
 that one field written into a class's grid would put every class's drivers in it. Those rounds are
 entered class by class on the results screen, as before. See `lib/srhSeasonResults.js`,
-`lib/resultsWrite.js` and `app/api/import-srh-season-results/route.js`.
+`lib/resultsWrite.js`, `app/api/import-srh-season-results/route.js` and
+`components/SrhUnmatchedDrivers.jsx` (which reuses `components/AddDriverToRace.jsx` rather than
+growing a second idea of who a driver is).
 
 ### Running a Time Trial or a placement night
 
