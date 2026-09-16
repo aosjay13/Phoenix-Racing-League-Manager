@@ -19,10 +19,16 @@ export const dynamic = "force-dynamic";
 // the races moves all of it. Results reference entries, not tracks, and are
 // never touched.
 //
-// Body: { from_ids: [...], into_id, name }
+// Body: { from_ids: [...], into_id, name, dry_run }
 //   from_ids — the duplicates to fold in and delete
 //   into_id  — the venue that survives (keeps its id, so existing links work)
 //   name     — what the merged venue is called; defaults to the survivor's
+//   dry_run  — say what this WOULD do and write nothing
+//
+// The dry run answers from the same code that does the work, reading exactly
+// the same races, so the count an admin approves is the merge that then runs.
+// The duplicate eliminator (components/TrackDuplicateScanner.jsx) previews
+// every group through it before committing anything.
 
 const FILLABLE = ["location", "length", "track_type", "logo_url", "notes"];
 
@@ -31,6 +37,7 @@ const blank = v => !String(v ?? "").trim();
 const handlePOST = withAdmin(async (request) => {
   const body = await request.json();
   const intoId = body.into_id;
+  const dryRun = !!body.dry_run;
   // Accept one id or many; a duplicate list containing the survivor is a no-op
   // for that entry rather than an error.
   const fromIds = [...new Set((Array.isArray(body.from_ids) ? body.from_ids : [body.from_id])
@@ -103,39 +110,49 @@ const handlePOST = withAdmin(async (request) => {
   }
 
   const raceUpdates = [...raceRefs.values()];
-  for (let i = 0; i < raceUpdates.length; i += 450) {
-    const batch = db().batch();
-    for (const { ref, update } of raceUpdates.slice(i, i + 450)) batch.update(ref, update);
-    await batch.commit();
-  }
 
   // The survivor keeps everything it already had; blank details are filled in
   // from the venues folded into it (first one that has the field), so merging a
   // sparse duplicate that happened to carry the location or the logo doesn't
   // throw that detail away.
+  //
+  // Worked out BEFORE anything is written so the dry run can report it: "this
+  // merge also gives Daytona the location and the logo it was missing" is part
+  // of what an admin is approving.
   const updates = { name: finalName };
+  const filled = [];
   for (const field of FILLABLE) {
     if (!blank(into[field])) continue;
     const donor = fromDocs.map(d => d.data()).find(d => !blank(d[field]));
-    if (donor) updates[field] = donor[field];
+    if (donor) { updates[field] = donor[field]; filled.push(field); }
   }
   // Names this venue used to be listed under — provenance for an admin looking
   // at the merged track later, and never the venue's own current name.
   updates.merged_names = [...new Set([...(into.merged_names || []), ...names])]
     .filter(n => n.toLowerCase() !== finalName.toLowerCase());
 
-  await db().collection("tracks").doc(intoId).update(updates);
-  for (const d of fromDocs) await d.ref.delete();
-
-  return NextResponse.json({
-    ok: true,
+  const summary = {
     track: { id: intoId, ...into, ...updates },
     merged_ids: fromIds,
     tracks_merged: fromDocs.length,
     races_moved: movedIds.size,
     races_renamed: raceUpdates.length - movedIds.size,
     merged_names: updates.merged_names,
-  });
+    filled,
+  };
+
+  if (dryRun) return NextResponse.json({ ok: true, dry_run: true, ...summary });
+
+  for (let i = 0; i < raceUpdates.length; i += 450) {
+    const batch = db().batch();
+    for (const { ref, update } of raceUpdates.slice(i, i + 450)) batch.update(ref, update);
+    await batch.commit();
+  }
+
+  await db().collection("tracks").doc(intoId).update(updates);
+  for (const d of fromDocs) await d.ref.delete();
+
+  return NextResponse.json({ ok: true, ...summary });
 });
 
 // A successful write here changes something the cached league reads are built

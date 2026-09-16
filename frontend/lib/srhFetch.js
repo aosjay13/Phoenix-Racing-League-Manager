@@ -87,3 +87,18 @@ export async function srhCarName(carId) {
     return null;
   }
 }
+
+// SimRacerHub's Tracks page — every venue it knows, in one request.
+//
+// Fetched once per schedule import, to turn each round's layout name into the
+// venue behind it and to give a venue this app is about to create iRacing's own
+// logo for it (see parseSrhTrackDirectory). Null when it can't be read, which
+// costs the import nothing: tracks are then matched on their names alone and
+// created with less filled in.
+export async function srhTrackDirectoryHtml() {
+  try {
+    return await srhFetchText(`${SRH_SCORING}/tracks.php`);
+  } catch {
+    return null;
+  }
+}

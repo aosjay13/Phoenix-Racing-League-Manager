@@ -475,6 +475,81 @@ export function parseSrhSchedule(html) {
   };
 }
 
+// ── 3b. SimRacerHub's own track directory ─────────────────────────────────
+
+// Every venue SimRacerHub knows, off its Tracks page — the base names a
+// schedule's layouts are built from, each with iRacing's own logo for it.
+//
+// A schedule names the LAYOUT raced ("Lime Rock Park Grand Prix"), which is one
+// string with no seam in it. This list is the seam: the longest base name that
+// starts the string is the venue, and the rest is the layout (see
+// splitTrackName in lib/trackMatch.js). Across the eight leagues this was built
+// against, all 82 distinct layout names resolved to one of these 154 venues.
+//
+// The logo is worth the request on its own. It is iRacing's, hosted by iRacing,
+// so a venue this app creates from an import arrives looking like the venue
+// rather than like a blank row — the one piece of "what is this place"
+// SimRacerHub can actually supply, since it publishes no length or surface.
+//
+// One row per venue: { name, logo_url }. The page carries a map link and the
+// venue's own website too, and neither is kept: this app stores a track's
+// location as the words a person reads on its card ("Concord, NC"), and a pair
+// of coordinates in that field is worse than the blank an admin fills in.
+export function parseSrhTrackDirectory(html) {
+  const text = String(html || "");
+  const rows = [...text.matchAll(/<tr class='jsTableRow'[^>]*>([\s\S]*?)<\/tr>/gi)];
+  const out = [];
+  for (const [, body] of rows) {
+    const cells = [...body.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map(c => c[1]);
+    if (!cells.length) continue;
+    const name = textOf(cells[0]);
+    if (!name) continue;
+    // The light-theme logo; SimRacerHub prints a dark one beside it, and either
+    // reads the same on this app's own cards. The logo cell is located by what
+    // is IN it rather than by its position, because a row that has lost a cell
+    // would otherwise hand a venue the map pin as its logo.
+    const logoCell = cells.find(c => /track-logo-light/i.test(c)) || cells.find(c => /images-static\.iracing\.com/i.test(c)) || "";
+    const logo = logoCell.match(/<img[^>]*class='track-logo-light'[^>]*>/i) || logoCell.match(/<img[^>]*>/i);
+    const logoUrl = logo ? (logo[0].match(/src='([^']+)'/) || [])[1] || "" : "";
+    out.push({ name, logo_url: /^https?:\/\//i.test(logoUrl) ? logoUrl : "" });
+  }
+  return out;
+}
+
+// A schedule's layout names → what the directory knows about each, keyed by the
+// name exactly as the schedule wrote it. Anything the directory has never heard
+// of simply gets nothing, which is a venue created with only a name.
+export function srhTrackInfo(names, directory = []) {
+  const bases = directory.map(t => t.name).filter(Boolean);
+  const byName = new Map(directory.map(t => [normalizeKey(t.name), t]));
+  const info = {};
+  for (const name of names || []) {
+    const raw = String(name ?? "").trim();
+    if (!raw || info[raw]) continue;
+    const base = longestBase(raw, bases);
+    const detail = base ? byName.get(normalizeKey(base)) : null;
+    info[raw] = { base: base || "", logo_url: detail?.logo_url || "" };
+  }
+  return info;
+}
+
+const normalizeKey = s => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+// The longest venue name that starts this layout name, so "Indianapolis Motor
+// Speedway Road Course" resolves to the Motor Speedway and not to a shorter
+// venue that merely shares its first word.
+function longestBase(name, bases) {
+  const key = normalizeKey(name);
+  let best = "";
+  for (const base of bases) {
+    const b = normalizeKey(base);
+    if (!b) continue;
+    if (key !== b && !key.startsWith(`${b} `)) continue;
+    if (b.length > normalizeKey(best).length) best = base;
+  }
+  return best;
+}
+
 // ── 4. The rounds → what this app writes ──────────────────────────────────
 
 const blank = v => !String(v ?? "").trim();
