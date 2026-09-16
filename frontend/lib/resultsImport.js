@@ -337,13 +337,25 @@ export function buildRows({ rows }, mapping, entries, opts = {}) {
     ? (r => r.values.qual_time)
     : (mapping.fastest_lap_time != null ? (r => r.values._fastest_lap_time) : null);
   if (lapTimeSource) {
+    // Deliberately looser than the shared clock parser: a pasted column can
+    // carry a lap time with something else alongside it, and this only has to
+    // find the number. Null when there is no number to find at all.
     const parseLap = t => {
       const m = String(t).match(/(?:(\d+):)?(\d+(?:\.\d+)?)/);
-      if (!m) return Infinity;
+      if (!m) return null;
       return (m[1] ? Number(m[1]) * 60 : 0) + Number(m[2]);
     };
     let bestI = -1, bestV = Infinity;
-    out.forEach((r, i) => { const raw = lapTimeSource(r); const v = parseLap(raw); if (raw && v < bestV) { bestV = v; bestI = i; } });
+    out.forEach((r, i) => {
+      const v = parseLap(lapTimeSource(r));
+      // A zero is not a lap, so it can't be the fastest one. Exports print
+      // "0:00.000" all the time for a driver who never set a time, and taken at
+      // face value it would hand them the Fastest Lap bonus — and the "Best
+      // Laps" column it feeds on every stats and records screen. Same rule the
+      // grid and the record books use: see lapSeconds in lib/raceTime.js.
+      if (v == null || v <= 0) return;
+      if (v < bestV) { bestV = v; bestI = i; }
+    });
     out.forEach((r, i) => { r.values.fastest_lap = i === bestI; });
   } else {
     out.forEach(r => { r.values.fastest_lap = false; });

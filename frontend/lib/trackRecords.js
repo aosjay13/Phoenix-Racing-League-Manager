@@ -32,8 +32,15 @@ export function classRecordKey({ gameId, className }) {
 // File a lap into `map` under `key`, keeping only the fastest. Ties keep the
 // lap already held — the first driver to set the time owns the record, which is
 // how timing sheets break a dead heat.
+//
+// A lap of zero seconds is refused outright, however it got here. "0:00.000" is
+// what a timing export prints for a driver who never set a time, and it parses
+// as cleanly as a real lap does (see lapSeconds in lib/raceTime.js) — but a zero
+// filed here would be the record at that venue for ever, since nothing can beat
+// it. Callers screen their own laps; this is the last gate before the record
+// book, so it refuses one too rather than trusting every future caller to.
 export function keepFastest(map, key, lap) {
-  if (!key || !lap || lap.seconds == null) return map;
+  if (!key || !lap || !(lap.seconds > 0)) return map;
   const held = map[key];
   if (held == null || lap.seconds < held.seconds) map[key] = lap;
   return map;

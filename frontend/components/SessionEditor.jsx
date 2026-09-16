@@ -14,7 +14,7 @@ import { pointsFor, pointsBreakdown, classConfigs, classScoresOwnPoints, configF
 import { AUTO_FLAG_FIELDS, applyAutoFlags, detectFlagLocks, autoMostLapsLedSlot } from "@/lib/autoFlags";
 import { BANGER_BOOL_FIELDS, BANGER_RESULT_FIELDS, BANGER_STATS, bangerRates, blankBangerRow, hasBangerBonuses } from "@/lib/bangerRacing";
 import { BRACKET_SIZES, bracketGridError, bracketPositionAt, bracketPositions, bracketRoundFor, bracketRounds, bracketSizeForField, bracketSizeLabel, normalizeBracketSize, ordinal } from "@/lib/bracketRacing";
-import { parseTime, formatTime, formatGap, formatDelta, parseDelta, parseLapsDown, deriveLaps } from "@/lib/raceTime";
+import { parseTime, lapSeconds, formatTime, formatGap, formatDelta, parseDelta, parseLapsDown, deriveLaps } from "@/lib/raceTime";
 import { isRoundsRace, isTimedRace, scheduledRounds, sessionScheduledLaps } from "@/lib/raceLength";
 import { classesOnGrid, fillClassLaps, rowsMissingLaps, seedClassLaps } from "@/lib/sessionLaps";
 
@@ -231,6 +231,12 @@ function sortByFinish(rows) {
 //
 // Only qual_time is persisted — the gaps are recomputed from the times on
 // every load, which is what keeps them honest after a reorder or a correction.
+//
+// All three read a cell through lapSeconds rather than the bare clock parser
+// (see lib/raceTime.js): "0:00.000" is a driver who never set a time, and taken
+// literally as pole it would put a gap of the pole-sitter's whole lap against
+// every other car — and then derive those wrong times back into the column.
+// A zero is treated as no time at all, and the text stays where it was typed.
 
 // Fill in lap times from the gap columns. A row with no time takes whichever
 // gap it has — To Lead first, since it's absolute (no chain of rounding to
@@ -242,12 +248,12 @@ function sortByFinish(rows) {
 // half-entered "1:" must not be "restored" from the row's stale gap columns
 // mid-keystroke.
 function deriveQualTimes(rows, edited = null, held = null) {
-  const leaderTime = parseTime(rows.find(r => Number(r.finish_pos) === 1)?.qual_time);
+  const leaderTime = lapSeconds(rows.find(r => Number(r.finish_pos) === 1)?.qual_time);
   let prev = null;                       // last row above this one that has a time
   let changed = false;
   const next = rows.map((r, i) => {
     const editedField = edited && edited.idx === i && edited.field !== "qual_time" ? edited.field : null;
-    const t = parseTime(r.qual_time);
+    const t = lapSeconds(r.qual_time);
     if (held && held.idx === i && held.field === "qual_time") { if (t != null) prev = t; return r; }
     if (t != null && !editedField) { prev = t; return r; }
     if (!r.entry_id) return r;
@@ -277,11 +283,11 @@ function deriveQualTimes(rows, edited = null, held = null) {
 // text is left exactly as typed so a half-entered "+0.3" is never rewritten to
 // "+0.300" under the cursor. It normalizes as soon as focus leaves.
 function computeQualGaps(rows, skip = null) {
-  const leaderTime = parseTime(rows.find(r => Number(r.finish_pos) === 1)?.qual_time);
+  const leaderTime = lapSeconds(rows.find(r => Number(r.finish_pos) === 1)?.qual_time);
   let prev = null;
   let changed = false;
   const next = rows.map((r, i) => {
-    const t = parseTime(r.qual_time);
+    const t = lapSeconds(r.qual_time);
     if (t == null) return r;
     const isLeader = Number(r.finish_pos) === 1;
     const held = f => skip && skip.idx === i && skip.field === f;
@@ -680,7 +686,7 @@ export function SessionEditor({
         // left in place they'd just re-derive the time that was deleted (or
         // its half-typed replacement) the moment focus moved. They refill
         // themselves as soon as the new time parses.
-        if (qualTimeEdit && field === "qual_time" && parseTime(value) == null) {
+        if (qualTimeEdit && field === "qual_time" && lapSeconds(value) == null) {
           patch.qual_to_lead = "";
           patch.qual_gap = "";
         }

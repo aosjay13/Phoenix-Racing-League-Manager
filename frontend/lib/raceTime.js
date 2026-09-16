@@ -16,6 +16,30 @@ export function parseTime(str) {
   return sec < 0 ? null : sec;
 }
 
+// What a lap time is worth in seconds, or null when it is not a lap anybody
+// actually turned.
+//
+// parseTime is deliberately permissive — it has to accept "1:23.456", "83.456"
+// and "1:02:03.004" from whatever a timing screen prints — so this is where the
+// app draws the line, and it draws it at "a real lap". Anything that RANKS or
+// RECORDS a lap reads it through here rather than through parseTime:
+//
+//   • 0 is not a lap. "0", "0:00", "00:00.000" and "0:00.000" all parse to a
+//     perfectly legitimate zero, and plenty of exports print exactly that for a
+//     driver who never set a time. Counted, a zero stands as the venue's track
+//     record — unbeatable — and takes the Fastest Lap bonus with it, off one
+//     blank cell or one slip of the keyboard.
+//   • Infinity is not a lap either. "Infinity" and "1e400" both survive
+//     Number(), and rendered back out they read "Infinity:NaN:NaN.NaN".
+//
+// Neither is a crash, which is exactly what makes them worth catching: they
+// look like data. Nothing here rewrites what was entered — the cell keeps its
+// text so it can be corrected, it just doesn't count toward anything.
+export function lapSeconds(str) {
+  const seconds = parseTime(str);
+  return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+}
+
 const pad = (n, w = 2) => String(n).padStart(w, "0");
 
 function breakdown(totalSec) {

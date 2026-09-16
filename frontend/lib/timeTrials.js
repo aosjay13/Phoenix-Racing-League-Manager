@@ -21,7 +21,7 @@
 // Kept dependency-free apart from the shared clock parser so every rule below
 // can be exercised without a database or a browser.
 
-import { formatTime, parseTime } from "@/lib/raceTime";
+import { formatTime, lapSeconds } from "@/lib/raceTime";
 
 // ── Session settings ────────────────────────────────────────────────────────
 
@@ -84,24 +84,13 @@ export function normalizeLaps(value, maxLaps = LAPS_UNLIMITED) {
 
 // What a typed lap is worth in seconds, or null when it is not a lap at all.
 //
-// The clock parser is deliberately permissive — it has to accept "1:23.456",
-// "83.456" and "1:02:03.004" from whatever a timing screen prints — so this is
-// where a time trial draws the line, and it draws it at "a lap somebody
-// actually turned":
-//
-//   • 0 is not a lap. "0", "00:00.000" and "0:00" all parse to a legitimate
-//     zero, and a zero would win Best Time outright AND stand as the venue's
-//     track record, unbeatable, from one slip of the keyboard.
-//   • Infinity is not a lap. "Infinity" and "1e400" both survive Number(), and
-//     rendered straight back out they read "Infinity:NaN:NaN.NaN".
-//
-// Neither is a crash, which is exactly what makes them worth catching here:
-// they look like data. A rejected lap keeps its text on the sheet and is shown
+// The rule is the whole app's rather than the trial's own — a zero and an
+// infinity both parse cleanly out of a clock string and neither is a lap
+// anybody turned, wherever it was entered. It lives in lib/raceTime.js beside
+// the parser it guards; re-exported here because a trial sheet is where most
+// of its callers are. A rejected lap keeps its text on the sheet and is shown
 // as unreadable, so it can be corrected rather than silently disappearing.
-export function lapSeconds(text) {
-  const seconds = parseTime(text);
-  return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
-}
+export { lapSeconds };
 
 // Every lap as { lap, text, seconds } — `lap` is the 1-based number shown on
 // the sheet, `seconds` null for a blank or unusable entry.
