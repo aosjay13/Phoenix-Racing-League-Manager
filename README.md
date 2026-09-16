@@ -156,9 +156,13 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   on SimRacerHub because that is where its scoring lives. Paste that season's link and the whole
   schedule comes over in one press: the season itself, every round with its **date**, its **track**,
   its **distance** (laps or a clock), its car, its start times, and which rounds run for no
-  championship points. Venues are matched to the tracks you already have — through the names a
-  merged track remembers, so an import can't re-create one you just tidied away — and anything new
-  is added to your Tracks library. Off weeks are skipped, playoff rounds SimRacerHub leaves
+  championship points. **Venues get a review step of their own**: every track the schedule races at
+  is checked against the ones you already have, through every name each of them answers to, and one
+  that merely *resembles* a track you have is never taken as the same place without being asked —
+  “…Oval” and “…Roval” are one letter apart and two different venues. Anything new is added to your
+  Tracks library under **whatever your league calls it**, with iRacing's own logo for it and the
+  surface its name implies, and the name SimRacerHub uses is remembered on it — so next season's
+  import matches it outright with nothing to review. Off weeks are skipped, playoff rounds SimRacerHub leaves
   unnumbered are numbered in date order, and a league that writes its dates as `17/08/2026` has
   them read the right way round. You see every round it found, and which venues are new, **before**
   anything is created. Offered on **League Setup ▸ Seasons** and inside the Schedule's
@@ -1080,10 +1084,34 @@ season's worth of rows appearing before you'd noticed the wrong link was pasted.
 change), its car, and for every round: the round number, the league's own name for the event (or
 the track's, when they don't name their events), the date, the track, the distance as **laps or a
 clock**, whether the round runs for **no championship points**, and the **practice and race start
-times** where SimRacerHub shows them. Tracks are matched against the ones you already have —
-including the former names a merged venue remembers, so an import can't re-create a duplicate you
-just cleaned up — and any genuinely new venue is added to your Tracks library, so those rounds have
-a track page and lap records from the day they're created.
+times** where SimRacerHub shows them. Every round is *linked* to a real track rather than carrying
+its name as loose text, so those rounds have a track page and lap records from the day they're
+created — which is what the **Venues** step below is for.
+
+**Venues, checked rather than duplicated — and named how you like.** A track is the one thing in
+this app that accumulates: lap records, a history, every race ever run there. So the importer does
+for venues exactly what the results importer does for drivers, and the preview carries a **Venues**
+table with a row per track the schedule races at:
+
+- **yours** — an exact hit on a name that track already answers to (its own name, a name a merge
+  folded into it, or a name an earlier import recorded). Nothing to decide.
+- **check** — something *resembles* it. Usually the same venue with a **different layout**, which
+  is the one near miss that matters: “Charlotte Motor Speedway Oval” and “… Roval” are one letter
+  apart in thirty and two different places to race, and attaching a season to the wrong one puts
+  its history on the wrong track. So a resemblance is *never* accepted on its own — the dropdown
+  offers the matcher's best guesses with the reason each is there (“same venue, different layout”,
+  “similar name”), plus every other track in your league for the ones it never thought of. Leave it
+  alone and the venue is **created**, not assumed.
+- **new** — not in your app yet. Type **whatever your league calls it** (“Charlotte Roval”, not
+  “Charlotte Motor Speedway Roval 2019”), pick a surface if the one its name implies is wrong, and
+  it's created with iRacing's own logo for the venue where SimRacerHub has one.
+
+Whichever you choose, **SimRacerHub's name for it is recorded on that track** — in the same
+“Also raced as” list a venue merge writes, shown on the track's own page. That is what stops
+SimRacerHub's naming becoming yours: the next import of that series is an exact match, and the
+Venues table has nothing to ask. Two venues can't be created under one name, and a row you've asked
+to point at an existing track but not said *which* blocks the button rather than importing half a
+season.
 
 **The messy parts, handled rather than guessed at.** SimRacerHub lets every league pick its own
 columns, so no two schedule pages have the same shape: every cell is found by what its column is
@@ -1100,7 +1128,9 @@ it says so instead of quietly choosing.
 **What doesn't come across.** Classes, the roster, the points structure and heat-racing setup: a
 schedule doesn't describe them, and they're set up as on any new season. Pole and winner columns
 are ignored too — those are results, and results are imported per race from the same site (see
-*Results entry* above). See `lib/srhSchedule.js` and `app/api/import-srh-season/route.js`.
+*Results entry* above). See `lib/srhSchedule.js`, `lib/trackMatch.js` and
+`app/api/import-srh-season/route.js`. The schedule parsing and the venue check are both pure and
+covered by `lib/__tests__/srhSchedule.test.mjs` and `lib/__tests__/trackMatch.test.mjs`.
 
 ### Running a Time Trial or a placement night
 

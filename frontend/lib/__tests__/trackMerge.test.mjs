@@ -195,6 +195,14 @@ check("linked races count", counted.d2, 3);
 check("free text counts, however it was cased", counted.d1, 2);
 check("a linked race is never stolen by a name", counted.m1, 1);
 
+// A former name that differs from the current one only by case is the SAME key,
+// and listing the track against it twice would double every race held there —
+// which would then point the merge at the wrong survivor.
+check("a name answered to twice is still counted once", countTrackRaces(
+  [{ id: "a", name: "Daytona", merged_names: ["DAYTONA", "daytona"] }],
+  [{ id: "r1", track: "Daytona" }, { id: "r2", track: "daytona" }],
+).a, 2);
+
 check("a race in another league is left out", countTrackRaces(
   [{ id: "a", name: "Daytona", league_id: "L1" }],
   [{ id: "r", track: "Daytona", league_id: "L2" }],

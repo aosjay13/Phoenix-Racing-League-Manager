@@ -26,6 +26,12 @@
 
 import { normalizeName } from "@/lib/nameKey";
 import { nameSimilarity } from "@/lib/resultsImport";
+// "Every name this track answers to" is one rule, and it belongs in one place:
+// the schedule importer WRITES those former names onto a track when an admin
+// confirms a venue, and this module READS them to recognise a fresh duplicate
+// typed under an old name. Two copies of that rule would drift apart and the
+// two halves would stop meeting.
+import { trackNames } from "@/lib/trackMatch";
 
 // How alike two venue names have to be before this module says anything.
 //
@@ -82,25 +88,6 @@ const LAYOUT_WORDS = new Set([
   "figure", "combined", "full", "reverse", "inner", "outer", "east", "west", "north", "south",
   "legends", "moto", "sprint", "indy", "alt", "alternate", "nascar", "gp",
 ]);
-
-// A track's name plus every name it used to be listed under, which a merge
-// keeps on the survivor (see /api/admin/tracks/merge). A venue cleaned up once
-// must not be flagged against its own old name — and a NEW duplicate typed
-// under that old name should still be found.
-export function trackNames(track) {
-  const out = [];
-  const seen = new Set();
-  const push = value => {
-    const text = String(value ?? "").trim();
-    const key = normalizeName(text);
-    if (!key || seen.has(key)) return;
-    seen.add(key);
-    out.push(text);
-  };
-  push(track?.name);
-  for (const n of track?.merged_names || []) push(n);
-  return out;
-}
 
 // The comparison form of a venue name: accents folded, case dropped,
 // punctuation gone, shorthand spelled out. "Daytona Int'l Spdwy" →
@@ -320,9 +307,10 @@ export function countTrackRaces(tracks = [], races = []) {
   const byId = new Map(tracks.map(t => [t.id, t]));
   const byName = new Map();          // a name a venue answers to -> track ids
   for (const t of tracks) {
-    for (const name of trackNames(t)) {
-      const key = normalizeName(name);
-      if (!key) continue;
+    // Deduped per track: a venue whose former name differs from its current one
+    // only by case or punctuation answers to that key twice, and listing its id
+    // twice would count every race held there twice.
+    for (const key of new Set(trackNames(t).map(normalizeName).filter(Boolean))) {
       if (!byName.has(key)) byName.set(key, []);
       byName.get(key).push(t.id);
     }

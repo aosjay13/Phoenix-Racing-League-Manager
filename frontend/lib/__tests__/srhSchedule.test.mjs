@@ -2,7 +2,7 @@
 // that replaces typing twelve rounds in for the second time.
 //
 // It writes a season, a dozen races and any venue the league is missing, all
-// from one URL, so the parsing has to be right about six things:
+// from one URL, so the parsing has to be right about seven things:
 //
 //   1. where to fetch from, and where NOT to — parseSrhSeasonRef is the only
 //      thing deciding where the server makes a request to, and a series or
@@ -22,17 +22,21 @@
 //   5. the round numbers. This app orders a schedule by them, and SimRacerHub
 //      leaves playoff rounds unnumbered and lists the page by date, so taking
 //      them as given can put two races on one number;
-//   6. and the distances: laps, or a clock, or a column that isn't a distance
-//      at all.
+//   6. the distances: laps, or a clock, or a column that isn't a distance at
+//      all;
+//   7. and the venue behind each layout name, read off SimRacerHub's own track
+//      directory, which is what lets the track checker in lib/trackMatch.js
+//      tell an Oval from a Roval at the same place. Whether that venue is
+//      already in the app is that module's job and its own test file.
 import assert from "node:assert";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   mapScheduleHeaders, numberRounds, parseSrhSchedule, parseSrhSeasonNames,
-  parseSrhSeasonRef, readCarCell, readEventCell, readRaceLength,
-  readScheduleDate, readSessionTime, resolveDates, roundName,
-  scheduleHeaderField, srhSchedulePlan, srhSchedulePageUrl,
+  parseSrhSeasonRef, parseSrhTrackDirectory, readCarCell, readEventCell,
+  readRaceLength, readScheduleDate, readSessionTime, resolveDates, roundName,
+  scheduleHeaderField, srhSchedulePlan, srhSchedulePageUrl, srhTrackInfo,
 } from "../srhSchedule.js";
 
 let n = 0;
@@ -296,6 +300,62 @@ check("a round with no track and no distance is flagged",
   thinPlan.rows[0].warnings, ["No track", "No race length"]);
 ok("…and is still imported, for the admin to finish",
   thinPlan.races[0].name === "Mystery Round" && thinPlan.races.length === 3);
+
+// ── 7b. SimRacerHub's own track directory ──────────────────────
+//
+// A schedule names the LAYOUT raced, in one string with no seam in it: "Lime
+// Rock Park Grand Prix" is the Grand Prix layout of Lime Rock Park, and nothing
+// in the name says where the venue stops. SimRacerHub's Tracks page is the
+// seam, and it also carries iRacing's own logo for each venue, so a track this
+// import creates arrives looking like the place rather than like a blank row.
+//
+// Markup below is copied from the live page.
+const directoryPage = `<html><body><table id='jsTable'>
+<tr class='jsTableRow' id='trk_168'><td class='wrap ctr'><b><a href='https://adelaidegrandfinal.com.au/' title='https://adelaidegrandfinal.com.au/' target='_blank'>Adelaide Street Circuit</b></a></td><td class='ctr'><a href='http://maps.google.com/maps?hl=en&t=k&ie=UTF8&output=embed&ll=-34.93,138.62&z=15' target='track_map'><img src='images/map.png'></a></td><td class='ctr'><img src='https://images-static.iracing.com/img/logos/tracks/538__light.png' alt='Adelaide Street Circuit' class='track-logo-light' style='max-width: 100%; max-height: 50px'><img src='https://images-static.iracing.com/img/logos/tracks/538__dark.png' alt='Adelaide Street Circuit' class='track-logo-dark' style='max-width: 100%; max-height: 50px'></td><td class='ctr'>No</td><td class='ctr'>1</td><td class='ctr'>128</td><td class='ctr'>163</td></tr>
+<tr class='jsTableRow' id='trk_31'><td class='wrap ctr'><b><a href='http://www.charlottemotorspeedway.com/' target='_blank'>Charlotte Motor Speedway</b></a></td><td class='ctr'><a href='http://maps.google.com/maps?ll=35.352,-80.683&z=15' target='track_map'><img src='images/map.png'></a></td><td class='ctr'><img src='https://images-static.iracing.com/img/logos/tracks/31__light.png' alt='Charlotte Motor Speedway' class='track-logo-light'><img src='https://images-static.iracing.com/img/logos/tracks/31__dark.png' class='track-logo-dark'></td><td class='ctr'>No</td><td class='ctr'>9</td></tr>
+<tr class='jsTableRow' id='trk_304'><td class='wrap ctr'><b>Lime Rock Park</b></td><td class='ctr'><img src='images/map.png'></td><td class='ctr'><img src='https://images-static.iracing.com/img/logos/tracks/304__light.png' class='track-logo-light'></td><td class='ctr'>No</td><td class='ctr'>4</td></tr>
+</table></body></html>`;
+
+const directory = parseSrhTrackDirectory(directoryPage);
+check("every venue on the page, once", directory.map(t => t.name),
+  ["Adelaide Street Circuit", "Charlotte Motor Speedway", "Lime Rock Park"]);
+check("…each with iRacing's own logo for it",
+  directory.map(t => t.logo_url),
+  ["https://images-static.iracing.com/img/logos/tracks/538__light.png",
+    "https://images-static.iracing.com/img/logos/tracks/31__light.png",
+    "https://images-static.iracing.com/img/logos/tracks/304__light.png"]);
+// The row prints a light logo and a dark one and a map pin, and the light logo
+// is found by what it IS rather than by which cell it sits in — a row that has
+// lost a cell would otherwise hand a venue the map pin as its logo.
+ok("the map pin is never mistaken for a logo",
+  !directory.some(t => /images\/map\.png/.test(t.logo_url)));
+check("a venue with no logo at all is still a venue",
+  parseSrhTrackDirectory("<tr class='jsTableRow'><td><b>Backyard Oval</b></td><td></td></tr>"),
+  [{ name: "Backyard Oval", logo_url: "" }]);
+check("a row with no name is no venue",
+  parseSrhTrackDirectory("<tr class='jsTableRow'><td>&nbsp;</td><td><img src='https://x/y.png' class='track-logo-light'></td></tr>"), []);
+check("some other page of the site is not a directory", parseSrhTrackDirectory("<html><body><p>Nope</p></body></html>"), []);
+check("and an unreadable one costs the import nothing", parseSrhTrackDirectory(null), []);
+
+// What the schedule's layout names resolve to, keyed by the name exactly as the
+// schedule wrote it — which is the key the review table and the admin's answers
+// both use.
+const info = srhTrackInfo([
+  "Charlotte Motor Speedway Roval 2019", "Lime Rock Park Grand Prix",
+  "Adelaide Street Circuit", "Somewhere Nobody Races", "  ",
+], directory);
+check("a layout resolves to the venue behind it",
+  info["Charlotte Motor Speedway Roval 2019"],
+  { base: "Charlotte Motor Speedway", logo_url: "https://images-static.iracing.com/img/logos/tracks/31__light.png" });
+check("a venue that names no layout resolves to itself",
+  info["Adelaide Street Circuit"].base, "Adelaide Street Circuit");
+check("a name the directory has never heard of gets nothing rather than a guess",
+  info["Somewhere Nobody Races"], { base: "", logo_url: "" });
+check("and a blank cell isn't looked up at all", Object.keys(info),
+  ["Charlotte Motor Speedway Roval 2019", "Lime Rock Park Grand Prix", "Adelaide Street Circuit", "Somewhere Nobody Races"]);
+check("nothing to look up looks nothing up", srhTrackInfo(null, directory), {});
+check("and with no directory, every name is simply unknown",
+  srhTrackInfo(["Lime Rock Park Grand Prix"]), { "Lime Rock Park Grand Prix": { base: "", logo_url: "" } });
 
 // ── 8. What writes, and what may not ──────────────────────────────────────
 //
