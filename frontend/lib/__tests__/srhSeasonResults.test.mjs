@@ -220,6 +220,23 @@ check("the session says how many there were", [built.matched, built.provisional]
   check("a qualifying row carries its figure", takenQual.rows.find(r => r.entry_id === "eA").manual_points, 75);
 }
 
+// ── 3c. A brand new season, with no roster at all ──────────────────────────
+//
+// Where every import of a new series starts. The roster is empty, so nobody on
+// the pages can be matched — and that must come back as a READABLE plan naming
+// everyone it couldn't place, not as an exception and not as nothing. It is
+// what fills the dialog's roster panel, and there is no other way to reach it:
+// the route used to refuse an empty roster outright, which walled off the one
+// import that needed the panel most.
+{
+  const empty = sessionRows(srhSegmentTable(featureSeg), [], { sessionType: "feature" });
+  check("an empty roster matches nobody", empty.rows, []);
+  check("…and names every driver it couldn't place", empty.unmatched.length, 4);
+  check("…including the provisional entry, who is still a person to add",
+    empty.unmatched.includes("Brian Burchett"), true);
+  check("…and counts nothing as matched", [empty.matched, empty.provisional], [0, 0]);
+}
+
 // ── 4. The flags ───────────────────────────────────────────────────────────
 //
 // Fastest Lap comes from the source. Hard Charger and Most Laps Led are worked
@@ -306,6 +323,21 @@ check("…and counts what it will write", plan.rows_total, 5);
 check("the event grows the sessions to hold it", [plan.race_update.heat_format, plan.race_update.heats, plan.race_update.consolations],
   [true, ["Heat 1"], ["Consolation"]]);
 check("nobody on this page is off the roster", plan.unmatched, []);
+
+// …and the same night against an EMPTY roster: a readable plan naming everyone
+// to add, which is the only thing that can fill the dialog's roster panel.
+{
+  const emptyPlan = planRace({ id: "r1" }, doc, []);
+  check("a brand new season still plans its sessions", emptyPlan.sessions.map(s => s.session),
+    ["Heat 1", "Consolation", "A-Main Feature"]);
+  check("…with nothing to write", emptyPlan.rows_total, 0);
+  check("…and everyone on it listed to be added", [...emptyPlan.unmatched].sort(),
+    ["Brian Burchett", "Mia Rose", "Nathan Anderson"]);
+  // The event's structure is still worked out, so adding the drivers and
+  // running it again lands them in the right sessions.
+  check("…and the event still gains the sessions it ran",
+    [emptyPlan.race_update.heat_format, emptyPlan.race_update.heats], [true, ["Heat 1"]]);
+}
 
 // The whole-night plan threads the choice down to every session on it.
 {

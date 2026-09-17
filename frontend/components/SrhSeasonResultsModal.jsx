@@ -71,6 +71,21 @@ function RoundReport({ state }) {
 
   const r = state.report || {};
   const sessions = r.sessions || [];
+  // Read fine, wrote nothing, because nobody on the page is on the roster yet
+  // — the normal answer on a brand new season, and the one the driver panel
+  // below exists to deal with.
+  if (r.needs_roster) {
+    return (
+      <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+        <Chip kind="warn" title={(r.unmatched || []).join("\n")}>
+          {(r.unmatched || []).length} to add to the roster
+        </Chip>
+        <Chip kind="busy" title={sessions.map(x => x.session).join(", ")}>
+          {sessions.length} session{sessions.length === 1 ? "" : "s"} ready
+        </Chip>
+      </div>
+    );
+  }
   const names = sessions.map(s => s.session).join(", ");
   const rows = r.rows_total || 0;
   const unmatched = (r.unmatched || []).length;
@@ -270,10 +285,14 @@ export function SrhSeasonResultsModal({ seasonId, seasonName, seriesName = "", r
     setNotice("");
     setAt(0);
 
-    let ok = 0, failed = 0, rows = 0, structures = 0, srhPoints = false;
+    let ok = 0, failed = 0, rows = 0, structures = 0, srhPoints = false, waiting = 0;
     let lastWrote = false;
     for (let i = 0; i < list.length; i++) {
       const race = list[i];
+      // Reset per round: the Skill Rating fallback below asks whether the LAST
+      // round wrote, and a round that failed or is waiting on the roster did
+      // not — leaving this true from an earlier round would skip the replay.
+      lastWrote = false;
       setState(s => ({ ...s, [race.id]: { status: "busy" } }));
       try {
         const res = await api("/api/import-srh-season-results", {
@@ -294,6 +313,9 @@ export function SrhSeasonResultsModal({ seasonId, seasonName, seriesName = "", r
           },
         });
         setState(s => ({ ...s, [race.id]: { status: preview ? "read" : "done", report: res } }));
+        // A round that read fine but is waiting on the roster hasn't imported
+        // anything, so it must not be counted as one that did.
+        if (res.needs_roster) { waiting += 1; setAt(i + 1); continue; }
         ok += 1;
         rows += res.rows_total || 0;
         structures += res.written?.points_structures || 0;
@@ -319,7 +341,7 @@ export function SrhSeasonResultsModal({ seasonId, seasonName, seriesName = "", r
     }
 
     setBusy("");
-    setSummary({ preview, ok, failed, rows, structures, srhPoints, partial: !!(only && only.length) });
+    setSummary({ preview, ok, failed, rows, structures, srhPoints, waiting, partial: !!(only && only.length) });
     if (!preview && ok) onImported?.();
   }
 
@@ -422,6 +444,7 @@ export function SrhSeasonResultsModal({ seasonId, seasonName, seriesName = "", r
               {summary.preview
                 ? `Read ${summary.ok} round${summary.ok === 1 ? "" : "s"} · ${summary.rows} rows ready`
                 : `Imported ${summary.ok} round${summary.ok === 1 ? "" : "s"} · ${summary.rows} rows written`}
+              {summary.waiting ? ` · ${summary.waiting} waiting on the roster` : ""}
               {summary.failed ? ` · ${summary.failed} failed` : ""}
               {summary.partial ? " · the rounds that were short of drivers" : ""}
               {summary.structures ? ` · ${summary.structures} session${summary.structures === 1 ? "" : "s"} scored on a chosen structure` : ""}

@@ -215,13 +215,13 @@ const handlePOST = withAdmin(async (request, ctx, user) => {
   if (read.error) return NextResponse.json({ error: read.error }, { status: read.status });
   const { doc, url: sourceUrl } = read;
 
+  // An EMPTY roster is not an error. It is where a brand new season in a brand
+  // new series starts, and it is the case the dialog's driver panel exists for:
+  // the round is read anyway, every name on it comes back as one the roster
+  // hasn't got, and they are added from there. Refusing here — which this used
+  // to do — put a wall in front of exactly the import that needed the panel
+  // most, since nothing can reach the panel without a report to fill it.
   const entries = await loadMatchEntries(season_id, season.game_id, leagueId);
-  if (!entries.length) {
-    return NextResponse.json(
-      { error: "This season has no roster yet, so there is nobody to import results for. Add the drivers first." },
-      { status: 400 },
-    );
-  }
 
   const plan = planRace(race, doc, entries, { takeSrhPoints });
 
@@ -289,13 +289,23 @@ const handlePOST = withAdmin(async (request, ctx, user) => {
     took_srh_points: takeSrhPoints,
   };
 
+  // Nothing to write, for one of two very different reasons.
+  //
+  // Everybody on the page is a driver this season's roster hasn't got: that is
+  // a ROUND READ SUCCESSFULLY whose answer is "add these people first", and on
+  // a new season it is the expected answer. It comes back as a success
+  // carrying the names, so the dialog can put them in front of the admin and
+  // the round can be run again — reporting it as a failure taught an admin the
+  // import was broken when it was waiting for them.
+  if (!plan.rows_total && plan.unmatched.length) {
+    return NextResponse.json({ ...report, preview, needs_roster: true, written: null });
+  }
+  // A page with no results and nobody to blame it on is a real failure.
   if (!plan.rows_total) {
     return NextResponse.json({
       ...report,
       ok: false,
-      error: plan.unmatched.length
-        ? "Nobody on that page is on this season's roster — check the roster, or that this is the right round."
-        : "That SimRacerHub page has no results to import.",
+      error: "That SimRacerHub page has no results to import.",
     }, { status: 422 });
   }
 

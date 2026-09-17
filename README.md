@@ -1195,6 +1195,16 @@ is turned into a heat weekend over a capital letter. Practice is skipped — thi
 that decided it (the Feature, or the race) and written onto the event, where the results page
 prints them. A heat's cautions are not the night's, so they are not used.
 
+**A season with no roster yet is the normal starting point, not a failure.** A brand new season in a
+brand new series has nobody on it, so every driver on those pages is one to add — the round is read
+anyway, comes back naming all of them, and the round reports as *waiting on the roster* rather than
+as an error. **Add all N to the roster** then does the ones needing no decision in one press: a name
+nothing in your driver database resembles gets a new driver, a name matching exactly one driver (or a
+player account) is hung on the driver they already are, and anything a human should look at is left
+below for you. That split isn't the importer's opinion — it's the same rule the driver picker and
+`POST /api/drivers` apply, which is what stops a bulk add from being how a league ends up with two of
+somebody.
+
 **Nothing is guessed at, and nothing is a dead end.** Every driver is matched against the roster
 through each name they answer to — their profile name, the name they race under in iRacing, and
 every connected account. A name that matches nobody is **left out and named** rather than guessed

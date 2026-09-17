@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { AddDriverToRace } from "@/components/AddDriverToRace";
 import { nextUnanswered } from "@/lib/srhSeasonResults";
+import { ensureDriverId, isDuplicateDriverError } from "@/lib/driverPool";
+import { entryClassIds } from "@/lib/classFilter";
 
 // The drivers a season import found on SimRacerHub and couldn't place — and
 // the means to place them, without leaving the dialog.
@@ -54,6 +56,8 @@ export function SrhUnmatchedDrivers({
 }) {
   const [classes, setClasses] = useState([]);
   const [classId, setClassId] = useState("");
+  const [bulk, setBulk] = useState(null);   // { at, total } while a bulk add runs
+  const [bulkNote, setBulkNote] = useState("");
 
   // A season with classes puts every driver in one, and an entry with no class
   // is missing from that class's standings — so a season that HAS classes is
@@ -125,6 +129,87 @@ export function SrhUnmatchedDrivers({
     advanceFrom(key);
   }
 
+  // ── Add everyone the app can place on its own ────────────────────────────
+  //
+  // A brand new season in a brand new series starts with an empty roster, so
+  // EVERY name on the pages is one to add — and answering thirty of them one at
+  // a time is not an import in one click by any reading.
+  //
+  // So the ones that need no decision are done in one press, and only those.
+  // What counts as needing no decision is not this component's opinion: it is
+  // duplicateReport's, the same rule the picker below and POST /api/drivers
+  // apply. A name nothing in the driver pool resembles ("none") is created; a
+  // name matching exactly one driver, or a player account, IS that driver
+  // ("linked") and the entry hangs on them. Anything a human should look at —
+  // several candidates, or one that merely resembles them — is left alone and
+  // stays in the list, because a bulk add that guessed at those is precisely
+  // how a league ends up with two of somebody.
+  async function addAll() {
+    const todo = open.slice();
+    if (!todo.length) return;
+    setBulk({ at: 0, total: todo.length });
+    setBulkNote("");
+    let created = 0, linked = 0, asked = 0;
+    try {
+      const [pool, gameList, seasonEntries] = await Promise.all([
+        api("/api/drivers").catch(() => []),
+        api("/api/games").catch(() => []),
+        api(`/api/entries?season_id=${seasonId}`).catch(() => []),
+      ]);
+      const games = Object.fromEntries((gameList || []).map(g => [g.id, g.name]));
+      const roster = [...(seasonEntries || [])];
+
+      for (let i = 0; i < todo.length; i++) {
+        const u = todo[i];
+        setBulk({ at: i + 1, total: todo.length });
+        let driverId;
+        try {
+          // Reuses the driver when the pool already holds them, creates one
+          // when it plainly doesn't, and throws when it is a question.
+          driverId = await ensureDriverId({ name: u.name, pool, games });
+        } catch (err) {
+          if (isDuplicateDriverError(err)) { asked += 1; continue; }
+          throw err;
+        }
+        const known = pool.some(d => d.id === driverId);
+        // Already on this season's roster under another name — take the entry
+        // they have rather than making a second one, the same way the picker
+        // does.
+        const mine = roster.find(e => e.driver_id === driverId);
+        let entry = mine;
+        if (mine) {
+          const have = entryClassIds(mine);
+          if (classId && !have.includes(classId)) {
+            entry = await api(`/api/entries/${mine.id}`, { method: "PATCH", body: { class_ids: [...have, classId] } });
+          }
+        } else {
+          entry = await api("/api/entries", {
+            method: "POST",
+            body: {
+              name: u.name, team_id: "", season_id: seasonId, driver_id: driverId,
+              class_ids: classId ? [classId] : [],
+            },
+          });
+          roster.push(entry);
+        }
+        if (known) linked += 1; else created += 1;
+        onDone?.(u.name.toLowerCase(), entry);
+        onRosterChanged?.(entry);
+      }
+
+      const said = [
+        created ? `${created} new driver${created === 1 ? "" : "s"} created` : "",
+        linked ? `${linked} matched to ${linked === 1 ? "a driver" : "drivers"} you already have` : "",
+        asked ? `${asked} left below — ${asked === 1 ? "it resembles" : "they resemble"} somebody already in the app, so ${asked === 1 ? "it needs" : "they need"} your answer` : "",
+      ].filter(Boolean).join(" · ");
+      setBulkNote(said || "Nothing to add.");
+    } catch (err) {
+      onError?.(err.message);
+    } finally {
+      setBulk(null);
+    }
+  }
+
   if (!unmatched.length) return null;
 
   return (
@@ -146,12 +231,34 @@ export function SrhUnmatchedDrivers({
         )}
       </div>
       <p style={{ margin: "4px 0 10px", fontSize: "0.8rem", color: "var(--ink-1)" }}>
-        Their rows were left out rather than guessed at. The first one is open below with its list down:
+        {entries.length === 0
+          ? "This season's roster is empty, which is where a new season starts — so every driver on those pages is one to add. "
+          : "Their rows were left out rather than guessed at. "}
+        The first one is open below with its list down:
         point it at the driver they already are, or create them, and the next one opens itself. The box
         searches every name a driver answers to, so somebody who races here under a different name is found
         rather than duplicated, and creating someone genuinely new asks first if the name resembles a driver
         you already have. When they&rsquo;re all answered, re-import the rounds below and their results land.
       </p>
+      {/* The one press that makes a brand new season work. Everything needing
+          no decision goes on the roster at once; the rest stay below. */}
+      {open.length > 0 && (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", margin: "0 0 10px" }}>
+          <button type="button" className="btn btn-primary" style={{ marginTop: 0 }}
+            disabled={!!bulk}
+            title="Create the drivers nothing in your driver database resembles, and hang the rest on the driver they already are. Anything that needs a decision is left below."
+            onClick={addAll}>
+            {bulk ? `Adding ${bulk.at} of ${bulk.total}…` : `Add all ${open.length} to the roster`}
+          </button>
+          <span style={{ fontSize: "0.76rem", color: "var(--ink-2)" }}>
+            {entries.length === 0
+              ? "This season has no roster yet, so every name above is one to add — start here."
+              : "Only the ones needing no decision; anyone resembling a driver you already have is left for you."}
+          </span>
+        </div>
+      )}
+      {bulkNote && <p style={{ margin: "0 0 10px", fontSize: "0.78rem", color: "#3fb950" }}>{bulkNote}</p>}
+
       <p style={{ margin: "0 0 10px", fontSize: "0.76rem", color: "var(--ink-2)" }}>
         If the box says a name is <em>already on this season&rsquo;s roster</em>, then they are on it under a
         name too far from the one SimRacerHub prints for the import to be sure. Add SimRacerHub&rsquo;s
