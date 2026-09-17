@@ -171,14 +171,14 @@ export function SrhSeasonImportModal({ gameId, games = [], seriesId, seriesName,
   }
 
   return (
-    <Modal title="Import a season from SimRacerHub" onClose={onClose}>
-      <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.82rem" }}>
+    <Modal title="Import a season from SimRacerHub" size="workspace" onClose={onClose}>
+      <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.82rem", maxWidth: 760 }}>
         Paste the SimRacerHub link for the season (its schedule, standings or results page — any of them
         carries the id) and the whole schedule comes across: every round, its date, its track and how far it
         runs. Nothing is created until you&rsquo;ve seen what it found.
       </p>
 
-      <form onSubmit={e => { e.preventDefault(); readSchedule(); }}>
+      <form onSubmit={e => { e.preventDefault(); readSchedule(); }} style={{ maxWidth: 620 }}>
         <div className="field">
           <label htmlFor="srh_season_url">SimRacerHub season URL</label>
           <input id="srh_season_url" value={url} autoFocus
@@ -211,7 +211,10 @@ export function SrhSeasonImportModal({ gameId, games = [], seriesId, seriesName,
           ))}
 
           {/* Where it goes. Whatever the page's scope already names isn't asked
-              for again — from League Setup's Seasons panel that's both. */}
+              for again — from League Setup's Seasons panel that's both.
+              A column of its own: these are a form, and the card is only this
+              wide so the tables below it fit. */}
+          <div style={{ maxWidth: 620 }}>
           {!scopedGameIsIracing && iracingGames.length > 1 && (
             <div className="field">
               <label>iRacing game</label>
@@ -249,10 +252,11 @@ export function SrhSeasonImportModal({ gameId, games = [], seriesId, seriesName,
               check — the rounds below are named from the schedule and can be edited afterwards.
             </span>
           </div>
+          </div>
 
           <h4 style={{ margin: "16px 0 6px" }}>The schedule</h4>
-          <div style={{ overflowX: "auto", maxHeight: "40vh", overflowY: "auto" }}>
-            <table className="stats-table" style={{ fontSize: "0.8rem" }}>
+          <div style={{ overflowX: "auto", maxHeight: "56vh", overflowY: "auto" }}>
+            <table className="stats-table" style={{ fontSize: "0.8rem", width: "100%" }}>
               <thead>
                 <tr>
                   <th>R</th>
@@ -320,13 +324,13 @@ export function SrhSeasonImportModal({ gameId, games = [], seriesId, seriesName,
                   {preview.track_summary?.suggested || 0} to check, {creatingTracks.length} new
                 </span>
               </h4>
-              <p style={{ margin: "0 0 8px", fontSize: "0.78rem", color: "var(--ink-2)" }}>
+              <p style={{ margin: "0 0 8px", fontSize: "0.78rem", color: "var(--ink-2)", maxWidth: 820 }}>
                 Name a new venue whatever your league calls it — the name SimRacerHub uses is remembered on it, so
                 the next import of this series matches it without asking. A venue you point at one you already have
                 keeps its lap records and history.
               </p>
-              <div style={{ overflowX: "auto", maxHeight: "40vh", overflowY: "auto" }}>
-                <table className="stats-table" style={{ fontSize: "0.8rem" }}>
+              <div style={{ overflowX: "auto", maxHeight: "56vh", overflowY: "auto" }}>
+                <table className="stats-table" style={{ fontSize: "0.8rem", width: "100%" }}>
                   <thead>
                     <tr>
                       <th style={{ textAlign: "left" }}>On SimRacerHub</th>

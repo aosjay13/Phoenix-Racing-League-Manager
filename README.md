@@ -1477,6 +1477,27 @@ the submit button — so a quick-create dialog can never quietly offer fewer opt
 different document, than the full setup screen. Add a field once, in the shared form, and every
 entry point gets it. Follow the same split when adding a second way to create something.
 
+### Three dialog widths, and a table is never a form
+
+Every `<Modal>` picks one of three ceilings in `components/Modal.jsx`, and which one depends on what
+the dialog *is*:
+
+| | | |
+|---|---|---|
+| **form** | 480 | the default — a dialog that asks something. A form is easier to read in a narrow column |
+| **wide** | 760 | `wide` — a couple of things side by side |
+| **workspace** | 1080 | `size="workspace"` — a dialog you *work in*: the season schedule importer puts a whole calendar and a row per venue (a name, a dropdown of every track in the league, a text field and a type) in front of you at once |
+
+The rule that matters: **a table is not a form.** Squeezed into a form column, a table of twelve
+rounds becomes a horizontal scrollbar, and a schedule you can only see a third of at a time cannot be
+checked — which is the entire reason you were shown it before anything is created. So the card is
+widened for the table, and the prose and single-line fields inside it are given a column of their own
+(`maxWidth` on the paragraph and on the block of fields) rather than being stretched to match. Wider
+is not more readable for a sentence or a name box.
+
+All three only lift the ceiling. The card is `width: 100%` under it, so on a phone every dialog is the
+same full-width dialog it has always been.
+
 ### One tick box for the whole app
 
 Every checkbox and radio in the app — League Setup's switches, a results grid's tick cells, the
