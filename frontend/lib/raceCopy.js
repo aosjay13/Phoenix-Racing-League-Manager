@@ -303,3 +303,25 @@ export function copyResultDocs(results = [], {
 export function nextRoundNumber(targetRaces = []) {
   return targetRaces.reduce((m, r) => Math.max(m, Number(r.round_number) || 0), 0) + 1;
 }
+
+// The round numbers a COPIED SCHEDULE takes.
+//
+// Into an empty season the copies keep their own numbering, because that is
+// what a schedule is: "Race 1" of the calendar you copied is "Race 1" of the
+// copy, and a league running one schedule in two classes wants the two to read
+// alike. A source round with no number of its own falls back to its place in
+// the order, so a half-numbered calendar still comes out 1..N.
+//
+// Into a season that ALREADY has rounds they continue from the last one
+// instead. Two rounds sharing a number would order that calendar by chance —
+// this app sorts a schedule by round number — and silently renumbering what was
+// already there would be worse. Nothing existing is touched either way.
+//
+// `sourceRaces` are in the order they will be written.
+export function scheduleRoundNumbers(sourceRaces = [], targetRaces = []) {
+  const keepOwn = (targetRaces || []).length === 0;
+  const startAt = nextRoundNumber(targetRaces);
+  return (sourceRaces || []).map((race, i) => (keepOwn
+    ? (Number(race?.round_number) || i + 1)
+    : startAt + i));
+}

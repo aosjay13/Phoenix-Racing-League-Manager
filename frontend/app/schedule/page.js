@@ -7,6 +7,7 @@ import { useLeague } from "@/components/LeagueProvider";
 import { useAuth } from "@/components/AuthProvider";
 import { RaceCreateModal } from "@/components/RaceCreateModal";
 import { RaceCopyModal } from "@/components/RaceCopyModal";
+import { ScheduleCopyModal } from "@/components/ScheduleCopyModal";
 import { SeasonCreateModal } from "@/components/SeasonCreateModal";
 import { SrhSeasonResultsModal } from "@/components/SrhSeasonResultsModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -376,6 +377,7 @@ function SeasonSchedule() {
   // screen, which is exactly where the button wasn't.
   const [showCreateSeason, setShowCreateSeason] = useState(false);
   const [showCopy, setShowCopy] = useState(false);
+  const [showCopySchedule, setShowCopySchedule] = useState(false); // a whole calendar, into another season
   const [showSrhResults, setShowSrhResults] = useState(false); // whole-season SimRacerHub results import
   const [toDelete, setToDelete] = useState(null); // race pending delete confirmation
   const [toggleComplete, setToggleComplete] = useState(false); // season completion pending confirmation
@@ -495,6 +497,15 @@ function SeasonSchedule() {
               onClick={() => setShowCopy(true)}>
               ⧉ Copy Race
             </button>
+            {/* The same thing for a whole calendar — the copy a league running
+                one schedule in two classes was doing a round at a time. */}
+            <button
+              className="btn btn-ghost"
+              style={{ marginTop: 0 }}
+              title="Copy every round of a season's calendar into another season, in this series or a different one"
+              onClick={() => setShowCopySchedule(true)}>
+              ⧉⧉ Copy Schedule
+            </button>
             {/* iRacing only, because SimRacerHub scores iRacing leagues and
                 nothing else — the route refuses any other game whatever this
                 shows. Sits beside Copy Race as the other way a whole season's
@@ -544,7 +555,8 @@ function SeasonSchedule() {
           Every event is managed from this table: <strong>⏱</strong> opens its results grid (qualifying,
           races, heats and points), <strong>✎</strong> edits the event itself — name, date, track, sessions
           and heat racing — and <strong>🗑</strong> deletes it. <strong>⧉ Copy Race</strong> above brings an
-          event and its results across from another season, in this series or a different one.
+          event and its results across from another season, in this series or a different one, and
+          <strong>⧉⧉ Copy Schedule</strong> does the same for a whole calendar at once.
           {srhImportable ? <> <strong>📥 Import Season Results</strong> fills the whole calendar in at once
           from SimRacerHub — one link per round, every session on it.</> : null}
         </p>
@@ -615,6 +627,16 @@ function SeasonSchedule() {
           // dialog is still open — pole, winner and field size fill in behind
           // it, which is the whole point of having imported them.
           onImported={() => loadRaces()}
+        />
+      )}
+
+      {isAdmin && showCopySchedule && (
+        <ScheduleCopyModal
+          seasonId={seasonId}
+          onClose={() => { setShowCopySchedule(false); loadRaces(); }}
+          // A copy INTO the season being viewed lands on this calendar, so
+          // reload it as soon as the copy reports back.
+          onCopied={() => loadRaces()}
         />
       )}
 

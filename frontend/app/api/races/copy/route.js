@@ -5,7 +5,7 @@ import { recalcGameSkillRatings, gameIdForSeason } from "@/lib/skillRatingServer
 import { entryClassIds } from "@/lib/classFilter";
 import {
   mapClassesByName, mapClassId, planEntryMap, newEntryForDriver,
-  copyRaceDoc, copyResultDocs, customPointsIdMap, nextRoundNumber,
+  copyRaceDoc, copyResultDocs, customPointsIdMap, nextRoundNumber, scheduleRoundNumbers,
 } from "@/lib/raceCopy";
 import { withStatsRefresh } from "@/lib/statsCache";
 
@@ -20,7 +20,10 @@ export const dynamic = "force-dynamic";
 //   GET  ?season_id=…          → that season's events, oldest round first, with
 //                                whether each has saved results
 //   POST { race_id, to_season_id, … }
-//                              → do the copy
+//                              → copy that one event
+//   POST { from_season_id, to_season_id, … }
+//                              → copy that season's WHOLE SCHEDULE — every
+//                                round of it, in order
 //
 // A race carries per-season ids that mean nothing in the target season, so the
 // copy translates rather than duplicates (see lib/raceCopy.js): drivers are
@@ -33,6 +36,14 @@ export const dynamic = "force-dynamic";
 // What's deliberately left behind: Skill Rating (recomputed for the target
 // season's game at the end of the copy) and Strength of Field, both of which are
 // derived by replaying a game's whole timeline and would be fiction if carried.
+//
+// A WHOLE SCHEDULE is the same copy done for every round, and it is one request
+// rather than a loop of them on purpose: the roster and class mappings are
+// worked out once instead of per round, every document lands in one run of
+// batches, and the Skill Rating replay — which walks a game's entire timeline —
+// is paid for once at the end rather than twelve times. It is the same planner
+// and the same rules either way; the only thing a schedule adds is which round
+// numbers the copies take.
 
 // One league's seasons with the series and game around them, so the dialog can
 // offer "which season?" as a single grouped dropdown instead of making an admin
@@ -129,30 +140,58 @@ async function commitAll(docs) {
   }
 }
 
+// A season with more rounds than this is not a schedule.
+const MAX_SCHEDULE_RACES = 120;
+
 const handlePOST = withAdmin(async (request, ctx, user) => {
   const {
-    race_id, to_season_id,
-    include_results = true,
+    race_id, from_season_id, to_season_id,
+    // A whole schedule is the calendar, so it copies WITHOUT last season's
+    // results unless they're asked for; one event is usually copied for the
+    // results it scored, so that one brings them by default. Both dialogs offer
+    // the same switch either way.
+    include_results = !from_season_id,
     add_missing_drivers = true,
     name = null, date = null, round_number = null,
   } = await request.json();
 
-  if (!race_id || !to_season_id) {
-    return NextResponse.json({ error: "race_id and to_season_id required" }, { status: 400 });
+  const wholeSchedule = !race_id && !!from_season_id;
+  if (!to_season_id || (!race_id && !from_season_id)) {
+    return NextResponse.json({ error: "to_season_id and one of race_id / from_season_id required" }, { status: 400 });
   }
 
-  const [raceDoc, targetSeasonDoc] = await Promise.all([
-    db().collection("races").doc(race_id).get(),
-    db().collection("seasons").doc(to_season_id).get(),
-  ]);
-  if (!raceDoc.exists) return NextResponse.json({ error: "That race no longer exists." }, { status: 404 });
+  // ── What is being copied ─────────────────────────────────────────────────
+  //
+  // One event or every round of a season. From here down the two are the same
+  // thing — a list of source races — so there is one set of rules rather than
+  // two that could drift.
+  const targetSeasonDoc = await db().collection("seasons").doc(to_season_id).get();
   if (!targetSeasonDoc.exists) return NextResponse.json({ error: "That season no longer exists." }, { status: 404 });
 
-  const race = { id: raceDoc.id, ...raceDoc.data() };
-  const fromSeasonId = race.season_id;
-  if (!fromSeasonId) {
-    return NextResponse.json({ error: "That race isn't attached to a season." }, { status: 400 });
+  let sourceRaces = [];
+  let fromSeasonId = from_season_id || "";
+  if (wholeSchedule) {
+    const snap = await db().collection("races").where("season_id", "==", from_season_id).get();
+    sourceRaces = snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (Number(a.round_number) || 0) - (Number(b.round_number) || 0));
+    if (!sourceRaces.length) {
+      return NextResponse.json({ error: "That season has no races to copy." }, { status: 404 });
+    }
+    if (sourceRaces.length > MAX_SCHEDULE_RACES) {
+      return NextResponse.json({ error: `That season has ${sourceRaces.length} rounds, which is more than this can copy at once.` }, { status: 400 });
+    }
+  } else {
+    const raceDoc = await db().collection("races").doc(race_id).get();
+    if (!raceDoc.exists) return NextResponse.json({ error: "That race no longer exists." }, { status: 404 });
+    const race = { id: raceDoc.id, ...raceDoc.data() };
+    if (!race.season_id) {
+      return NextResponse.json({ error: "That race isn't attached to a season." }, { status: 400 });
+    }
+    fromSeasonId = race.season_id;
+    sourceRaces = [race];
   }
+
   if (fromSeasonId === to_season_id) {
     return NextResponse.json({ error: "Pick a different season to copy into." }, { status: 400 });
   }
@@ -172,8 +211,12 @@ const handlePOST = withAdmin(async (request, ctx, user) => {
       db().collection("classes").where("season_id", "==", fromSeasonId).get(),
       db().collection("classes").where("season_id", "==", to_season_id).get(),
       db().collection("races").where("season_id", "==", to_season_id).get(),
+      // One query either way: a season's results all carry its season_id, so a
+      // whole schedule needs no per-race read.
       include_results
-        ? db().collection("results").where("race_id", "==", race_id).get()
+        ? (wholeSchedule
+          ? db().collection("results").where("season_id", "==", fromSeasonId).get()
+          : db().collection("results").where("race_id", "==", race_id).get())
         : Promise.resolve({ docs: [] }),
     ]);
 
@@ -186,38 +229,63 @@ const handlePOST = withAdmin(async (request, ctx, user) => {
   const now = new Date().toISOString();
   const stamp = { created_at: now, created_by: user.uid, ...(leagueId ? { league_id: leagueId } : {}) };
 
-  // ── The race itself ──────────────────────────────────────────────────────
-  // Points structures typed for a single session live on the race document, so
-  // the copy gets its own ids for them — otherwise the two events would share
-  // one structure and editing either would re-score the other. Empty unless the
-  // source event actually carries one.
-  const customPointsMap = customPointsIdMap(race);
-  const raceRef = db().collection("races").doc();
-  const newRace = {
-    ...copyRaceDoc(race, {
-      season_id: to_season_id,
-      round_number: round_number != null && round_number !== ""
-        ? Number(round_number)
-        : nextRoundNumber(docsOf(targetRacesSnap)),
-      name, date,
-      // A "<class> only" round stays pinned to the same class by name when the
-      // target season runs one; otherwise it copies as a shared round, since a
-      // stale class id would hide the event from every calendar.
-      class_id: mapClassId(race.class_id, classMap),
-      classMap,
-      // The event's caution flags / lead changes describe the race that was
-      // run, so they come across only when its results do.
-      include_results,
+  // ── The races themselves ─────────────────────────────────────────────────
+  //
+  // Which round numbers the copies take. A schedule copied into an EMPTY season
+  // keeps its own numbering, because that is the schedule — "Race 1" of the
+  // source is "Race 1" of the copy. Into a season that already has rounds, they
+  // continue from the last one instead, since two rounds sharing a number would
+  // order the calendar by chance. One event always joins the end, as it always
+  // has.
+  const targetRaces = docsOf(targetRacesSnap);
+  const startAt = nextRoundNumber(targetRaces);
+  const keepsOwnNumbers = wholeSchedule && targetRaces.length === 0;
+  const scheduleNumbers = scheduleRoundNumbers(sourceRaces, targetRaces);
+
+  const resultsByRace = {};
+  for (const r of results) (resultsByRace[r.race_id] ??= []).push(r);
+
+  const planned = sourceRaces.map((race, i) => {
+    // Points structures typed for a single session live on the race document,
+    // so each copy gets its own ids for them — otherwise the two events would
+    // share one structure and editing either would re-score the other. Empty
+    // unless the source event actually carries one.
+    const customPointsMap = customPointsIdMap(race);
+    const ref = db().collection("races").doc();
+    return {
+      source: race,
+      ref,
       customPointsMap,
-    }),
-    copied_from_race_id: race.id,
-    copied_from_season_id: fromSeasonId,
-    ...stamp,
-  };
+      doc: {
+        ...copyRaceDoc(race, {
+          season_id: to_season_id,
+          round_number: wholeSchedule
+            ? scheduleNumbers[i]
+            : (round_number != null && round_number !== "" ? Number(round_number) : startAt),
+          // Renaming and re-dating are one event's business; a schedule keeps
+          // every round's own name and date, which is what a schedule IS.
+          name: wholeSchedule ? null : name,
+          date: wholeSchedule ? null : date,
+          // A "<class> only" round stays pinned to the same class by name when
+          // the target season runs one; otherwise it copies as a shared round,
+          // since a stale class id would hide the event from every calendar.
+          class_id: mapClassId(race.class_id, classMap),
+          classMap,
+          // The event's caution flags / lead changes describe the race that was
+          // run, so they come across only when its results do.
+          include_results,
+          customPointsMap,
+        }),
+        copied_from_race_id: race.id,
+        copied_from_season_id: fromSeasonId,
+        ...stamp,
+      },
+    };
+  });
 
   // ── The drivers those results belong to ──────────────────────────────────
-  // Only the drivers this event actually scored need to exist on the target
-  // roster — copying a race is not a roster import, so nobody else comes along.
+  // Only the drivers these events actually scored need to exist on the target
+  // roster — copying races is not a roster import, so nobody else comes along.
   const scoringEntryIds = new Set(results.map(r => r.entry_id).filter(Boolean));
   const scoringEntries = sourceEntries.filter(e => scoringEntryIds.has(e.id));
   const { map: entryMap, missing } = planEntryMap(scoringEntries, targetEntries);
@@ -236,13 +304,23 @@ const handlePOST = withAdmin(async (request, ctx, user) => {
     }
   }
 
-  const { rows, skipped } = copyResultDocs(results, {
-    race_id: raceRef.id, season_id: to_season_id, entryMap, classMap, customPointsMap,
-  });
+  // Each copy's results, keyed to the copy rather than to the round they came
+  // from — one race's worth at a time, so a session's points structure is the
+  // one its own event carries.
+  const rows = [];
+  const skipped = [];
+  for (const p of planned) {
+    const out = copyResultDocs(resultsByRace[p.source.id] || [], {
+      race_id: p.ref.id, season_id: to_season_id, entryMap, classMap,
+      customPointsMap: p.customPointsMap,
+    });
+    rows.push(...out.rows);
+    skipped.push(...out.skipped);
+  }
 
   await commitAll([
     ...createdEntries,
-    { ref: raceRef, doc: newRace },
+    ...planned.map(p => ({ ref: p.ref, doc: p.doc })),
     ...rows.map(doc => ({ ref: db().collection("results").doc(), doc: { ...doc, ...stamp } })),
   ]);
 
@@ -261,7 +339,11 @@ const handlePOST = withAdmin(async (request, ctx, user) => {
   const skippedNames = [...new Set(skipped.map(r => nameOfEntry[r.entry_id] || "Unknown driver"))];
 
   return NextResponse.json({
-    race: { id: raceRef.id, ...newRace },
+    // The one event, for the dialog that copied one. A schedule reports the set.
+    race: { id: planned[0].ref.id, ...planned[0].doc },
+    races_copied: planned.length,
+    rounds: planned.map(p => ({ id: p.ref.id, name: p.doc.name, round_number: p.doc.round_number })),
+    kept_round_numbers: keepsOwnNumbers,
     results_copied: rows.length,
     results_skipped: skipped.length,
     drivers_created: createdEntries.length,

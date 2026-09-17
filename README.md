@@ -152,6 +152,16 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   **Different Leaders**, which needs no box at all: it is the number of drivers whose Led column
   shows at least one lap, worked out from the session on screen so it can never drift from the grid
   under it. A blank (or a 0) is left off the page rather than printed as a counted figure
+- ⧉⧉ **Copy Schedule** — copy a whole season's calendar into another season, in the same series or
+  a different one. The same translation **⧉ Copy Race** does, done for every round at once: each
+  keeps its name, date, track, distance, sessions and per-session points structures, and classes are
+  re-matched to the target season **by name**, since a class id means nothing outside the season it
+  belongs to. Into an empty season the rounds **keep their own numbers**, so the copy reads exactly
+  like the calendar it came from; into one that already has rounds they're added after them and
+  nothing there is touched. Results come only if you tick for them — copying a schedule means the
+  calendar, and a season's worth of someone else's results is a lot to undo. It is literally the same
+  request and the same planner underneath, so a league running one calendar in two classes stops
+  doing Copy Race twelve times
 - 📋 **Paste a season schedule from a spreadsheet (any game)** — SimRacerHub scores iRacing and
   nothing else, so every other league was still building next season a round at a time. Select the
   schedule in your sheet, paste it, and the whole season comes across: every round with its **date**,
@@ -1502,7 +1512,8 @@ frontend/
     standings/      ← Driver + team points tables
     stats/          ← Scoped driver stats (season/series/game/league), sortable
     schedule/       ← Season calendar (admin: ⏱ enter results, ✎ edit event, 🗑 delete,
-                      ⧉ Copy Race, and 📥 Import Season Results on an iRacing season —
+                      ⧉ Copy Race, ⧉⧉ Copy Schedule, + New Season, and
+                      📥 Import Season Results on an iRacing season —
                       a URL bar per round, one press for the whole season's results)
     calendar/       ← Global month-by-month calendar of every event in the league,
                       filtered by Game ▸ Series (lib/calendar.js holds its arithmetic)

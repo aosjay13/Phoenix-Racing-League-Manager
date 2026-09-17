@@ -12,10 +12,13 @@
 //   4. derived numbers (Skill Rating, Strength of Field) are never copied —
 //      they're replayed from the target game's own timeline.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   COPIED_RACE_FIELDS, COPIED_RESULT_FIELDS,
   copyRaceDoc, copyResultDocs, mapClassId, mapClassesByName,
-  newEntryForDriver, nextRoundNumber, planEntryMap,
+  newEntryForDriver, nextRoundNumber, planEntryMap, scheduleRoundNumbers,
 } from "../raceCopy.js";
 import { UNCLASSIFIED } from "../classFilter.js";
 
@@ -147,6 +150,66 @@ ok("a per-class points map with nothing left to key on is dropped entirely",
 check("a copy lands one past the target season's last round",
   nextRoundNumber([{ round_number: 3 }, { round_number: 11 }, { round_number: "7" }]), 12);
 check("…and opens an empty season at round 1", nextRoundNumber([]), 1);
+
+// ── A WHOLE SCHEDULE's round numbers ──────────────────────────────────────
+//
+// Copying one calendar into another season is the same copy done per round, and
+// the only thing it adds is which numbers the copies take. Into an empty season
+// they keep their own, because that is what a schedule IS — a league running one
+// calendar in two classes wants the two to read alike. Into a season that
+// already has rounds they continue from the last, since two rounds sharing a
+// number would order that calendar by chance, and renumbering what was already
+// there would be worse.
+const calendar = [{ round_number: 1 }, { round_number: 2 }, { round_number: 3 }];
+
+check("into an empty season a schedule keeps its own numbers",
+  scheduleRoundNumbers(calendar, []), [1, 2, 3]);
+check("…including a calendar that doesn't start at one",
+  scheduleRoundNumbers([{ round_number: 5 }, { round_number: 6 }], []), [5, 6]);
+check("…and a gap in the middle is the league's own numbering, kept",
+  scheduleRoundNumbers([{ round_number: 1 }, { round_number: 3 }], []), [1, 3]);
+check("a round with no number of its own falls back to its place in the order",
+  scheduleRoundNumbers([{ round_number: 1 }, {}, { round_number: 3 }], []), [1, 2, 3]);
+check("…and a wholly unnumbered calendar comes out 1..N",
+  scheduleRoundNumbers([{}, {}, {}], []), [1, 2, 3]);
+
+check("into a season that already has rounds they continue from the last",
+  scheduleRoundNumbers(calendar, [{ round_number: 4 }, { round_number: 5 }]), [6, 7, 8]);
+check("…from the HIGHEST of them, not the last written",
+  scheduleRoundNumbers(calendar, [{ round_number: 9 }, { round_number: 2 }]), [10, 11, 12]);
+check("…so nothing already there is ever landed on",
+  scheduleRoundNumbers([{ round_number: 1 }], [{ round_number: 1 }]), [2]);
+check("copying nothing numbers nothing", scheduleRoundNumbers([], []), []);
+
+// ── One copier, two sizes ─────────────────────────────────────────────────
+//
+// A whole schedule is the same copy done for every round. It matters that it is
+// literally the same code: a second copier would drift, and the drift would be
+// in the rules that translate a per-season id — which is the whole difficulty
+// of copying anything between seasons.
+{
+  const here = dirname(fileURLToPath(import.meta.url));
+  const route = readFileSync(join(here, "../..", "app/api/races/copy/route.js"), "utf8");
+
+  ok("the route copies one event or a whole season", /from_season_id/.test(route));
+  ok("…through the same race planner", /copyRaceDoc\(/.test(route) && route.match(/copyRaceDoc\(/g).length === 1);
+  ok("…and the same result planner", /copyResultDocs\(/.test(route) && route.match(/copyResultDocs\(/g).length === 1);
+  ok("…mapping drivers and classes once for the set, not per round",
+    route.match(/planEntryMap\(/g).length === 1 && route.match(/mapClassesByName\(/g).length === 1);
+  // A season's results all carry its season_id, so a twelve-round copy is one
+  // query rather than twelve.
+  ok("a schedule's results are read in one query",
+    /where\("season_id", "==", fromSeasonId\)/.test(route));
+  // Renaming and re-dating are one event's business. A schedule keeps every
+  // round's own name and date, which is what a schedule is.
+  ok("a schedule keeps every round's own name and date",
+    /name: wholeSchedule \? null : name/.test(route) && /date: wholeSchedule \? null : date/.test(route));
+  // The Skill Rating replay walks a game's entire timeline, so a twelve-round
+  // copy must pay for it once.
+  ok("the Skill Rating replay is paid for once",
+    route.match(/recalcGameSkillRatings\(/g).length === 1);
+  ok("…and every document still lands in batches", /commitAll\(/.test(route));
+}
 
 // ── 4. The results ───────────────────────────────────────────────────────
 
