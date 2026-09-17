@@ -361,11 +361,20 @@ function FeedSection({ title, icon, rows, kind }) {
 // ── One season's full event table (a concrete season is selected) ──────────
 
 function SeasonSchedule() {
-  const { seasonId, season, classId, className, classes, raceClass, refresh, league, game, series } = useLeague();
+  const {
+    seasonId, season, classId, className, classes, raceClass, refresh, league, game, series,
+    gameId, seriesId, games, seriesList, setGameId, setSeriesId, setSeasonId,
+  } = useLeague();
   const { isAdmin } = useAuth();
   const router = useRouter();
   const [sharing, setSharing] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
+  // Starting ANOTHER season, from inside the one you're looking at. Every way
+  // in — a paste, a CSV, a JSON export, a SimRacerHub link, or typing it — is
+  // in this one dialog, and it was previously reachable only from the
+  // cross-season feed. Next season is most often built while last season is on
+  // screen, which is exactly where the button wasn't.
+  const [showCreateSeason, setShowCreateSeason] = useState(false);
   const [showCopy, setShowCopy] = useState(false);
   const [showSrhResults, setShowSrhResults] = useState(false); // whole-season SimRacerHub results import
   const [toDelete, setToDelete] = useState(null); // race pending delete confirmation
@@ -502,6 +511,11 @@ function SeasonSchedule() {
             <button className="btn btn-primary" style={{ marginTop: 0 }} onClick={() => setShowCreate(true)}>
               + New Race
             </button>
+            <button className="btn btn-primary" style={{ marginTop: 0 }}
+              title="Start another season — type it, paste it from a spreadsheet, load a CSV or JSON file, or read it off SimRacerHub"
+              onClick={() => setShowCreateSeason(true)}>
+              + New Season
+            </button>
           </div>
         )}
       </div>
@@ -549,6 +563,29 @@ function SeasonSchedule() {
           confirmLabel={completed ? "Reopen season" : "Mark complete"}
           onConfirm={confirmToggleComplete}
           onClose={() => setToggleComplete(false)}
+        />
+      )}
+
+      {/* The same dialog the cross-season feed opens, and the same one every
+          schedule importer lives in — so "import a season" is available from
+          wherever you happen to be standing, not only from the one view that
+          has no season selected. */}
+      {showCreateSeason && (
+        <SeasonCreateModal
+          gameId={gameId} games={games}
+          seriesId={seriesId} seriesName={series?.name} seriesList={seriesList}
+          onClose={() => setShowCreateSeason(false)}
+          onCreated={(created, scope) => {
+            setShowCreateSeason(false);
+            // Move the whole selector onto the season that was just made, so the
+            // page becomes its calendar — the same landing the feed's button
+            // gives, rather than leaving you on last season wondering whether it
+            // worked.
+            refresh();
+            if (scope.gameId !== gameId) setGameId(scope.gameId);
+            if (scope.seriesId !== seriesId) setSeriesId(scope.seriesId);
+            setSeasonId(created.id);
+          }}
         />
       )}
 

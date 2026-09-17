@@ -15,7 +15,12 @@ Race\tDates\tTrack\tTotal Race Laps
 2\t11/6/2023\tRoad America\t18
 3\t11/13/2023\tFontana\t50`;
 
-// Import a season's schedule by pasting it — ANY game.
+// Import a season's schedule by pasting it — ANY game, and any of the four
+// shapes a schedule turns up in: typed or pasted text, a CSV, a TSV out of a
+// spreadsheet, or a JSON export. They are all ONE reader (lib/pastedSchedule.js)
+// because they are all one thing: a table with a header row. A file picker sits
+// beside the box for the two that usually arrive as files, and drops their
+// contents into it, so what gets imported is always the text you can see.
 //
 // The SimRacerHub importer next door only helps iRacing leagues, because
 // SimRacerHub scores nothing else. Every other league still keeps a schedule;
@@ -42,6 +47,7 @@ export function PastedScheduleImportModal({ gameId, games = [], seriesId, series
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState(null);
   const [trackChoices, setTrackChoices] = useState({});
+  const [fileNote, setFileNote] = useState("");
 
   // Any game — that is the whole point of this one. The scope's own game is
   // used when it has one.
@@ -119,6 +125,24 @@ export function PastedScheduleImportModal({ gameId, games = [], seriesId, series
   const setChoice = (raw, patch) =>
     setTrackChoices(prev => ({ ...prev, [raw]: { ...(prev[raw] || {}), ...patch } }));
 
+  // A CSV or a JSON export usually arrives as a file rather than on the
+  // clipboard. Reading it into the box rather than importing it straight off
+  // disk keeps one rule: what gets imported is what you can see and correct.
+  async function loadFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      const content = await file.text();
+      setText(content);
+      setPreview(null);
+      setError(null);
+      setFileNote(`Loaded ${file.name} — press Read schedule.`);
+    } catch (err) {
+      setError(`Couldn't read ${file.name}: ${err.message}`);
+    }
+  }
+
   // What each column was read as, so a header this misread is visible BEFORE a
   // season is built on it. The one thing a paste can get wrong that a URL
   // can't.
@@ -137,10 +161,12 @@ export function PastedScheduleImportModal({ gameId, games = [], seriesId, series
   return (
     <Modal title="Import a season schedule from a paste" size="workspace" onClose={onClose}>
       <p style={{ marginTop: 0, color: "var(--ink-2)", fontSize: "0.82rem", maxWidth: 760 }}>
-        Select your season&rsquo;s schedule in a spreadsheet and paste it below — columns separated by tabs,
-        commas or spaces, all three read the same. It needs a header row naming its columns, and a row per
-        round under it. A title line above the headers becomes the season&rsquo;s name, and a totals line at
-        the bottom is left out. Nothing is created until you&rsquo;ve seen what it found.
+        Select your season&rsquo;s schedule in a spreadsheet and paste it below — tabs, commas or aligned
+        spaces all read the same, and so does a <strong>JSON</strong> export. Or load a <strong>.csv</strong>,
+        <strong>.tsv</strong> or <strong>.json</strong> file straight into the box. It needs a header row
+        naming its columns and a row per round under it; a title line above the headers becomes the
+        season&rsquo;s name, and a totals line at the bottom is left out. Nothing is created until
+        you&rsquo;ve seen what it found.
       </p>
 
       <form onSubmit={e => { e.preventDefault(); read(); }} style={{ maxWidth: 820 }}>
@@ -154,12 +180,22 @@ export function PastedScheduleImportModal({ gameId, games = [], seriesId, series
             Column names it knows: <strong>Race</strong> or <strong>Round</strong>, <strong>Date</strong>,
             {" "}<strong>Track</strong>, <strong>Laps</strong> or <strong>Minutes</strong>, and optionally
             {" "}<strong>Event</strong> and <strong>Car</strong>. It is forgiving about the wording —
-            &ldquo;Dates&rdquo;, &ldquo;Circuit&rdquo; and &ldquo;Total Race Laps&rdquo; all read fine.
+            &ldquo;Dates&rdquo;, &ldquo;Circuit&rdquo; and &ldquo;Total Race Laps&rdquo; all read fine. In a
+            JSON export the same names are read off each round&rsquo;s keys.
           </span>
         </div>
-        <button className="btn btn-primary" type="submit" disabled={busy || creating || !text.trim()}>
-          {busy ? "Reading…" : preview ? "Read again" : "Read schedule"}
-        </button>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <button className="btn btn-primary" type="submit" style={{ marginTop: 0 }} disabled={busy || creating || !text.trim()}>
+            {busy ? "Reading…" : preview ? "Read again" : "Read schedule"}
+          </button>
+          <label className="btn btn-ghost" style={{ marginTop: 0, cursor: "pointer" }}
+            title="Load a .csv, .tsv, .txt or .json file into the box above">
+            📂 Load a file…
+            <input type="file" accept=".csv,.tsv,.txt,.json,text/csv,application/json"
+              onChange={loadFile} style={{ display: "none" }} />
+          </label>
+          {fileNote && <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>{fileNote}</span>}
+        </div>
       </form>
 
       {preview && (

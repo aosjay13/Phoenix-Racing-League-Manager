@@ -117,7 +117,56 @@ const OFF_WEEK = /\b(off[-\s]?week|bye|no\s+race|break|holiday|tbd|tba)\b/i;
 // words people write in them.
 const looksLikeTotal = cells => /\btotals?\b/i.test(cells.join(" "));
 
-// ── 3. The paste → the same rounds parseSrhSchedule yields ────────────────
+// ── 3. JSON, read as the same table ───────────────────────────────────────
+
+// A schedule exported as JSON, turned into the grid the rest of this module
+// reads. An array of objects IS a table — its keys are the header row and its
+// values are the rows — so rather than a second reader with its own ideas about
+// dates and totals, JSON becomes a grid and goes through exactly the pipeline a
+// paste does. The key names go through the same forgiving vocabulary, so
+// {"Race":1,"Dates":"10/30/2023"} and {"round":1,"date":"2023-10-30"} both land.
+//
+// Returns { grid, title } or null when the text isn't JSON, or is JSON that
+// isn't a list of rounds.
+export function jsonScheduleGrid(text) {
+  const raw = String(text ?? "").trim();
+  if (!raw.startsWith("[") && !raw.startsWith("{")) return null;
+  let data;
+  try { data = JSON.parse(raw); } catch { return null; }
+
+  // A bare array, or an object wrapping one under whichever name the exporter
+  // chose. The title comes along when the wrapper carries one.
+  let title = "";
+  let list = null;
+  if (Array.isArray(data)) list = data;
+  else if (data && typeof data === "object") {
+    for (const key of ["races", "rounds", "schedule", "events", "rows", "data"]) {
+      if (Array.isArray(data[key])) { list = data[key]; break; }
+    }
+    for (const key of ["season", "season_name", "name", "title"]) {
+      if (typeof data[key] === "string" && data[key].trim()) { title = data[key].trim(); break; }
+    }
+  }
+  if (!Array.isArray(list)) return null;
+
+  const rows = list.filter(r => r && typeof r === "object" && !Array.isArray(r));
+  if (!rows.length) return null;
+
+  // Every key any round carries, in the order they are first seen — an exporter
+  // that leaves a field off one round must not shift the others' columns.
+  const headers = [];
+  for (const row of rows) for (const key of Object.keys(row)) if (!headers.includes(key)) headers.push(key);
+  if (!headers.length) return null;
+
+  const cell = v => {
+    if (v == null) return "";
+    if (typeof v === "object") return "";
+    return String(v);
+  };
+  return { grid: [headers, ...rows.map(row => headers.map(h => cell(row[h])))], title };
+}
+
+// ── 4. The paste → the same rounds parseSrhSchedule yields ────────────────
 
 // Returns null when the text isn't a schedule at all, so a caller can say so
 // rather than create an empty season.
@@ -128,9 +177,15 @@ export function parsePastedSchedule(text) {
   const raw = String(text ?? "");
   if (!raw.trim()) return null;
 
-  const delimiter = detectDelimiter(raw);
-  const grid = raw.split(/\r?\n/)
-    .map(line => splitLine(line, delimiter))
+  // JSON first — it is unambiguous, and reading it as delimited text would
+  // find commas inside it and make nonsense. Either way what comes out is a
+  // grid, and the rest of this reads a grid.
+  const asJson = jsonScheduleGrid(raw);
+  const delimiter = asJson ? "json" : detectDelimiter(raw);
+  const grid = (asJson
+    ? asJson.grid
+    : raw.split(/\r?\n/).map(line => splitLine(line, delimiter))
+  )
     // A spreadsheet pads short rows with empty cells, so a "blank" line is one
     // whose cells are all empty rather than one with no characters.
     .filter(cells => cells.some(c => clean(c) !== ""));
@@ -140,7 +195,11 @@ export function parsePastedSchedule(text) {
   // It is rarely the first — a schedule is usually titled, and the title is
   // what the season gets called.
   let headerIdx = -1, best = 0;
-  for (let i = 0; i < Math.min(grid.length, 15); i++) {
+  // JSON has no title rows and no preamble: its keys are the header row, full
+  // stop. Scoring for one would let a round whose values happen to read like
+  // column names beat it.
+  if (asJson) { headerIdx = 0; best = grid[0].filter(c => pastedHeaderField(c) != null).length; }
+  else for (let i = 0; i < Math.min(grid.length, 15); i++) {
     const known = grid[i].filter(c => pastedHeaderField(c) != null).length;
     if (known > best) { best = known; headerIdx = i; }
   }
@@ -159,7 +218,7 @@ export function parsePastedSchedule(text) {
   // Everything above the header is the title. The last non-empty line of it is
   // the one nearest the table, which is the one naming this schedule.
   const titleRows = grid.slice(0, headerIdx).map(cells => cells.map(clean).filter(Boolean).join(" ").trim());
-  const title = seasonNameFrom(titleRows.filter(Boolean).pop() || "");
+  const title = seasonNameFrom(asJson ? asJson.title : (titleRows.filter(Boolean).pop() || ""));
 
   const body = grid.slice(headerIdx + 1);
   const cellOf = cells => idx => (idx == null ? "" : clean(cells[idx]));

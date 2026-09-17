@@ -21,7 +21,9 @@
 //      SimRacerHub schedule — this must not grow a second opinion.
 //   4. NOTHING VANISHES. Every row not read as a round is named, with why.
 import assert from "node:assert";
-import { mapPastedHeaders, parsePastedSchedule, pastedHeaderField, seasonNameFrom } from "../pastedSchedule.js";
+import {
+  jsonScheduleGrid, mapPastedHeaders, parsePastedSchedule, pastedHeaderField, seasonNameFrom,
+} from "../pastedSchedule.js";
 import { srhSchedulePlan } from "../srhSchedule.js";
 import { initialTrackChoices, trackChoiceProblems } from "../scheduleReview.js";
 
@@ -200,6 +202,54 @@ for (const [label, text] of [
 {
   const written = parsePastedSchedule("Race,Date,Track,Race Length\n1,3/1/2026,Spa,1h 30m");
   check("a length written out is read", written.rounds[0].length, { length_type: "time", race_minutes: 90 });
+}
+
+// ── JSON, which is the same table with its header row as keys ─────────────
+//
+// An array of objects IS a table, so it becomes a grid and goes through exactly
+// the pipeline a paste does. A second reader with its own ideas about dates and
+// totals is the thing this avoids.
+{
+  const bare = parsePastedSchedule(JSON.stringify([
+    { Race: 1, Dates: "10/30/2023", Track: "Daytona Oval", "Total Race Laps": 50 },
+    { Race: 2, Dates: "11/6/2023", Track: "Road America", "Total Race Laps": 18 },
+  ]));
+  check("a JSON array of rounds reads", bare.rounds.length, 2);
+  check("…its keys are the header row", bare.mapping, { round: 0, date: 1, track: 2, laps: 3 });
+  check("…and the same forgiving names apply to them", bare.rounds[0].track, "Daytona Oval");
+  check("…with dates resolved across the whole export, as ever",
+    bare.rounds.map(r => r.date), ["2023-10-30", "2023-11-06"]);
+  check("…and a number stays a distance", bare.rounds[0].length, { length_type: "laps", total_laps: 50 });
+
+  // An exporter that wraps the list, and names the season while it's there.
+  const wrapped = parsePastedSchedule(JSON.stringify({
+    season: "2023 Season 1 Schedule",
+    races: [{ round: 1, date: "2023-10-30", track: "Daytona Oval", laps: 50 }],
+  }));
+  check("a wrapped list is found", wrapped.rounds.length, 1);
+  check("…and the wrapper's own name becomes the season's", wrapped.title, "2023 Season 1");
+  check("…with lower-case keys reading as well as capitalised ones", wrapped.mapping.track, 2);
+
+  // A round that leaves a field off must not shift the other rounds' columns.
+  const ragged = parsePastedSchedule(JSON.stringify([
+    { round: 1, date: "2026-03-01", track: "Bristol", laps: 100 },
+    { round: 2, date: "2026-03-08", laps: 200 },
+  ]));
+  check("a missing key leaves a blank, not a shifted column",
+    ragged.rounds.map(r => r.track), ["Bristol", ""]);
+  check("…and the round after it keeps its distance",
+    ragged.rounds[1].length, { length_type: "laps", total_laps: 200 });
+
+  // The grid builder on its own, since it is what decides all of the above.
+  check("a bare array becomes a grid", jsonScheduleGrid('[{"a":1},{"a":2}]').grid, [["a"], ["1"], ["2"]]);
+  check("text that isn't JSON is not JSON", jsonScheduleGrid("Race,Date\n1,3/1/2026"), null);
+  check("…nor is JSON that holds no rounds", jsonScheduleGrid("[]"), null);
+  check("…nor a number", jsonScheduleGrid("42"), null);
+  check("…nor a list of strings", jsonScheduleGrid('["Bristol","Martinsville"]'), null);
+  check("broken JSON is refused rather than thrown", parsePastedSchedule("{ nope"), null);
+  // A nested object in a cell is not a value a schedule column can hold.
+  check("a nested object reads as empty rather than [object Object]",
+    jsonScheduleGrid('[{"track":{"name":"Bristol"}}]').grid[1], [""]);
 }
 
 // ── 4. What isn't a schedule ──────────────────────────────────────────────

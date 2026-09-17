@@ -157,8 +157,9 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   schedule in your sheet, paste it, and the whole season comes across: every round with its **date**,
   its **track** and how far it runs. Tabs, commas or aligned spaces all read the same, and the column
   names are forgiving — *Race*, *Rd*, *Dates*, *Circuit*, *Total Race Laps* all land where they
-  should. The **title line becomes the season's name** and a **totals line at the bottom is left
-  out**; every row it didn't read as a round is listed with why. Dates are resolved across the whole
+  should — and a **JSON** export reads the same way, with its keys as the header row, whether you
+  paste it or load the file. The **title line becomes the season's name** and a **totals line at the
+  bottom is left out**; every row it didn't read as a round is listed with why. Dates are resolved across the whole
   paste at once, so `10/30/2023` settles `11/6` with it. Venues are matched to the tracks you already
   have, exactly as the SimRacerHub import does — it is the same review table and the same writer
   underneath, only the reading is new
@@ -1175,6 +1176,19 @@ does the same job.
 **📋 Import a season schedule from a paste**, beside the SimRacerHub one. Offered whatever the game
 is: a calendar in a sheet is not an iRacing idea, and an iRacing league with its calendar in Excel is
 welcome to it as well.
+
+**+ New Season is on the Schedule whether or not a season is selected.** Next season is most often
+built while last season is still on screen, so the button — and with it every way of importing one:
+text, CSV, TSV, JSON and SimRacerHub — is in the toolbar of a season's own calendar as well as on the
+cross-season feed. Either way you land on the new season's calendar once it's made.
+
+**Four shapes, one reader.** Typed text, a CSV, a TSV out of a spreadsheet and a JSON export are all
+the same thing — a table with a header row — so they go through one parser rather than four. JSON is
+turned into that table with its keys as the header row, so `{"Race":1,"Dates":"10/30/2023"}` and
+`{"round":1,"date":"2023-10-30"}` both land, and an exporter that wraps the list (`{"season":…,
+"races":[…]}`) has its own name read as the season's. **📂 Load a file…** reads a `.csv`, `.tsv`,
+`.txt` or `.json` straight into the box — into the box, not past it, so what gets imported is always
+what you can see and correct.
 
 **What to paste.** Select the sheet and paste it. Columns separated by tabs, commas or aligned spaces
 all read the same:
