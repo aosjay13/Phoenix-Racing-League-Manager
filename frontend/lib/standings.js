@@ -1,4 +1,5 @@
 import { classOfResult } from "@/lib/classFilter";
+import { entryIdentityKeys } from "@/lib/teams";
 import { BANGER_BONUS_TYPES, BANGER_STATS, BANGER_STAT_KEYS, bangerPoints, bangerStatLine, blankBangerTotals } from "@/lib/bangerRacing";
 import { isNoPointsTemplate } from "@/lib/pointsTemplates";
 
@@ -1009,6 +1010,63 @@ export function compareStandings(a, b, { pointsKey = "adjusted_points", nameKey 
   return 0;
 }
 
+// ── One row per driver, not one per roster entry ───────────────────────────
+//
+// A season's roster is meant to hold ONE entry per driver, and the paths that
+// add one reuse the entry a driver already has (see POST /api/entries). Data
+// written before that rule did not always: a driver added a second time — once
+// per class, back when an entry could only carry one, or through a "＋ Create
+// new driver" that resolved to somebody already on the roster — ends up with
+// two entries, and the season's results split between them.
+//
+// Scored per ENTRY, that reads as two drivers of the same name, each holding a
+// share of one championship. Both rows are wrong, both are ranked, and nothing
+// on the table says why. So the unit of a standings row is the DRIVER, resolved
+// the way the roster and the stats tables resolve one — driver profile, then
+// linked account, then name (entryIdentityKeys) — and their results are added up
+// once however many entries they arrived on. Drop weeks, the tie-breakers, the
+// gaps and the team roll-up all follow from that single row, so a duplicated
+// driver stops costing themselves positions in every column at once.
+//
+// Nothing is folded across DIFFERENT drivers: a result whose entry is missing
+// from the roster keeps a bucket of its own, since there is no identity to fold
+// it into.
+const rowKeyFor = (entry, entryId) => entryIdentityKeys(entry || {})[0] || `e:${entryId}`;
+
+// Which of a driver's duplicate entries speaks for them: the one carrying a car
+// number (the roster identity people recognise, and the survivor the roster's
+// Combine action keeps), then the oldest, then the lowest id — so the answer
+// never depends on the order Firestore handed the documents back.
+function preferEntry(a = {}, b = {}) {
+  const an = a.number != null && a.number !== "";
+  const bn = b.number != null && b.number !== "";
+  if (an !== bn) return an ? -1 : 1;
+  const at = String(a.created_at ?? ""), bt = String(b.created_at ?? "");
+  if (at !== bt) return at < bt ? -1 : 1;
+  return String(a.id ?? "").localeCompare(String(b.id ?? ""));
+}
+
+// One driver's entries → the single roster row the championship reads them as.
+// Each field comes from the first entry that actually carries it (they arrive in
+// preferEntry order, so that is the entry the roster shows), and the points
+// adjustment is the SUM of every entry's: a penalty recorded against one of a
+// driver's entries is still a penalty against the driver, and dropping it here
+// would quietly hand back points an admin took away.
+function mergeEntries(list) {
+  const firstOf = key => list.find(e => e[key] != null && e[key] !== "")?.[key] ?? null;
+  const notes = [...new Set(list.map(e => e.adjustment_note).filter(Boolean))];
+  return {
+    name: firstOf("name") ?? "Unknown",
+    number: firstOf("number"),
+    driver_id: firstOf("driver_id"),
+    user_id: firstOf("user_id"),
+    team_id: firstOf("team_id"),
+    team: firstOf("team"),
+    points_adjustment: list.reduce((a, e) => a + num(e.points_adjustment), 0),
+    adjustment_note: notes.length ? notes.join(" · ") : null,
+  };
+}
+
 // results should already be passed through decorateRaceBonuses().
 // `templatesById` (optional) resolves each result's own points_template_id
 // (see lib/pointsTemplatesServer.js), so a Heat/Consolation/Feature session
@@ -1024,12 +1082,20 @@ export function calculateStandings(results, entries, teams = [], config, templat
   const teamsById = Object.fromEntries(teams.map(t => [t.id, t]));
   const scorer = makeScorer(results, { config, classes, entriesById, templatesById });
 
-  const byEntry = {};
-  for (const r of results) (byEntry[r.entry_id] ??= []).push(r);
+  // Grouped by driver rather than by entry — see rowKeyFor above.
+  const byDriver = {};
+  for (const r of results) {
+    const bucket = (byDriver[rowKeyFor(entriesById[r.entry_id], r.entry_id)] ??= { entryIds: [], results: [] });
+    if (!bucket.entryIds.includes(r.entry_id)) bucket.entryIds.push(r.entry_id);
+    bucket.results.push(r);
+  }
 
   const rows = [];
-  for (const [entryId, entryResults] of Object.entries(byEntry)) {
-    const entry = entriesById[entryId] || {};
+  for (const bucket of Object.values(byDriver)) {
+    // Every entry this driver's results came in on, the roster's own first.
+    const entryIds = bucket.entryIds.map(id => entriesById[id] ?? { id }).sort(preferEntry).map(e => e.id);
+    const entryResults = bucket.results;
+    const entry = mergeEntries(entryIds.map(id => entriesById[id] ?? {}));
     const team = teamsById[entry.team_id] || {};
     // EVERY session the driver scored in counts, Qualifying included: its
     // qualifying points are a line of the championship in their own right, worth
@@ -1068,7 +1134,12 @@ export function calculateStandings(results, entries, teams = [], config, templat
     const adjustment = num(entry.points_adjustment);
 
     rows.push({
-      entry_id: entryId,
+      entry_id: entryIds[0],
+      // Every roster entry this row stands for — one on a healthy roster, more
+      // when a driver was added twice. Carried so a screen acting on the row
+      // (the Class column, the points-adjustment editor) acts on all of them
+      // rather than on whichever one happened to come first.
+      entry_ids: entryIds,
       driver_name: entry.name ?? "Unknown",
       driver_number: entry.number ?? null,
       driver_id: entry.driver_id ?? null,

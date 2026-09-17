@@ -66,11 +66,14 @@ export function coerceField(opts, raw) {
 // response body, so it can decorate the docs on the way past.
 //
 // `guard` is an async last look at a POST before anything is written. It's
-// handed the request body and the request, and returning a NextResponse
-// REFUSES the create with it — which is how POST /api/drivers stops a second
-// profile for somebody the league already has without the caller confirming it
-// first (see app/api/drivers/route.js). Returning nothing lets the write
-// proceed, so a collection with no guard behaves exactly as it always did.
+// handed the request body and the request, and returning a NextResponse ANSWERS
+// the create with it instead of writing the document — which is how POST
+// /api/drivers refuses a second profile for somebody the league already has
+// until the caller confirms it (see app/api/drivers/route.js), and how POST
+// /api/entries answers with the roster entry a driver already holds in that
+// season rather than adding them to it twice (see app/api/entries/route.js).
+// Returning nothing lets the write proceed, so a collection with no guard
+// behaves exactly as it always did.
 // The cached league reads (standings, stats, the schedule feed) are built from
 // these collections, so a create, edit or delete in one of them makes whatever
 // is cached wrong. Dropping it HERE covers every collection the generic routes

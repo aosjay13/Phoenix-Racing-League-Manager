@@ -24,8 +24,8 @@ import {
 } from "@/lib/standings";
 import { bangerPoints, bangerStatLine, hasBangerBonuses } from "@/lib/bangerRacing";
 import {
-  classIdsInSeason, classNamesFor, entryClassIds, entryClassIdsOrdered,
-  filterEntriesByClass, filterResultsByClass, orderEntryClasses,
+  classIdsInSeason, entryClassIds, filterEntriesByClass, filterResultsByClass,
+  orderClassIds, orderEntryClasses,
 } from "@/lib/classFilter";
 import { seasonChampions } from "@/lib/champions";
 import { applySeasonTeams, teamsForEntries } from "@/lib/teams";
@@ -152,12 +152,20 @@ export function buildStandings(index, { seasonId, classId = "", className = "" }
   // only carry a single class. Every driver lists their classes in the SEASON's
   // order (the order the Class menu shows), so the column reads the same way on
   // every row instead of following whatever order each entry was saved with.
+  //
+  // Read across EVERY entry the row stands for, not just the first: a driver who
+  // holds two roster entries (see calculateStandings) is one row now, and their
+  // classes are the classes of both — which is exactly the shape the duplicate
+  // used to take, one entry per class.
+  const classNameById = new Map(classes.map(c => [c.id, c.name]));
   for (const r of drivers.rows) {
-    const entry = entriesById[r.entry_id];
-    const cids = entryClassIdsOrdered(entry, classes);
+    const cids = orderClassIds(
+      (r.entry_ids ?? [r.entry_id]).flatMap(id => entryClassIds(entriesById[id])),
+      classes,
+    );
     r.class_id = cids[0] || null;
     r.class_ids = cids;
-    const names = classNamesFor(entry, classes);
+    const names = cids.map(id => classNameById.get(id)).filter(Boolean);
     r.class_name = names.length ? names.join(" · ") : null;
   }
 

@@ -419,4 +419,87 @@ check("qualifying adjustment", pointsFor({ ...q("e1", 1), points_adjustment: -4,
 }
 
 
+// ── 21. A driver the roster holds twice is still ONE championship row ─────
+//
+// The bug: a season's roster ended up with two entries for the same driver (the
+// "one entry per class" era, or a "＋ Create new driver" answered "yes, that's
+// them" — see lib/rosterEntry.js), and the standings scored each entry as its
+// own competitor. The driver was listed twice, each row holding a share of
+// their season: neither total right, both of them ranked, and the real leader
+// showing up mid-table.
+{
+  // Same driver profile, two roster entries; the older one is the roster's.
+  const twice = [
+    { id: "e1", name: "Ana", driver_id: "d-ana", created_at: "2026-01-01T00:00:00Z" },
+    { id: "e9", name: "Ana", driver_id: "d-ana", created_at: "2026-02-01T00:00:00Z" },
+    { id: "e2", name: "Bo", driver_id: "d-bo", created_at: "2026-01-01T00:00:00Z" },
+  ];
+  // Ana wins round 1 on one entry and finishes P2 of round 2 on the other.
+  const split = [
+    q("e1", 1), race("e1", "Race", 1),
+    q("e9", 2, { race_id: "r2" }), race("e9", "Race", 2, { race_id: "r2" }),
+    q("e2", 2), race("e2", "Race", 2),
+    q("e2", 2, { race_id: "r2" }), race("e2", "Race", 3, { race_id: "r2" }),
+  ];
+  const rows = calculateStandings(split, twice, [], config).rows;
+
+  check("a driver held twice by the roster is one row", rows.length, 2);
+  const ana = rows.find(r => r.driver_name === "Ana");
+  // 10 + 100 (round 1) + 5 + 90 (round 2) — every session they ran, once.
+  check("their whole season totals on that row", ana.adjusted_points, 205);
+  check("…and so do their stats", [ana.starts, ana.wins, ana.poles], [2, 1, 1]);
+  check("the row is the leader it should be", ana.rank, 1);
+  // The row is named after the roster's own entry, and still says which entries
+  // it stands for, so the screens can act on all of them.
+  check("the row keeps the roster's entry", ana.entry_id, "e1");
+  check("…and names every entry behind it", ana.entry_ids, ["e1", "e9"]);
+
+  // A points adjustment sitting on EITHER entry is the driver's; losing the one
+  // on the duplicate would silently hand back points an admin took away.
+  const penalised = twice.map(e => (e.id === "e9" ? { ...e, points_adjustment: -25, adjustment_note: "Post-race penalty" } : e));
+  const withPenalty = calculateStandings(split, penalised, [], config).rows.find(r => r.driver_name === "Ana");
+  check("an adjustment on the duplicate still counts", withPenalty.points_adjustment, -25);
+  check("…and comes off the total", withPenalty.adjusted_points, 180);
+  check("…with its reason kept", withPenalty.adjustment_note, "Post-race penalty");
+
+  // Drop weeks are rounds of ONE driver's season, so the round dropped is the
+  // worst of the rounds they ran — whichever entry each arrived on.
+  const dropOne = { ...config, dropWeeks: 1 };
+  const dropped = calculateStandings(split, twice, [], dropOne).rows.find(r => r.driver_name === "Ana");
+  check("drop weeks drop the worst round across both entries", dropped.adjusted_points, 110);
+
+  // Two roster rows carrying a number: the one with a car number is the roster
+  // identity, so that is the entry (and the number) the row is shown under.
+  const numbered = twice.map(e => (e.id === "e9" ? { ...e, number: "7" } : e));
+  const shown = calculateStandings(split, numbered, [], config).rows.find(r => r.driver_name === "Ana");
+  check("the entry with a car number speaks for the driver", shown.entry_id, "e9");
+  check("…and the row shows that number", shown.driver_number, "7");
+}
+
+// ── 22. …and two DIFFERENT drivers are never folded together ──────────────
+{
+  // Same name, different driver profiles: two people, two championship rows.
+  const namesakes = [
+    { id: "e1", name: "Ana", driver_id: "d-ana" },
+    { id: "e9", name: "Ana", driver_id: "d-other" },
+  ];
+  const rows = calculateStandings([race("e1", "Race", 1), race("e9", "Race", 2)], namesakes, [], config).rows;
+  check("two drivers who share a name stay two rows", rows.length, 2);
+  check("…each with their own points", rows.map(r => r.adjusted_points), [100, 90]);
+
+  // Legacy entries carry no profile at all; there the name IS the identity, the
+  // same way the roster and the stats tables read it.
+  const legacy = [{ id: "e1", name: "Ana" }, { id: "e9", name: "ana" }];
+  const folded = calculateStandings([race("e1", "Race", 1), race("e9", "Race", 2)], legacy, [], config).rows;
+  check("entries with no profile fold on their name", folded.length, 1);
+  check("…totalling both", folded[0].adjusted_points, 190);
+
+  // A result whose entry is no longer on the roster has no identity to fold
+  // into — it keeps a row of its own rather than joining somebody else's.
+  const orphan = calculateStandings([race("e1", "Race", 1), race("gone", "Race", 2)],
+    [{ id: "e1", name: "Ana", driver_id: "d-ana" }], [], config).rows;
+  check("a result whose entry is gone keeps its own row", orphan.length, 2);
+  check("…named as it always was", orphan.find(r => r.entry_id === "gone").driver_name, "Unknown");
+}
+
 console.log(`all ${n} checks passed — totals equal the sum of every grid's Points column`);

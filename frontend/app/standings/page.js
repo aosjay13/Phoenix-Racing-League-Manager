@@ -153,6 +153,7 @@ export default function StandingsPage() {
   const [error, setError] = useState(null);
   const [sharing, setSharing] = useState(false);
   const [assigning, setAssigning] = useState(false);
+  const [combining, setCombining] = useState(false);
 
   // The season's raw documents — its roster, its calendar, every result — and
   // nothing computed. The championship is worked out below, in this browser.
@@ -200,6 +201,32 @@ export default function StandingsPage() {
     }
   }
 
+  // Tidy the roster behind a merged row.
+  //
+  // The table above already scores a driver once however many entries they
+  // hold, so the championship on screen is right either way. The DATA is still
+  // two rows though, and everything that lists the roster rather than the
+  // standings still shows both: the results grid offers the same name twice, so
+  // the next session can be entered against either one. Combining folds them
+  // into a single entry and moves every result across, each keeping the class it
+  // was scored in (see /api/admin/entries/combine).
+  async function combineDuplicates() {
+    const names = duplicatedDrivers.map(r => r.driver_name).join(", ");
+    if (!confirm(`Combine the duplicate roster entries for ${names}? Every result moves onto the entry that's kept, with the class it was scored in, and nothing is deleted.`)) return;
+    setCombining(true);
+    setError(null);
+    try {
+      for (const row of duplicatedDrivers) {
+        await api("/api/admin/entries/combine", { method: "POST", body: { entry_ids: row.entry_ids } });
+      }
+      load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setCombining(false);
+    }
+  }
+
   function openAdjust(row) {
     setAdjusting(row);
     setAdjForm({
@@ -214,13 +241,23 @@ export default function StandingsPage() {
     setBusy(true);
     setError(null);
     try {
-      await api(`/api/entries/${adjusting.entry_id}`, {
-        method: "PATCH",
-        body: {
-          points_adjustment: Number(adjForm.points_adjustment || 0),
-          adjustment_note: adjForm.adjustment_note,
-        },
-      });
+      // A row is one DRIVER, which on a roster carrying a driver twice is more
+      // than one entry (see lib/standings.js). The whole adjustment goes on the
+      // entry the row is named after and the others are cleared, so the number
+      // typed here is the number the table shows — rather than being added to a
+      // leftover sitting on the duplicate, which the row would then total up.
+      const entryIds = adjusting.entry_ids?.length ? adjusting.entry_ids : [adjusting.entry_id];
+      for (const [i, id] of entryIds.entries()) {
+        await api(`/api/entries/${id}`, {
+          method: "PATCH",
+          body: i === 0
+            ? {
+              points_adjustment: Number(adjForm.points_adjustment || 0),
+              adjustment_note: adjForm.adjustment_note,
+            }
+            : { points_adjustment: 0, adjustment_note: "" },
+        });
+      }
       setAdjusting(null);
       load();
     } catch (err) {
@@ -235,6 +272,9 @@ export default function StandingsPage() {
   }
 
   const baseRows = data?.[tab] ?? [];
+  // Drivers this season's roster holds more than once — one championship row
+  // each above (see lib/standings.js), two or more entries underneath.
+  const duplicatedDrivers = (data?.drivers ?? []).filter(r => (r.entry_ids?.length ?? 0) > 1);
   // With an overall championship on, the combined table IS that championship —
   // everyone on it is racing the same title, so spelling out each driver's own
   // classes ("Pro · Sportsman · Rookie") only stretches the row without saying
@@ -348,6 +388,27 @@ export default function StandingsPage() {
             </>
           )}{" "}
           Existing results re-score the moment it&rsquo;s saved.
+        </p>
+      )}
+
+      {/* A driver on the roster twice. The table is already right — they are one
+          row here — but the roster underneath it isn't, and every screen that
+          lists the roster still shows both. Admin-only: it names a job only an
+          admin can do, and it is nothing a visitor needs to read. */}
+      {isAdmin && duplicatedDrivers.length > 0 && (
+        <p style={{ marginTop: 8, color: "var(--accent-gold, #e2b714)", fontSize: "0.85rem" }}>
+          ⚠ <strong>
+            {duplicatedDrivers.map(r => r.driver_name).join(", ")}{" "}
+            {duplicatedDrivers.length === 1 ? "is on this season's roster twice" : "are on this season's roster more than once"}.
+          </strong>{" "}
+          The standings count {duplicatedDrivers.length === 1 ? "their" : "each of their"} races once, so the table
+          above is right — but the results grid still offers both entries, so the next session can be entered
+          against either one. Combining folds them into a single entry; every result moves across and keeps the
+          class it was scored in.{" "}
+          <button className="btn btn-ghost" style={{ marginTop: 0, padding: "4px 10px" }} disabled={combining} onClick={combineDuplicates}>
+            {combining ? "Combining…" : "Combine duplicate entries"}
+          </button>
+          {error && <span style={{ display: "block", color: "#e5484d" }}>{error}</span>}
         </p>
       )}
 
