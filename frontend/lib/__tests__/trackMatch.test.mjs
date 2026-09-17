@@ -264,45 +264,67 @@ check("and neither does nothing at all", applyTrackDecisions(null).errors, []);
 const here = dirname(fileURLToPath(import.meta.url));
 const read = f => readFileSync(join(here, "../..", f), "utf8");
 const route = read("app/api/import-srh-season/route.js");
-const modal = read("components/SrhSeasonImportModal.jsx");
+// The venue answers are applied, and the tracks written, by ONE module now —
+// shared by this importer and the pasted-schedule one, so these rules cover
+// both rather than only the route they started in. See lib/scheduleWrite.js.
+const writer = read("lib/scheduleWrite.js");
+const pasteRoute = read("app/api/import-schedule-paste/route.js");
+// The review table is shared too, and so is the rule for when its answers are
+// complete — the two importers render the one table and gate their Create
+// buttons on the one rule.
+const modal = read("components/ScheduleImportReview.jsx");
+const rules = read("lib/scheduleReview.js");
+const srhModal = read("components/SrhSeasonImportModal.jsx");
+const pasteModal = read("components/PastedScheduleImportModal.jsx");
 
 ok("the preview checks every venue against the league's own tracks",
   /planTrackImport\(plan\.tracks, leagueTracks/.test(route));
-ok("…and answers with them, the reasons included", /tracks: trackPlan\.rows/.test(route));
+ok("…and answers with them, the reasons included", /tracks: trackPlan\.rows/.test(writer));
 ok("…and with every track in the league, for a venue the matcher never offered",
-  /league_tracks: leagueTracks/.test(route));
-ok("the write applies the admin's answers", /applyTrackDecisions\(trackPlan\.rows, body\.track_decisions/.test(route));
-ok("…and refuses the lot if any of them can't be", /track_errors: decided\.errors/.test(route));
+  /league_tracks: leagueTracks/.test(writer));
+ok("the write applies the admin's answers", /applyTrackDecisions\(trackPlan\.rows, trackDecisions/.test(writer));
+ok("…and refuses the lot if any of them can't be", /track_errors: decided\.errors/.test(writer));
 ok("…recording the source's name on a track it was pointed at",
-  /merged_names: merged/.test(route) && /aliased\.push/.test(route));
-ok("…but not twice", /if \(!known\.has\(normalizeName\(raw\)\)\)/.test(route));
+  /merged_names: merged/.test(writer) && /aliased\.push/.test(writer));
+ok("…but not twice", /if \(!known\.has\(normalizeName\(raw\)\)\)/.test(writer));
 ok("a venue it creates is validated like any other new track",
-  /spec: SPECS\.tracks/.test(route));
+  /spec: SPECS\.tracks/.test(writer));
 ok("…and carries the source's name when the admin called it something else",
-  /merged_names: \[raw\]/.test(route));
+  /merged_names: \[raw\]/.test(writer));
 // Tracks are settled first so each race is LINKED to a real venue rather than
 // carrying its name as loose text, which is what gives a new season's rounds a
 // track page and lap records from the day they're created.
 ok("the venues are settled before the races that race at them",
-  route.indexOf("applyTrackDecisions(") < route.indexOf("spec: SPECS.races"));
+  writer.indexOf("applyTrackDecisions(") < writer.indexOf("spec: SPECS.races"));
 ok("…and every race points at the track the admin settled on",
-  /trackIdByName\.get\(race\.track\)/.test(route) && /track_id: track\.id/.test(route));
+  /trackIdByName\.get\(race\.track\)/.test(writer) && /track_id: track\.id/.test(writer));
+// The pasted-schedule importer runs the same check and the same write, which is
+// the whole reason this is one module: a second copy would drift, and the drift
+// would fill the Tracks library with near-duplicates.
+ok("the pasted-schedule importer checks its venues the same way",
+  /planTrackImport\(plan\.tracks, leagueTracks/.test(pasteRoute));
+ok("…and writes them through the same writer", /writeScheduleImport\(/.test(pasteRoute));
 
 ok("the review table starts each venue on what the matcher proposed",
-  /t\.status === "matched"\s*\?\s*\{ action: "use", track_id: t\.track_id \}/.test(modal));
+  /t\.status === "matched"\s*\?\s*\{ action: "use", track_id: t\.track_id \}/.test(rules));
 ok("…which for anything else is a new track under the source's name",
-  /\{ action: "create", name: t\.suggested_name, track_type: t\.suggested_type \}/.test(modal));
+  /\{ action: "create", name: t\.suggested_name, track_type: t\.suggested_type \}/.test(rules));
+ok("…and both importers start from that same proposal",
+  /initialTrackChoices\(/.test(srhModal) && /initialTrackChoices\(/.test(pasteModal));
 ok("…and it says why each candidate is being offered", /CANDIDATE_WHY\[c\.reason\]/.test(modal));
 ok("…in words that call a layout a layout", /same venue, different layout/.test(modal));
 ok("a new venue is named whatever the league likes", /aria-label=\{`Name for \$\{t\.raw\}`\}/.test(modal));
 ok("…and typed, with the surface its name implied offered first", /TRACK_TYPES\.map\(type =>/.test(modal));
 ok("every track in the league is reachable, not just the matcher's offers",
   /optgroup label="Every track"/.test(modal));
-ok("the answers go with the create", /track_decisions: trackChoices/.test(modal));
-ok("…and the button won't press while a venue is unsettled", /tracksReady/.test(modal)
-  && /&& tracksReady/.test(modal.replace(/\n\s*/g, " ")));
+ok("the answers go with the create",
+  /track_decisions: trackChoices/.test(srhModal) && /track_decisions: trackChoices/.test(pasteModal));
+ok("…and neither button presses while a venue is unsettled",
+  [srhModal, pasteModal].every(m => /&& tracksReady/.test(m.replace(/\n\s*/g, " "))));
+ok("…judged by the one shared rule", /trackChoiceProblems\(/.test(rules.length ? srhModal : "")
+  && /trackChoiceProblems\(/.test(pasteModal));
 ok("…with a duplicate name called out before it's sent", /Two venues would be created under the same name/.test(modal));
-ok("each round shows the venue as it will be HERE, not as SimRacerHub writes it",
-  /SimRacerHub calls it/.test(modal));
+ok("each round shows the venue as it will be HERE, not as the source writes it",
+  /\$\{sourceLabel\} calls it/.test(modal));
 
 console.log(`trackMatch: ${n} assertions passed`);

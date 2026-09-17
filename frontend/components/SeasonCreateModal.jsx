@@ -8,6 +8,7 @@ import { BLANK_SEASON_FORM, seasonFormToBody } from "@/lib/seasonForm";
 import { isBangerDoc } from "@/lib/bangerRacing";
 import { isIracingGame } from "@/lib/signupRequest";
 import { SrhSeasonImportModal } from "@/components/SrhSeasonImportModal";
+import { PastedScheduleImportModal } from "@/components/PastedScheduleImportModal";
 
 // Sentinel for the "start a brand new one" choice in the game / series pickers.
 const NEW = "__new__";
@@ -27,15 +28,22 @@ const NEW = "__new__";
 // is what makes this dialog enough to get a brand new game racing without a
 // detour through League Setup.
 //
-// An iRacing league gets a second way in from here: its season is already built
-// on SimRacerHub, so rather than typing the schedule twice it can be read off
-// that page in one go — the season, every round, its tracks and its distances.
-// Offered only where it could work, which is a league with an iRacing game (see
-// SrhSeasonImportModal, and isIracingGame in lib/signupRequest.js).
+// There are two ways in besides typing it. An iRacing league's season is
+// already built on SimRacerHub, so rather than typing the schedule twice it can
+// be read off that page in one go — offered only where it could work, which is
+// a league with an iRacing game (see SrhSeasonImportModal, and isIracingGame in
+// lib/signupRequest.js).
+//
+// And every OTHER league keeps its schedule somewhere too; it is just a
+// spreadsheet rather than a URL. Pasting it does the same job, so that one is
+// offered always — a schedule in a sheet is not an iRacing idea, and an iRacing
+// league with its calendar in Excel is welcome to it as well.
 export function SeasonCreateModal({ gameId, games = [], seriesId, seriesName, seriesList = [], onClose, onCreated }) {
   const [form, setForm] = useState(BLANK_SEASON_FORM);
   // Swapped to the SimRacerHub importer, which creates the season itself.
   const [fromSrh, setFromSrh] = useState(false);
+  // …or to the paste importer, which does the same for every other game.
+  const [fromPaste, setFromPaste] = useState(false);
   const [templates, setTemplates] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -85,6 +93,17 @@ export function SeasonCreateModal({ gameId, games = [], seriesId, seriesName, se
   const iracingHere = gameId
     ? isIracingGame(games.find(g => g.id === gameId)?.name)
     : games.some(g => isIracingGame(g.name));
+
+  if (fromPaste) {
+    return (
+      <PastedScheduleImportModal
+        gameId={gameId} games={games}
+        seriesId={seriesId} seriesName={seriesName} seriesList={seriesList}
+        onClose={() => setFromPaste(false)}
+        onCreated={(res, scope) => onCreated(res.season, scope)}
+      />
+    );
+  }
 
   if (fromSrh) {
     return (
@@ -146,6 +165,18 @@ export function SeasonCreateModal({ gameId, games = [], seriesId, seriesName, se
             </button>
           </div>
         )}
+        {/* Every other game — and any league whose calendar lives in a sheet
+            rather than on SimRacerHub. */}
+        <div style={{ border: "1.5px solid var(--border)", borderRadius: 10, padding: "10px 12px", marginBottom: 14, background: "var(--bg-elevated)" }}>
+          <strong style={{ fontSize: "0.85rem" }}>Already have the schedule in a spreadsheet?</strong>
+          <p style={{ margin: "2px 0 8px", fontSize: "0.78rem", color: "var(--ink-2)" }}>
+            Paste it instead of typing it — a row per round, with its date, its track and how far it runs. Any
+            game, any spreadsheet, tabs or commas.
+          </p>
+          <button className="btn btn-ghost" type="button" style={{ marginTop: 0 }} onClick={() => setFromPaste(true)}>
+            📋 Import a season schedule from a paste
+          </button>
+        </div>
         {needsGame && (
           <>
             <div className="field">

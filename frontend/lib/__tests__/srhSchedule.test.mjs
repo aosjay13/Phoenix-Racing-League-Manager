@@ -367,28 +367,38 @@ check("and with no directory, every name is simply unknown",
 const here = dirname(fileURLToPath(import.meta.url));
 const read = f => readFileSync(join(here, "../..", f), "utf8");
 const route = read("app/api/import-srh-season/route.js");
+// Both schedule importers — this one and the pasted one — write through one
+// module, so the rules about WRITING are asserted there and cover both. See
+// lib/scheduleWrite.js.
+const writer = read("lib/scheduleWrite.js");
 const modal = read("components/SrhSeasonImportModal.jsx");
 const newSeason = read("components/SeasonCreateModal.jsx");
 const leagueSetup = read("app/admin/page.js");
 
 ok("the route is gated on a staff role", /withAdmin\(/.test(route));
-ok("…and refuses a series that isn't under an iRacing game", /isIracingGame\(game\?\.name\)/.test(route));
+ok("…and refuses a series that isn't under an iRacing game", /isIracingGame\(/.test(route));
 ok("…before it reads anything at all",
-  route.indexOf("isIracingGame(game?.name)") < route.indexOf("await srhFetchText"));
-ok("…and refuses a series from another league", /belongs to another league/.test(route));
+  route.indexOf("isIracingGame(") < route.indexOf("await srhFetchText"));
+// The cross-league check moved into resolveTargetSeries with the writer, so it
+// now guards BOTH schedule importers rather than this one.
+ok("…and refuses a series from another league", /belongs to another league/.test(writer));
+ok("…which this route asks before it writes", /resolveTargetSeries\(/.test(route));
 // The preview must answer before any write, so the branch returning it comes
 // first and there is nothing above it that could add a row.
 const previewAt = route.indexOf("if (preview) {");
 const writeAt = route.indexOf("// ── Write it");
 ok("the preview answers before the write", previewAt > 0 && writeAt > previewAt);
 ok("…and nothing is added above it", !/\.add\(|batch\.set\(/.test(route.slice(0, previewAt)));
+const flat = writer.replace(/\n\s*/g, " ");
 ok("every race is validated by the same rules a single one is",
-  /buildEntityDoc\(\{\s*spec: SPECS\.races/.test(route.replace(/\n\s*/g, " ")));
-ok("…and so is the season", /spec: SPECS\.seasons/.test(route.replace(/\n\s*/g, " ")));
-ok("…and every track it creates", /spec: SPECS\.tracks/.test(route.replace(/\n\s*/g, " ")));
+  /buildEntityDoc\(\{ spec: SPECS\.races/.test(flat));
+ok("…and so is the season", /spec: SPECS\.seasons/.test(flat));
+ok("…and every track it creates", /spec: SPECS\.tracks/.test(flat));
+// The writer is shared, so the route must not have grown a second one.
+ok("the route writes nothing of its own", !/buildEntityDoc\(|\.add\(|batch\.set\(/.test(route));
 ok("where the request may go is decided by parseSrhSeasonRef and nothing else",
   /const ref = parseSrhSeasonRef\(input\)/.test(route) && route.match(/srhFetchText\(/g).length === 1);
-ok("a season's worth of races is written in batches", /batch\.commit\(\)/.test(route));
+ok("a season's worth of races is written in batches", /batch\.commit\(\)/.test(writer));
 
 ok("the importer reads before it creates", /preview: true/.test(modal));
 ok("…and creates only on a second press", /Create season &/.test(modal));

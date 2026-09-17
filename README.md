@@ -152,6 +152,16 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   **Different Leaders**, which needs no box at all: it is the number of drivers whose Led column
   shows at least one lap, worked out from the session on screen so it can never drift from the grid
   under it. A blank (or a 0) is left off the page rather than printed as a counted figure
+- 📋 **Paste a season schedule from a spreadsheet (any game)** — SimRacerHub scores iRacing and
+  nothing else, so every other league was still building next season a round at a time. Select the
+  schedule in your sheet, paste it, and the whole season comes across: every round with its **date**,
+  its **track** and how far it runs. Tabs, commas or aligned spaces all read the same, and the column
+  names are forgiving — *Race*, *Rd*, *Dates*, *Circuit*, *Total Race Laps* all land where they
+  should. The **title line becomes the season's name** and a **totals line at the bottom is left
+  out**; every row it didn't read as a round is listed with why. Dates are resolved across the whole
+  paste at once, so `10/30/2023` settles `11/6` with it. Venues are matched to the tracks you already
+  have, exactly as the SimRacerHub import does — it is the same review table and the same writer
+  underneath, only the reading is new
 - 📅 **One-click SEASON import from SimRacerHub (iRacing)** — an iRacing league builds next season
   on SimRacerHub because that is where its scoring lives. Paste that season's link and the whole
   schedule comes over in one press: the season itself, every round with its **date**, its **track**,
@@ -1154,6 +1164,57 @@ whole season of them at once, see *Importing a whole season's results from SimRa
 See `lib/srhSchedule.js`, `lib/trackMatch.js` and
 `app/api/import-srh-season/route.js`. The schedule parsing and the venue check are both pure and
 covered by `lib/__tests__/srhSchedule.test.mjs` and `lib/__tests__/trackMatch.test.mjs`.
+
+### Importing a season schedule from a paste
+
+*Any game.* The SimRacerHub importer above only helps iRacing leagues, because SimRacerHub scores
+nothing else. Every other league keeps a schedule too — it just lives in a spreadsheet — so pasting it
+does the same job.
+
+**Where it is.** **League Setup ▸ Seasons**, and inside the Schedule's **+ New Season** dialog —
+**📋 Import a season schedule from a paste**, beside the SimRacerHub one. Offered whatever the game
+is: a calendar in a sheet is not an iRacing idea, and an iRacing league with its calendar in Excel is
+welcome to it as well.
+
+**What to paste.** Select the sheet and paste it. Columns separated by tabs, commas or aligned spaces
+all read the same:
+
+```
+2023 Season 1 Schedule
+Race    Dates       Track                        Total Race Laps
+1       10/30/2023  Daytona Oval                 50
+2       11/6/2023   Road America                 18
+…
+                    Total Laps =                 310
+```
+
+That whole block, including the title line and the totals line, is what to paste. The **title line
+becomes the season's name** (a trailing "Schedule" or "Calendar" is dropped — that says what the
+sheet is, not what the season is), and the **totals line is left out**.
+
+**The column names are forgiving**, because a spreadsheet header is whatever a human typed.
+*Race* or *Round* or *Rd* or *#* for the round number, *Date* or *Dates*, *Track* or *Venue* or
+*Circuit*, *Laps* or *Minutes* for the distance, and optionally *Event* and *Car*. "Total Race Laps"
+reads as a distance, not as a round number — the order the columns are matched in is what decides
+that, and the preview says what each one was **read as** so a misread column is visible before a
+season is built on it.
+
+**Nothing vanishes.** Every row *not* read as a round is listed with why — a totals line, a spacer, a
+note at the bottom. The rule is one line: a round says either where it sits in the season or when it
+was run, and a row saying neither is not describing a race.
+
+**Dates are resolved across the whole paste at once**, not row by row — `10/30/2023` proves the sheet
+is month-first, which settles `11/6` with it. A sheet that can't prove its order says so rather than
+choosing quietly. Same reader, same rule and same warning as a SimRacerHub schedule.
+
+**Everything after the reading is shared.** The rounds it produces are the exact shape
+`parseSrhSchedule` produces, so the round numbering, the season and race documents, the venue check
+against the tracks you already have, the review table you approve, and the writer that creates it all
+are the ones the SimRacerHub importer uses. A fix to any of them fixes both. See
+`lib/pastedSchedule.js` (the reading, covered by `lib/__tests__/pastedSchedule.test.mjs` — which
+leads with the column collisions and the totals line, the two things a spreadsheet gets wrong),
+`lib/scheduleWrite.js` (the one writer), `lib/scheduleReview.js` (when the venue answers are
+complete) and `components/ScheduleImportReview.jsx` (the one review table).
 
 ### Importing a whole season's results from SimRacerHub
 

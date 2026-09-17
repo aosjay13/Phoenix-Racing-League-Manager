@@ -22,6 +22,7 @@ import { listToTableOrZero, normalizedBuiltinTemplates, tableToList } from "@/li
 import { carForClass } from "@/lib/classFilter";
 import { SeasonForm } from "@/components/SeasonForm";
 import { SrhSeasonImportModal } from "@/components/SrhSeasonImportModal";
+import { PastedScheduleImportModal } from "@/components/PastedScheduleImportModal";
 import { BangerBonusFields, PointsFields } from "@/components/PointsFields";
 import { BLANK_SEASON_FORM, scoresNoPoints, seasonFormToBody, seasonToForm } from "@/lib/seasonForm";
 import { isCustomOrdered, seasonDateRangeLabel } from "@/lib/seasonOrder";
@@ -163,6 +164,10 @@ function AdminInner() {
   // SimRacerHub scores iRacing leagues and nothing else. See
   // SrhSeasonImportModal; the route refuses any other game whatever this shows.
   const [srhSeasonOpen, setSrhSeasonOpen] = useState(false);
+  // …and the one for every other game, which reads a schedule out of a
+  // spreadsheet instead. Offered whatever the game is: a calendar in a sheet is
+  // not an iRacing idea. See PastedScheduleImportModal.
+  const [pasteSeasonOpen, setPasteSeasonOpen] = useState(false);
   const iracingGame = isIracingGame(game?.name);
   // Demo Derby / Banger Racing can be set at series, season or class level (see
   // lib/bangerRacing.js). `bangerSeries` covers everything under the selected
@@ -663,6 +668,36 @@ function AdminInner() {
                 🔗 Import a season from SimRacerHub
               </button>
             </div>
+          )}
+          {/* And the one for everybody else. SimRacerHub scores iRacing and
+              nothing else, so every other league's schedule lives in a
+              spreadsheet — pasting it does the same job. */}
+          {seriesId && (
+            <div style={{ border: "1.5px solid var(--border)", borderRadius: 10, padding: "10px 12px", marginBottom: 16, background: "var(--bg-elevated)" }}>
+              <strong style={{ fontSize: "0.85rem" }}>Got this season&rsquo;s schedule in a spreadsheet?</strong>
+              <p style={{ margin: "2px 0 8px", fontSize: "0.8rem", color: "var(--ink-2)" }}>
+                Paste it and the whole schedule comes across — a row per round with its date, its track and how far
+                it runs — instead of being entered round by round below. Any game, tabs or commas, and you&rsquo;ll
+                see what it read before anything is created.
+              </p>
+              <button className="btn btn-ghost" type="button" style={{ marginTop: 0 }}
+                onClick={() => setPasteSeasonOpen(true)}>
+                📋 Import a season schedule from a paste
+              </button>
+            </div>
+          )}
+          {pasteSeasonOpen && (
+            <PastedScheduleImportModal
+              gameId={gameId} games={games}
+              seriesId={seriesId} seriesName={series?.name} seriesList={seriesList}
+              onClose={() => setPasteSeasonOpen(false)}
+              onCreated={(res) => {
+                setPasteSeasonOpen(false);
+                refresh();
+                league.setSeasonId(res.season.id);
+                showToast("success", `${res.season.name}: ${res.races} race${res.races === 1 ? "" : "s"} imported${res.tracks_created.length ? `, ${res.tracks_created.length} new track${res.tracks_created.length === 1 ? "" : "s"}` : ""}.`);
+              }}
+            />
           )}
           {srhSeasonOpen && (
             <SrhSeasonImportModal

@@ -40,7 +40,13 @@ export function detectDelimiter(text) {
 
 // Split one line into cells for the chosen delimiter, honouring simple
 // double-quote CSV quoting (commas inside quotes stay put).
-function splitLine(line, delim) {
+//
+// Exported because a pasted SCHEDULE is the same kind of text as a pasted
+// results table — tab-separated out of a spreadsheet, comma-separated out of a
+// CSV, or space-aligned out of a forum post — and only the vocabulary of its
+// headers differs. See lib/pastedSchedule.js, which finds its own header row
+// and reuses this and detectDelimiter for the splitting.
+export function splitLine(line, delim) {
   if (delim === "ws") return line.trim().split(/\s{2,}/).map(c => c.trim());
   if (delim === "|") return line.split(/\s*\|\s*/).map(c => c.trim()).filter((c, i, a) => !((i === 0 || i === a.length - 1) && c === ""));
   if (delim === ",") {
