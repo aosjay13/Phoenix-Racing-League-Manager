@@ -2550,6 +2550,50 @@ it to inherit). This is what stops a class ticked purely to carry a takedown rat
 drivers' finishing points, and an all-zero scale on an existing class doc is read as "inherit" for the
 same reason.
 
+**Every points scale takes a paste out of a spreadsheet.** A league does not invent its points
+structure in this app — it already exists, in a sheet somebody built years ago and edits every
+off-season. Retyping forty numbers in order is both tedious and the one place a transposed pair goes
+unnoticed for a season, so the **Race Points** and **Qualifying Points** boxes read a paste instead.
+Select the column in Excel or Google Sheets, paste, and the scale arrives in order.
+
+There are two ways in, because they answer different moments:
+
+- **Paste straight into the box.** A paste with tab stops or several lines in it came out of a
+  spreadsheet, so it is read as a scale rather than dropped in as text. Anything else — a comma list,
+  a single number, a word — lands exactly as it always did, and a paste this *can't* read is never
+  eaten, it just goes in as typed.
+- **📋 Paste from a spreadsheet**, under every scale box. This one shows what it made of the paste
+  **before** filling anything in, which is also how anyone discovers the box takes a paste at all.
+
+Either way, what it read is said out loud — which column it took as the position and which as the
+points, every row it left out and why, and anything it decided for itself — and **Undo** puts the
+previous scale back in one click. It is the same box in every points editor there is: the series, the
+season and the class forms in League Setup, and the per-session editor on a results tab (including a
+session's own one-off structure, below), so a scale is filled the same way wherever it is edited.
+
+The shapes a spreadsheet actually produces all read:
+
+| Pasted | Read as |
+| --- | --- |
+| a column of numbers | the scale, top place first |
+| `Position` / `Points` columns | each position scored its own points, in whatever order the rows sit |
+| a `Finish`, `Driver`, `Points` sheet | the position and points columns; the rest is ignored |
+| a scale written along one row | the scale, left to right |
+| a row of positions over a row of points | each position scored the points under it |
+| a CSV, or space-aligned text | the same as any of the above |
+
+A title line above the table (`2026 Points Structure`) and a totals line under it are left out and
+named as such. Ordinals (`1st`, `2nd`) read as positions, `1,200` reads as one number rather than two
+columns, and a cell holding `N/A` or a dash is *nothing* rather than 0 — a position that pays no
+points and a cell nobody filled in must not read the same. A **gap** is the one thing it will not
+quietly close up: a paste missing 4th leaves 4th paying 0 and says so, because sliding 5th up into it
+would silently re-score every place below the gap. The splitting and the column vocabulary are the
+importers' own (`detectDelimiter` / `splitLine` / `headerToField` in `lib/resultsImport.js`) — the
+same two the pasted-schedule importer reuses — so a fix to them fixes all three. The rules live in
+`lib/pointsPaste.js`, asserted in `lib/__tests__/pointsPaste.test.mjs`, and the box itself is
+`components/PointsScaleField.jsx`. Nothing about how a scale is stored or scored changes: a paste
+produces the same comma list an admin would have typed.
+
 **Visibility is strict, and nothing is inferred from what a scope contains.** The derby stats appear
 only where the scope being *viewed* is itself labelled Demo Derby / Banger Racing — the class you
 picked, the season, or the series it sits in. So a racing series with a Banger class inside it shows

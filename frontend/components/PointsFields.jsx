@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { api } from "@/lib/api";
 import { ALL_BONUS_TYPES, BONUS_TYPES } from "@/lib/standings";
 import { BANGER_BONUS_TYPES } from "@/lib/bangerRacing";
 import { BUILTIN_TEMPLATES, tableToList } from "@/lib/pointsTemplates";
+import { PointsScaleField } from "@/components/PointsScaleField";
 import { pointsFormToTemplate } from "@/lib/seasonForm";
 
 // The Demo Derby / Banger Racing bonus values, as their own labelled block —
@@ -68,6 +69,10 @@ export function PointsFields({
   // series simply sets nothing (its seasons keep their own), and a season —
   // the only level with nothing above it by default — scores 0.
   const blankMeans = seriesLevel ? " (blank = seasons keep their own)" : inherits ? " (blank = use the season's)" : " (blank = 0 points)";
+  // This form is rendered more than once on a screen — a season's and a class's
+  // sit on the same League Setup page — so the scale boxes take generated ids
+  // rather than fixed ones, which would tie two labels to one field.
+  const fieldId = useId();
   const [templateId, setTemplateId] = useState("");
   const [qualTemplateId, setQualTemplateId] = useState("");
   const [templateName, setTemplateName] = useState("");
@@ -150,16 +155,20 @@ export function PointsFields({
         </div>
       </div>
 
-      <div className="field"><label>Race Points — comma-separated, 1st place first{blankMeans}</label>
-        <textarea rows={3} disabled={disabled} value={value.race_points}
-          placeholder="350, 320, 300, 280, 260, 250, 240, …"
-          onChange={e => onPatch({ race_points: e.target.value })} />
+      {/* Both scales take a paste straight out of a spreadsheet, which is where
+          a league's points structure actually lives — see PointsScaleField. */}
+      <PointsScaleField
+        id={`${fieldId}-race-points`}
+        label={`Race Points — comma-separated, 1st place first${blankMeans}`}
+        what="Race Points" rows={3} disabled={disabled} value={value.race_points}
+        placeholder="350, 320, 300, 280, 260, 250, 240, …"
+        onChange={next => onPatch({ race_points: next })}>
         {noPoints && (
           <span style={{ fontSize: "0.78rem", color: "var(--accent-gold, #e2b714)" }}>
             {blankWarning || "⚠ Blank scores 0 for every finishing position — load a template above if that isn’t what you want."}
           </span>
         )}
-      </div>
+      </PointsScaleField>
 
       <div className="field">
         <label>Load Qualifying Points Template</label>
@@ -179,17 +188,20 @@ export function PointsFields({
         </span>
       </div>
 
-      <div className="field"><label>Qualifying Points — comma-separated, pole first{blankMeans}</label>
-        <textarea rows={2} disabled={disabled} value={value.qual_points}
-          placeholder="35, 32, 30, 28, 26, 25, …"
-          onChange={e => onPatch({ qual_points: e.target.value })} />
+      <PointsScaleField
+        id={`${fieldId}-qual-points`}
+        label={`Qualifying Points — comma-separated, pole first${blankMeans}`}
+        what="Qualifying Points" rows={2} disabled={disabled} value={value.qual_points}
+        placeholder="35, 32, 30, 28, 26, 25, …"
+        onChange={next => onPatch({ qual_points: next })}>
         {/* There's no Pole Bonus field any more — it paid for the same result as
             the first number here, so a season with both scored a pole twice. */}
         <span style={{ fontSize: "0.78rem", color: "var(--ink-2)" }}>
           Pole is position 1 of this list — set what a pole is worth here; there is no separate pole
           bonus. The Qualifying session scores these points itself, as its own line of the
           championship, so a driver&rsquo;s total is the sum of every session they ran.
-        </span></div>
+        </span>
+      </PointsScaleField>
 
       {afterScales}
 

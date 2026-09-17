@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Modal } from "@/components/Modal";
 import { api } from "@/lib/api";
 import { ALL_BONUS_TYPES, BONUS_TYPES } from "@/lib/standings";
 import { BangerBonusFields } from "@/components/PointsFields";
 import { listToTableOrZero, tableToList } from "@/lib/pointsTemplates";
 import { CUSTOM_POINTS_OPTION, isCustomPointsId } from "@/lib/customPoints";
+import { PointsScaleField } from "@/components/PointsScaleField";
 
 const isBuiltin = id => String(id).startsWith("builtin-");
 
@@ -89,6 +90,7 @@ export function PointsEditorModal({
   const savedSelected = templates.find(t => t.id === selection && !isBuiltin(t.id));
   const forQualifying = sessionType === "qualifying";
   const custom = selection === CUSTOM_POINTS_OPTION;
+  const fieldId = useId();
   const sessionLabel = classLabel ? `${classLabel}'s ${session}` : session;
 
   function changeSelection(id) {
@@ -177,14 +179,21 @@ export function PointsEditorModal({
                 ? `Viewing ${baseLabel.toLowerCase()}. Edit below and apply to customize ${classLabel ? `${classLabel}'s ` : "this "}session.`
                 : "Edit below, then apply the changes to this session or save them as a template."}
           </p>
-          <div className="field"><label>Race Points — comma-separated, 1st place first (blank = 0 points)</label>
-            <textarea rows={3} value={fields.race} style={monoBox}
-              placeholder="350, 320, 300, 280, 260, …"
-              onChange={e => edit({ race: e.target.value })} /></div>
-          <div className="field"><label>Qualifying Points — comma-separated, pole first (blank = 0 points){forQualifying ? "" : " · used by this structure's Qualifying session"}</label>
-            <textarea rows={2} value={fields.qual} style={monoBox}
-              placeholder="35, 32, 30, 28, 26, …"
-              onChange={e => edit({ qual: e.target.value })} /></div>
+          {/* Both scales take a paste straight out of a spreadsheet — the same
+              box the Season and Class forms use, so a scale is filled the same
+              way wherever it is edited. See PointsScaleField. */}
+          <PointsScaleField
+            id={`${fieldId}-race-points`}
+            label="Race Points — comma-separated, 1st place first (blank = 0 points)"
+            what="Race Points" rows={3} value={fields.race} textareaStyle={monoBox}
+            placeholder="350, 320, 300, 280, 260, …"
+            onChange={next => edit({ race: next })} />
+          <PointsScaleField
+            id={`${fieldId}-qual-points`}
+            label={`Qualifying Points — comma-separated, pole first (blank = 0 points)${forQualifying ? "" : " · used by this structure's Qualifying session"}`}
+            what="Qualifying Points" rows={2} value={fields.qual} textareaStyle={monoBox}
+            placeholder="35, 32, 30, 28, 26, …"
+            onChange={next => edit({ qual: next })} />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>
             {BONUS_TYPES.map(([key, label]) => (
               <div className="field" key={key}><label>{label}</label>
