@@ -1198,17 +1198,21 @@ prints them. A heat's cautions are not the night's, so they are not used.
 **Nothing is guessed at, and nothing is a dead end.** Every driver is matched against the roster
 through each name they answer to — their profile name, the name they race under in iRacing, and
 every connected account. A name that matches nobody is **left out and named** rather than guessed
-at. Those names then come with the means to fix them, in the dialog: each one gets **the same driver
-picker the results screen uses to add a driver mid-entry**, seeded with the name SimRacerHub
-printed. It searches every name a driver answers to, so "Anderson, Nathan" finds the Nathan Anderson
+at — and **Check first** doesn't just report them, it starts putting them right. A check that finds
+any takes you straight to the list with the first name open and its dropdown down; answer it and the
+next one opens itself, so a season's worth is worked without reaching for the mouse between names.
+The header counts you through it (*on 3 of 9*), the rest of the list stays visible so you can see how
+far there is to go, and clicking any of them jumps there. Each one gets **the same driver picker the
+results screen uses to add a driver mid-entry**, seeded with the name SimRacerHub printed. It searches every name a driver answers to, so "Anderson, Nathan" finds the Nathan Anderson
 who has raced here for three seasons instead of starting a second one; creating somebody genuinely
 new opens the full driver form and still asks first when the name resembles someone already in the
 app. A season with classes asks once which class they join. Each name says how many rounds it is
 missing from, so the driver worth resolving first is the obvious one, and **Leave them off** is a
 real answer for a one-round guest.
 
-Resolving a name puts them on the roster; **↻ Re-import the rounds with missing drivers** then runs
-only those rounds, which is when their results actually land. Re-importing a round replaces what it
+**Leave them off** is a real answer for a one-round guest and moves the run on like any other.
+Resolving a name puts them on the roster; once they are all answered, **↻ Re-import the rounds with
+missing drivers** runs only those rounds, which is when their results actually land. Re-importing a round replaces what it
 wrote, so running it twice is safe.
 
 **By default it scores every driver on the points SimRacerHub paid them**, which is what makes the

@@ -443,3 +443,23 @@ export function unmatchedRoster(reports = []) {
     (a, b) => b.rounds.length - a.rounds.length || a.name.localeCompare(b.name),
   );
 }
+
+// Which missing driver to put in front of the admin next.
+//
+// The importer's roster panel WORKS its list rather than displaying it: one
+// name is active, answering it opens the next. This is the "next" — the first
+// unanswered name BELOW the one just dealt with, wrapping back to the top so a
+// list worked out of order still finishes, and never the name just answered
+// (whose answer hasn't reached this function's `answered` set yet, because it
+// was set in the same tick).
+//
+// `keys` are the names in the order they are shown, `answered` the ones already
+// resolved or left off. "" when there is nothing left, which is what ends the
+// run.
+export function nextUnanswered(keys = [], fromKey = "", answered = []) {
+  const done = answered instanceof Set ? answered : new Set(answered);
+  const from = keys.indexOf(fromKey);
+  // From the one after it, round to the one before it.
+  const order = from < 0 ? [...keys] : [...keys.slice(from + 1), ...keys.slice(0, from + 1)];
+  return order.find(k => k !== fromKey && !done.has(k)) || "";
+}

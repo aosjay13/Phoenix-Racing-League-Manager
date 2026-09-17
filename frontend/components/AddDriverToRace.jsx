@@ -36,6 +36,10 @@ import { DuplicateDriverPrompt } from "@/components/DuplicateDriverPrompt";
 // question isn't "who do you want to add" but "who is this name SimRacerHub
 // printed" — so the box arrives with that name already in it and the list one
 // click away, and the wording is the season's roster rather than this race's.
+// `autoOpen` goes one further and puts the caret in the box with the list
+// already down, which is how that importer walks a season's worth of missing
+// drivers: resolve one and the next one opens itself, so the whole list is
+// worked without reaching for the mouse between each.
 // Everything else is identical on purpose: resolving who a driver is has one
 // answer in this app, and a second search box with its own idea of which names
 // count would be the thing that splits a driver's history in two.
@@ -55,7 +59,7 @@ import { DuplicateDriverPrompt } from "@/components/DuplicateDriverPrompt";
 export function AddDriverToRace({
   seasonId, seriesName, existingNames, defaultClassId = "", onCreated, onError, onNotice = () => {},
   initialQuery = "", placeholder = "+ Add a driver to this race…", emptyLabel = "Already in this race.",
-  clearOnAdd = true, style,
+  clearOnAdd = true, autoOpen = false, style,
 }) {
   const [drivers, setDrivers] = useState([]);   // the global driver pool
   const [accounts, setAccounts] = useState([]); // player accounts with no driver profile yet
@@ -136,6 +140,17 @@ export function AddDriverToRace({
   // Any change to what's typed (or reopening the list) puts the highlight back
   // on the top match, so Enter always takes the obvious answer.
   useEffect(() => { setActive(0); }, [query, open]);
+
+  // Take the caret and drop the list, for the caller working a list of names
+  // one at a time. The pool is still loading on the first frame, so the list
+  // opens on the "create" row alone and fills itself the moment the drivers
+  // arrive — `open` stays true across that, which is what makes it look like
+  // one continuous list rather than a flicker.
+  useEffect(() => {
+    if (!autoOpen) return;
+    inputRef.current?.focus();
+    setOpen(true);
+  }, [autoOpen]);
 
   function choose(opt) {
     if (!opt || busy) return;

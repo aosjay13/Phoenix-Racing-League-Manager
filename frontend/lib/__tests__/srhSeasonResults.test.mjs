@@ -28,10 +28,14 @@
 //      number where the numbering agrees and down the page where it doesn't.
 //   6. THE PEOPLE THE ROSTER HASN'T GOT. The same driver missing from nine
 //      rounds is ONE person to put right, not nine warnings — and which rounds
-//      they were missing from is what says which rounds to run again.
+//      they were missing from is what says which rounds to run again. Answering
+//      one opens the next, so the list gets WORKED rather than displayed, and
+//      "which one is next" has to be right or the run stalls or loops.
 import assert from "node:assert";
 import { parseSrhPage, srhSegmentTable } from "../srhImport.js";
-import { matchScheduleToRaces, planRace, planSessions, sessionRows, unmatchedRoster } from "../srhSeasonResults.js";
+import {
+  matchScheduleToRaces, nextUnanswered, planRace, planSessions, sessionRows, unmatchedRoster,
+} from "../srhSeasonResults.js";
 
 let n = 0;
 const check = (label, got, want) => { n++; assert.deepStrictEqual(got, want, `${label}: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`); };
@@ -376,5 +380,42 @@ check("a round read twice is listed once",
     { race_id: "r1", label: "Race 1", unmatched: ["Ghost, Casper"] },
     { race_id: "r1", label: "Race 1", unmatched: ["Ghost, Casper"] },
   ])[0].rounds.length, 1);
+
+// ── 7. Working the list, one name at a time ───────────────────────────────
+//
+// The panel keeps one name active and opens the next when it is answered. The
+// answer just given has NOT reached the answered set yet — it was set in the
+// same tick — so the name being advanced from must be excluded by name, or the
+// run hands you the driver you just dealt with and never moves.
+const names = ["alice", "bob", "cass", "dev"];
+
+check("the next name is the one below", nextUnanswered(names, "alice", []), "bob");
+check("the one just answered is never handed back", nextUnanswered(names, "alice", []) === "alice", false);
+check("…even though it isn't in the answered set yet",
+  nextUnanswered(["alice", "bob"], "alice", []), "bob");
+check("names already answered are stepped over", nextUnanswered(names, "alice", ["bob", "cass"]), "dev");
+
+// Worked out of order — the admin clicked down the list — the run still has to
+// come back for the ones above rather than ending early.
+check("it wraps to the top for anything left behind",
+  nextUnanswered(names, "dev", ["bob"]), "alice");
+check("…and picks the first still open on the way round",
+  nextUnanswered(names, "cass", ["alice"]), "dev");
+check("a middle name with only earlier ones left wraps",
+  nextUnanswered(names, "cass", ["dev"]), "alice");
+
+// The end of the run: nothing left is "", which is what closes the panel's
+// active row rather than looping on the last name.
+check("nothing left ends the run", nextUnanswered(names, "dev", ["alice", "bob", "cass"]), "");
+check("a one-name list ends as soon as it is answered", nextUnanswered(["alice"], "alice", []), "");
+check("an empty list has no next", nextUnanswered([], "alice", []), "");
+
+// A name that isn't in the list at all (it was resolved and the list rebuilt
+// under us) still yields the first thing outstanding rather than nothing.
+check("a name no longer in the list falls to the first open one",
+  nextUnanswered(names, "gone", ["alice"]), "bob");
+
+// A Set is as good as an array, since that is what the caller naturally holds.
+check("an answered Set works the same", nextUnanswered(names, "alice", new Set(["bob"])), "cass");
 
 console.log(`srhSeasonResults: ${n} checks passed`);

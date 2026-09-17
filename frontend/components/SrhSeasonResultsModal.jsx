@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { matchScheduleToRaces, unmatchedRoster } from "@/lib/srhSeasonResults";
 import { SrhUnmatchedDrivers } from "@/components/SrhUnmatchedDrivers";
@@ -167,6 +167,22 @@ export function SrhSeasonResultsModal({ seasonId, seasonName, seriesName = "", r
     ),
     [state, labelFor],
   );
+  // Checking a season is what turns up the drivers the roster hasn't got, so a
+  // check that finds any takes you straight to them with the first one open —
+  // "check" starts the job rather than filing a report about it. Only when the
+  // list goes from empty to not, so answering one name doesn't yank the page
+  // back up, and a later check that finds more rearms it.
+  const rosterPanelRef = useRef(null);
+  const hadUnmatched = useRef(false);
+  useEffect(() => {
+    if (running) return;
+    const has = unmatched.length > 0;
+    if (has && !hadUnmatched.current) {
+      rosterPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    hadUnmatched.current = has;
+  }, [running, unmatched.length]);
+
   // The rounds those drivers were missing from — the ones worth running again
   // once the roster has them.
   const affected = useMemo(() => {
@@ -446,6 +462,7 @@ export function SrhSeasonResultsModal({ seasonId, seasonName, seriesName = "", r
             picker against each one. Resolving them writes roster entries; the
             rounds they were missing from are then run again, which is when
             their rows actually land. */}
+        <div ref={rosterPanelRef} />
         {!running && unmatched.length > 0 && (
           <SrhUnmatchedDrivers
             seasonId={seasonId}
