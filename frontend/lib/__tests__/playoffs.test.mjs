@@ -22,7 +22,7 @@ import {
   BLANK_PLAYOFF_CONFIG, applyFormatPreset, buildPlayoffs, defaultRoundsFor,
   describePlayoffFormat, normalizePlayoffConfig, playoffLabelForRace, playoffPointsFor,
   playoffSetupWarnings, playoffsOn, resolveRegularRounds, roundPlan, seasonPlayoffConfig,
-  splitRaces,
+  seedBasePointsFor, seedModeUsesBase, splitRaces,
 } from "../playoffs.js";
 import { seasonChampions, titlesByEntry } from "../champions.js";
 import { resolveSeasonConfig } from "../standings.js";
@@ -315,11 +315,37 @@ check("a reset base of 200 starts the whole field on 200", resetTo(), [200, 200,
 // now it means what the box says rather than throwing it away.
 check("including a season saved under the old 'start over on zero' answer",
   resetTo({ seed_mode: "reset_zero" }), [200, 200, 200, 200]);
-check("seeded steps count down from it",
+// Reported next, and the same trap one box along: "I have 1 point between
+// seeds, but it isn't counting." It wasn't — the gap was read by ONE seed mode,
+// and the answer a league picks after setting a reset base is not that one. So
+// the two collapsed: a reset is the base, minus the gap a seat, plus the playoff
+// points banked, and all three always count.
+check("the gap counts in the reset answer, one point a seat",
+  resetTo({ seed_gap: 1 }), [200, 199, 198, 197]);
+check("whatever the gap is", resetTo({ seed_gap: 10 }), [200, 190, 180, 170]);
+check("and a season saved under the old 'seeded steps' answer reads the same",
   resetTo({ seed_mode: "carry_gap", seed_gap: 10 }), [200, 190, 180, 170]);
+check("a gap of 0 is a field dead level on the base", resetTo({ seed_gap: 0 }), [200, 200, 200, 200]);
 check("and only carrying the regular season over leaves totals alone",
   resetTo({ seed_mode: "carry_over" }), [390, 370, 320, 280]);
 check("a base of 0 is still a clean sheet", resetTo({ seed_base: 0 }), [0, 0, 0, 0]);
+
+// The gap and the playoff points are not rivals — they add. This is the whole of
+// what was asked for: "this + playoff points should set my field correctly".
+// E1 won three regular-season rounds (15) and took the regular season title (10).
+check("the gap and the banked playoff points both land on the same seed",
+  build({ playoff_config: { ...playoffConfig, seed_base: 200, seed_gap: 1 } }).seeds.map(s => s.points),
+  [225, 204, 198, 197]);
+
+// The preview the menu draws is this arithmetic, not a second copy of it.
+check("seat one starts on the base", seedBasePointsFor({ seed_base: 200, seed_gap: 1 }, 0), 200);
+check("and every seat below is a gap further back",
+  [1, 2, 3].map(i => seedBasePointsFor({ seed_base: 200, seed_gap: 1 }, i)), [199, 198, 197]);
+check("carrying the regular season over gives a seat no number of its own",
+  seedBasePointsFor({ seed_mode: "carry_over", seed_base: 200 }, 2), null);
+check("which is the one answer the two boxes mean nothing to",
+  [seedModeUsesBase("base_plus_bonus"), seedModeUsesBase("carry_gap"), seedModeUsesBase("carry_over")],
+  [true, true, false]);
 // The preset a league reaches for, with a number typed into it.
 const presetThenTyped = applyFormatPreset(normalizePlayoffConfig(null), "reset");
 check("the Points Reset preset no longer picks the answer that ignored the box",
@@ -461,7 +487,11 @@ check("and its last round is the one that decides it",
 const chase = applyFormatPreset(BLANK_PLAYOFF_CONFIG, "chase_2004");
 check("the Chase is ten drivers", chase.field_size, 10);
 check("in one round", chase.rounds.length, 1);
-check("seeded in steps", [chase.seed_mode, chase.seed_base, chase.seed_gap], ["carry_gap", 5050, 5]);
+// The Chase's seeding is 5050 in 5-point steps. It reads as the one reset
+// answer now — the steps are the gap, not a mode of their own.
+check("seeded in steps", [chase.seed_mode, chase.seed_base, chase.seed_gap], ["base_plus_bonus", 5050, 5]);
+check("and the steps are what the field actually starts on",
+  [0, 1, 9].map(i => seedBasePointsFor(chase, i)), [5050, 5045, 5005]);
 const elim = applyFormatPreset(chase, "elimination");
 check("switching to eliminations rebuilds the ladder", elim.rounds.map(r => r.advance), [12, 8, 4, 1]);
 check("Custom keeps everything and only renames the format",

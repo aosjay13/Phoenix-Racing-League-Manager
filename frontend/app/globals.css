@@ -4365,6 +4365,69 @@ input[type="radio"]:disabled:checked {
 
 .playoff-step.is-win strong { color: var(--accent-gold, #e2b714); }
 
+/* The seeded field, read off before anything is saved. Every bug reported
+   against the playoff menu has been a number typed into a box that the chosen
+   answer quietly ignored — so the answer is drawn, not described. */
+.playoff-seed-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-cyan);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+}
+
+.playoff-seed-preview.is-flat {
+  display: block;
+  font-size: 0.82rem;
+  color: var(--ink-1);
+}
+
+.playoff-seed-preview-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-2);
+}
+
+.playoff-seed-seats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.playoff-seed-seat {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.playoff-seed-seat em {
+  font-style: normal;
+  font-size: 0.7rem;
+  color: var(--ink-2);
+}
+
+.playoff-seed-seat strong {
+  font-size: 0.86rem;
+  color: var(--ink-0);
+  font-variant-numeric: tabular-nums;
+}
+
+.playoff-seed-seat.is-more { border-style: dashed; }
+
+.playoff-seed-preview-note {
+  font-size: 0.76rem;
+  color: var(--ink-2);
+}
+
 .playoff-section { margin-top: 14px; }
 
 .playoff-heading {

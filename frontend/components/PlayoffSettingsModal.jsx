@@ -7,7 +7,8 @@ import { api } from "@/lib/api";
 import {
   FINALE_MODES, PLAYOFF_FORMATS, QUALIFY_MODES, SEED_MODES, WILDCARD_MODES, WILDCARD_SEEDS,
   applyFormatPreset, defaultRoundsFor, describePlayoffFormat, normalizePlayoffConfig,
-  playoffFormat, playoffSetupWarnings, resolveRegularRounds, seedModeUsesBase, splitRaces,
+  playoffFormat, playoffSetupWarnings, resolveRegularRounds, seedBasePointsFor, seedModeUsesBase,
+  splitRaces,
 } from "@/lib/playoffs";
 
 // ── The Playoff Format menu ────────────────────────────────────────────────
@@ -123,6 +124,51 @@ function LadderPreview({ config }) {
           {s.note && <i className="playoff-step-note">{s.note}</i>}
         </span>
       ))}
+    </div>
+  );
+}
+
+// What the field will actually start the playoff on, seat by seat. Drawn from
+// seedBasePointsFor — the same function the bracket is seeded with — so this can
+// never be a preview that agrees with the menu and disagrees with the results.
+//
+// It exists because every bug reported against this menu has been the same
+// shape: a number typed into a box that the chosen answer quietly ignored, with
+// nothing on screen to show it had been ignored. A field you can read off before
+// you save is the thing that makes that impossible.
+function SeedPreview({ config }) {
+  const cfg = normalizePlayoffConfig(config);
+  if (!seedModeUsesBase(cfg.seed_mode)) {
+    return (
+      <p className="playoff-seed-preview is-flat">
+        Nobody&rsquo;s total moves — every driver carries their regular-season points into the playoff.
+      </p>
+    );
+  }
+  const shown = Math.min(cfg.field_size, 10);
+  const seats = Array.from({ length: shown }, (_, i) => seedBasePointsFor(cfg, i));
+  return (
+    <div className="playoff-seed-preview">
+      <span className="playoff-seed-preview-label">The field starts on</span>
+      <span className="playoff-seed-seats">
+        {seats.map((points, i) => (
+          <span key={i} className="playoff-seed-seat">
+            <em>#{i + 1}</em>
+            <strong>{points}</strong>
+          </span>
+        ))}
+        {cfg.field_size > shown && (
+          <span className="playoff-seed-seat is-more">
+            <em>…#{cfg.field_size}</em>
+            <strong>{seedBasePointsFor(cfg, cfg.field_size - 1)}</strong>
+          </span>
+        )}
+      </span>
+      <span className="playoff-seed-preview-note">
+        {cfg.playoff_points_enabled
+          ? "plus the playoff points each driver banked, on top of these"
+          : "this season pays no playoff points, so these are the exact numbers"}
+      </span>
     </div>
   );
 }
@@ -418,14 +464,25 @@ export function PlayoffSettingsModal({
             </div>
             <div className="field">
               <label htmlFor="playoff_seed_gap">Points between seeds</label>
-              <input id="playoff_seed_gap" type="number" min="0" disabled={disabled}
+              <input id="playoff_seed_gap" type="number" min="0"
+                disabled={disabled || !seedModeUsesBase(cfg.seed_mode)}
                 value={raw.seed_gap} onChange={field("seed_gap")} />
               <span style={subLabel}>
-                Only used by <strong>Reset in seeded steps</strong>: the 1 seed starts on the base, the 2 seed
-                this far back, and so on down the field. The 2004 Chase used 5.
+                {seedModeUsesBase(cfg.seed_mode) ? (
+                  <>
+                    How much further back each seat starts. <strong>0</strong> puts the whole field dead level
+                    on the base; <strong>1</strong> gives the top seed a point a seat; the 2004 Chase used
+                    <strong> 5</strong>. It always counts, alongside the base and the playoff points.
+                  </>
+                ) : (
+                  <>Not used by this answer — carrying the regular season over already separates the field by
+                    what they scored.</>
+                )}
               </span>
             </div>
           </div>
+
+          <SeedPreview config={cfg} />
 
           <div className="field check-row">
             <input type="checkbox" id="playoff_carry_playoff_points" disabled={disabled}

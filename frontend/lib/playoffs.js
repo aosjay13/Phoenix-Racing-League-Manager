@@ -116,32 +116,55 @@ export const WILDCARD_SEEDS = [
     "Every driver who qualified on merit lines up ahead of every wildcard, whatever the points say."],
 ];
 
-// What the field starts the playoff on.
+// What the field starts the playoff on. There are only two answers, because
+// there are only two things that can happen to a driver's total: it is replaced,
+// or it isn't.
 //
-// There used to be a fourth answer here, "Start over on zero", and it was a
-// trap: it ignored the Reset base entirely and wiped everyone to 0. It was never
-// a separate rule — it is this first one with the number thrown away, and
-// whether playoff points are added on top is already its own tick
-// (`carry_playoff_points`). So a league that picked it (or picked the Points
-// Reset preset, which set it) could type 200 into the box sitting right there
-// and still watch every driver start the playoff on nothing, with the menu
-// showing 200 the whole time. Setting the base to 0 is how you start over on
-// zero, and it is what the box says it is. `reset_zero` still normalizes onto
-// this mode, so every season saved under it reads the same.
+// This list used to have four, and the extra two were traps. Each was THIS first
+// answer with one of its numbers thrown away — "Start over on zero" ignored the
+// Reset base, and "Reset in seeded steps" was the only one that read the gap —
+// so a league could type a number into a box sitting right there in the menu and
+// watch it do nothing, with the menu still showing what they typed. Both still
+// normalize onto the reset answer (see normalizeSeedMode), and because a season
+// saved under either kept its base and its gap, every one of them reads exactly
+// as it did.
+//
+// A reset is three numbers now, and all three always count:
+//
+//     seed N starts on   (Reset base) − (Points between seeds × seats below 1st)
+//                        + the playoff points they banked, when those carry
+//
+// Everything real falls out of that. Flat reset to 2000: base 2000, gap 0.
+// Clean sheet: base 0, gap 0. The 2004 Chase: base 5050, gap 5. One point a
+// seat: base whatever, gap 1.
 export const SEED_MODES = [
-  ["base_plus_bonus", "Reset everyone to the same number",
-    "Every driver in the field drops to the Reset base below — 2000 for NASCAR's playoffs, or 0 for a clean-sheet start — plus the playoff points they banked, when those carry."],
-  ["carry_gap", "Reset in seeded steps",
-    "The top seed starts on the base, and every seed below starts a fixed number of points further back. The 2004 Chase (5050, in 5-point steps)."],
+  ["base_plus_bonus", "Reset the field to a number you set",
+    "Every driver drops to the Reset base — 2000 for NASCAR's playoffs, 0 for a clean sheet — then loses the gap below for each seat they are off the top, and adds the playoff points they banked."],
   ["carry_over", "Carry the regular season over",
     "Nobody's points move. The playoff simply narrows who can still win the title."],
 ];
 
-// The reset modes that actually put everyone on a number of their own — the
-// ones the Reset base means something to. Carrying the regular season over is
-// the only answer that doesn't touch anybody's total.
+// Does this answer put the field on numbers of its own? Carrying the regular
+// season over is the only one that doesn't, so it is the only one the Reset base
+// and the seed gap mean nothing to — and where the menu says so rather than
+// leaving two live boxes that do nothing.
 export function seedModeUsesBase(mode) {
-  return mode !== "carry_over";
+  return normalizeSeedMode(mode) !== "carry_over";
+}
+
+// What seed N starts the playoff on, before the playoff points they banked.
+// `seedIndex` is 0 for the top seed. Null when the format carries the regular
+// season over, where a seed has no number of its own — their total is their
+// total.
+//
+// This is the seeding arithmetic, and it lives here so that the menu's live
+// preview of the field and the bracket the season is actually scored on are the
+// same code. A preview computed separately is a preview that can agree with the
+// menu and disagree with the results, which is worse than no preview at all.
+export function seedBasePointsFor(config, seedIndex = 0) {
+  const cfg = normalizePlayoffConfig(config);
+  if (cfg.seed_mode === "carry_over") return null;
+  return num(cfg.seed_base) - num(cfg.seed_gap) * Math.max(0, int(seedIndex, 0));
 }
 
 // How the title is settled in the last round.
@@ -183,7 +206,7 @@ export const PLAYOFF_FORMATS = [
     blurb: "The top ten are reset to 5050 and separated by five points a seed, then race the last ten rounds for it. No eliminations — the points decide.",
     defaults: {
       field_size: 10, qualify_mode: "points",
-      seed_mode: "carry_gap", seed_base: 5050, seed_gap: 5,
+      seed_mode: "base_plus_bonus", seed_base: 5050, seed_gap: 5,
       reset_between_rounds: false, advance_on_win: false,
       finale_mode: "points", finale_reset: false,
       playoff_points_enabled: false,
@@ -422,8 +445,11 @@ export const BLANK_PLAYOFF_CONFIG = {
   notes: "",
 };
 
+// The two answers that were this one with a number ignored — see SEED_MODES.
+const LEGACY_SEED_MODES = { reset_zero: "base_plus_bonus", carry_gap: "base_plus_bonus" };
+
 function normalizeSeedMode(mode) {
-  return mode === "reset_zero" ? "base_plus_bonus" : mode;
+  return LEGACY_SEED_MODES[mode] || mode;
 }
 
 function dedupeWildcards(list) {
@@ -759,10 +785,10 @@ function seedField(regularRows, config, bankedPoints, regularChampionEntry, rost
     const banked = num(bankedPoints.get(row.entry_id), 0)
       + (regularChampionEntry === row.entry_id ? regularChampionBonus(cfg) : 0);
     const carried = cfg.carry_playoff_points ? banked : 0;
-    let points;
-    if (cfg.seed_mode === "carry_over") points = num(row.adjusted_points) + carried;
-    else if (cfg.seed_mode === "carry_gap") points = num(cfg.seed_base) - num(cfg.seed_gap) * i + carried;
-    else points = num(cfg.seed_base) + carried;
+    // Carried over, a driver keeps their own total; reset, they take the number
+    // their seat is worth. Either way the banked playoff points go on top.
+    const seeded = seedBasePointsFor(cfg, i);
+    const points = (seeded == null ? num(row.adjusted_points) : seeded) + carried;
     return {
       seed: i + 1,
       entry_id: row.entry_id,
@@ -1114,7 +1140,7 @@ export function describePlayoffFormat(config) {
     : field);
   bits.push(cfg.rounds.length > 1 ? `${plural(cfg.rounds.length, "round")} of eliminations` : "one round");
   if (cfg.seed_mode === "carry_over") bits.push("points carried over");
-  else if (cfg.seed_mode === "carry_gap") bits.push(`seeded from ${cfg.seed_base} in ${plural(cfg.seed_gap, "point")} steps`);
+  else if (cfg.seed_gap) bits.push(`seeded from ${cfg.seed_base} in ${plural(cfg.seed_gap, "point")} steps`);
   else if (!cfg.seed_base && !cfg.playoff_points_enabled) bits.push("everyone reset to zero");
   else bits.push(`reset to ${cfg.seed_base}${cfg.playoff_points_enabled ? " + playoff points" : ""}`);
   if (cfg.rounds.length > 1 && cfg.finale_mode === "best_finish") bits.push("best finisher in the final race takes it");

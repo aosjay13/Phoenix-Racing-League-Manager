@@ -53,9 +53,9 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   season and a full format menu opens: where the regular season stops (and whether it crowns a
   **regular season champion**, which counts as a title of its own), how many drivers make the field
   and how they qualify (wins first then points, points only, winners only, everybody, or a
-  **wildcard** you pick by name), what they are reset to (a number you type — 2000, 200, or 0 for a
-  clean sheet — plus banked **playoff points**, or seeded steps, or their points carried
-  straight over), and a **round ladder** you build yourself — each round is "this many races, this
+  **wildcard** you pick by name), what they are reset to (a number you type, minus an optional gap
+  per seed, plus banked **playoff points** — or their points carried straight over), and a **round
+  ladder** you build yourself — each round is "this many races, this
   many drivers advance, reset to this". One round of ten races that advances one driver is a
   **Chase**; four rounds cutting 16 → 12 → 8 → 4 are **elimination playoffs**; a win in a round can
   lock a driver into the next one; and the finalists can start the last round dead level with the
@@ -3249,7 +3249,7 @@ and not a list of formats.
 | Preset | What it sets up |
 | --- | --- |
 | **Elimination Playoffs** (NASCAR 2016–2025) | 16 drivers, four rounds cutting to 12 / 8 / 4, reset to 2000 + playoff points each round, a win in a round advances you, the Championship race run level and decided on the best finisher |
-| **The Chase** (2004–2006) | the top 10 reset to 5050 in 5-point steps, then one long round to the end |
+| **The Chase** (2004–2006) | the top 10 reset to 5050 with a 5-point gap per seed, then one long round to the end |
 | **The Chase, with wins** (2007–2013) | 12 drivers reset to 5000, plus 10 playoff points a regular-season win |
 | **Points Reset** | the top X only, everyone level on the Reset base (0 out of the box — type any number), one round to the end |
 | **Carry Over** | the top X keep the points they earned; the playoff only narrows who can still win |
@@ -3263,10 +3263,21 @@ a 10-race ladder has a 26-round regular season without anybody typing 26. A roun
 takes every remaining round on the calendar, which is how one row describes a Chase — ten races, or
 twelve, or however many the calendar turns out to hold.
 
-**The Reset base is the number the field starts on**, and it means that in every answer that resets.
-Type 2000 for NASCAR's playoffs, 200 because that is what your league voted for, or 0 for a
-clean-sheet start where everyone begins from nothing. It also sets what the **first** round is raced
-from — which is why the Rounds table shows the first round's *Reset To* as the seeding rather than
+**A reset is three numbers, and all three always count.** Seed N starts the playoff on the **Reset
+base**, minus **Points between seeds** for every seat they are off the top, plus the **playoff
+points** they banked:
+
+    seed N starts on  =  Reset base  −  (Points between seeds × seats below 1st)  +  banked playoff points
+
+Everything real falls out of that one line. A flat reset to 2000 is base 2000, gap 0. A clean sheet
+is base 0, gap 0. The 2004 Chase is base 5050, gap 5. One point a seat is gap 1. There are only
+**two** seeding answers now — reset the field to a number you set, or carry the regular season over —
+because those are the only two things that can happen to a driver's total: it is replaced, or it
+isn't. The **seeded field is drawn live in the menu** (`#1 200 · #2 199 · #3 198 …`) off the same
+function the bracket is actually seeded with, so a number you type is a number you can read back
+before you save.
+
+The Reset base also sets what the **first** round is raced from — which is why the Rounds table shows the first round's *Reset To* as the seeding rather than
 offering a box: a round's reset is what the survivors *coming into* it drop to, and nobody comes into
 round one. The ladder steps up from the base after that (2000 seeded → 3000 → 4000 → 5000), and the
 bracket drawn at the top of the menu prints what each round starts on, so a number you typed is a
