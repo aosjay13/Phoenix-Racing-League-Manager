@@ -11,6 +11,7 @@
 import { ALL_BONUS_TYPES } from "@/lib/standings";
 import { listToTableOrZero, tableToList } from "@/lib/pointsTemplates";
 import { BLANK_CAR_SELECTION_FORM, carSelectionFormToBody, carSelectionToForm } from "@/lib/carSelection";
+import { BLANK_PLAYOFF_CONFIG, defaultRoundsFor, normalizePlayoffConfig } from "@/lib/playoffs";
 
 export const BLANK_BONUSES = Object.fromEntries(ALL_BONUS_TYPES.map(([k]) => [k, "0"]));
 
@@ -40,6 +41,16 @@ export const BLANK_SEASON_FORM = {
   heat_format: false,
   heat_points_template_id: "",
   consolation_points_template_id: "",
+  // Does this season end in a playoff? Off, and the whole playoff menu stays
+  // shut and nothing about the season changes. The rules themselves live in one
+  // object — see lib/playoffs.js — and a brand-new season opens the menu on the
+  // elimination ladder, which is the format most leagues mean when they say
+  // "playoffs".
+  playoffs_enabled: false,
+  playoff_config: {
+    ...BLANK_PLAYOFF_CONFIG,
+    rounds: defaultRoundsFor({ field_size: BLANK_PLAYOFF_CONFIG.field_size, seed_base: BLANK_PLAYOFF_CONFIG.seed_base }),
+  },
   // Car selection / lock-in for this season and its classes — see
   // lib/carSelection.js.
   ...BLANK_CAR_SELECTION_FORM,
@@ -69,6 +80,10 @@ export function seasonToForm(season = {}) {
     // "off" predates the strict visibility rule and reads the same as the
     // default now — an ordinary racing season.
     banger_mode: season.isBangerRacing ? "on" : (season.banger_mode === "on" ? "on" : ""),
+    playoffs_enabled: !!season.playoffs_enabled,
+    // Normalized on the way in, so a season saved before a setting existed
+    // opens the menu on that setting's default rather than on a blank.
+    playoff_config: normalizePlayoffConfig(season.playoff_config),
     ...carSelectionToForm(season),
     bonuses: Object.fromEntries(ALL_BONUS_TYPES.map(([k]) => [k, String(bonusSrc[k] ?? 0)])),
   };
@@ -92,6 +107,12 @@ export function seasonFormToBody(form) {
     heat_format: !!form.heat_format,
     heat_points_template_id: form.heat_format ? form.heat_points_template_id : "",
     consolation_points_template_id: form.heat_format ? form.consolation_points_template_id : "",
+    // The playoff rules are stored whether or not the tick is on, so switching
+    // playoffs off for a year and back on again doesn't lose the format the
+    // league spent an evening agreeing. Only the tick decides whether they
+    // apply. Everything is coerced here — the menu's inputs hand back strings.
+    playoffs_enabled: !!form.playoffs_enabled,
+    playoff_config: normalizePlayoffConfig(form.playoff_config),
     // The car list is stored as an array of names, not the textarea's raw text.
     ...carSelectionFormToBody(form),
     race_points: listToTableOrZero(form.race_points),

@@ -22,17 +22,33 @@ function titlePath({ game_name, series_name, season_name }, className = null) {
 
 // One row per CROWN rather than per season, because that's how they're counted:
 // a driver taking their class and the overall in the same season won two
-// championships, and each is its own line with its own full path.
+// championships, and each is its own line with its own full path. A season that
+// ran a playoff can hand the same driver a third — the regular season title —
+// so the rows are built from the crowns themselves rather than from "overall +
+// classes", which has nowhere to put one.
 function crownRows(titles) {
   const rows = [];
   for (const t of titles) {
-    const classNames = t.class_names || [];
-    if (t.overall) rows.push({ key: `${t.season_id}-overall`, path: titlePath(t), crown: "Overall", double: classNames.length > 0 });
-    // The class name is already the last step of the path, so the badge only
-    // has to say which KIND of crown this was.
-    for (const c of classNames) {
-      rows.push({ key: `${t.season_id}-class-${c}`, path: titlePath(t, c), crown: "Class", double: t.overall });
-    }
+    const crowns = t.crowns?.length
+      ? t.crowns
+      // A season computed before crowns were carried: rebuild them from what
+      // the row does have, which is exactly what this used to read.
+      : [
+        ...(t.overall ? [{ kind: "overall", class_name: null }] : []),
+        ...(t.class_names || []).map(name => ({ kind: "class", class_name: name })),
+      ];
+    crowns.forEach((c, i) => {
+      rows.push({
+        key: `${t.season_id}-${c.kind}-${c.class_name || "all"}-${i}`,
+        // The class name is already the last step of the path, so the badge
+        // only has to say which KIND of crown this was.
+        path: titlePath(t, c.class_name || ""),
+        crown: c.kind === "overall" ? "Overall"
+          : c.kind === "regular_season" ? (c.title || "Regular Season")
+            : "Class",
+        double: crowns.length > 1,
+      });
+    });
   }
   return rows;
 }

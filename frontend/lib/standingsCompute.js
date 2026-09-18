@@ -28,6 +28,7 @@ import {
   orderClassIds, orderEntryClasses,
 } from "@/lib/classFilter";
 import { seasonChampions } from "@/lib/champions";
+import { buildPlayoffs } from "@/lib/playoffs";
 import { applySeasonTeams, teamsForEntries } from "@/lib/teams";
 import { bareResults, driverNames, hiddenName, indexBundle, isIracingScope } from "@/lib/rawIndex";
 
@@ -64,7 +65,11 @@ export function buildStandings(index, { seasonId, classId = "", className = "" }
     classes,
   );
   const teams = teamsForEntries(allEntries, seasonId, teamIndex);
-  const racesById = Object.fromEntries(index.racesFor(seasonId).map(({ id, ...race }) => [id, race]));
+  // The race documents, whole and indexed. The playoff split (lib/playoffs.js)
+  // needs each race's own id and round number to know where the regular season
+  // stops, which the id-stripped map below can't answer.
+  const seasonRaces = index.racesFor(seasonId);
+  const racesById = Object.fromEntries(seasonRaces.map(({ id, ...race }) => [id, race]));
   const allResults = decorateRaceBonuses(decorateSessionFlags(bareResults(index.resultsFor(seasonId)), racesById,
     // The season and its classes can name heat/consolation points defaults of
     // their own; they resolve per result, under its own class.
@@ -169,12 +174,45 @@ export function buildStandings(index, { seasonId, classId = "", className = "" }
     r.class_name = names.length ? names.join(" · ") : null;
   }
 
+  // ── The playoff ──────────────────────────────────────────────────────────
+  //
+  // Built for the scope being VIEWED, from the same narrowed results the table
+  // above was scored from: at "All Classes" that's the season's playoff, and
+  // inside a class it's that class's own bracket, seeded from that class's own
+  // regular season. One setting on the season, one playoff per championship it
+  // decides — which is exactly how the class championships already work.
+  //
+  // Null for every season that doesn't run one, so the screen renders nothing
+  // new for the leagues that don't.
+  const playoffs = buildPlayoffs({
+    season, races: seasonRaces, results, entries: Object.values(entriesById),
+    pointsConfig: config, templatesById, classes,
+  });
+  if (playoffs) {
+    // Playoff rows are named off the roster entry like any other row, so they
+    // take the same contextual naming the table above does — an iRacing real
+    // name never leaks onto another game's bracket.
+    const rename = row => {
+      if (!row) return row;
+      const entry = entriesById[row.entry_id];
+      return entry ? { ...row, driver_name: championName(index.bundle, entry, gameId) } : row;
+    };
+    playoffs.seeds = playoffs.seeds.map(rename);
+    playoffs.outsiders = playoffs.outsiders.map(rename);
+    playoffs.rounds = playoffs.rounds.map(r => ({ ...r, rows: r.rows.map(rename) }));
+    playoffs.active_round = playoffs.active_round
+      ? playoffs.rounds[playoffs.active_round_index] ?? playoffs.active_round
+      : null;
+    playoffs.champion = rename(playoffs.champion);
+    playoffs.regular_champion = rename(playoffs.regular_champion);
+  }
+
   // Every crown this season handed out, so the standings screen can show who
   // was actually credited — a class-by-class list plus the overall one, in the
   // same order the classes are listed. Computed from the UNFILTERED season, and
   // empty until the season is marked completed (nothing is awarded before
   // then). Named from the roster entry, matching the tables above.
-  const champions = seasonChampions(season, allResults, allEntries, config, templatesById, classes)
+  const champions = seasonChampions(season, allResults, allEntries, config, templatesById, classes, seasonRaces)
     .map(c => ({
       ...c,
       driver_name: championName(index.bundle, entriesById[c.entry_id], gameId),
@@ -214,6 +252,10 @@ export function buildStandings(index, { seasonId, classId = "", className = "" }
       // it (the selection travels by name across seasons).
       class_id: classSel[0] || null,
     } : null,
+    // The playoff for this scope — the regular season champion, the seeded
+    // field, every round's table and who came out of it. Null when this season
+    // doesn't run one; see lib/playoffs.js.
+    playoffs,
     drop_weeks: drivers.drop_weeks,
     drivers: drivers.rows,
     teams: teamRows,

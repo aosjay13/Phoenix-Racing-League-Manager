@@ -444,6 +444,32 @@ export const SPECS = {
                        // scores exactly as before.
                        heat_format: { bool: true, default: false },
                        heat_points_template_id: {}, consolation_points_template_id: {},
+                       // `playoffs_enabled` says this season ends in a PLAYOFF:
+                       // the regular season stops at a set round, a regular
+                       // season champion may be crowned there, and the rounds
+                       // after it are raced under their own rules for the title.
+                       // The tick is the whole switch — a season carrying a
+                       // config it never turned on scores exactly as it always
+                       // did.
+                       //
+                       // `playoff_config` is every one of those rules, as ONE
+                       // object rather than twenty-five loose fields: the field
+                       // size and how drivers qualify for it, the seeding reset,
+                       // the round ladder (races per round, how many advance,
+                       // what each round resets to), the playoff points paid for
+                       // wins / poles / heat wins / top finishes, whether the
+                       // finale is decided on points or on the best finisher,
+                       // and what the two champions are called. There is no one
+                       // playoff format — a league races whatever it voted on —
+                       // so the settings are stored as the answer sheet they are
+                       // and a format nobody has invented yet needs no schema
+                       // change. normalizePlayoffConfig() in lib/playoffs.js is
+                       // the single place that decides what a missing or blank
+                       // answer means, so the menu, the standings, the schedule
+                       // badges and the championship tally all read a season the
+                       // same way.
+                       playoffs_enabled: { bool: true, default: false },
+                       playoff_config: {},
                        ...CAR_SELECTION_FIELDS } },
   // Classes divide a season's field into separately-scored groups ("Pro" /
   // "Amateur", "GT3" / "LMP2"). A class belongs to exactly one season; a roster

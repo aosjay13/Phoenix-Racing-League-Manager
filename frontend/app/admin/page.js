@@ -733,6 +733,12 @@ function AdminInner() {
               classesAreBanger={classes.some(isBangerDoc)}
               seriesDoc={series}
               gameDoc={game}
+              // The selected season's calendar, so the playoff menu can say
+              // where the regular season ends and check the round ladder
+              // against the rounds that actually exist. Empty while a new
+              // season is being added, which is exactly right — it has no
+              // calendar yet.
+              races={editIds.season && editIds.season === seasonId ? races : []}
             />
 
             <span style={{ display: "block" }}>

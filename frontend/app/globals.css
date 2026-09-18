@@ -4255,3 +4255,320 @@ input[type="radio"]:disabled:checked {
   .placement-column { flex: 1 1 auto; width: 100%; }
   .placement-bar-progress { margin-right: 0; width: 100%; }
 }
+
+/* ── Playoffs ──────────────────────────────────────────────────────────────
+   The playoff format menu (components/PlayoffSettingsModal.jsx), the callout
+   that opens it from the season form, and the Playoffs panel on Standings.
+
+   Gold throughout, because a playoff is the title fight: it is the one thing on
+   a standings page that is not "how the points stand" but "who can still win",
+   and it should not read as another table of numbers. */
+
+.playoff-callout {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-gold, #e2b714);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+}
+
+.playoff-chip {
+  display: inline-block;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--accent-gold, #e2b714);
+  background: rgba(226, 183, 20, 0.12);
+  border: 1px solid rgba(226, 183, 20, 0.3);
+  white-space: nowrap;
+}
+
+.playoff-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+/* The format drawn as the bracket it is. It scrolls sideways rather than
+   wrapping mid-ladder, because a ladder that wraps stops reading as one. */
+.playoff-ladder {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  overflow-x: auto;
+}
+
+.playoff-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 78px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.playoff-step strong {
+  font-size: 0.95rem;
+  color: var(--ink-0);
+  font-variant-numeric: tabular-nums;
+}
+
+.playoff-step em {
+  font-style: normal;
+  font-size: 0.68rem;
+  color: var(--ink-2);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* A round is the arrow between two cuts, not a cut itself. */
+.playoff-step.is-round {
+  border-style: dashed;
+  background: transparent;
+}
+
+.playoff-step.is-round strong { color: var(--accent-cyan); font-size: 0.82rem; }
+
+.playoff-step.is-win {
+  border-color: rgba(226, 183, 20, 0.45);
+  background: rgba(226, 183, 20, 0.1);
+}
+
+.playoff-step.is-win strong { color: var(--accent-gold, #e2b714); }
+
+.playoff-section { margin-top: 14px; }
+
+.playoff-heading {
+  margin: 18px 0 6px;
+  font-size: 0.92rem;
+  color: var(--ink-0);
+}
+
+.playoff-section > .playoff-heading:first-child { margin-top: 4px; }
+
+/* Two columns at workspace width, one on a phone — the same treatment the
+   derby bonus grid takes. */
+.playoff-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 16px;
+}
+
+.playoff-format-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.playoff-format-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  color: var(--ink-1);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.playoff-format-card:hover:not(:disabled) { border-color: var(--accent-gold, #e2b714); }
+
+.playoff-format-card.is-picked {
+  border-color: var(--accent-gold, #e2b714);
+  background: rgba(226, 183, 20, 0.08);
+}
+
+.playoff-format-card:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.playoff-format-icon { font-size: 1.2rem; }
+.playoff-format-card strong { color: var(--ink-0); font-size: 0.92rem; }
+.playoff-format-card em { font-style: normal; font-size: 0.72rem; color: var(--accent-gold, #e2b714); text-transform: uppercase; letter-spacing: 0.04em; }
+.playoff-format-card span:last-child { font-size: 0.78rem; color: var(--ink-2); }
+
+/* A rule that needs explaining is a radio row, not a dropdown option: the
+   explanation is what makes the choice meaningful. */
+.playoff-choices { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+
+.playoff-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  cursor: pointer;
+}
+
+.playoff-choice.is-picked { border-color: var(--accent-gold, #e2b714); background: rgba(226, 183, 20, 0.08); }
+.playoff-choice > input { margin-top: 3px; flex: 0 0 auto; }
+.playoff-choice strong { display: block; color: var(--ink-0); font-size: 0.86rem; }
+
+.playoff-rounds-table input {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  color: var(--ink-0);
+  font-size: 0.85rem;
+}
+
+.playoff-warn {
+  margin: 10px 0 0;
+  padding: 10px 14px 10px 30px;
+  border: 1px solid rgba(226, 183, 20, 0.4);
+  border-radius: 10px;
+  background: rgba(226, 183, 20, 0.08);
+  color: var(--accent-gold, #e2b714);
+  font-size: 0.82rem;
+}
+
+.playoff-warn li { margin: 2px 0; }
+
+/* ── The Playoffs panel on Standings ──────────────────────────────────────── */
+
+.playoff-panel {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-gold, #e2b714);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+}
+
+.playoff-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.playoff-panel-head h3 { margin: 0; font-size: 1rem; }
+
+.playoff-note {
+  margin: 8px 0 0;
+  font-size: 0.83rem;
+  color: var(--ink-1);
+  font-style: italic;
+}
+
+.playoff-crowns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+
+.playoff-crown {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(226, 183, 20, 0.35);
+  background: rgba(226, 183, 20, 0.1);
+  color: var(--ink-0);
+  font-size: 0.84rem;
+}
+
+.playoff-crown span { color: var(--ink-2); font-size: 0.76rem; }
+
+/* One card per round, side by side — the bracket as it actually stands. */
+.playoff-rounds {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.playoff-round-card {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-base, var(--bg-elevated));
+}
+
+.playoff-round-card.is-active { border-color: var(--accent-cyan); }
+.playoff-round-card.is-final { border-color: rgba(226, 183, 20, 0.45); }
+
+.playoff-round-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.playoff-round-head strong { font-size: 0.88rem; color: var(--ink-0); }
+.playoff-round-head span { font-size: 0.72rem; color: var(--ink-2); white-space: nowrap; }
+
+.playoff-round-list { list-style: none; margin: 0; padding: 0; }
+
+.playoff-round-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 0;
+  font-size: 0.82rem;
+  color: var(--ink-1);
+  border-bottom: 1px solid var(--border);
+}
+
+.playoff-round-list li:last-child { border-bottom: none; }
+.playoff-round-list .playoff-seed { color: var(--ink-2); font-size: 0.72rem; min-width: 22px; font-variant-numeric: tabular-nums; }
+.playoff-round-list .playoff-name { flex: 1; min-width: 0; overflow-wrap: anywhere; color: var(--ink-0); }
+.playoff-round-list .playoff-pts { font-variant-numeric: tabular-nums; color: var(--ink-1); }
+
+.playoff-round-list li.is-advanced .playoff-name { color: var(--accent-cyan); font-weight: 600; }
+.playoff-round-list li.is-eliminated { opacity: 0.55; }
+.playoff-round-list li.is-eliminated .playoff-name { text-decoration: line-through; }
+.playoff-round-list li.is-champion .playoff-name { color: var(--accent-gold, #e2b714); font-weight: 700; }
+
+/* The cutline: the row the field is actually split on. */
+.playoff-cut {
+  border-bottom: 2px dashed rgba(226, 183, 20, 0.55) !important;
+}
+
+.playoff-cut-label {
+  display: block;
+  margin: 4px 0 2px;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent-gold, #e2b714);
+}
+
+.playoff-badge {
+  display: inline-block;
+  margin-top: 2px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent-gold, #e2b714);
+}
+
+@media (max-width: 640px) {
+  .playoff-grid { grid-template-columns: 1fr; }
+  .playoff-format-cards { grid-template-columns: 1fr; }
+}

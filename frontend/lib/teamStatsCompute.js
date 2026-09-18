@@ -63,7 +63,10 @@ export function buildTeamStats(index, { team: wanted } = {}) {
     if (!entries.some(onTeam) && !teamIndex.driverIdsFor(team.id, season.id).length) continue;
 
     const config = resolveSeasonConfig(season, index.seriesFor(season));
-    const racesById = Object.fromEntries(index.racesFor(season.id).map(({ id, ...race }) => [id, race]));
+    // Whole documents as well as the index: a playoff season's crowns are
+    // decided by round number (see lib/playoffs.js).
+    const seasonRaces = index.racesFor(season.id);
+    const racesById = Object.fromEntries(seasonRaces.map(({ id, ...race }) => [id, race]));
     const results = decorateRaceBonuses(decorateSessionFlags(bareResults(index.resultsFor(season.id)), racesById,
       sessionScopeContext({ seasons: [season], classes: seasonClasses, entriesById })));
     // Each result scores under its driver's class, so a class with its own
@@ -96,7 +99,7 @@ export function buildTeamStats(index, { team: wanted } = {}) {
     // Every championship won on this team that season — class champions
     // included, and no overall champion at all when the season runs
     // class-only titles. A dual crown (class + overall) is two championships.
-    for (const [entryId, rec] of titlesByEntry(seasonChampions(season, results, entries, config, templatesById, seasonClasses))) {
+    for (const [entryId, rec] of titlesByEntry(seasonChampions(season, results, entries, config, templatesById, seasonClasses, seasonRaces))) {
       const champ = entriesById[entryId];
       if (!onTeam(champ)) continue;
       titles += rec.titles;

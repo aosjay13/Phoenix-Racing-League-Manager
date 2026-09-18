@@ -67,7 +67,12 @@ export function buildCareerProfile(index, { driverId = null, userId = null } = {
     const myEntryIds = new Set(myEntries.filter(e => e.season_id === seasonId).map(e => e.id));
 
     const seasonClasses = index.classesFor(seasonId);
-    const racesById = Object.fromEntries(index.racesFor(seasonId).map(({ id, ...race }) => [id, race]));
+    // Kept whole as well as indexed: the playoff split reads each race's round
+    // number off the documents themselves (see lib/playoffs.js), so a season
+    // that ends in a playoff credits the bracket's champion rather than its
+    // points leader.
+    const seasonRaces = index.racesFor(seasonId);
+    const racesById = Object.fromEntries(seasonRaces.map(({ id, ...race }) => [id, race]));
     const seasonEntries = index.entriesFor(seasonId);
     const seasonEntriesById = Object.fromEntries(seasonEntries.map(e => [e.id, e]));
     const seasonResults = decorateRaceBonuses(decorateSessionFlags(bareResults(index.resultsFor(seasonId)), racesById,
@@ -170,7 +175,7 @@ export function buildCareerProfile(index, { driverId = null, userId = null } = {
     // the season runs class-only titles — then narrowed to this driver. A
     // driver who won both their class and the overall in one season scores
     // two, with both crowns recorded so the profile can show which they were.
-    const mineRec = [...titlesByEntry(seasonChampions(season, seasonResults, seasonEntries, config, templatesById, seasonClasses))]
+    const mineRec = [...titlesByEntry(seasonChampions(season, seasonResults, seasonEntries, config, templatesById, seasonClasses, seasonRaces))]
       .find(([entryId]) => myEntryIds.has(entryId))?.[1];
     if (mineRec) {
       totalTitles += mineRec.titles;
@@ -187,6 +192,11 @@ export function buildCareerProfile(index, { driverId = null, userId = null } = {
         game_name: index.gameById[season.game_id]?.name ?? null,
         overall: mineRec.overall,
         class_names: mineRec.class_names,
+        // Every crown of that season, in the order they were decided — a class
+        // title, the outright one, and a regular season championship where the
+        // season's playoff format crowns one. The profile lists one row per
+        // crown off this, so the list can never be shorter than the count.
+        crowns: mineRec.crowns,
         label: describeCrowns(mineRec),
       });
     }

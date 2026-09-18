@@ -25,8 +25,17 @@
 //     championships were won; collapsing them to one used to make the overall
 //     title vanish from the records in exactly the case where it's most often
 //     won, since the outright leader is usually a class winner too.
+//   • A season that runs a PLAYOFF crowns the playoff winner, not the points
+//     leader. The whole point of a playoff is that leading the points in
+//     October decides nothing, so the title follows the bracket — and where the
+//     format also crowns a regular season champion, that is a SECOND crown, and
+//     a second title, exactly like a class championship is. A season whose
+//     playoff never actually ran (the tick is on, no playoff round has results)
+//     falls back to the points leader, because a completed season has to have
+//     crowned somebody. See lib/playoffs.js.
 
 import { calculateStandings } from "@/lib/standings";
+import { buildPlayoffs, playoffsOn, seasonPlayoffConfig } from "@/lib/playoffs";
 import { classIdSet, filterResultsByClass } from "@/lib/classFilter";
 
 // Every crown handed out in one season, as
@@ -34,14 +43,48 @@ import { classIdSet, filterResultsByClass } from "@/lib/classFilter";
 // `results` must already be decorated (bonuses + session flags), exactly as
 // calculateStandings expects. `classes` is the season's class list — empty for
 // a single-class season.
-export function seasonChampions(season, results, entries, config, templatesById = {}, classes = []) {
+export function seasonChampions(season, results, entries, config, templatesById = {}, classes = [], races = []) {
   if (!season || season.status !== "completed" || !results.length) return [];
 
   const crowns = [];
   const entriesById = Object.fromEntries(entries.map(e => [e.id, e]));
+  const playoffConfig = seasonPlayoffConfig(season);
+
+  // Who won a championship over one set of results — one class's, or the whole
+  // season's. Without a playoff that is the points leader, as it always was.
+  // With one it's whoever came out of the bracket, plus the regular season
+  // champion when the format crowns one and counts it.
+  function crownsOver(subset, { kind, class_id = null, class_name = null }) {
+    const out = [];
+    if (playoffsOn(season)) {
+      const playoffs = buildPlayoffs({
+        season, races, results: subset, entries, pointsConfig: config, templatesById, classes,
+      });
+      if (playoffs?.regular_champion && playoffConfig?.regular_season_counts_title) {
+        out.push({
+          entry_id: playoffs.regular_champion.entry_id,
+          kind: "regular_season", class_id, class_name,
+          title: playoffs.regular_champion.title,
+        });
+      }
+      if (playoffs?.champion) {
+        out.push({
+          entry_id: playoffs.champion.entry_id,
+          kind, class_id, class_name, title: playoffs.champion.title,
+        });
+        return out;
+      }
+      // A playoff that never ran decides nothing, so the season falls through
+      // to the points leader below rather than finishing with no champion.
+    }
+    const top = calculateStandings(subset, entries, [], config, templatesById, classes).rows[0];
+    if (top) out.push({ entry_id: top.entry_id, kind, class_id, class_name });
+    return out;
+  }
 
   // Each class crowns its own champion, scored within the class — its own
-  // points, its own drop weeks, its own leader.
+  // points, its own drop weeks, its own leader, and its own run through the
+  // playoff bracket when the season races one.
   for (const c of classes) {
     const classResults = filterResultsByClass(results, c.id, entriesById);
     if (!classResults.length) continue;
@@ -51,15 +94,13 @@ export function seasonChampions(season, results, entries, config, templatesById 
     // record this class while their entry no longer does still raced it — cut
     // their entry out and the adjustment vanishes from the total that decides
     // the crown, and the champion's name comes out as "Unknown".
-    const top = calculateStandings(classResults, entries, [], config, templatesById, classes).rows[0];
-    if (top) crowns.push({ entry_id: top.entry_id, kind: "class", class_id: c.id, class_name: c.name ?? null });
+    crowns.push(...crownsOver(classResults, { kind: "class", class_id: c.id, class_name: c.name ?? null }));
   }
 
   // The overall title. A season without classes has only this one; a season
   // with classes awards it only when the combined championship is enabled.
   if (!classes.length || season.combined_championship !== false) {
-    const top = calculateStandings(results, entries, [], config, templatesById, classes).rows[0];
-    if (top) crowns.push({ entry_id: top.entry_id, kind: "overall", class_id: null, class_name: null });
+    crowns.push(...crownsOver(results, { kind: "overall" }));
   }
 
   return crowns;
@@ -75,13 +116,32 @@ export function seasonChampions(season, results, entries, config, templatesById 
 export function titlesByEntry(crowns) {
   const byEntry = new Map();
   for (const c of crowns) {
-    const rec = byEntry.get(c.entry_id) ?? { titles: 0, overall: false, class_names: [] };
+    const rec = byEntry.get(c.entry_id) ?? { titles: 0, overall: false, class_names: [], labels: [], crowns: [] };
     rec.titles += 1;
     if (c.kind === "overall") rec.overall = true;
-    else if (c.class_name) rec.class_names.push(c.class_name);
+    else if (c.kind === "class" && c.class_name) rec.class_names.push(c.class_name);
+    rec.labels.push(crownLabel(c));
+    // The crowns themselves, so a profile can print one line per championship
+    // rather than reconstructing them from `overall` + `class_names` — which
+    // has no room for a regular season title and would list one fewer crown
+    // than `titles` counts.
+    rec.crowns.push(c);
     byEntry.set(c.entry_id, rec);
   }
   return byEntry;
+}
+
+// What one crown is called on a profile or a tooltip. A class crown is its
+// class; the outright one is "Overall"; a regular season championship says so,
+// under the name the season gave it, with its class when it has one.
+export function crownLabel(c) {
+  if (!c) return "";
+  if (c.kind === "regular_season") {
+    const title = c.title || "Regular Season Champion";
+    return c.class_name ? `${title} (${c.class_name})` : title;
+  }
+  if (c.kind === "class") return c.class_name || "Class";
+  return "Overall";
 }
 
 // The crowns that count for the scope being viewed. Inside one class, only that
@@ -101,5 +161,6 @@ export function crownsInScope(crowns, selection = "") {
 // somebody won in a season, for profiles and tooltips.
 export function describeCrowns(rec) {
   if (!rec) return "";
+  if (rec.labels?.length) return rec.labels.join(" + ");
   return [...(rec.overall ? ["Overall"] : []), ...rec.class_names].join(" + ");
 }

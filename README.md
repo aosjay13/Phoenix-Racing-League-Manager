@@ -49,6 +49,21 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   on. Unlike Demo Derby these are ordinary racing finishes — a bracket 3rd is a straight **3** in
   Average Finish, both 3rd-place drivers are paid identical points, and it all cascades into Wins,
   Podiums, Top 5s and the Overall and per-Game stats like any other result
+- 🏆 **Playoffs** — end a season the way your league actually voted to. Tick **Playoffs** on a
+  season and a full format menu opens: where the regular season stops (and whether it crowns a
+  **regular season champion**, which counts as a title of its own), how many drivers make the field
+  and how they qualify (wins first then points, points only, winners only, or everybody), what they
+  are reset to (zero, a base plus banked **playoff points**, seeded steps, or their points carried
+  straight over), and a **round ladder** you build yourself — each round is "this many races, this
+  many drivers advance, reset to this". One round of ten races that advances one driver is a
+  **Chase**; four rounds cutting 16 → 12 → 8 → 4 are **elimination playoffs**; a win in a round can
+  lock a driver into the next one; and the finalists can start the last round dead level with the
+  title going to the best finisher on the day. Presets fill it in for the Chase (2004 and
+  2007–2013), NASCAR's 2016–2025 playoffs, a points reset, a carry-over and a winner-take-all
+  finale — then every number stays yours to change. **Playoff points** can be paid for wins, poles,
+  heat/stage wins, a top-X finishing table and the regular season title, and they survive every
+  reset. Nothing about how a race scores changes: a playoff changes who the points decide, and a
+  multi-class season runs one **per class**
 - ⏱ **Time Trials & Placements** — a hub of its own for hot-lapping, time attack and division
   placement nights. Each session takes **as many laps per driver as you allow** (a Maximum Laps
   limit, or unlimited) and works out **Best Time** and **Best Average Time** from them, both
@@ -1575,6 +1590,8 @@ frontend/
                       DriverMergeTool (find & fold duplicate profiles), DriverRecord (the three
                       sortable tables on a driver's profile), PlacementBoard +
                       PlacementTargetFields + AutoPlaceModal (the placement night),
+                      PlayoffSettingsModal (the playoff format menu) + PlayoffPanel (the
+                      bracket on Standings),
                       MessageBoard + AdminMessages (the two ends of the board)
 firebase/           ← Firestore + Storage security rules
 backend/            ← Legacy Python backend (unused; superseded by Next.js API routes)
@@ -1601,7 +1618,7 @@ the dialog *is*:
 |---|---|---|
 | **form** | 480 | the default — a dialog that asks something. A form is easier to read in a narrow column |
 | **wide** | 760 | `wide` — a couple of things side by side |
-| **workspace** | 1080 | `size="workspace"` — a dialog you *work in*: the season schedule importer puts a whole calendar and a row per venue (a name, a dropdown of every track in the league, a text field and a type) in front of you at once |
+| **workspace** | 1080 | `size="workspace"` — a dialog you *work in*: the season schedule importer puts a whole calendar and a row per venue (a name, a dropdown of every track in the league, a text field and a type) in front of you at once, and the **Playoff Format** menu puts a round ladder in front of you the way it would be drawn on a whiteboard |
 
 The rule that matters: **a table is not a form.** Squeezed into a form column, a table of twelve
 rounds becomes a horizontal scrollbar, and a schedule you can only see a third of at a time cannot be
@@ -3198,6 +3215,115 @@ the table's width. This is measured, not guessed: a 17-column standings export o
 and clipped its last column before that rule existed. The metadata strip uses a padding-based
 thirds grid rather than flex `gap` or CSS grid, both of which html2canvas renders inconsistently.
 
+### Playoffs
+
+Plenty of leagues don't hand the title to whoever leads the points in December. They stop the
+regular season at some round, crown a regular season champion, and race the rest of the year under
+completely different rules — a points reset, elimination rounds, a Chase. Which rules, exactly,
+changes every off-season, because the format is whatever got voted in at the January meeting.
+
+So this doesn't ship a playoff format. It ships the **four questions every format is an answer
+to**, and lets a season answer them however it likes:
+
+| | |
+| --- | --- |
+| **Who is in it?** | how many drivers, and how they qualify |
+| **What do they start on?** | the seeding reset |
+| **How is it raced?** | the round ladder |
+| **What is a result worth?** | the ordinary points, plus playoff points |
+
+Tick **Playoffs** on a season (League Setup → Seasons, or the Schedule's **+ New Season** dialog —
+the same form, as always) and **⚙ Playoff Format…** opens the menu. It is a workspace-width dialog
+rather than another block of the form column, because a playoff is a ladder and a ladder read a
+third at a time is a ladder nobody checks. Six tabs, in the order a league answers them — Format,
+The Field, Seeding & Reset, Rounds, Playoff Points, Champions — with the format **drawn as a
+bracket** underneath the whole time, so a change to a number is visible as a change to the shape:
+
+    16 drivers qualify → 3 races Round of 16 → 12 advance → 3 races Round of 12 → … → 🏆 Champion
+
+**Presets are a starting point, never a lock.** Pick one and it fills in the other five tabs; change
+anything afterwards and the format simply becomes yours, which is the entire reason this is a menu
+and not a list of formats.
+
+| Preset | What it sets up |
+| --- | --- |
+| **Elimination Playoffs** (NASCAR 2016–2025) | 16 drivers, four rounds cutting to 12 / 8 / 4, reset to 2000 + playoff points each round, a win in a round advances you, the Championship race run level and decided on the best finisher |
+| **The Chase** (2004–2006) | the top 10 reset to 5050 in 5-point steps, then one long round to the end |
+| **The Chase, with wins** (2007–2013) | 12 drivers reset to 5000, plus 10 playoff points a regular-season win |
+| **Points Reset** | the top X only, everyone level at zero, one round to the end |
+| **Carry Over** | the top X keep the points they earned; the playoff only narrows who can still win |
+| **Winner Takes All** | a short ladder into a single deciding race, finalists level |
+| **Custom Format** | keeps everything you already have and only renames the format |
+
+**Where the regular season ends.** Set *Regular season ends after round N* and rounds 1–N are the
+regular season; everything after is the playoff. Leave it on **0** and it works itself out: the
+races your ladder asks for are counted back from the end of the calendar, so a 36-round season with
+a 10-race ladder has a 26-round regular season without anybody typing 26. A round with **Races: 0**
+takes every remaining round on the calendar, which is how one row describes a Chase — ten races, or
+twelve, or however many the calendar turns out to hold.
+
+**The round ladder** is a table you edit: name, races, how many advance, what the survivors reset
+to, with ↑ ↓ to reorder and 🗑 to remove. **↻ Rebuild from field size** regenerates a sensible
+ladder for the field you've set. The last round always advances exactly one driver — it's the one
+that decides the title — and two switches change how the rounds behave:
+
+- **Reset the points at the start of every round** — survivors drop to that round's reset number
+  (plus their banked playoff points, when those carry). Off, the points keep running.
+- **Win a race in a round and you're through** — a race winner advances whatever the points say,
+  and takes one of the round's slots with them. This is the rule that makes an elimination round
+  worth watching from 12th, and it is the one thing a points-shaped implementation quietly drops:
+  in `lib/__tests__/playoffs.test.mjs` the driver who **out-scores everybody in the Round of 4 goes
+  home**, because the two drivers who won a race in it took both places.
+
+**Playoff points** are a second currency: banked rather than spent, they seed the field and survive
+every reset, which is what keeps a dominant regular season worth something to a driver who has just
+been dropped back to 2000. They're read off results the app already records, so there is nothing
+extra to enter — a main-event win, a pole (position 1 of a Qualifying session), a **heat win** (this
+app's stage win) and an optional top-X table, which takes a spreadsheet paste like every other points
+scale. The ordinary points structure still scores every race exactly as it always did.
+
+**Two champions, and you choose whether there are two.** *Crown a regular season champion* is its
+own tick — plenty of series don't do it, and the regular season simply sets the field — and under it
+*It counts as a title in career and team stats* decides whether that crown is a **Championship** on
+the driver's record or an honour the standings show and nothing more. Both crowns are named in your
+league's own words. Everything is awarded only once the season is marked **complete**, like every
+other championship here, and the confirmation you read before closing a season out says *playoff
+champion* rather than *points leader* on a playoff season, so it matches what goes in the books.
+
+**A multi-class season runs the playoff per class.** One setting on the season, one bracket per
+championship it decides: each class seeds its own field from its own regular season and crowns its
+own playoff champion, exactly the way class championships already work. Nothing extra to configure.
+
+**What it looks like once it's running.** The Schedule badges every playoff round with which round
+of the ladder it belongs to (*🏆 Round of 12 · 2/3*, and *· decider* on the race that settles it)
+and marks the **🏁 Regular Season Finale**. Standings grows a **Playoffs** panel above the
+championship table — the format, the note your league wrote for itself, the regular season champion,
+the seeded field with the **cutline** through it and the drivers who missed the cut below, then one
+card per round showing who advanced, who was knocked out (struck through) and who is still in it.
+The table underneath is unchanged: it is still the season's full points, and the panel is who those
+points can still win it for.
+
+**Nothing changes for a league that doesn't tick it.** Playoffs are off by default, the whole feature
+is behind `seasons.playoffs_enabled`, and a season carrying a format it never switched on is scored
+and crowned exactly as it always was. Unticking it keeps the format on the shelf rather than
+throwing it away, so a league that skips playoffs for one season gets its rules back the year after.
+
+**Under the hood.** The rules live in **one object** — `seasons.playoff_config`, next to the
+`seasons.playoffs_enabled` tick — rather than twenty-five loose season fields: they are meaningless
+apart from each other, they're written and read as a unit, and a format nobody has invented yet
+should not need a schema migration. `normalizePlayoffConfig()` in `lib/playoffs.js` is the single
+place that decides what a missing, blank or hand-edited answer means, so the menu, the standings,
+the schedule badges and the championship tally all read a season the same way. The bracket itself is
+built by `buildPlayoffs()` from the season's own rules and the results already on the board — nothing
+about a playoff is entered by hand, so it can't disagree with the results. The menu is
+`components/PlayoffSettingsModal.jsx`, the panel `components/PlayoffPanel.jsx`, and the rules are
+pinned by `lib/__tests__/playoffs.test.mjs` and `lib/__tests__/playoffMenu.test.jsx`.
+
+The menu **warns rather than refuses**. A ladder longer than the calendar, a last round that
+advances two drivers, a cutoff past the end of the season: each is called out in the dialog and on
+the season form beside the tick, and none of them blocks a save. A season is very often half set up,
+and a menu that won't save until the calendar exists is a menu you can't use in February.
+
 ### Marking a season complete
 
 **Mark Season Complete** on the Schedule (and the matching control in League Setup) flips
@@ -3237,6 +3363,12 @@ profile, the stats tables and team pages alike.
   because two crowns were won — collapsing them to one used to make the overall title vanish from
   the records in exactly the case where it is most often won, since the outright leader is usually a
   class winner too. Both are recorded, and the driver profile lists each on its own line.
+- A season that runs a **playoff** crowns the **playoff winner**, not the points leader — the whole
+  point of a playoff being that leading the points in October decides nothing. Where the format also
+  crowns a **regular season champion** (and is set to count it), that is a second crown and a second
+  title, exactly as a class championship is. A playoff that was switched on but never actually raced
+  falls back to the points leader, because a completed season has to have crowned somebody. See
+  **Playoffs** above.
 
 Scope decides which crowns count: inside a class only that class's title does, while the unscoped
 view counts every crown — which is what carries class championships up to the global tally.

@@ -9,6 +9,8 @@ import { normalizedBuiltinTemplates } from "@/lib/pointsTemplates";
 import { scoresNoPoints } from "@/lib/seasonForm";
 import { BANGER_MODES, bangerEntryScope } from "@/lib/bangerRacing";
 import { resolveSignupRules } from "@/lib/carSelection";
+import { PlayoffSettingsModal } from "@/components/PlayoffSettingsModal";
+import { describePlayoffFormat, normalizePlayoffConfig, playoffFormat, playoffSetupWarnings } from "@/lib/playoffs";
 
 // Every season field, in one place. Rendered identically by League Setup's
 // Seasons panel and by the Schedule page's "+ New Season" dialog, so the two
@@ -25,10 +27,14 @@ import { resolveSignupRules } from "@/lib/carSelection";
 // `gameDoc` / `seriesDoc` are the game and series this season belongs to, read
 // only to show what the season already inherits from them — the sign-up
 // requirements in force above it (see lib/carSelection.js).
+// `races` is this season's calendar, when the screen has one. The playoff menu
+// reads it to say where the regular season ends and how many rounds are left
+// for the playoff; without it the menu still works, it just can't check the
+// format against a calendar that doesn't exist yet (a season being created).
 export function SeasonForm({
   value, onChange, templates = [], onTemplatesChanged,
   disabled = false, defaultPointsOpen = false, onError, banger = false, classesAreBanger = false,
-  seriesDoc = null, gameDoc = null,
+  seriesDoc = null, gameDoc = null, races = [],
 }) {
   // `banger` here means the SERIES runs derby, which already covers every
   // season in it; the season's own switch below is for a derby season inside an
@@ -42,6 +48,12 @@ export function SeasonForm({
     classes: classesAreBanger ? [{ isBangerRacing: true }] : [],
   });
   const [showPoints, setShowPoints] = useState(defaultPointsOpen);
+  // The playoff menu is a dialog rather than another block of this column: a
+  // playoff is a ladder, and a ladder needs the width (see
+  // components/PlayoffSettingsModal.jsx).
+  const [showPlayoffs, setShowPlayoffs] = useState(false);
+  const playoffCfg = normalizePlayoffConfig(value.playoff_config);
+  const playoffWarnings = value.playoffs_enabled ? playoffSetupWarnings(playoffCfg, races) : [];
 
   const set = patch => onChange(f => ({ ...f, ...patch }));
   const field = name => e => set({ [name]: e.target.value });
@@ -82,6 +94,61 @@ export function SeasonForm({
           </span>
         </label>
       </div>
+
+      {/* Playoffs. A structural answer like the overall championship above it —
+          it decides HOW this season's title is settled, not what a finish pays —
+          so it sits with the other championship ticks rather than down with the
+          scoring. Everything it needs is behind one button, because a playoff
+          format is six questions and a round ladder, and none of that belongs in
+          a form column. See components/PlayoffSettingsModal.jsx. */}
+      <div className="field check-row">
+        <input type="checkbox" id="season_playoffs_enabled" disabled={disabled}
+          checked={!!value.playoffs_enabled} onChange={check("playoffs_enabled")} />
+        <label htmlFor="season_playoffs_enabled" style={{ margin: 0 }}>
+          Playoffs
+          <span style={{ display: "block", fontWeight: 400, fontSize: "0.78rem", color: "var(--ink-2)" }}>
+            Off (default): the driver leading the points at the end of the year is champion. On: the regular
+            season ends at a round you pick — crowning a regular season champion, if your series does that —
+            and the rounds after it are raced under their own rules: a points reset, elimination rounds, a
+            Chase, or whatever your league actually voted on. Nothing about how a race scores changes; a
+            playoff changes who the points decide.
+          </span>
+        </label>
+      </div>
+
+      {value.playoffs_enabled && (
+        <div className="playoff-callout">
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <span className="playoff-chip">
+              {playoffFormat(playoffCfg.format).icon} {playoffFormat(playoffCfg.format).name}
+            </span>
+            <span style={{ display: "block", marginTop: 4, fontSize: "0.8rem", color: "var(--ink-1)" }}>
+              {describePlayoffFormat(playoffCfg)}
+            </span>
+            {playoffWarnings.length > 0 && (
+              <span style={{ display: "block", marginTop: 4, fontSize: "0.78rem", color: "var(--accent-gold, #e2b714)" }}>
+                ⚠ {playoffWarnings[0]}
+                {playoffWarnings.length > 1 && ` (+${playoffWarnings.length - 1} more)`}
+              </span>
+            )}
+          </div>
+          <button type="button" className="btn btn-ghost" style={{ marginTop: 0, whiteSpace: "nowrap" }}
+            disabled={disabled} onClick={() => setShowPlayoffs(true)}>
+            ⚙ Playoff Format…
+          </button>
+        </div>
+      )}
+
+      {showPlayoffs && (
+        <PlayoffSettingsModal
+          value={value.playoff_config}
+          onChange={cfg => set({ playoff_config: cfg })}
+          races={races}
+          seasonName={value.name}
+          disabled={disabled}
+          onClose={() => setShowPlayoffs(false)}
+        />
+      )}
 
       <div className="field check-row">
         <input type="checkbox" id="season_per_class_schedules" disabled={disabled}

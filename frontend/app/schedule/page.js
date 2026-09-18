@@ -22,6 +22,7 @@ import { racePerClassResults } from "@/lib/classFilter";
 import { lapsAreSecondary } from "@/lib/raceLength";
 import { hasSessionTimes, localZoneLabel, raceSessionTimes, sessionTimeLine } from "@/lib/raceTimes";
 import { isIracingGame } from "@/lib/signupRequest";
+import { playoffLabelForRace, resolveRegularRounds, roundPlan, seasonPlayoffConfig, splitRaces } from "@/lib/playoffs";
 
 // A driver cell that links to the profile when we can resolve one, else plain
 // text. Falls back to an em-dash for events with no recorded pole/winner yet.
@@ -419,6 +420,22 @@ function SeasonSchedule() {
 
   const ordered = [...races].sort((a, b) => (Number(a.round_number) || 0) - (Number(b.round_number) || 0));
   const nextRound = races.reduce((m, r) => Math.max(m, Number(r.round_number) || 0), 0) + 1;
+  // Where the regular season stops, and which round of the ladder each event
+  // after it belongs to — so a calendar says what it is at a glance rather than
+  // only on the standings page. Null for every season that doesn't run a
+  // playoff, which leaves the table exactly as it was. See lib/playoffs.js.
+  const playoffCfg = seasonPlayoffConfig(season);
+  const playoffPlan = playoffCfg ? roundPlan(playoffCfg, splitRaces(ordered, playoffCfg).playoff) : [];
+  const regularRounds = playoffCfg ? resolveRegularRounds(playoffCfg, ordered) : 0;
+  const playoffFor = id => (playoffPlan.length ? playoffLabelForRace(id, playoffPlan) : null);
+  // Who a completed season actually crowns. On a playoff season that is whoever
+  // came out of the bracket, not whoever led the points — so the confirmation
+  // an admin reads before closing the season out says the same thing the record
+  // books will. See lib/champions.js.
+  const crownWho = playoffCfg ? "playoff champion" : "points leader";
+  const regularSeasonCrownClause = playoffCfg?.regular_season_champion && playoffCfg?.regular_season_counts_title
+    ? ` The ${playoffCfg.regular_season_title} is credited as a title of its own at the same time.`
+    : "";
   const perClassSchedules = !!season?.per_class_schedules;
   // SimRacerHub is where an iRacing league's scoring lives, and it scores
   // nothing else — so the season-wide results import is offered on iRacing
@@ -473,6 +490,12 @@ function SeasonSchedule() {
         {raceClass && (
           <span className="page-badge" title={`Pole, winner and field size are ${raceClass.name}'s own, on every event that runs its classes separately`}>
             {raceClass.name} Results
+          </span>
+        )}
+        {playoffCfg && (
+          <span className="page-badge"
+            title={`This season ends in a playoff — the regular season runs to round ${regularRounds || "?"}`}>
+            🏆 Playoffs
           </span>
         )}
         {races.length > 0 && <ShareGraphicButton onClick={() => setSharing(true)} />}
@@ -569,9 +592,9 @@ function SeasonSchedule() {
             ? `Reopen "${season?.name}"? It will no longer count as a finished season, and its champion's Title will be removed until you mark it complete again. Players will be able to sign up for it and change their locked-in car again.`
             : `Mark "${season?.name}" complete? This closes out the season and credits its champion(s) with a Championship in their career and team stats — ${
                 classes.length
-                  ? `each class's points leader${season?.combined_championship === false ? " (this season awards no overall title)" : ", plus the overall points leader"}`
-                  : "the points leader"
-              }. It also closes the season to players: nobody else can sign up for it, and nobody can change the car they locked in. Their Dashboard reads "Season over — sign-ups are done". Nothing is deleted, and reopening it undoes all of that.`}
+                  ? `each class's ${crownWho}${season?.combined_championship === false ? " (this season awards no overall title)" : `, plus the overall ${crownWho}`}`
+                  : `the ${crownWho}`
+              }.${regularSeasonCrownClause} It also closes the season to players: nobody else can sign up for it, and nobody can change the car they locked in. Their Dashboard reads "Season over — sign-ups are done". Nothing is deleted, and reopening it undoes all of that.`}
           confirmLabel={completed ? "Reopen season" : "Mark complete"}
           onConfirm={confirmToggleComplete}
           onClose={() => setToggleComplete(false)}
@@ -694,6 +717,30 @@ function SeasonSchedule() {
                     <td className="sticky-col" style={{ textAlign: "left" }}>
                       <Link href={`/races/${r.id}`} style={{ color: "var(--accent-cyan)", fontWeight: 600 }}>{r.name}</Link>
                       {r.track && <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.78rem" }}>{r.track}</span>}
+                      {playoffCfg && (() => {
+                        const po = playoffFor(r.id);
+                        if (po) {
+                          return (
+                            <span className="playoff-badge" style={{ display: "block" }}
+                              title={po.is_decider
+                                ? "The race that decides the championship"
+                                : `${po.round_name} — race ${po.race_index} of ${po.race_count}`}>
+                              🏆 {po.round_name}
+                              {po.race_count > 1 && ` · ${po.race_index}/${po.race_count}`}
+                              {po.is_decider && " · decider"}
+                            </span>
+                          );
+                        }
+                        if (regularRounds && Number(r.round_number) === regularRounds) {
+                          return (
+                            <span className="playoff-badge" style={{ display: "block", color: "var(--accent-cyan)" }}
+                              title="The last round of the regular season — the playoff field is set here">
+                              🏁 Regular Season Finale
+                            </span>
+                          );
+                        }
+                        return null;
+                      })()}
                     </td>
                     {showClassCol && (
                       <td style={{ textAlign: "left" }}>

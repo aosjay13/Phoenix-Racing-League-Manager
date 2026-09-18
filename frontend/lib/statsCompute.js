@@ -200,7 +200,7 @@ function aggregate(index, seasons, classId = "", className = "", gameId = null) 
     // whoever led the combined table. A driver who wins both their class and
     // the overall in one season scores both — two championships were decided.
     const crowns = crownsInScope(
-      seasonChampions(season, decorated, allEntries, config, templatesById, seasonClasses),
+      seasonChampions(season, decorated, allEntries, config, templatesById, seasonClasses, seasonRaces),
       classSel.length ? classSel : classId,
     );
     for (const [entryId, rec] of titlesByEntry(crowns)) {

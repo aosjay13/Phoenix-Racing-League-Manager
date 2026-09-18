@@ -6,6 +6,7 @@ import { useLeague } from "@/components/LeagueProvider";
 import { useAuth } from "@/components/AuthProvider";
 import { useSortable } from "@/components/useSortable";
 import { ShareGraphicModal } from "@/components/ShareGraphicModal";
+import { PlayoffPanel } from "@/components/PlayoffPanel";
 import { leagueLogos, toGraphicTable } from "@/lib/shareGraphic";
 import { api } from "@/lib/api";
 import { useRawBundle } from "@/components/useRawBundle";
@@ -357,6 +358,13 @@ export default function StandingsPage() {
       </p>
 
       <SeasonChampions champions={data?.champions ?? []} />
+
+      {/* The playoff, when this season runs one — the regular season champion,
+          the seeded field with its cutline, and every round of the ladder. It
+          sits ABOVE the championship table rather than replacing it: the table
+          is still how the season's points stand, and this is who those points
+          can still win it for. Inside a class it's that class's own bracket. */}
+      <PlayoffPanel playoffs={data?.playoffs ?? null} seasonName={season?.name ?? ""} className={className || ""} />
 
       <div className="tab-row">
         <button className={`tab${tab === "drivers" ? " active" : ""}`} onClick={() => chooseTab("drivers")}>Drivers</button>
