@@ -7,7 +7,7 @@ import { api } from "@/lib/api";
 import {
   FINALE_MODES, PLAYOFF_FORMATS, QUALIFY_MODES, SEED_MODES, WILDCARD_MODES, WILDCARD_SEEDS,
   applyFormatPreset, defaultRoundsFor, describePlayoffFormat, normalizePlayoffConfig,
-  playoffFormat, playoffSetupWarnings, resolveRegularRounds, splitRaces,
+  playoffFormat, playoffSetupWarnings, resolveRegularRounds, seedModeUsesBase, splitRaces,
 } from "@/lib/playoffs";
 
 // ── The Playoff Format menu ────────────────────────────────────────────────
@@ -82,12 +82,29 @@ function LadderPreview({ config }) {
     top: everyone ? "Everyone" : String(cfg.field_size),
     bottom: everyone ? "eligible" : `driver${cfg.field_size === 1 ? "" : "s"} qualify`,
   }];
+  // What the field starts each round on. Round one is the seeding, and every
+  // round after it is that round's own reset — when the format resets at all.
+  // This is on the drawing because "everyone starts on 200" is the answer a
+  // league is actually checking when it opens this menu, and a number that
+  // isn't drawn anywhere is a number nobody can see go wrong.
+  const startsOn = i => {
+    if (i === 0) {
+      if (cfg.seed_mode === "carry_over") return "points carried";
+      if (cfg.seed_mode === "carry_gap") return `from ${cfg.seed_base}`;
+      return `on ${cfg.seed_base}`;
+    }
+    if (!cfg.reset_between_rounds) return "points kept";
+    if (i === cfg.rounds.length - 1 && cfg.finale_reset) return `level on ${cfg.rounds[i].reset_base}`;
+    return `on ${cfg.rounds[i].reset_base}`;
+  };
+
   cfg.rounds.forEach((round, i) => {
     const last = i === cfg.rounds.length - 1;
     steps.push({
       key: `r${i}`,
       top: round.races ? `${round.races} race${round.races === 1 ? "" : "s"}` : "rest of season",
       bottom: round.name,
+      note: startsOn(i),
       arrow: true,
     });
     steps.push({
@@ -103,6 +120,7 @@ function LadderPreview({ config }) {
         <span key={s.key} className={`playoff-step${s.arrow ? " is-round" : ""}${s.win ? " is-win" : ""}`}>
           <strong>{s.top}</strong>
           <em>{s.bottom}</em>
+          {s.note && <i className="playoff-step-note">{s.note}</i>}
         </span>
       ))}
     </div>
@@ -380,12 +398,22 @@ export function PlayoffSettingsModal({
           <div className="playoff-grid" style={{ marginTop: 12 }}>
             <div className="field">
               <label htmlFor="playoff_seed_base">Reset base</label>
-              <input id="playoff_seed_base" type="number" disabled={disabled}
+              <input id="playoff_seed_base" type="number" disabled={disabled || !seedModeUsesBase(cfg.seed_mode)}
                 value={raw.seed_base} onChange={field("seed_base")} />
               <span style={subLabel}>
-                The number everyone in the field drops to. NASCAR&rsquo;s playoffs use <strong>2000</strong>;
-                the 2004 Chase used <strong>5050</strong> for the top seed. Ignored when the points carry over
-                untouched.
+                {seedModeUsesBase(cfg.seed_mode) ? (
+                  <>
+                    <strong>The number every driver in the field starts the playoff on.</strong> Type what you
+                    want: 2000 is NASCAR&rsquo;s playoffs, 5050 was the 2004 Chase&rsquo;s top seed, and{" "}
+                    <strong>0</strong> is a clean-sheet start where everyone begins from nothing. It also sets
+                    what the first round is raced from, since a round&rsquo;s own reset only applies to the
+                    drivers who survive into it.
+                  </>
+                ) : (
+                  <>Not used by this answer: carrying the regular season over means nobody&rsquo;s total
+                    moves. Pick <strong>Reset everyone to the same number</strong> above to start the field on
+                    a number of your own.</>
+                )}
               </span>
             </div>
             <div className="field">
@@ -461,8 +489,26 @@ export function PlayoffSettingsModal({
                         )}
                     </td>
                     <td>
-                      <input type="number" value={r.reset_base} disabled={disabled}
-                        onChange={e => patchRound(i, { reset_base: e.target.value })} />
+                      {/* A round's reset is what the survivors COMING INTO it
+                          drop to, and nobody comes into the first round — it is
+                          raced on the seeding. So round one shows what the
+                          seeding produces instead of offering a box that looks
+                          like it sets the number and silently does nothing. */}
+                      {i === 0 ? (
+                        <span style={{ fontSize: "0.8rem", color: "var(--ink-2)" }}
+                          title="The first round is raced on the seeding — set it under Seeding & Reset">
+                          {cfg.seed_mode === "carry_over"
+                            ? "points carried"
+                            : `${cfg.seed_base} (seeding)`}
+                        </span>
+                      ) : (
+                        <input type="number" value={r.reset_base}
+                          disabled={disabled || !cfg.reset_between_rounds}
+                          title={cfg.reset_between_rounds
+                            ? "What the survivors drop to when this round starts"
+                            : "Turn on \u201cReset the points at the start of every round\u201d below to use this"}
+                          onChange={e => patchRound(i, { reset_base: e.target.value })} />
+                      )}
                     </td>
                     <td style={{ whiteSpace: "nowrap" }}>
                       <button type="button" className="icon-btn" title="Move up" disabled={disabled || i === 0}

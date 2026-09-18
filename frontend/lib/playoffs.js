@@ -117,16 +117,32 @@ export const WILDCARD_SEEDS = [
 ];
 
 // What the field starts the playoff on.
+//
+// There used to be a fourth answer here, "Start over on zero", and it was a
+// trap: it ignored the Reset base entirely and wiped everyone to 0. It was never
+// a separate rule — it is this first one with the number thrown away, and
+// whether playoff points are added on top is already its own tick
+// (`carry_playoff_points`). So a league that picked it (or picked the Points
+// Reset preset, which set it) could type 200 into the box sitting right there
+// and still watch every driver start the playoff on nothing, with the menu
+// showing 200 the whole time. Setting the base to 0 is how you start over on
+// zero, and it is what the box says it is. `reset_zero` still normalizes onto
+// this mode, so every season saved under it reads the same.
 export const SEED_MODES = [
-  ["base_plus_bonus", "Reset to a base, plus playoff points",
-    "Everyone drops to the same base number, then adds the playoff points they banked in the regular season. NASCAR 2016–2025 (2000 + playoff points)."],
+  ["base_plus_bonus", "Reset everyone to the same number",
+    "Every driver in the field drops to the Reset base below — 2000 for NASCAR's playoffs, or 0 for a clean-sheet start — plus the playoff points they banked, when those carry."],
   ["carry_gap", "Reset in seeded steps",
     "The top seed starts on the base, and every seed below starts a fixed number of points further back. The 2004 Chase (5050, in 5-point steps)."],
-  ["reset_zero", "Start over on zero",
-    "Everyone in the field is wiped to nothing and races the playoff from scratch."],
   ["carry_over", "Carry the regular season over",
     "Nobody's points move. The playoff simply narrows who can still win the title."],
 ];
+
+// The reset modes that actually put everyone on a number of their own — the
+// ones the Reset base means something to. Carrying the regular season over is
+// the only answer that doesn't touch anybody's total.
+export function seedModeUsesBase(mode) {
+  return mode !== "carry_over";
+}
 
 // How the title is settled in the last round.
 export const FINALE_MODES = [
@@ -199,7 +215,7 @@ export const PLAYOFF_FORMATS = [
     blurb: "The championship starts again from zero for the drivers who made the cut. Whatever they built in the regular season is a ticket, not a lead.",
     defaults: {
       field_size: 10, qualify_mode: "points",
-      seed_mode: "reset_zero", seed_base: 0, seed_gap: 0,
+      seed_mode: "base_plus_bonus", seed_base: 0, seed_gap: 0,
       reset_between_rounds: false, advance_on_win: false,
       finale_mode: "points", finale_reset: false,
       playoff_points_enabled: false,
@@ -231,7 +247,7 @@ export const PLAYOFF_FORMATS = [
     blurb: "A short ladder into a single deciding race: the finalists start level and the best of them on the day is champion.",
     defaults: {
       field_size: 4, qualify_mode: "points",
-      seed_mode: "reset_zero", seed_base: 0, seed_gap: 0,
+      seed_mode: "base_plus_bonus", seed_base: 0, seed_gap: 0,
       reset_between_rounds: true, advance_on_win: true,
       finale_mode: "best_finish", finale_reset: true,
       playoff_points_enabled: false,
@@ -296,12 +312,18 @@ export function defaultRoundsFor({
   const cuts = cutsFor(field_size, finale_size);
   const rounds = [];
   let left = int(field_size, 0);
+  // The FIRST round is raced on the seeding — a round's reset applies when the
+  // survivors come INTO it, and nobody comes into round one. So round one's
+  // number is the seed base, and each round after it steps up from there:
+  // 2000 seeded, Round of 12 to 3000, Round of 8 to 4000, Championship to 5000,
+  // which is the ladder NASCAR actually runs. Stepping from round one instead
+  // shifted the whole thing up by a round.
   cuts.forEach((advance, i) => {
     rounds.push({
       name: `Round of ${left}`,
       races: Math.max(1, int(races_per_round, 3)),
       advance,
-      reset_base: num(seed_base, 0) + num(round_step, 0) * (i + 1),
+      reset_base: num(seed_base, 0) + num(round_step, 0) * i,
     });
     left = advance;
   });
@@ -309,7 +331,7 @@ export function defaultRoundsFor({
     name: left <= 1 ? "Final Round" : `Championship ${left}`,
     races: Math.max(1, int(finale_races, 1)),
     advance: 1,
-    reset_base: num(seed_base, 0) + num(round_step, 0) * (cuts.length + 1),
+    reset_base: num(seed_base, 0) + num(round_step, 0) * cuts.length,
   });
   return rounds;
 }
@@ -400,6 +422,10 @@ export const BLANK_PLAYOFF_CONFIG = {
   notes: "",
 };
 
+function normalizeSeedMode(mode) {
+  return mode === "reset_zero" ? "base_plus_bonus" : mode;
+}
+
 function dedupeWildcards(list) {
   const seen = new Set();
   const out = [];
@@ -436,7 +462,9 @@ export function normalizePlayoffConfig(raw) {
     wildcards: dedupeWildcards((Array.isArray(src.wildcards) ? src.wildcards : []).map(normalizeWildcard)),
     wildcard_mode: text(src.wildcard_mode, base.wildcard_mode) || base.wildcard_mode,
     wildcard_seed: text(src.wildcard_seed, base.wildcard_seed) || base.wildcard_seed,
-    seed_mode: text(src.seed_mode, base.seed_mode) || base.seed_mode,
+    // "Start over on zero" was this mode with the base ignored — see SEED_MODES.
+    // A season saved under it carries seed_base 0, so it reads identically.
+    seed_mode: normalizeSeedMode(text(src.seed_mode, base.seed_mode) || base.seed_mode),
     seed_base,
     seed_gap: num(src.seed_gap, base.seed_gap),
     rounds,
@@ -733,7 +761,6 @@ function seedField(regularRows, config, bankedPoints, regularChampionEntry, rost
     const carried = cfg.carry_playoff_points ? banked : 0;
     let points;
     if (cfg.seed_mode === "carry_over") points = num(row.adjusted_points) + carried;
-    else if (cfg.seed_mode === "reset_zero") points = carried;
     else if (cfg.seed_mode === "carry_gap") points = num(cfg.seed_base) - num(cfg.seed_gap) * i + carried;
     else points = num(cfg.seed_base) + carried;
     return {
@@ -1086,9 +1113,9 @@ export function describePlayoffFormat(config) {
     ? `${field}${cfg.wildcard_mode === "extra" ? " + " : ", "}${plural(wild, "wildcard")}${cfg.wildcard_mode === "extra" ? "" : " of them picked"}`
     : field);
   bits.push(cfg.rounds.length > 1 ? `${plural(cfg.rounds.length, "round")} of eliminations` : "one round");
-  if (cfg.seed_mode === "reset_zero") bits.push("everyone reset to zero");
-  else if (cfg.seed_mode === "carry_over") bits.push("points carried over");
+  if (cfg.seed_mode === "carry_over") bits.push("points carried over");
   else if (cfg.seed_mode === "carry_gap") bits.push(`seeded from ${cfg.seed_base} in ${plural(cfg.seed_gap, "point")} steps`);
+  else if (!cfg.seed_base && !cfg.playoff_points_enabled) bits.push("everyone reset to zero");
   else bits.push(`reset to ${cfg.seed_base}${cfg.playoff_points_enabled ? " + playoff points" : ""}`);
   if (cfg.rounds.length > 1 && cfg.finale_mode === "best_finish") bits.push("best finisher in the final race takes it");
   return bits.join(" · ");

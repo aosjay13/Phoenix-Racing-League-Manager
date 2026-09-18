@@ -93,7 +93,9 @@ const season = {
     regular_rounds: 2,
     field_size: 3,
     qualify_mode: "points",
-    seed_mode: "reset_zero",
+    // Everyone from nothing: the base IS the answer, so it's set explicitly.
+    seed_mode: "base_plus_bonus",
+    seed_base: 0,
     rounds: [
       { name: "Semi-Final", races: 1, advance: 2, reset_base: 0 },
       { name: "The Final", races: 1, advance: 1, reset_base: 0 },

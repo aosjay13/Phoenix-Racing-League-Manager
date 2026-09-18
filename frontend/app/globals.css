@@ -4341,6 +4341,15 @@ input[type="radio"]:disabled:checked {
   letter-spacing: 0.03em;
 }
 
+/* What the field starts this round on — the number a league opens this menu to
+   check, so it is drawn on the ladder rather than left to be inferred. */
+.playoff-step-note {
+  font-style: normal;
+  font-size: 0.68rem;
+  color: var(--accent-gold, #e2b714);
+  font-variant-numeric: tabular-nums;
+}
+
 /* A round is the arrow between two cuts, not a cut itself. */
 .playoff-step.is-round {
   border-style: dashed;

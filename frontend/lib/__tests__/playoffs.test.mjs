@@ -293,6 +293,51 @@ const wildCrowns = seasonChampions(
 check("a season with a wildcard still crowns whoever came out of the bracket",
   wildCrowns.find(c => c.kind === "overall").entry_id, "e3");
 
+// ── 5c. The Reset base is the number the field starts on ───────────────────
+//
+// Reported from a real season: "I tell the playoffs to reset to 200 points, but
+// it sets everyone to 0." It did. There was a fourth seed mode, "Start over on
+// zero", which ignored the Reset base completely — and the preset called Points
+// Reset, the one anybody wanting to reset to a number would pick by name, set
+// it. So you picked the preset, typed 200 into the box sitting right there, and
+// every driver started the playoff on nothing while the menu showed 200.
+const resetTo = (over = {}) => build({
+  playoff_config: {
+    ...playoffConfig, playoff_points_enabled: false, seed_base: 200,
+    rounds: [{ name: "Semi", races: 2, advance: 2, reset_base: 300 },
+      { name: "Final", races: 2, advance: 1, reset_base: 400 }],
+    ...over,
+  },
+}).seeds.map(s => s.points);
+
+check("a reset base of 200 starts the whole field on 200", resetTo(), [200, 200, 200, 200]);
+// THE ONE THAT WAS BROKEN. The old "start over on zero" key still resolves, and
+// now it means what the box says rather than throwing it away.
+check("including a season saved under the old 'start over on zero' answer",
+  resetTo({ seed_mode: "reset_zero" }), [200, 200, 200, 200]);
+check("seeded steps count down from it",
+  resetTo({ seed_mode: "carry_gap", seed_gap: 10 }), [200, 190, 180, 170]);
+check("and only carrying the regular season over leaves totals alone",
+  resetTo({ seed_mode: "carry_over" }), [390, 370, 320, 280]);
+check("a base of 0 is still a clean sheet", resetTo({ seed_base: 0 }), [0, 0, 0, 0]);
+// The preset a league reaches for, with a number typed into it.
+const presetThenTyped = applyFormatPreset(normalizePlayoffConfig(null), "reset");
+check("the Points Reset preset no longer picks the answer that ignored the box",
+  presetThenTyped.seed_mode, "base_plus_bonus");
+check("so typing a number into it works",
+  build({ playoff_config: { ...presetThenTyped, regular_rounds: 4, field_size: 4,
+    playoff_points_enabled: false, seed_base: 200,
+    rounds: [{ name: "Run-In", races: 4, advance: 1, reset_base: 200 }] } })
+    .seeds.map(s => s.points),
+  [200, 200, 200, 200]);
+
+// A round's reset is what the survivors COMING INTO it drop to, so the first
+// round is raced on the seeding and the ladder steps up from there. Generating
+// it one step early made every NASCAR-shaped ladder wrong by a round.
+check("the generated ladder resets from the seed base, not a round past it",
+  defaultRoundsFor({ field_size: 16, seed_base: 2000 }).map(r => r.reset_base),
+  [2000, 3000, 4000, 5000]);
+
 // ── 6. A reset means reset ─────────────────────────────────────────────────
 const finalRound = built.rounds[1];
 check("only the survivors are in the final round", finalRound.rows.map(r => r.entry_id).sort(), ["e2", "e3"]);

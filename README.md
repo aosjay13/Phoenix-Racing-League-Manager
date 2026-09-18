@@ -53,7 +53,8 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   season and a full format menu opens: where the regular season stops (and whether it crowns a
   **regular season champion**, which counts as a title of its own), how many drivers make the field
   and how they qualify (wins first then points, points only, winners only, everybody, or a
-  **wildcard** you pick by name), what they are reset to (zero, a base plus banked **playoff points**, seeded steps, or their points carried
+  **wildcard** you pick by name), what they are reset to (a number you type — 2000, 200, or 0 for a
+  clean sheet — plus banked **playoff points**, or seeded steps, or their points carried
   straight over), and a **round ladder** you build yourself — each round is "this many races, this
   many drivers advance, reset to this". One round of ten races that advances one driver is a
   **Chase**; four rounds cutting 16 → 12 → 8 → 4 are **elimination playoffs**; a win in a round can
@@ -3250,7 +3251,7 @@ and not a list of formats.
 | **Elimination Playoffs** (NASCAR 2016–2025) | 16 drivers, four rounds cutting to 12 / 8 / 4, reset to 2000 + playoff points each round, a win in a round advances you, the Championship race run level and decided on the best finisher |
 | **The Chase** (2004–2006) | the top 10 reset to 5050 in 5-point steps, then one long round to the end |
 | **The Chase, with wins** (2007–2013) | 12 drivers reset to 5000, plus 10 playoff points a regular-season win |
-| **Points Reset** | the top X only, everyone level at zero, one round to the end |
+| **Points Reset** | the top X only, everyone level on the Reset base (0 out of the box — type any number), one round to the end |
 | **Carry Over** | the top X keep the points they earned; the playoff only narrows who can still win |
 | **Winner Takes All** | a short ladder into a single deciding race, finalists level |
 | **Custom Format** | keeps everything you already have and only renames the format |
@@ -3261,6 +3262,15 @@ races your ladder asks for are counted back from the end of the calendar, so a 3
 a 10-race ladder has a 26-round regular season without anybody typing 26. A round with **Races: 0**
 takes every remaining round on the calendar, which is how one row describes a Chase — ten races, or
 twelve, or however many the calendar turns out to hold.
+
+**The Reset base is the number the field starts on**, and it means that in every answer that resets.
+Type 2000 for NASCAR's playoffs, 200 because that is what your league voted for, or 0 for a
+clean-sheet start where everyone begins from nothing. It also sets what the **first** round is raced
+from — which is why the Rounds table shows the first round's *Reset To* as the seeding rather than
+offering a box: a round's reset is what the survivors *coming into* it drop to, and nobody comes into
+round one. The ladder steps up from the base after that (2000 seeded → 3000 → 4000 → 5000), and the
+bracket drawn at the top of the menu prints what each round starts on, so a number you typed is a
+number you can see.
 
 **The round ladder** is a table you edit: name, races, how many advance, what the survivors reset
 to, with ↑ ↓ to reorder and 🗑 to remove. **↻ Rebuild from field size** regenerates a sensible
