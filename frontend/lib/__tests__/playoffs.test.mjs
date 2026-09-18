@@ -177,6 +177,35 @@ check("and the table says so", roundOne.rows.find(r => r.entry_id === "e1").stat
 const noWinRule = build({ playoff_config: { ...playoffConfig, advance_on_win: false } });
 check("without it, the points decide the round", noWinRule.rounds[0].advanced.sort(), ["e1", "e3"]);
 
+// Switched off, the switch is off. Nothing under Playoff Points pays — and that
+// includes the regular season champion's bonus, which is the one that got away:
+// it reads off a champion rather than off a result, so it sat outside the gate
+// every other payout goes through and quietly seeded the regular season champion
+// 15 clear of the field on a season that pays no playoff points at all.
+const noPP = build({
+  playoff_config: { ...playoffConfig, playoff_points_enabled: false },
+});
+check("with playoff points off, nobody has banked any",
+  noPP.seeds.map(s => s.playoff_points), [0, 0, 0, 0]);
+check("the regular season champion included",
+  noPP.seeds.find(s => s.entry_id === "e1").playoff_points, 0);
+// THE POINT: every seed is the reset base and nothing else. E1 was starting on
+// 125 — 100 for the reset, 15 for the regular season title, 10 for three wins.
+check("so the whole field starts the playoff level on the reset base",
+  noPP.seeds.map(s => s.points), [100, 100, 100, 100]);
+// And the champion is still crowned — the bonus is off, not the title.
+check("the regular season champion is still crowned, just not paid",
+  noPP.regular_champion.entry_id, "e1");
+// A value left sitting in the box from before it was switched off pays nothing.
+const stashed = build({
+  playoff_config: {
+    ...playoffConfig, playoff_points_enabled: false,
+    playoff_points: { ...playoffConfig.playoff_points, regular_champion: 50, win: 25 },
+  },
+});
+check("a value left in the box from before it was switched off pays nothing",
+  stashed.seeds.map(s => s.points), [100, 100, 100, 100]);
+
 // ── 5b. Wildcards: the driver a person puts in ─────────────────────────────
 //
 // E5 finished every regular-season round last and is nowhere near the cut. A

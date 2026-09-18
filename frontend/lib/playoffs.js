@@ -627,6 +627,19 @@ export function playoffPointsFor(result, config) {
   return (pos === 1 ? num(pp.win) : 0) + num(table[pos], 0);
 }
 
+// The one-off bonus for leading the points when the regular season ends.
+//
+// It is a PLAYOFF POINT like any other, so it is paid only when the season pays
+// playoff points at all. It reads off a champion rather than off a result, which
+// is the only reason it isn't already inside playoffPointsFor — and was exactly
+// how it came to be paid by a season with playoff points switched off, seeding
+// the regular season champion 15 clear of everybody for no stated reason. The
+// switch is the switch: off means nothing below it pays.
+function regularChampionBonus(config) {
+  const cfg = normalizePlayoffConfig(config);
+  return cfg.playoff_points_enabled ? num(cfg.playoff_points.regular_champion) : 0;
+}
+
 // Every driver's banked playoff points across a set of results, keyed by entry.
 export function playoffPointsByEntry(results = [], config) {
   const totals = new Map();
@@ -716,7 +729,7 @@ function seedField(regularRows, config, bankedPoints, regularChampionEntry, rost
 
   return ordered.map((row, i) => {
     const banked = num(bankedPoints.get(row.entry_id), 0)
-      + (regularChampionEntry === row.entry_id ? num(cfg.playoff_points.regular_champion) : 0);
+      + (regularChampionEntry === row.entry_id ? regularChampionBonus(cfg) : 0);
     const carried = cfg.carry_playoff_points ? banked : 0;
     let points;
     if (cfg.seed_mode === "carry_over") points = num(row.adjusted_points) + carried;
@@ -870,7 +883,7 @@ export function buildPlayoffs({
   const bank = new Map(regularBank);
   if (regularChampion) {
     bank.set(regularChampion.entry_id,
-      num(bank.get(regularChampion.entry_id), 0) + num(cfg.playoff_points.regular_champion));
+      num(bank.get(regularChampion.entry_id), 0) + regularChampionBonus(cfg));
   }
   let champion = null;
   const eliminated = [];

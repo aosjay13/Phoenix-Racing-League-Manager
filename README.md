@@ -3310,6 +3310,10 @@ extra to enter — a main-event win, a pole (position 1 of a Qualifying session)
 app's stage win) and an optional top-X table, which takes a spreadsheet paste like every other points
 scale. The ordinary points structure still scores every race exactly as it always did.
 
+*This season pays playoff points* is the switch for all of it, the regular season champion's one-off
+bonus included: turned off, nothing under it pays, whatever values are left sitting in the boxes, and
+the field is seeded purely on where drivers finished the regular season.
+
 **Two champions, and you choose whether there are two.** *Crown a regular season champion* is its
 own tick — plenty of series don't do it, and the regular season simply sets the field — and under it
 *It counts as a title in career and team stats* decides whether that crown is a **Championship** on
