@@ -143,7 +143,11 @@ function ItemRow({ logo, name, meta, onEdit, onDelete, editing, children }) {
   return (
     <div className="driver-row" style={editing ? { background: "var(--accent-cyan-dim)" } : undefined}>
       {logo ? <img src={logo} alt="" className="avatar avatar-sm" style={{ borderRadius: 6 }} /> : <span>🏁</span>}
-      <span style={{ flex: 1, minWidth: 0 }}>
+      {/* A class rather than an inline flex, so the stylesheet can say how the
+          name behaves when the row is in a narrow column — an inline style
+          can't be overridden, and `min-width: 0` let the name collapse to a
+          word a line while five buttons kept their full width. */}
+      <span className="item-row-name">
         {name}
         {meta && <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.76rem" }}>{meta}</span>}
       </span>

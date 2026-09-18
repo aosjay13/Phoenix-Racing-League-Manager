@@ -1630,6 +1630,16 @@ Cancel button at the bottom of a long form. Below 900px there is no room for two
 stack — the list first, since you choose before you edit, capped in height so it never eats a phone
 screen.
 
+**Both halves are sized to be read.** The two columns are *fractions* of the page rather than a fixed
+sliver beside a flexible one, so they grow together with the window instead of every extra pixel
+going into whitespace on the right. The League Setup stage itself used to be capped at **900px** —
+a width set when a panel was a single form column, and the real reason a season list read three
+words to a line — so it now takes the page, and the page it sits on is allowed to run wider than the
+1800px every other screen is held to (scoped with `:has()`, so nothing else changes). On a 2560px
+monitor that is a list three times its old width and an editor twice its old width; on a laptop both
+are smaller, and the list rows wrap their buttons onto their own line so the **name** always gets the
+width rather than collapsing to a word a line behind five buttons that don't shrink.
+
 One component does all five (`SetupSplit` in `app/admin/page.js`), so a panel cannot drift into its
 own arrangement, and the shared library panels (Tracks, Drivers, Points Templates) are untouched:
 they are workbenches rather than list-and-edit pairs.

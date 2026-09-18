@@ -192,6 +192,14 @@ a {
   width: 100%;
 }
 
+/* League Setup is the one screen that is genuinely two screens side by side —
+   a list of seasons and the editor for one of them — so it is allowed more of a
+   wide monitor than a page of prose or a single table. Scoped with :has() so no
+   other page changes; browsers without it simply keep the 1800px above. */
+.main:has(.setup-stage) {
+  max-width: 2400px;
+}
+
 /* ── Page title ─────────────────────────────── */
 .page-title {
   display: flex;
@@ -1199,7 +1207,11 @@ tbody tr:hover {
    of the job in view. */
 .setup-split {
   display: grid;
-  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  /* Roughly an even split, list slightly narrower than the editor. Both are
+     fractions rather than fixed widths so they grow together with the window —
+     a 340px list next to a 1fr editor put every extra pixel into whitespace on
+     the right while the list stayed unreadable. */
+  grid-template-columns: minmax(340px, 1fr) minmax(0, 1.1fr);
   gap: 20px;
   align-items: start;
 }
@@ -1263,15 +1275,22 @@ tbody tr:hover {
 
 .setup-split-note button { margin-top: 6px; }
 
-/* A row in a 300px column is tighter than one across the page: it wraps rather
-   than squeezing into a horizontal scrollbar, and its buttons step down a size.
-   (The name cell carries its own inline flex from <ItemRow>, so it keeps the
-   width it asks for and the buttons wrap around it.) */
+/* The name cell of an <ItemRow>, wherever one is used. */
+.item-row-name { flex: 1; min-width: 0; }
+
+/* A row inside the list column is tighter than one across the page, so it wraps
+   rather than squeezing into a horizontal scrollbar, and its buttons step down a
+   size. The name is given a floor: without one it collapsed to a word a line
+   while the row's five buttons held their full width — which is the "scrunched"
+   the split was supposed to cure. Below that floor the buttons wrap to their own
+   line instead, and the name gets the row. */
 .setup-split-rows .driver-row {
   flex-wrap: wrap;
   row-gap: 4px;
   padding: 8px 10px;
 }
+
+.setup-split-rows .item-row-name { min-width: 240px; }
 
 .setup-split-rows .driver-row .btn { font-size: 0.74rem; }
 
@@ -1279,7 +1298,7 @@ tbody tr:hover {
    whatever width is left — wider is not more readable for a name box. */
 .setup-split-form { min-width: 0; }
 
-.setup-split-form > form { max-width: 640px; }
+.setup-split-form > form { max-width: 1280px; }
 
 @media (max-width: 900px) {
   /* No room for two columns, so they stack — the list first, because you choose
@@ -1417,7 +1436,11 @@ tbody tr:hover {
    wide monitor. */
 .setup-stage {
   margin-top: 16px;
-  max-width: 900px;
+  /* Was 900px, back when a panel was a single form column. It is now a list
+     BESIDE an editor, and 900px between them is what made the season list read
+     three words to a line with the form squeezed to 540px beside it. Two
+     columns need the width of two columns. */
+  max-width: 2200px;
 }
 
 /* Numbered step chip on a structure panel's heading. */
