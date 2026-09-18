@@ -70,6 +70,14 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
   // lead changes) onto the event with this import. On by default, because a
   // source that reports them is the reason not to type them by hand.
   const [withRaceStats, setWithRaceStats] = useState(true);
+  // Whether the points the source itself counted are what each row is scored
+  // on. On by default whenever the loaded table carries a Points column, which
+  // is the only time the switch is shown: a table that bothered to print points
+  // is a table whose standings the admin wants to match, and re-deriving them
+  // from this league's own structure is what makes the two disagree. Untick to
+  // go back to scoring every finishing position here. Same bargain as the
+  // season importer's switch — see SrhSeasonResultsModal.
+  const [takePoints, setTakePoints] = useState(true);
   const [aliasesByDriver, setAliasesByDriver] = useState({}); // driver_id -> [alias value strings]
   const fileRef = useRef(null);
 
@@ -336,40 +344,64 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
     return dup;
   }, [applicable]);
 
+  // What the source paid a review row, whatever source it came from: the
+  // itemised SimRacerHub total when the page carried one, otherwise the plain
+  // Points column a pasted table, a CSV or an iRacing file mapped. Null when
+  // the table said nothing about points at all.
+  const paidFor = (row, idx) => srhPointsFor(idx)?.total ?? row.values.points ?? null;
+
   function apply() {
-    const rows = applicable.map(({ row, entry_id, provisional, idx }) => ({
-      entry_id,
-      // Ticked "Prov": the editor parks this driver in Provisional Entries on
-      // flat points rather than giving them a finishing position, so none of
-      // the stats below are used for them.
-      provisional,
-      finish_pos: row.values.finish_pos,
-      start_pos: row.values.start_pos,
-      laps: row.values.laps,
-      laps_led: row.values.laps_led,
-      incidents: row.values.incidents,
-      interval: row.values.interval,
-      race_time: row.values.race_time,
-      qual_time: row.values.qual_time,
-      // The driver's best single lap time (clock string) — fills the grid's
-      // "Best Lap" column and is what a track record is derived from. Was
-      // previously dropped here, so SimRacerHub fastest-lap times never saved.
-      fastest_lap_time: row.values.fastest_lap_time,
-      // Car number read from the "Car Number" / "Car #" column, if any.
-      car_number: row.values.car_number,
-      status: row.values.status,
-      fastest_lap: row.values.fastest_lap,
-      // What the source paid this driver. A provisional entry's flat points ARE
-      // this number — there's no finishing position to score one off — so the
-      // editor puts it straight in their points box. A finishing row is scored
-      // by the league's own structure instead, and this is only shown.
-      points: row.values.points,
-      // …and, on a SimRacerHub import, the part of that total this app has no
-      // way to work out for itself: its penalties, its own bonuses, its stage
-      // points. That net goes in the grid's Adj column, on top of the points
-      // the structure pays. Null from any other source, which leaves Adj alone.
-      points_adjustment: srhPointsFor(idx)?.carried ?? null,
-    }));
+    const rows = applicable.map(({ row, entry_id, provisional, idx }) => {
+      // Taken as the row's own points outright when the switch is on. The
+      // figure already contains whatever the source added or took away, so its
+      // penalties and bonuses must NOT also go to Adj — that double-count is
+      // the whole reason these two are decided together. Null hands the row
+      // back to this league's own points structure, exactly as before.
+      const paid = paidFor(row, idx);
+      const override = takePoints && paid != null ? paid : null;
+      return {
+        entry_id,
+        // Ticked "Prov": the editor parks this driver in Provisional Entries on
+        // flat points rather than giving them a finishing position, so none of
+        // the stats below are used for them.
+        provisional,
+        finish_pos: row.values.finish_pos,
+        start_pos: row.values.start_pos,
+        laps: row.values.laps,
+        laps_led: row.values.laps_led,
+        incidents: row.values.incidents,
+        interval: row.values.interval,
+        race_time: row.values.race_time,
+        qual_time: row.values.qual_time,
+        // The driver's best single lap time (clock string) — fills the grid's
+        // "Best Lap" column and is what a track record is derived from. Was
+        // previously dropped here, so SimRacerHub fastest-lap times never saved.
+        fastest_lap_time: row.values.fastest_lap_time,
+        // Car number read from the "Car Number" / "Car #" column, if any.
+        car_number: row.values.car_number,
+        status: row.values.status,
+        fastest_lap: row.values.fastest_lap,
+        // What the source paid this driver. A provisional entry's flat points
+        // ARE this number — there's no finishing position to score one off — so
+        // the editor puts it straight in their points box either way.
+        points: paid,
+        // The part of that total this app has no way to work out for itself: a
+        // SimRacerHub penalty, a bonus of its own, its stage points. That net
+        // goes in the grid's Adj column, on top of the points this league's
+        // structure pays. Null from a source with no opinion on it, which
+        // leaves a hand-typed Adj alone.
+        //
+        // Zero when the row carries the source's total instead, because the
+        // total already contains them.
+        points_adjustment: override != null ? 0 : (srhPointsFor(idx)?.carried ?? null),
+        // The figure the row is scored on, straight into the grid's Points
+        // cell, which pointsFor then pays instead of working one out from the
+        // finishing position (see lib/standings.js). Every cell stays editable
+        // on the results screen afterwards, and clearing one hands that row
+        // back to the points structure.
+        manual_points: override,
+      };
+    });
     // The event's race statistics ride alongside the rows rather than in them:
     // they belong to the race, so the editor holds them for its own Save to
     // write onto the event. Left out entirely when the source reported none, or
@@ -583,14 +615,28 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
                 Provisional Entries at the bottom of the results screen on flat points instead of taking a finishing position.
               </p>
             )}
+            {/* ── Score on the source's own points ─────────────────────────
+                Shown only when the loaded table carried points at all. This is
+                the switch that decides whether this season's standings match
+                the ones the source prints: with it on, the pasted Pts column is
+                what each row is paid, so nothing has to be reconciled by hand
+                afterwards. The season importer offers the same bargain in the
+                same words — see SrhSeasonResultsModal. */}
             {showPoints && (
-              <p style={{ margin: "0 0 8px", fontSize: "0.78rem", color: "var(--ink-2)" }}>
-                <strong>Pts</strong> is what the source paid, to check against your own — a finishing row is scored by
-                <em> your</em> points structure, never from this. What does come across is the part this app can&rsquo;t work
-                out for itself: a penalty, or a bonus of your league&rsquo;s own, lands in the grid&rsquo;s <strong>Adj</strong>{" "}
-                column (hover a figure for the breakdown), and a <strong>provisional</strong> entry takes the figure as its
-                flat points.
-              </p>
+              <div className="check-row" style={{ margin: "0 0 10px" }}>
+                <input id="import_take_points" type="checkbox" checked={takePoints}
+                  onChange={e => setTakePoints(e.target.checked)} />
+                <label htmlFor="import_take_points" style={{ fontSize: "0.82rem" }}>
+                  <strong>Score every driver on the points in this table</strong>
+                  <span style={{ display: "block", color: "var(--ink-2)", fontSize: "0.78rem", marginTop: 2 }}>
+                    {takePoints
+                      ? "Each row is imported holding the figure in the Pts column — that scale, those bonuses, those penalties — so the standings here match the ones this table came from, with nothing to edit. Every figure is still editable per row on the results screen afterwards, and clearing one hands that row back to your own points structure."
+                      : "Your own points structure scores every finishing position instead, and Pts below is only there to check against it. What this app can't work out for itself (a penalty, or a bonus of your league's own) still rides across in the grid's Adj column. The standings here will differ from the source's wherever the two scales do."}
+                    {" "}A <strong>provisional</strong> entry takes the figure as its flat points either way, having no
+                    finishing position to be scored off.
+                  </span>
+                </label>
+              </div>
             )}
             <div style={{ overflowX: "auto" }}>
               <table className="stats-table" style={{ fontSize: "0.8rem" }}>
@@ -609,7 +655,9 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
                       ? <th>Qual Time</th>
                       : <><th>Laps</th><th>Led</th><th>Inc</th><th>FL</th><th>Status</th></>}
                     {showPoints && (
-                      <th title="What the source paid this driver. A finishing row is scored by your own points structure, so this is here to check against it — hover a figure for the breakdown. A provisional entry's points are taken from it.">
+                      <th title={takePoints
+                        ? "What the source paid this driver — and, with the box above ticked, what this row is scored on. Hover a figure for the breakdown."
+                        : "What the source paid this driver. A finishing row is scored by your own points structure, so this is here to check against it — hover a figure for the breakdown. A provisional entry's points are taken from it."}>
                         Pts
                       </th>
                     )}
@@ -681,7 +729,10 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
                             <td style={statStyle}>{row.values.status}</td>
                           </>
                         )}
-                        {showPoints && <PointsCell row={row} points={srhPointsFor(idx)} provisional={provRow} />}
+                        {showPoints && (
+                          <PointsCell row={row} points={srhPointsFor(idx)} provisional={provRow}
+                            taken={takePoints && paidFor(row, idx) != null} />
+                        )}
                       </tr>
                     );
                   })}
@@ -726,20 +777,29 @@ export function ImportResultsModal({ session, sessionType, entries, seasonId, se
 // The review table's Pts cell: what the source paid this driver, and which part
 // of it the grid is about to take.
 //
-// A finishing row is scored by the league's own points structure, off the
+// `taken` — the "Score every driver on the points in this table" box — says the
+// total IS this row's points. The Adj chip then goes away, because the total
+// already contains everything it would have carried, and the hover text says so
+// rather than describing a breakdown that no longer applies.
+//
+// Unticked, the row is scored by the league's own points structure off the
 // position the grid holds, so the total here is for CHECKING against it rather
-// than something the import writes. What the import does write is the Adj
+// than something the import writes. What the import does write then is the Adj
 // figure beside it: the penalties and the bonuses this app has no way to derive
 // for itself (see srhRowPoints in lib/srhImport.js). A provisional entry is the
-// other way round — the total IS its points, because a driver who didn't race
+// same either way — the total IS its points, because a driver who didn't race
 // has no finishing position to be paid for.
-function PointsCell({ row, points, provisional }) {
+function PointsCell({ row, points, provisional, taken = false }) {
   const total = points?.total ?? row.values.points;
   if (total == null) return <td />;
-  const carried = provisional ? 0 : Number(points?.carried || 0);
+  const carried = provisional || taken ? 0 : Number(points?.carried || 0);
   const round = v => (Number.isInteger(v) ? v : Number(Number(v).toFixed(3)));
+  // A pasted table has no itemised breakdown to hover, so it gets the one line
+  // that matters instead of nothing at all.
+  const title = srhPointsSummary(points, { provisional, taken })
+    || (taken && !provisional ? `Imported as this row's points: ${round(total)}` : "");
   return (
-    <td title={srhPointsSummary(points, { provisional }) || undefined} style={{ whiteSpace: "nowrap" }}>
+    <td title={title || undefined} style={{ whiteSpace: "nowrap" }}>
       {round(total)}
       {carried !== 0 && (
         <span
@@ -752,9 +812,12 @@ function PointsCell({ row, points, provisional }) {
           Adj {carried > 0 ? "+" : ""}{round(carried)}
         </span>
       )}
-      {provisional && (
+      {provisional ? (
         <span style={{ marginLeft: 6, fontSize: "0.68rem", color: "var(--ink-2)" }}>flat</span>
-      )}
+      ) : taken ? (
+        <span title="This row is scored on this figure, not on your points structure"
+          style={{ marginLeft: 6, fontSize: "0.68rem", color: "var(--ink-2)" }}>scored</span>
+      ) : null}
     </td>
   );
 }

@@ -593,13 +593,16 @@ export function pointsFor(result, config) {
   // flat value an admin typed is the whole answer (see the Provisional section
   // of the results editor; they're also excluded from stats — see statLine).
   //
-  // And a session IMPORTED WITH ITS SOURCE'S OWN POINTS. A league scored on
-  // SimRacerHub has a championship table there already, and the only way for
-  // this app's table to agree with it row for row is to take the number
-  // SimRacerHub paid rather than re-derive one: its scale, its bonuses, its
+  // And a session IMPORTED WITH ITS SOURCE'S OWN POINTS. A league scored
+  // somewhere else — on SimRacerHub, or in the spreadsheet a results table was
+  // pasted from — has a championship table there already, and the only way for
+  // this app's table to agree with it row for row is to take the number that
+  // source paid rather than re-derive one: its scale, its bonuses, its
   // penalties and its stage points are one figure per driver that no structure
-  // here can reproduce. So the importer can write that figure onto the row (see
-  // lib/srhSeasonResults.js), and this is what makes it score.
+  // here can reproduce. So every importer can write that figure onto the row —
+  // the season importer (lib/srhSeasonResults.js) and the per-session Smart
+  // Import (components/ImportResultsModal.jsx) alike — and this is what makes
+  // it score.
   //
   // It stays editable afterwards, cell by cell, and clearing a cell hands the
   // row back to the league's own structure — which is why this is a value on

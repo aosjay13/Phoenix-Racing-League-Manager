@@ -522,30 +522,58 @@ ok("…opening the same importer on that box", /autoFocusSrh=\{importSrhFirst\}/
 ok("…and what comes back fills the grid rather than saving it", /onApply=\{applyImport\}/.test(editor));
 
 // The points wiring, which is the one place an import could quietly become a
-// second scorer. The review table hands over the source's total and the net to
-// adjust by; the editor puts the total on a PROVISIONAL row's points box and
-// the net in the Adj column, and computes every finishing row's points itself.
-ok("the review table hands over what the source paid", /points: row\.values\.points/.test(modal));
-ok("…and the part of it this app can't derive", /points_adjustment: srhPointsFor\(idx\)\?\.carried/.test(modal));
+// second scorer — and, since the per-session importer learned to take the
+// points a source counted, the one place it is ALLOWED to, under a switch the
+// admin can see. The review table hands over what the source paid; what the
+// grid does with it is decided by that switch and by nothing else.
+ok("the review table hands over what the source paid", /points: paid,/.test(modal));
+ok("…read off whichever source carried it", /srhPointsFor\(idx\)\?\.total \?\? row\.values\.points/.test(modal));
+ok("…and the part of it this app can't derive", /srhPointsFor\(idx\)\?\.carried/.test(modal));
 ok("a provisional entry's points box takes the source's figure", /manual_points: imported/.test(editor));
 ok("…and comes off auto so the auto-fill can't overwrite it", /auto: imported == null/.test(editor));
 ok("the Adj column takes the carried net", /points_adjustment: im\.points_adjustment != null/.test(editor));
-// The negative that matters, read off applyImport itself: `manual_points` is
-// the only field this app scores a row FROM instead of computing (and only
-// when the row is provisional — see pointsFor), so an import may set it on a
-// provisional row and nowhere else. A finishing row getting one would be the
-// import overriding the league's points structure.
+
+// ── Scoring a session on the points its source counted ────────────────────
+//
+// The switch: shown only when the loaded table carries points at all, on by
+// default (a table that printed points is one whose standings are meant to
+// match), and worded so an admin knows which scorer they just chose.
+ok("the importer offers to score on the source's own points", /Score every driver on the points in this table/.test(modal));
+ok("…defaulting to taking them", /const \[takePoints, setTakePoints\] = useState\(true\)/.test(modal));
+ok("…and only where there are points to take", /\{showPoints && \(\s*<div className="check-row"/.test(modal));
+ok("…which is any source that counted some", /r\.values\.points != null \|\| srhPointsFor\(i\)/.test(modal));
+
+// The two halves that must be decided together: the row is scored on the
+// source's total, and NOTHING is carried to Adj on top of it — the total
+// already contains the source's penalties and bonuses, so carrying both would
+// charge every penalty twice.
+const apply = modal.slice(modal.indexOf("function apply()"), modal.indexOf("onApply(rows"));
+ok("apply() is where the review table hands over", apply.length > 500);
+ok("the source's total becomes the row's own points", /manual_points: override/.test(apply));
+ok("…only when the admin asked for it", /const override = takePoints && paid != null \? paid : null/.test(apply));
+ok("…and nothing is carried to Adj as well",
+  /points_adjustment: override != null \? 0 :/.test(apply));
+
 const applyImport = editor.slice(editor.indexOf("function applyImport("), editor.indexOf("setImportOpen(false)"));
 ok("applyImport is where the import lands", applyImport.length > 500);
 const placed = applyImport.slice(applyImport.indexOf("const placed"), applyImport.indexOf("const sorted"));
-ok("a finishing row is never given manual points by an import", !/manual_points/.test(placed));
-// …and nothing else in applyImport touches the field either, outside the block
-// that builds the provisional list.
-const provisionalBlock = applyImport.indexOf("if (allowProv)");
-ok("the provisional list is the only place manual points are set",
-  !/manual_points/.test(applyImport.slice(0, provisionalBlock))
-  && /manual_points/.test(applyImport.slice(provisionalBlock)));
-ok("…so the league's own structure still scores every finish", /pointsFor\(scoreRow\(row\), configForRow\(row\)\)/.test(editor));
+ok("a finishing row is scored on the figure the import carried", /manual_points: im\.manual_points != null/.test(placed));
+// The negative that still matters: an import with no opinion on points must
+// leave the cell empty, so every source that says nothing about them — and
+// every grid filled in by hand — is scored by the league's structure exactly
+// as before.
+ok("…and left alone by an import that carried none", /: row\.manual_points,/.test(placed));
+ok("the league's own structure still scores a row with no figure of its own",
+  /pointsFor\(scoreRow\(row\), configForRow\(row\)\)/.test(editor));
+ok("…and every imported figure stays editable afterwards", /const pointsEditable = useMemo/.test(editor));
+
+// Taking the source's points means taking its word on whether the session
+// counts — a heat pays nothing here by default, so the figures would sit on
+// every row and reach nobody. Proposed on Apply, written by Save, never both.
+ok("an import onto a session that pays nothing says so", /setPendingPointsOn\(paidSomebody && !pointsOn/.test(applyImport));
+ok("…only ever turning points ON", !/setPendingPointsOn\([^)]*false\)/.test(applyImport));
+ok("…and it is Save that writes it", /await onSessionPointsEnabledChange\(session, true\)/.test(editor));
+ok("…with the admin told, and able to refuse", /Leave it off/.test(editor));
 
 // The race's own figures take the same route as the rows: proposed by the
 // review table, held by the grid, written by the grid's Save and by nothing

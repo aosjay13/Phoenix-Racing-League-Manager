@@ -566,6 +566,11 @@ export function SessionEditor({
   // import fills them in for review exactly as it fills the rows. Shape:
   // { stats: { caution_flags, caution_laps, lead_changes }, sessionName }.
   const [pendingRaceStats, setPendingRaceStats] = useState(null);
+  // An import brought points this session is meant to be scored on, onto a
+  // session that awards none. Like the race statistics above, that is a change
+  // to the EVENT rather than to a result, so it waits here for this grid's own
+  // Save — Apply still writes nothing. See applyImport for why it's needed.
+  const [pendingPointsOn, setPendingPointsOn] = useState(false);
   // Whether Smart Import was opened by the SimRacerHub button beside it, which
   // only decides where the cursor starts — both buttons open the same importer.
   const [importSrhFirst, setImportSrhFirst] = useState(false);
@@ -1237,6 +1242,23 @@ export function SessionEditor({
       if (allowProv && r.provisional) { provById.set(r.entry_id, r); byId.delete(r.entry_id); }
       else { byId.set(r.entry_id, r); provById.delete(r.entry_id); }
     }
+
+    // Taking the source's own points means taking its word on whether this
+    // session COUNTS. A heat or a consolation awards nothing here until
+    // somebody says otherwise (see defaultSessionFlags in lib/standings.js), so
+    // a heat imported with the figures its own scoring paid would carry them on
+    // every row and still pay the field nothing — the standings would disagree
+    // with the source on exactly the session this was meant to fix.
+    //
+    // Proposed only when the import actually paid somebody, and only ever ON:
+    // a session an admin deliberately silenced stays silenced unless the
+    // results themselves say it scored. Same rule the season importer follows
+    // (see app/api/import-srh-season-results/route.js) — except that this is a
+    // change to the event, so it is held for Save rather than written on Apply.
+    const paidSomebody = [...byId.values(), ...provById.values()]
+      .some(r => Number(r.manual_points || 0) !== 0);
+    setPendingPointsOn(paidSomebody && !pointsOn && !!onSessionPointsEnabledChange);
+
     const num = (v, fallback) => (v === "" || v == null ? fallback : String(v));
     const placed = [...byId.values()].map(im => {
       const entry = entryById.get(im.entry_id);
@@ -1261,15 +1283,33 @@ export function SessionEditor({
         // A per-result adjustment the source carried. From SimRacerHub that's
         // its penalties ("Cause of Caution", "14 incidents") plus any bonus
         // this app has no way to work out for itself ("No incidents", "Show
-        // Up") — see srhRowPoints in lib/srhImport.js. The finishing points
-        // themselves are NOT imported: this season's own structure pays those,
-        // off the position in the grid, which is what keeps one scorer.
+        // Up") — see srhRowPoints in lib/srhImport.js. It sits on top of the
+        // points this season's structure pays for the position in the grid.
         //
-        // An import with no opinion on it (a pasted table, an iRacing file)
-        // leaves the cell alone, so an adjustment typed by hand survives.
+        // Zero when the import is handing over the source's own total below,
+        // which already contains those penalties and bonuses — paying both
+        // would charge every penalty twice.
+        //
+        // An import with no opinion on it (a pasted table with no Points
+        // column, an iRacing file) leaves the cell alone, so an adjustment
+        // typed by hand survives.
         points_adjustment: im.points_adjustment != null
           ? String(im.points_adjustment)
           : row.points_adjustment,
+        // The points the source counted, taken as this row's own — whether that
+        // came from a SimRacerHub page or a Points column in a pasted table.
+        // pointsFor pays this figure instead of scoring the finishing position
+        // (see lib/standings.js), which is what makes these standings agree
+        // with the ones the results came from.
+        //
+        // Set on the row rather than hidden away, so the grid's Points column
+        // turns into editable cells (see pointsEditable) and clearing one hands
+        // that row back to this season's structure. An import that says nothing
+        // about points — a table with no Points column, or the box unticked —
+        // leaves the cell empty, so those rows score exactly as they always did.
+        manual_points: im.manual_points != null && im.manual_points !== ""
+          ? String(im.manual_points)
+          : row.manual_points,
       };
     });
     const sorted = sortByFinish(placed);
@@ -1603,10 +1643,12 @@ export function SessionEditor({
   const rowPointsTitle = row => (!row.entry_id ? undefined
     : pointsBreakdown(scoreRow(row), configForRow(row)));
 
-  // Does any row on this grid carry a points figure OF ITS OWN? That is what a
-  // SimRacerHub import writes so the two championships agree (see
-  // `manual_points` in pointsFor), and once one row has one the whole column
-  // becomes editable — which is what makes "import it, then edit it" true.
+  // Does any row on this grid carry a points figure OF ITS OWN? That is what an
+  // import writes when it is told to score on the points its source counted —
+  // a SimRacerHub page, or a Points column in a pasted table — so the two
+  // championships agree (see `manual_points` in pointsFor). Once one row has
+  // one the whole column becomes editable, which is what makes "import it, then
+  // edit it" true.
   // Emptying a cell hands that row back to the league's points structure.
   //
   // Nothing appears for a session nobody imported that way, so a grid filled in
@@ -1748,10 +1790,26 @@ export function SessionEditor({
             `Results saved, but the race statistics didn't: ${err.message}. They're still listed above — press Save again to retry.`);
         }
       }
+      // …and, on the same terms, the switch that decides whether the figures
+      // just saved are worth anything. A failure here is not worth losing the
+      // results over — it's one toggle, still on screen and still pressable —
+      // so it's said out loud rather than thrown.
+      let pointsSwitched = false;
+      if (pendingPointsOn && onSessionPointsEnabledChange && !pointsOn) {
+        try {
+          await onSessionPointsEnabledChange(session, true);
+          setPendingPointsOn(false);
+          pointsSwitched = true;
+        } catch { /* the toggle above is still there to press by hand */ }
+      }
       const saved = scoped
         ? `${sessionClassName || "Class"} results saved. Standings and profiles update instantly.`
         : "Results saved. Standings and profiles update instantly.";
-      showToast("success", statsSaved ? `${saved} Race statistics saved to Race Info.` : saved);
+      const extras = [
+        statsSaved ? "Race statistics saved to Race Info." : "",
+        pointsSwitched ? `${session} now awards championship points, because the import brought some.` : "",
+      ].filter(Boolean).join(" ");
+      showToast("success", extras ? `${saved} ${extras}` : saved);
     } catch (err) {
       showToast("error", err.message);
     } finally {
@@ -2139,6 +2197,30 @@ export function SessionEditor({
             Saved onto this event — and printed at the top of its results page — when you press Save below. A 0 reads
             as “not recorded” and is left off the page. <strong>Different Leaders</strong> needs no figure: it is counted
             from the drivers whose <strong>Led</strong> column shows at least one lap.
+          </p>
+        </div>
+      )}
+
+      {/* ── A session about to start awarding points ────────────────────
+          An import brought the points its source paid, onto a session this
+          league awards none for — a heat or a consolation, usually. The figures
+          are on every row and would pay the field nothing, which is the one way
+          "import it and the standings match" could quietly fail. Saving turns
+          the switch on; discarding leaves the session silent and the figures
+          sitting there, which is a real choice (a heat run for the show). */}
+      {pendingPointsOn && (
+        <div style={{ border: "1.5px solid var(--accent-amber, #d29922)", borderRadius: 10, padding: "10px 12px", marginBottom: 12, background: "rgba(210,153,34,0.06)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+            <strong style={{ fontSize: "0.85rem" }}>“{session}” doesn&rsquo;t award championship points yet</strong>
+            <button type="button" className="btn btn-ghost" style={{ marginTop: 0, padding: "2px 10px", fontSize: "0.78rem" }}
+              title="Keep this session out of the championship — the imported figures stay on the rows and pay nothing"
+              onClick={() => setPendingPointsOn(false)}>✕ Leave it off</button>
+          </div>
+          <p style={{ margin: "6px 0 0", fontSize: "0.78rem", color: "var(--ink-2)" }}>
+            The import brought the points its source paid, and they&rsquo;re in the Points column below — but this
+            session pays nothing toward the championship, so they&rsquo;d count for nobody. Pressing <strong>Save</strong>{" "}
+            turns <strong>Award Championship Points</strong> on for it, so the standings here match the ones these
+            results came from. That switch is at the top of this grid if you&rsquo;d rather flip it yourself later.
           </p>
         </div>
       )}

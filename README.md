@@ -977,23 +977,50 @@ Admin pages appear in the sidebar once your email is in `ADMIN_EMAILS` (see setu
    times, gaps, elapsed times, laps led, incidents, car numbers and lap-down finishers are all
    converted into what this app stores, and a driver SimRacerHub paid without them racing arrives
    ticked for **Provisional Entries** with the points it paid them already in their box.
-   The review table's **Pts** column shows what SimRacerHub paid every driver, to check against
-   what your grid will pay; hovering one reads the total back term by term. A finishing row is
-   scored by **your** points structure and never from that figure, because one event must have one
-   scorer. What does cross over is the part this app has no way to work out for itself: every
-   penalty ("Cause of Caution", "14 incidents") and any bonus of your league's own invention
-   ("No incidents", "Show Up") are netted into the grid's **Adj** column, where they sit on top of
-   the points your structure pays and can be edited like anything else. The bonuses this app
-   derives from the results — fastest lap, led a lap, most laps led, the biggest climb — are left
-   to your own structure so they are never paid twice, and a pole bonus SimRacerHub prints against
-   the race is skipped because this app scores Qualifying on its own line. Stage points come across
-   only when the night didn't run its Stages as sessions of their own; when it did, they are scored
-   on those grids instead. Names are matched against the roster through every name each
+   The review table's **Pts** column shows what SimRacerHub paid every driver, and hovering one
+   reads the total back term by term. Names are matched against the roster through every name each
    driver answers to, exactly as the rest of the importer does. And **nothing is saved**: the import
    fills the grid for you to check and correct, and **Save** is still what scores it. A SimRacerHub
    link pasted into the paste-a-table box is fetched rather than parsed, so either way in works. See
    `lib/srhImport.js` and `app/api/import-srh/route.js` — the fetch is server-side because
    SimRacerHub sends no CORS headers, so a browser cannot read it directly.
+
+   **If the results you pasted counted points, those are the points.** Whenever the loaded table
+   carries a points column — SimRacerHub's, or a **Points** / **Pts** / **Champ Points** column in
+   a spreadsheet you pasted, a CSV you uploaded or an iRacing file — the importer offers **Score
+   every driver on the points in this table**, ticked. Each row then imports holding that figure:
+   that scale, those bonuses, those penalties. This is the setting that makes the standings here
+   match the standings the results came from, without a single number retyped. Untick it and your
+   own points structure scores every finishing position instead, with **Pts** there only to check
+   against — which is what the importer always did, and still does for any table that counted no
+   points at all.
+
+   Two things follow from taking a source's total, and the importer does both for you. Nothing is
+   carried into the **Adj** column alongside it: a total already contains the penalties and bonuses
+   that made it, so carrying them as well would charge every penalty twice. And a session your
+   league awards no championship points for — a heat, usually — says so above the grid and turns
+   **Award Championship Points** on when you **Save**, because figures the whole field can see
+   paying nobody is the one way "import it and the standings match" could quietly fail. That notice
+   has a **✕ Leave it off** if the session really was run for the show.
+
+   With the box unticked, what still crosses over is the part this app has no way to work out for
+   itself: every SimRacerHub penalty ("Cause of Caution", "14 incidents") and any bonus of your
+   league's own invention ("No incidents", "Show Up") are netted into the grid's **Adj** column,
+   where they sit on top of the points your structure pays and can be edited like anything else.
+   The bonuses this app derives from the results — fastest lap, led a lap, most laps led, the
+   biggest climb — are left to your own structure so they are never paid twice, and a pole bonus
+   SimRacerHub prints against the race is skipped because this app scores Qualifying on its own
+   line. Stage points come across only when the night didn't run its Stages as sessions of their
+   own; when it did, they are scored on those grids instead.
+
+   Either way the figures stay yours. An imported points figure lands in the grid's **Points**
+   column as an editable cell — type over one to change what that row scores, or empty it to hand
+   that row straight back to your own points structure. A driver the source paid without them
+   racing arrives in **Provisional Entries** on exactly the points it paid them, which has always
+   been true and does not depend on the switch: a driver who never took a position has no position
+   to be scored off. See `manual_points` in `lib/standings.js`, which is where a figure on a row
+   beats the structure, and `lib/__tests__/pastedPoints.test.mjs`, which checks the whole chain from
+   a pasted spreadsheet to a championship total.
 
    **Race statistics belong to the race, not to a driver.** The **Race Info** tab carries three
    optional boxes — **Caution flags**, **Caution laps** and **Lead changes** — filled in after the
@@ -1325,7 +1352,9 @@ keeps the plain computed number it has always had. Taking SimRacerHub's points a
 championship points **on** for any session it actually paid for, since a heat and a consolation award
 nothing here until told otherwise, and a heat night would otherwise import its figures and still pay
 the field nothing. It only ever turns points on, so a session you deliberately silenced stays
-silenced.
+silenced. The per-session **Smart Import** offers the same choice for any table that counted points
+— a spreadsheet pasted into one grid behaves exactly like a SimRacerHub season imported into twelve
+— so this is one rule with one answer, not a SimRacerHub special case.
 
 **Untick it and the older rule applies:** your own structure pays for every position and only what it
 can't work out for itself (a SimRacerHub penalty or bonus) rides across in the **Adj** column. A row

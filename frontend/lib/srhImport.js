@@ -645,7 +645,7 @@ export function srhSegmentTable(segment) {
 // that looks off on the grid afterwards can be read rather than reverse-
 // engineered — the same courtesy the grid's own Points cell does with
 // explainPoints (see lib/standings.js).
-export function srhPointsSummary(points, { provisional = false } = {}) {
+export function srhPointsSummary(points, { provisional = false, taken = false } = {}) {
   if (!points) return "";
   const n = v => (Number.isInteger(v) ? String(v) : String(Number(Number(v).toFixed(3))));
   const lines = [`SimRacerHub paid ${n(points.total)}`];
@@ -659,6 +659,19 @@ export function srhPointsSummary(points, { provisional = false } = {}) {
   // total is the whole answer for it.
   if (provisional) {
     lines.push("", `Imported as this provisional entry's points: ${n(points.total)}`);
+    return lines.join("\n");
+  }
+
+  // Scored on the total outright. Nothing is itemised out to the Adj column,
+  // because the total already contains every term above — and this league's own
+  // structure pays nothing for the finishing position, which is exactly what
+  // makes the two sets of standings agree.
+  if (taken) {
+    lines.push(
+      "",
+      `Imported as this row's points: ${n(points.total)}`,
+      "Your own points structure doesn't score this row — clear its Points cell on the results screen to hand it back.",
+    );
     return lines.join("\n");
   }
 
