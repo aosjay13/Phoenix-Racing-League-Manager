@@ -52,8 +52,8 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
 - 🏆 **Playoffs** — end a season the way your league actually voted to. Tick **Playoffs** on a
   season and a full format menu opens: where the regular season stops (and whether it crowns a
   **regular season champion**, which counts as a title of its own), how many drivers make the field
-  and how they qualify (wins first then points, points only, winners only, or everybody), what they
-  are reset to (zero, a base plus banked **playoff points**, seeded steps, or their points carried
+  and how they qualify (wins first then points, points only, winners only, everybody, or a
+  **wildcard** you pick by name), what they are reset to (zero, a base plus banked **playoff points**, seeded steps, or their points carried
   straight over), and a **round ladder** you build yourself — each round is "this many races, this
   many drivers advance, reset to this". One round of ten races that advances one driver is a
   **Chase**; four rounds cutting 16 → 12 → 8 → 4 are **elimination playoffs**; a win in a round can
@@ -3227,7 +3227,7 @@ to**, and lets a season answer them however it likes:
 
 | | |
 | --- | --- |
-| **Who is in it?** | how many drivers, and how they qualify |
+| **Who is in it?** | how many drivers, how they qualify, and any wildcards you name |
 | **What do they start on?** | the seeding reset |
 | **How is it raced?** | the round ladder |
 | **What is a result worth?** | the ordinary points, plus playoff points |
@@ -3274,6 +3274,34 @@ that decides the title — and two switches change how the rounds behave:
   worth watching from 12th, and it is the one thing a points-shaped implementation quietly drops:
   in `lib/__tests__/playoffs.test.mjs` the driver who **out-scores everybody in the Round of 4 goes
   home**, because the two drivers who won a race in it took both places.
+
+**Wildcards: the driver a person puts in.** *The Field* tab has a **Wildcards** picker — a dropdown
+of the season's roster, and the drivers you pick go in the playoff **by name**. No rule decides it:
+not points, not wins, not how many rounds they started. That's the whole point. Leagues hand out a
+place for reasons a formula has never heard of — a dead PC for three rounds, the champion of a feeder
+series, a vote at the meeting — and a statistician who has decided somebody is in should not have to
+reverse-engineer a qualifying rule that lets them in by accident.
+
+So a wildcard overrides everything above it. It beats the qualifying rule, it beats the points
+cutline, and it beats the minimum-starts rule. **A pick who has not turned a lap all season is still
+in**, seeded off nothing, because somebody decided they should be. Two answers go with it, and both
+are formats real leagues have raced:
+
+- **Do they take a slot, or come on top?** *They take slots in the field* keeps a 16-driver field at
+  16 — the wildcards take the last places and the qualifying rule fills the rest, which is NASCAR's
+  2011–2013 wildcard and means somebody who qualified on merit drops out. *They're added on top*
+  makes a 16-driver field with two wildcards race 18, and costs nobody their place.
+- **Where do they line up?** *Seeded on their points, like everyone else* — a wildcard sitting 9th in
+  the regular season is seeded 9th; their place in the field was a gift, their place in the queue was
+  earned. Or *seeded behind the whole field*, so every driver who qualified on merit lines up ahead
+  of every wildcard whatever the points say.
+
+Each pick is stored as the roster entry it names **plus the name it had when it was picked**, so a
+pick still reads as a person before the roster has loaded — and if that driver is later removed from
+the roster the pick is kept and flagged in red rather than quietly dropped, because losing somebody's
+place in silence is worse than showing a name that needs fixing. A wildcard is badged 🃏 on the
+Playoffs panel's field table, and can win the whole thing: the bracket doesn't care how anyone got
+into it.
 
 **Playoff points** are a second currency: banked rather than spent, they seed the field and survive
 every reset, which is what keeps a dominant regular season worth something to a driver who has just

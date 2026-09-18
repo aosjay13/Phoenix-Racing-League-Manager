@@ -171,6 +171,10 @@ export function PlayoffPanel({ playoffs, seasonName = "", className = "" }) {
                     {row.qualified_by === "win" && (
                       <span className="playoff-badge" style={{ marginLeft: 6 }} title="In on a race win">in on a win</span>
                     )}
+                    {row.qualified_by === "wildcard" && (
+                      <span className="playoff-badge" style={{ marginLeft: 6 }}
+                        title="A wildcard — put in the field by hand, not by points or wins">🃏 wildcard</span>
+                    )}
                   </td>
                   <td>{fmt(row.regular_points)}</td>
                   <td>{row.wins}</td>

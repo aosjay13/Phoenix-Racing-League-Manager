@@ -739,6 +739,10 @@ function AdminInner() {
               // season is being added, which is exactly right — it has no
               // calendar yet.
               races={editIds.season && editIds.season === seasonId ? races : []}
+              // The season being edited, so the playoff menu can load its
+              // roster for the wildcard picker. Blank while a new season is
+              // being added — it has nobody on it yet.
+              seasonId={editIds.season || ""}
             />
 
             <span style={{ display: "block" }}>

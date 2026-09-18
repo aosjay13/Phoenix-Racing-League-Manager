@@ -11,7 +11,8 @@
 // however it likes:
 //
 //   1. WHO IS IN IT?      — how many drivers, and how they qualify (points, a
-//                           win, or everybody).
+//                           win, everybody, or a WILDCARD the statistician
+//                           simply names).
 //   2. WHAT DO THEY START ON? — the seeding rule. Wiped to zero, reset to a
 //                           base, a base plus the playoff points they banked,
 //                           or their regular-season points carried straight
@@ -82,6 +83,37 @@ export const QUALIFY_MODES = [
     "Only drivers who won a regular-season race make it — the field can come out smaller than the size set below, and that's the point."],
   ["all", "Everybody",
     "The whole field carries on into the playoff. Use it with a points reset to run a genuine 'everyone starts level' run-in."],
+];
+
+// ── Wildcards ──────────────────────────────────────────────────────────────
+//
+// A wildcard is a driver the statistician puts in the playoff BY NAME. No rule
+// decides it — not points, not wins, not starts — which is exactly the point:
+// leagues hand out a place for a reason a formula has never heard of. A driver
+// who missed three rounds with a dead PC and was quick in every other one. The
+// champion of a feeder series. Somebody the league voted in.
+//
+// So a wildcard overrides everything: the qualifying rule, the field's points
+// cutline and the minimum-starts rule alike. A pick who has not turned a lap all
+// season is still in, seeded from nothing — because somebody decided they should
+// be, and that decision is the whole feature.
+//
+// Two answers go with it, and both are real formats:
+
+// Do the wildcards come out of the field, or on top of it?
+export const WILDCARD_MODES = [
+  ["within_field", "They take slots in the field",
+    "A 16-driver field with 2 wildcards is still 16 drivers: the wildcards take the last two places and the qualifying rule fills the other fourteen. NASCAR's 2011–2013 wildcard."],
+  ["extra", "They're added on top",
+    "A 16-driver field with 2 wildcards races 18. The qualifying rule still fills all 16 places, and the wildcards join them."],
+];
+
+// And where do they line up?
+export const WILDCARD_SEEDS = [
+  ["points", "Seeded on their points, like everyone else",
+    "A wildcard sitting 9th in the regular season is seeded 9th. Their place in the field was a gift; their place in the queue was earned."],
+  ["last", "Seeded behind the whole field",
+    "Every driver who qualified on merit lines up ahead of every wildcard, whatever the points say."],
 ];
 
 // What the field starts the playoff on.
@@ -299,6 +331,18 @@ function normalizeRound(raw = {}, i = 0) {
   };
 }
 
+// One wildcard pick. Stored as the roster entry it names PLUS the name it had
+// when it was picked: the id is what the bracket seeds off, and the name is what
+// the menu can still print when the roster hasn't loaded yet, or when the entry
+// has since been deleted — a pick that silently becomes a blank row is worse
+// than one that says whose it was.
+//
+// A bare string reads as an id, so a config hand-written as ["abc123"] works.
+function normalizeWildcard(raw) {
+  if (typeof raw === "string") return { entry_id: raw.trim(), name: "" };
+  return { entry_id: text(raw?.entry_id, "").trim(), name: text(raw?.name, "").trim() };
+}
+
 export const BLANK_PLAYOFF_CONFIG = {
   format: "elimination",
   // Where the regular season stops. The round number of the LAST regular-season
@@ -311,6 +355,10 @@ export const BLANK_PLAYOFF_CONFIG = {
   field_size: 16,
   qualify_mode: "wins_then_points",
   min_starts: 0,
+  // Drivers put in by hand, whatever the rule above says — see WILDCARD_MODES.
+  wildcards: [],
+  wildcard_mode: "within_field",
+  wildcard_seed: "points",
   // What they start on.
   seed_mode: "base_plus_bonus",
   seed_base: 2000,
@@ -352,6 +400,17 @@ export const BLANK_PLAYOFF_CONFIG = {
   notes: "",
 };
 
+function dedupeWildcards(list) {
+  const seen = new Set();
+  const out = [];
+  for (const w of list) {
+    if (!w.entry_id || seen.has(w.entry_id)) continue;
+    seen.add(w.entry_id);
+    out.push(w);
+  }
+  return out;
+}
+
 // A stored (or in-progress) config → the one every reader works from. Missing
 // answers take the blank config's, a missing ladder is generated from the field
 // size, and every number is a number.
@@ -373,6 +432,10 @@ export function normalizePlayoffConfig(raw) {
     field_size,
     qualify_mode: text(src.qualify_mode, base.qualify_mode) || base.qualify_mode,
     min_starts: Math.max(0, int(src.min_starts, base.min_starts)),
+    // Picked twice is picked once; a pick with no entry behind it is no pick.
+    wildcards: dedupeWildcards((Array.isArray(src.wildcards) ? src.wildcards : []).map(normalizeWildcard)),
+    wildcard_mode: text(src.wildcard_mode, base.wildcard_mode) || base.wildcard_mode,
+    wildcard_seed: text(src.wildcard_seed, base.wildcard_seed) || base.wildcard_seed,
     seed_mode: text(src.seed_mode, base.seed_mode) || base.seed_mode,
     seed_base,
     seed_gap: num(src.seed_gap, base.seed_gap),
@@ -588,29 +651,68 @@ const resultsForRaces = (results, raceIds) => {
 const raceHasRun = (raceId, results) =>
   results.some(r => r.race_id === raceId && !isQualifying(r) && !isPreliminarySession(r.session_type));
 
-// The seeded field: who made it, in what order, and on what points.
-function seedField(regularRows, config, bankedPoints, regularChampionEntry) {
-  const cfg = normalizePlayoffConfig(config);
-  const eligible = regularRows.filter(row => int(row.starts, 0) >= cfg.min_starts);
+// A standings row for a wildcard who has none — somebody picked who never
+// scored, or never even started. They are in the playoff because a person said
+// so, so the absence of a season behind them cannot be what keeps them out; it
+// just means they are seeded off nothing.
+function bareRow(wildcard, rosterById) {
+  const entry = rosterById.get(wildcard.entry_id) || {};
+  return {
+    entry_id: wildcard.entry_id,
+    entry_ids: [wildcard.entry_id],
+    driver_name: entry.name || wildcard.name || "Unknown",
+    driver_id: entry.driver_id ?? null,
+    user_id: entry.user_id ?? null,
+    team: entry.team ?? null,
+    adjusted_points: 0, points: 0,
+    wins: 0, podiums: 0, top5: 0, top10: 0, poles: 0, best_laps: 0, laps_led: 0,
+    starts: 0, finish_sum: 0, qualifying_sessions: 0, start_sum: 0,
+    avg_finish: null, avg_start: null, best_finish: null,
+  };
+}
 
-  let field;
+// The seeded field: who made it, in what order, and on what points.
+function seedField(regularRows, config, bankedPoints, regularChampionEntry, rosterById = new Map()) {
+  const cfg = normalizePlayoffConfig(config);
+  const rowsById = new Map(regularRows.map(r => [r.entry_id, r]));
+
+  // The hand-picked drivers come out first and are never run past a rule: a
+  // wildcard is in, full stop. Their standings row is used where they have one,
+  // so a pick who has been racing all year is still seeded on what they did.
+  const wildcards = cfg.wildcards.map(w => rowsById.get(w.entry_id) || bareRow(w, rosterById));
+  const wildcardSet = new Set(wildcards.map(r => r.entry_id));
+
+  // Everyone else goes through the qualifying rule, for whatever slots the
+  // wildcards left — none of them, when the wildcards are added on top instead.
+  const eligible = regularRows.filter(row =>
+    !wildcardSet.has(row.entry_id) && int(row.starts, 0) >= cfg.min_starts);
+  const slots = cfg.wildcard_mode === "extra"
+    ? cfg.field_size
+    : Math.max(0, cfg.field_size - wildcards.length);
+
+  let qualified;
   if (cfg.qualify_mode === "all") {
-    field = eligible;
+    qualified = eligible;
   } else if (cfg.qualify_mode === "wins_only") {
-    field = eligible.filter(r => int(r.wins, 0) > 0).slice(0, cfg.field_size);
+    qualified = eligible.filter(r => int(r.wins, 0) > 0).slice(0, slots);
   } else if (cfg.qualify_mode === "wins_then_points") {
-    const winners = eligible.filter(r => int(r.wins, 0) > 0).slice(0, cfg.field_size);
+    const winners = eligible.filter(r => int(r.wins, 0) > 0).slice(0, slots);
     const taken = new Set(winners.map(r => r.entry_id));
     const rest = eligible.filter(r => !taken.has(r.entry_id));
-    field = [...winners, ...rest].slice(0, cfg.field_size);
+    qualified = [...winners, ...rest].slice(0, slots);
   } else {
-    field = eligible.slice(0, cfg.field_size);
+    qualified = eligible.slice(0, slots);
   }
 
   // Seeded in championship order — the qualifying rule decides who is in, never
   // what order they line up in. (A winner sitting 14th in the points is in the
-  // playoff, seeded 14th.)
-  const ordered = [...field].sort((a, b) => compareStandings(a, b, { pointsKey: "adjusted_points", nameKey: "driver_name" }));
+  // playoff, seeded 14th.) Wildcards line up on their own points too, unless
+  // the format puts every one of them behind the drivers who qualified.
+  const byOrder = list =>
+    [...list].sort((a, b) => compareStandings(a, b, { pointsKey: "adjusted_points", nameKey: "driver_name" }));
+  const ordered = cfg.wildcard_seed === "last"
+    ? [...byOrder(qualified), ...byOrder(wildcards)]
+    : byOrder([...qualified, ...wildcards]);
 
   return ordered.map((row, i) => {
     const banked = num(bankedPoints.get(row.entry_id), 0)
@@ -632,7 +734,9 @@ function seedField(regularRows, config, bankedPoints, regularChampionEntry) {
       regular_points: num(row.adjusted_points),
       wins: int(row.wins, 0),
       playoff_points: banked,
-      qualified_by: int(row.wins, 0) > 0 && cfg.qualify_mode !== "points" ? "win" : "points",
+      qualified_by: wildcardSet.has(row.entry_id) ? "wildcard"
+        : int(row.wins, 0) > 0 && cfg.qualify_mode !== "points" ? "win"
+          : "points",
       points,
     };
   });
@@ -752,7 +856,11 @@ export function buildPlayoffs({
   // in playoff races already run. The seed uses the regular-season half; the
   // resets use the running total.
   const regularBank = playoffPointsByEntry(regularResults, cfg);
-  const seeds = seedField(regularRows, cfg, regularBank, regularChampion?.entry_id ?? null);
+  // The roster, for the wildcards: a hand-picked driver with no results has no
+  // standings row to take a name from, and "Unknown" on a bracket is a bug
+  // report waiting to happen.
+  const rosterById = new Map(entries.map(e => [e.id, e]));
+  const seeds = seedField(regularRows, cfg, regularBank, regularChampion?.entry_id ?? null, rosterById);
   const seeded = new Set(seeds.map(s => s.entry_id));
 
   // Rounds are walked in order, each starting from what the last one left.
@@ -959,7 +1067,11 @@ const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 export function describePlayoffFormat(config) {
   const cfg = normalizePlayoffConfig(config);
   const bits = [];
-  bits.push(cfg.qualify_mode === "all" ? "Everybody eligible" : plural(cfg.field_size, "driver"));
+  const wild = cfg.wildcards.length;
+  const field = cfg.qualify_mode === "all" ? "Everybody eligible" : plural(cfg.field_size, "driver");
+  bits.push(wild
+    ? `${field}${cfg.wildcard_mode === "extra" ? " + " : ", "}${plural(wild, "wildcard")}${cfg.wildcard_mode === "extra" ? "" : " of them picked"}`
+    : field);
   bits.push(cfg.rounds.length > 1 ? `${plural(cfg.rounds.length, "round")} of eliminations` : "one round");
   if (cfg.seed_mode === "reset_zero") bits.push("everyone reset to zero");
   else if (cfg.seed_mode === "carry_over") bits.push("points carried over");
@@ -973,7 +1085,11 @@ export function describePlayoffFormat(config) {
 // warnings, never refusals: a season is very often half set up, and a menu that
 // refuses to save until the calendar exists is a menu you can't use in
 // February. Returns [] when the format is sound.
-export function playoffSetupWarnings(config, races = []) {
+// `entries` is the season's roster, when the caller has one. Handed over, the
+// wildcards are checked against it — a pick whose roster entry has since been
+// deleted would otherwise sit in the format looking fine and quietly stop being
+// a driver.
+export function playoffSetupWarnings(config, races = [], entries = null) {
   const cfg = normalizePlayoffConfig(config);
   const out = [];
   const { playoff } = splitRaces(races, cfg);
@@ -1001,6 +1117,16 @@ export function playoffSetupWarnings(config, races = []) {
   }
   if (cfg.qualify_mode === "wins_only" && cfg.seed_mode === "carry_over") {
     out.push("Winners only, with points carried over: a driver who won once from the back of the field starts the playoff there.");
+  }
+  if (cfg.wildcards.length && cfg.wildcard_mode === "within_field" && cfg.wildcards.length >= cfg.field_size) {
+    out.push(`Every place in the field is a wildcard: ${plural(cfg.wildcards.length, "pick")} for ${plural(cfg.field_size, "slot")}, so the regular season decides nothing.`);
+  }
+  if (cfg.wildcards.length && Array.isArray(entries) && entries.length) {
+    const roster = new Set(entries.map(e => e.id));
+    const gone = cfg.wildcards.filter(w => !roster.has(w.entry_id));
+    for (const w of gone) {
+      out.push(`Wildcard "${w.name || w.entry_id}" isn't on this season's roster any more — remove the pick or add them back.`);
+    }
   }
   return out;
 }

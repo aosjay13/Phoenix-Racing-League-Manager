@@ -44,7 +44,10 @@ const pointsConfig = resolveSeasonConfig({
   bonus_points: {},
 }, null);
 
-const entries = ["e1", "e2", "e3", "e4", "e5"].map(id => ({ id, name: id.toUpperCase() }));
+// E9 is on the roster and has never turned a lap — the wildcard nobody's rule
+// could ever find.
+const entries = [...["e1", "e2", "e3", "e4", "e5"].map(id => ({ id, name: id.toUpperCase() })),
+  { id: "e9", name: "Ghost" }];
 
 const races = Array.from({ length: 8 }, (_, i) => ({
   id: `r${i + 1}`, name: `Round ${i + 1}`, round_number: i + 1, date: `2026-03-0${i + 1}`,
@@ -173,6 +176,93 @@ check("and the table says so", roundOne.rows.find(r => r.entry_id === "e1").stat
 // Switch that rule off and it is a points round again, which is what a Chase is.
 const noWinRule = build({ playoff_config: { ...playoffConfig, advance_on_win: false } });
 check("without it, the points decide the round", noWinRule.rounds[0].advanced.sort(), ["e1", "e3"]);
+
+// ── 5b. Wildcards: the driver a person puts in ─────────────────────────────
+//
+// E5 finished every regular-season round last and is nowhere near the cut. A
+// wildcard is not an argument about whether they deserve it — somebody decided,
+// and the bracket does as it's told.
+const wild = build({
+  playoff_config: { ...playoffConfig, wildcards: [{ entry_id: "e5", name: "E5" }] },
+});
+check("a wildcard is in the field however far off the pace they were",
+  wild.seeds.map(s => s.entry_id).sort(), ["e1", "e2", "e3", "e5"]);
+check("and the field is still the size it was — the pick took a slot",
+  wild.seeds.length, 4);
+// THE POINT: E4 was 4th on merit and is out, because a place was given away.
+check("so the last driver in on points drops out", wild.outsiders.map(s => s.entry_id), ["e4"]);
+check("the table says how they got in",
+  wild.seeds.find(s => s.entry_id === "e5").qualified_by, "wildcard");
+check("everyone else got in the ordinary way",
+  wild.seeds.filter(s => s.qualified_by !== "wildcard").map(s => s.entry_id), ["e1", "e2", "e3"]);
+// Seeded on their own points like anybody else: E5 scored least, so E5 is 4th.
+check("a wildcard lines up on their own points, not at the back by default",
+  wild.seeds.find(s => s.entry_id === "e5").seed, 4);
+
+// Added on top instead, and nobody loses their place.
+const extra = build({
+  playoff_config: { ...playoffConfig, wildcards: [{ entry_id: "e5", name: "E5" }], wildcard_mode: "extra" },
+});
+check("a wildcard added on top makes the field bigger", extra.seeds.length, 5);
+check("and costs nobody their place", extra.outsiders, []);
+
+// Behind the whole field, whatever the points say.
+const behind = build({
+  playoff_config: {
+    ...playoffConfig,
+    field_size: 3,
+    wildcards: [{ entry_id: "e1", name: "E1" }],
+    wildcard_mode: "extra",
+    wildcard_seed: "last",
+  },
+});
+check("seeded last, a wildcard lines up behind every driver who qualified",
+  behind.seeds.map(s => s.entry_id), ["e2", "e3", "e4", "e1"]);
+check("even the one who led the regular season",
+  behind.seeds.find(s => s.entry_id === "e1").seed, 4);
+
+// A pick who never turned a lap is still a pick. This is the case a rule-shaped
+// implementation drops: there is no standings row to seed them off, and the
+// wrong answer is to quietly leave them out.
+const ghost = build({
+  playoff_config: {
+    ...playoffConfig,
+    wildcards: [{ entry_id: "e9", name: "Nobody" }],
+    wildcard_mode: "extra",
+  },
+});
+const ghostSeed = ghost.seeds.find(s => s.entry_id === "e9");
+ok("a wildcard with no results at all is still in the field", !!ghostSeed);
+check("named from the roster rather than left blank", ghostSeed.driver_name, "Ghost");
+check("on no regular-season points", ghostSeed.regular_points, 0);
+check("and seeded last, since there is nothing behind them", ghostSeed.seed, ghost.seeds.length);
+
+// The minimum-starts rule is a rule, so a wildcard overrides it too.
+const strict = build({
+  playoff_config: {
+    ...playoffConfig, min_starts: 99,
+    wildcards: [{ entry_id: "e5", name: "E5" }],
+  },
+});
+check("min-starts empties the field of everyone who qualified on merit",
+  strict.seeds.filter(s => s.qualified_by !== "wildcard"), []);
+check("but the wildcard is still in", strict.seeds.map(s => s.entry_id), ["e5"]);
+
+// Picked twice is picked once, and a pick with no driver behind it is no pick.
+check("a duplicate pick is one wildcard",
+  normalizePlayoffConfig({ wildcards: [{ entry_id: "e5" }, { entry_id: "e5", name: "E5" }] }).wildcards.length, 1);
+check("a blank pick is dropped",
+  normalizePlayoffConfig({ wildcards: [{ entry_id: "" }, "  "] }).wildcards, []);
+check("a bare id reads as a pick",
+  normalizePlayoffConfig({ wildcards: ["e5"] }).wildcards, [{ entry_id: "e5", name: "" }]);
+
+// And the crowns follow the bracket, wildcard or not — a wildcard can win it.
+const wildCrowns = seasonChampions(
+  { ...season, status: "completed", playoff_config: { ...playoffConfig, wildcards: [{ entry_id: "e5", name: "E5" }] } },
+  results, entries, pointsConfig, {}, [], races,
+);
+check("a season with a wildcard still crowns whoever came out of the bracket",
+  wildCrowns.find(c => c.kind === "overall").entry_id, "e3");
 
 // ── 6. A reset means reset ─────────────────────────────────────────────────
 const finalRound = built.rounds[1];
@@ -317,5 +407,13 @@ ok("a last round that advances two says nothing decides the title",
 ok("a cutoff past the end of the calendar leaves nothing to race",
   playoffSetupWarnings({ ...playoffConfig, regular_rounds: 8 }, races)
     .some(w => w.includes("Nothing to race")));
+ok("a field made entirely of wildcards says the racing decides nothing",
+  playoffSetupWarnings({ ...playoffConfig, field_size: 2, wildcards: [{ entry_id: "a" }, { entry_id: "b" }] }, races)
+    .some(w => w.includes("Every place in the field is a wildcard")));
+ok("a pick who has left the roster is called out by name",
+  playoffSetupWarnings({ ...playoffConfig, wildcards: [{ entry_id: "gone", name: "Old Mate" }] }, races, entries)
+    .some(w => w.includes("Old Mate")));
+check("and no roster to check against raises nothing",
+  playoffSetupWarnings({ ...playoffConfig, wildcards: [{ entry_id: "gone", name: "Old Mate" }] }, races), []);
 
 console.log(`playoffs: ${n} assertions passed`);

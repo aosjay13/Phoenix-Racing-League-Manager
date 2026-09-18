@@ -127,6 +127,15 @@ ok("the seeded field is listed with what it starts on", projected.includes("Star
 ok("and the drivers who missed the cut are under a cutline",
   projected.includes("cutline") && projected.includes("E4"));
 
+// A wildcard shows on the bracket as what it is: a place that was given, not
+// won. Nothing else on the panel changes.
+const wildPanel = render("the panel with a wildcard in the field", <PlayoffPanel playoffs={buildPlayoffs({
+  season: { ...season, playoff_config: { ...season.playoff_config, wildcards: [{ entry_id: "e4", name: "E4" }] } },
+  races, entries, pointsConfig,
+  results: results.filter(r => ["r1", "r2"].includes(r.race_id)),
+})} />);
+ok("a wildcard is badged as one on the field table", wildPanel.includes("wildcard"));
+
 // ── 4. A format survives a save ────────────────────────────────────────────
 //
 // The round trip an admin actually does: tick it, pick a format, save, come
@@ -151,6 +160,22 @@ const typed = seasonFormToBody({
   playoff_config: { ...normalizePlayoffConfig(null), field_size: "12", seed_base: "2000", regular_rounds: "26" },
 });
 check("a typed field size is stored as a number", typed.playoff_config.field_size, 12);
+// Wildcards are picked in the menu, so they have to survive the same trip.
+const withWildcard = seasonFormToBody({
+  ...BLANK_SEASON_FORM, name: "S4", playoffs_enabled: true,
+  playoff_config: {
+    ...normalizePlayoffConfig(null),
+    wildcards: [{ entry_id: "entry-7", name: "Ana Reyes" }],
+    wildcard_mode: "extra",
+  },
+});
+check("a wildcard pick is saved with the driver it names",
+  withWildcard.playoff_config.wildcards, [{ entry_id: "entry-7", name: "Ana Reyes" }]);
+check("and comes back when the season is re-opened",
+  seasonToForm({ ...withWildcard, id: "s4" }).playoff_config.wildcards,
+  [{ entry_id: "entry-7", name: "Ana Reyes" }]);
+check("with the answer about how it joins the field",
+  withWildcard.playoff_config.wildcard_mode, "extra");
 check("so is the reset base", typed.playoff_config.seed_base, 2000);
 check("and the cutoff", typed.playoff_config.regular_rounds, 26);
 

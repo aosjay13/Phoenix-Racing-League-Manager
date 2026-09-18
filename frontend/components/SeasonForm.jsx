@@ -31,10 +31,13 @@ import { describePlayoffFormat, normalizePlayoffConfig, playoffFormat, playoffSe
 // reads it to say where the regular season ends and how many rounds are left
 // for the playoff; without it the menu still works, it just can't check the
 // format against a calendar that doesn't exist yet (a season being created).
+// `seasonId` is the season being EDITED, when there is one. The playoff menu
+// loads that season's roster from it, for the wildcard picker — a season being
+// created has no roster to pick from, and the picker says so.
 export function SeasonForm({
   value, onChange, templates = [], onTemplatesChanged,
   disabled = false, defaultPointsOpen = false, onError, banger = false, classesAreBanger = false,
-  seriesDoc = null, gameDoc = null, races = [],
+  seriesDoc = null, gameDoc = null, races = [], seasonId = "",
 }) {
   // `banger` here means the SERIES runs derby, which already covers every
   // season in it; the season's own switch below is for a derby season inside an
@@ -144,6 +147,7 @@ export function SeasonForm({
           value={value.playoff_config}
           onChange={cfg => set({ playoff_config: cfg })}
           races={races}
+          seasonId={seasonId}
           seasonName={value.name}
           disabled={disabled}
           onClose={() => setShowPlayoffs(false)}

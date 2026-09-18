@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Modal } from "@/components/Modal";
 import { PointsScaleField } from "@/components/PointsScaleField";
+import { api } from "@/lib/api";
 import {
-  FINALE_MODES, PLAYOFF_FORMATS, QUALIFY_MODES, SEED_MODES,
+  FINALE_MODES, PLAYOFF_FORMATS, QUALIFY_MODES, SEED_MODES, WILDCARD_MODES, WILDCARD_SEEDS,
   applyFormatPreset, defaultRoundsFor, describePlayoffFormat, normalizePlayoffConfig,
   playoffFormat, playoffSetupWarnings, resolveRegularRounds, splitRaces,
 } from "@/lib/playoffs";
@@ -109,9 +110,22 @@ function LadderPreview({ config }) {
 }
 
 export function PlayoffSettingsModal({
-  value, onChange, onClose, races = [], seasonName = "", disabled = false,
+  value, onChange, onClose, races = [], seasonId = "", seasonName = "", disabled = false,
 }) {
   const [section, setSection] = useState("format");
+  // The season's roster, for the wildcard picker. Fetched here rather than
+  // handed down, because it is the one thing in this dialog nothing else on the
+  // season form needs — a league that never picks a wildcard never loads it.
+  // A season being created has no roster yet, and the picker says so.
+  const [roster, setRoster] = useState([]);
+  useEffect(() => {
+    if (!seasonId) { setRoster([]); return; }
+    let live = true;
+    api(`/api/entries?season_id=${seasonId}`)
+      .then(rows => { if (live) setRoster(Array.isArray(rows) ? rows : []); })
+      .catch(() => { if (live) setRoster([]); });
+    return () => { live = false; };
+  }, [seasonId]);
   // Two views of the same config, and the difference matters. `raw` is what the
   // inputs are bound to — whatever is currently typed, half-finished numbers and
   // cleared boxes included — so a field can actually be emptied and retyped.
@@ -130,7 +144,7 @@ export function PlayoffSettingsModal({
     };
   }, [value]);
   const cfg = useMemo(() => normalizePlayoffConfig(raw), [raw]);
-  const warnings = useMemo(() => playoffSetupWarnings(cfg, races), [cfg, races]);
+  const warnings = useMemo(() => playoffSetupWarnings(cfg, races, roster), [cfg, races, roster]);
   const split = useMemo(() => splitRaces(races, cfg), [races, cfg]);
   const cutoff = resolveRegularRounds(cfg, races);
 
@@ -157,6 +171,17 @@ export function PlayoffSettingsModal({
     reset_base: Number(cfg.rounds[cfg.rounds.length - 1]?.reset_base ?? cfg.seed_base) + 1000,
   }]);
   const rebuildRounds = () => setRounds(defaultRoundsFor({ field_size: cfg.field_size, seed_base: cfg.seed_base }));
+
+  const wildcards = cfg.wildcards;
+  const pickedIds = new Set(wildcards.map(w => w.entry_id));
+  // The name is stored beside the id so a pick still reads as a person when the
+  // roster hasn't loaded, or after that entry is gone — see lib/playoffs.js.
+  const addWildcard = entryId => {
+    const entry = roster.find(e => e.id === entryId);
+    if (!entry || pickedIds.has(entryId)) return;
+    set({ wildcards: [...wildcards, { entry_id: entry.id, name: entry.name || "" }] });
+  };
+  const removeWildcard = entryId => set({ wildcards: wildcards.filter(w => w.entry_id !== entryId) });
 
   return (
     <Modal title={`Playoff Format${seasonName ? ` · ${seasonName}` : ""}`} size="workspace" onClose={onClose}>
@@ -272,6 +297,63 @@ export function PlayoffSettingsModal({
           <h4 className="playoff-heading">How do they get in?</h4>
           <ChoiceRows name="playoff_qualify_mode" options={QUALIFY_MODES} value={raw.qualify_mode}
             disabled={disabled} onChange={v => set({ qualify_mode: v })} />
+
+          <h4 className="playoff-heading">Wildcards</h4>
+          <p style={subLabel}>
+            Drivers you put in <strong>by name</strong>. No rule decides it — not points, not wins, not how
+            many rounds they started — because leagues hand out a place for reasons a formula has never
+            heard of: a dead PC for three rounds, a feeder-series champion, a vote at the meeting. A
+            wildcard is in, full stop, and is seeded on their own points like everyone else unless you say
+            otherwise below.
+          </p>
+
+          {wildcards.length > 0 && (
+            <div className="playoff-wildcards">
+              {wildcards.map(w => {
+                const onRoster = !roster.length || roster.some(e => e.id === w.entry_id);
+                return (
+                  <span key={w.entry_id} className={`playoff-wildcard${onRoster ? "" : " is-missing"}`}>
+                    🃏 {roster.find(e => e.id === w.entry_id)?.name || w.name || w.entry_id}
+                    {!onRoster && <em title="This driver is no longer on the season's roster"> — off the roster</em>}
+                    <button type="button" className="icon-btn" title="Remove this wildcard"
+                      disabled={disabled} onClick={() => removeWildcard(w.entry_id)}>✕</button>
+                  </span>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="field">
+            <label htmlFor="playoff_add_wildcard">Add a wildcard</label>
+            <select id="playoff_add_wildcard" value="" disabled={disabled || !roster.length}
+              onChange={e => { addWildcard(e.target.value); }}>
+              <option value="">
+                {roster.length ? "Pick a driver from the roster…" : "No roster to pick from yet"}
+              </option>
+              {roster.filter(e => !pickedIds.has(e.id)).map(e => (
+                <option key={e.id} value={e.id}>
+                  {e.name}{e.number ? ` (#${e.number})` : ""}
+                </option>
+              ))}
+            </select>
+            <span style={subLabel}>
+              {roster.length
+                ? `${roster.length} driver${roster.length === 1 ? "" : "s"} on this season's roster. Pick as many as your format allows — each one takes a place in the field, or joins it, depending on the answer below.`
+                : "This season has no roster yet, so there is nobody to pick. Add the drivers first and come back — everything else in this menu can be set up now."}
+            </span>
+          </div>
+
+          {wildcards.length > 0 && (
+            <>
+              <h4 className="playoff-heading">Do the wildcards take a slot, or come on top?</h4>
+              <ChoiceRows name="playoff_wildcard_mode" options={WILDCARD_MODES} value={raw.wildcard_mode}
+                disabled={disabled} onChange={v => set({ wildcard_mode: v })} />
+
+              <h4 className="playoff-heading">Where do they line up?</h4>
+              <ChoiceRows name="playoff_wildcard_seed" options={WILDCARD_SEEDS} value={raw.wildcard_seed}
+                disabled={disabled} onChange={v => set({ wildcard_seed: v })} />
+            </>
+          )}
 
           <div className="field check-row" style={{ marginTop: 12 }}>
             <input type="checkbox" id="playoff_show_non_playoff" disabled={disabled}
