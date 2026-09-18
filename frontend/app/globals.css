@@ -1186,6 +1186,110 @@ tbody tr:hover {
   gap: 16px;
 }
 
+/* ── League Setup: the list beside the editor ───────────────────────────────
+   Each building panel (Games, Series, Seasons, Classes, Races) is a LIST and an
+   EDITOR. They used to be stacked, form first — which meant editing the fourth
+   season was: scroll past the entire season form to reach the list, press ✎,
+   then scroll all the way back up to the fields that had just been filled in,
+   with nothing on screen to say which season you were editing once you arrived.
+
+   Side by side, the list is a table of contents that never leaves: pick on the
+   left, edit on the right. The left column is sticky and scrolls on its own, so
+   a league with twenty seasons and a form four screens long still has both ends
+   of the job in view. */
+.setup-split {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.setup-split-list {
+  position: sticky;
+  top: 12px;
+  align-self: start;
+  /* Its own scrollbar rather than the page's: the point of the column is that
+     it stays put while the form beside it moves. */
+  max-height: calc(100vh - 150px);
+  overflow-y: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+}
+
+.setup-split-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.setup-split-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-2);
+}
+
+.setup-split-count {
+  font-style: normal;
+  font-size: 0.72rem;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--accent-cyan-dim, rgba(34, 211, 238, 0.14));
+  color: var(--accent-cyan);
+}
+
+.setup-split-new {
+  margin-top: 0;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.setup-split-note {
+  margin-bottom: 8px;
+  font-size: 0.74rem;
+  color: var(--ink-2);
+  line-height: 1.45;
+}
+
+.setup-split-note button { margin-top: 6px; }
+
+/* A row in a 300px column is tighter than one across the page: it wraps rather
+   than squeezing into a horizontal scrollbar, and its buttons step down a size.
+   (The name cell carries its own inline flex from <ItemRow>, so it keeps the
+   width it asks for and the buttons wrap around it.) */
+.setup-split-rows .driver-row {
+  flex-wrap: wrap;
+  row-gap: 4px;
+  padding: 8px 10px;
+}
+
+.setup-split-rows .driver-row .btn { font-size: 0.74rem; }
+
+/* The editor. Its fields keep a readable measure rather than stretching across
+   whatever width is left — wider is not more readable for a name box. */
+.setup-split-form { min-width: 0; }
+
+.setup-split-form > form { max-width: 640px; }
+
+@media (max-width: 900px) {
+  /* No room for two columns, so they stack — the list first, because you choose
+     before you edit. Nothing is sticky at this width: a pinned list would eat
+     half a phone screen. */
+  .setup-split { grid-template-columns: 1fr; }
+  .setup-split-list { position: static; max-height: 340px; }
+  .setup-split-form > form { max-width: none; }
+}
+
 /* ── League Setup: context breadcrumb + sections ─────────── */
 .setup-context {
   display: flex;

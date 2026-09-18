@@ -100,6 +100,45 @@ function Crumb({ icon, label, value, logo, active }) {
   );
 }
 
+// League Setup's building panels are a LIST and an EDITOR, and they used to be
+// stacked: the form first, every row of the list underneath it. That is fine
+// while a league has three seasons and a short form. It stops being fine the
+// moment either grows, and both have — to edit season four you scrolled past the
+// whole season form (points, playoffs, car lock-in, derby, sign-up rules) to
+// reach the list, pressed ✎, and scrolled all the way back up to the fields that
+// had just been filled in, with no way to see which season you were editing once
+// you got there.
+//
+// So they sit side by side, and the list STAYS PUT while the form scrolls: pick
+// on the left, edit on the right, and the thing you picked is still on screen
+// while you work on it. The list also carries its own "+ New" button, because
+// once an editor is permanently on screen, "how do I stop editing this and add
+// another one" needs an answer that isn't Cancel at the bottom of a long form.
+//
+// Below 900px there is no room for two columns, so they stack — list first,
+// since you choose before you edit.
+function SetupSplit({ listTitle, count, onNew, newLabel, list, children }) {
+  return (
+    <div className="setup-split">
+      <div className="setup-split-list">
+        <div className="setup-split-head">
+          <span className="setup-split-title">
+            {listTitle}
+            {count != null && <em className="setup-split-count">{count}</em>}
+          </span>
+          {onNew && (
+            <button type="button" className="btn btn-ghost setup-split-new" onClick={onNew}>
+              {newLabel}
+            </button>
+          )}
+        </div>
+        <div className="setup-split-rows">{list}</div>
+      </div>
+      <div className="setup-split-form">{children}</div>
+    </div>
+  );
+}
+
 function ItemRow({ logo, name, meta, onEdit, onDelete, editing, children }) {
   return (
     <div className="driver-row" style={editing ? { background: "var(--accent-cyan-dim)" } : undefined}>
@@ -481,6 +520,14 @@ function AdminInner() {
 
         {section === "games" && (
         <Panel title="Games" step={1} sub="e.g. iRacing, F1 25, Gran Turismo 7">
+          <SetupSplit
+            listTitle="Games" count={games.length}
+            newLabel="+ New game"
+            onNew={() => { setEditId("game", null); setGameForm(BLANK_GAME_FORM); }}
+            list={games.map(g => <ItemRow key={g.id} logo={g.logo_url} name={g.name} editing={editIds.game === g.id}
+              onEdit={() => { setEditId("game", g.id); setGameForm(gameToForm(g)); }}
+              onDelete={() => remove(`/api/games/${g.id}`, `Delete game "${g.name}"? Its series/seasons remain in the database but will be hidden.`)} />)}
+          >
           <form onSubmit={e => {
             e.preventDefault();
             save("/api/games", gameFormToBody(gameForm), editIds.game, () => { setGameForm(BLANK_GAME_FORM); setEditId("game", null); });
@@ -536,16 +583,28 @@ function AdminInner() {
                 onClick={() => { setEditId("game", null); setGameForm(BLANK_GAME_FORM); }}>Cancel</button>
             )}
           </form>
-          <div style={{ marginTop: 16 }}>
-            {games.map(g => <ItemRow key={g.id} logo={g.logo_url} name={g.name} editing={editIds.game === g.id}
-              onEdit={() => { setEditId("game", g.id); setGameForm(gameToForm(g)); }}
-              onDelete={() => remove(`/api/games/${g.id}`, `Delete game "${g.name}"? Its series/seasons remain in the database but will be hidden.`)} />)}
-          </div>
+          </SetupSplit>
         </Panel>
         )}
 
         {section === "series" && (
         <Panel title="Series" step={2} muted={!gameId} sub={gameId ? `In ${game?.name}` : "Select a game above first"}>
+          <SetupSplit
+            listTitle="Series" count={seriesList.length}
+            newLabel="+ New series"
+            onNew={() => { setEditId("series", null); setSeriesForm(BLANK_SERIES_FORM); setShowSeriesPoints(false); }}
+            list={seriesList.map(s => <ItemRow key={s.id} logo={s.logo_url} name={s.name}
+              meta={[isBangerDoc(s) ? "💥 Demo Derby / Banger Racing" : null,
+                     definesPoints(s) ? "default points set" : null,
+                     carLockinMeta(s)].filter(Boolean).join(" · ")}
+              editing={editIds.series === s.id}
+              onEdit={() => {
+                setEditId("series", s.id);
+                setSeriesForm(seriesToForm(s));
+                setShowSeriesPoints(definesPoints(s));
+              }}
+              onDelete={() => remove(`/api/series/${s.id}`, `Delete series "${s.name}"?`)} />)}
+          >
           <form onSubmit={e => {
             e.preventDefault();
             const body = seriesFormToBody(seriesForm);
@@ -634,19 +693,7 @@ function AdminInner() {
                 onClick={() => { setEditId("series", null); setSeriesForm(BLANK_SERIES_FORM); setShowSeriesPoints(false); }}>Cancel</button>
             )}
           </form>
-          <div style={{ marginTop: 16 }}>
-            {seriesList.map(s => <ItemRow key={s.id} logo={s.logo_url} name={s.name}
-              meta={[isBangerDoc(s) ? "💥 Demo Derby / Banger Racing" : null,
-                     definesPoints(s) ? "default points set" : null,
-                     carLockinMeta(s)].filter(Boolean).join(" · ")}
-              editing={editIds.series === s.id}
-              onEdit={() => {
-                setEditId("series", s.id);
-                setSeriesForm(seriesToForm(s));
-                setShowSeriesPoints(definesPoints(s));
-              }}
-              onDelete={() => remove(`/api/series/${s.id}`, `Delete series "${s.name}"?`)} />)}
-          </div>
+          </SetupSplit>
         </Panel>
         )}
 
@@ -712,6 +759,71 @@ function AdminInner() {
               }}
             />
           )}
+          <SetupSplit
+            listTitle="Seasons" count={seasons.length}
+            newLabel="+ New season"
+            onNew={() => { setEditId("season", null); setSeasonForm(BLANK_SEASON_FORM); }}
+            list={(
+              <>
+              {/* Season order. Newest at the top by default, judged on the race
+              dates in each season — so a Season 5 entered before 2, 3 and 4
+              still sits above them. The arrows override that when a league
+              wants its own order. */}
+              {seasons.length > 1 && (
+                <div className="setup-split-note">
+                  <span>
+                {seasonsHandSorted
+                  ? <>Sorted by hand. These seasons stay in the order below everywhere in the app.</>
+                  : <>Newest first, by <strong>race date</strong> — the season whose schedule starts latest is
+                     at the top, in this list and in the Season dropdown. Use the arrows to set your own order.</>}
+                  </span>
+                  {seasonsHandSorted && (
+                    <button className="btn btn-ghost" type="button" style={{ marginTop: 0, padding: "4px 10px" }}
+                      disabled={reorderingSeasons}
+                      onClick={() => saveSeasonOrder({ reset: true }, "Back to newest-first by race date.")}>
+                      ↺ Sort by race date
+                    </button>
+                  )}
+                </div>
+              )}
+              {seasons.map((s, i) => (
+              <ItemRow key={s.id} logo={s.logo_url} name={s.name} editing={editIds.season === s.id}
+                meta={[seasonDateRangeLabel(s) || "No dated races yet",
+                     isBangerDoc(s) ? "💥 Demo Derby / Banger Racing" : null,
+                     definesPoints(s) ? "default points set" : null,
+                     carLockinMeta(s)].filter(Boolean).join(" · ")}
+                onEdit={() => {
+                  setEditId("season", s.id);
+                  setSeasonForm(seasonToForm(s));
+                }}
+                onDelete={() => remove(`/api/seasons/${s.id}`, `Delete season "${s.name}"?`)}>
+                {seasons.length > 1 && (
+                  <span style={{ display: "inline-flex", gap: 2 }}>
+                    <button className="btn btn-ghost" type="button" title="Move up"
+                      style={{ marginTop: 0, padding: "4px 8px" }}
+                      disabled={reorderingSeasons || i === 0}
+                      onClick={() => moveSeason(i, -1)}>▲</button>
+                    <button className="btn btn-ghost" type="button" title="Move down"
+                      style={{ marginTop: 0, padding: "4px 8px" }}
+                      disabled={reorderingSeasons || i === seasons.length - 1}
+                      onClick={() => moveSeason(i, 1)}>▼</button>
+                  </span>
+                )}
+                <button className="btn btn-ghost" style={{ marginTop: 0, padding: "4px 10px" }}
+                  title="Completed seasons count toward drivers' Titles"
+                  onClick={async () => {
+                    try {
+                      await api(`/api/seasons/${s.id}`, { method: "PATCH", body: { status: s.status === "completed" ? "active" : "completed" } });
+                      refresh();
+                    } catch (err) { showToast("error", err.message); }
+                  }}>
+                  {s.status === "completed" ? "✓ Completed" : "Mark Completed"}
+                </button>
+              </ItemRow>
+              ))}
+              </>
+            )}
+          >
           <form onSubmit={e => {
             e.preventDefault();
             const body = seasonFormToBody(seasonForm);
@@ -753,64 +865,7 @@ function AdminInner() {
               )}
             </span>
           </form>
-          {/* Season order. Newest at the top by default, judged on the race
-              dates in each season — so a Season 5 entered before 2, 3 and 4
-              still sits above them. The arrows override that when a league
-              wants its own order. */}
-          {seasons.length > 1 && (
-            <div style={{ marginTop: 18, display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-              <span style={{ fontSize: "0.78rem", color: "var(--ink-2)", flex: 1, minWidth: 260 }}>
-                {seasonsHandSorted
-                  ? <>Sorted by hand. These seasons stay in the order below everywhere in the app.</>
-                  : <>Newest first, by <strong>race date</strong> — the season whose schedule starts latest is
-                     at the top, in this list and in the Season dropdown. Use the arrows to set your own order.</>}
-              </span>
-              {seasonsHandSorted && (
-                <button className="btn btn-ghost" type="button" style={{ marginTop: 0, padding: "4px 10px" }}
-                  disabled={reorderingSeasons}
-                  onClick={() => saveSeasonOrder({ reset: true }, "Back to newest-first by race date.")}>
-                  ↺ Sort by race date
-                </button>
-              )}
-            </div>
-          )}
-          <div style={{ marginTop: 16 }}>
-            {seasons.map((s, i) => (
-              <ItemRow key={s.id} logo={s.logo_url} name={s.name} editing={editIds.season === s.id}
-                meta={[seasonDateRangeLabel(s) || "No dated races yet",
-                     isBangerDoc(s) ? "💥 Demo Derby / Banger Racing" : null,
-                     definesPoints(s) ? "default points set" : null,
-                     carLockinMeta(s)].filter(Boolean).join(" · ")}
-                onEdit={() => {
-                  setEditId("season", s.id);
-                  setSeasonForm(seasonToForm(s));
-                }}
-                onDelete={() => remove(`/api/seasons/${s.id}`, `Delete season "${s.name}"?`)}>
-                {seasons.length > 1 && (
-                  <span style={{ display: "inline-flex", gap: 2 }}>
-                    <button className="btn btn-ghost" type="button" title="Move up"
-                      style={{ marginTop: 0, padding: "4px 8px" }}
-                      disabled={reorderingSeasons || i === 0}
-                      onClick={() => moveSeason(i, -1)}>▲</button>
-                    <button className="btn btn-ghost" type="button" title="Move down"
-                      style={{ marginTop: 0, padding: "4px 8px" }}
-                      disabled={reorderingSeasons || i === seasons.length - 1}
-                      onClick={() => moveSeason(i, 1)}>▼</button>
-                  </span>
-                )}
-                <button className="btn btn-ghost" style={{ marginTop: 0, padding: "4px 10px" }}
-                  title="Completed seasons count toward drivers' Titles"
-                  onClick={async () => {
-                    try {
-                      await api(`/api/seasons/${s.id}`, { method: "PATCH", body: { status: s.status === "completed" ? "active" : "completed" } });
-                      refresh();
-                    } catch (err) { showToast("error", err.message); }
-                  }}>
-                  {s.status === "completed" ? "✓ Completed" : "Mark Completed"}
-                </button>
-              </ItemRow>
-            ))}
-          </div>
+          </SetupSplit>
         </Panel>
         )}
 
@@ -828,6 +883,41 @@ function AdminInner() {
             <strong>points structure</strong>, so Pro and Amateur pay different points for the same
             finishing position.
           </p>
+          <SetupSplit
+            listTitle="Classes" count={classes.length}
+            newLabel="+ New class"
+            onNew={() => { setEditId("class", null); setClassForm(blankClass); setShowClassPoints(false); }}
+            list={(
+              <>
+              {seasonId && classes.length === 0 && (
+              <p style={{ fontSize: "0.82rem", color: "var(--ink-2)", margin: 0 }}>
+                No classes yet — {season?.name ?? "this season"} scores as one combined field.
+              </p>
+            )}
+            {classes.map(c => (
+              <ItemRow key={c.id} name={c.name}
+                meta={[carForClass(season, c), classToForm(c).own_points ? "own points" : null,
+                       isBangerDoc(c) ? "💥 banger racing" : null,
+                       carLockinMeta(c)].filter(Boolean).join(" · ")}
+                editing={editIds.class === c.id}
+                onEdit={() => {
+                  setEditId("class", c.id);
+                  setClassForm(classToForm(c));
+                  setShowClassPoints(classToForm(c).own_points);
+                }}
+                onDelete={async () => {
+                  if (!confirm(`Delete class "${c.name}"? Its drivers keep every stat they've scored — they just become unclassified.${classScoresOwnPoints(c) ? " Its own points structure goes with it, so their results re-score on the season's points." : ""}`)) return;
+                  try {
+                    await api(`/api/classes/${c.id}`, { method: "DELETE" });
+                    if (editIds.class === c.id) { setClassForm(blankClass); setShowClassPoints(false); setEditId("class", null); }
+                    loadClasses();
+                    refresh();
+                  } catch (err) { showToast("error", err.message); }
+                }} />
+              ))}
+              </>
+            )}
+          >
           <form onSubmit={e => {
             e.preventDefault();
             const body = classFormToBody(classForm, classes.length, { banger: classBanger });
@@ -983,39 +1073,54 @@ function AdminInner() {
                 onClick={() => { setEditId("class", null); setClassForm(blankClass); setShowClassPoints(false); }}>Cancel</button>
             )}
           </form>
-          <div style={{ marginTop: 16 }}>
-            {seasonId && classes.length === 0 && (
-              <p style={{ fontSize: "0.82rem", color: "var(--ink-2)", margin: 0 }}>
-                No classes yet — {season?.name ?? "this season"} scores as one combined field.
-              </p>
-            )}
-            {classes.map(c => (
-              <ItemRow key={c.id} name={c.name}
-                meta={[carForClass(season, c), classToForm(c).own_points ? "own points" : null,
-                       isBangerDoc(c) ? "💥 banger racing" : null,
-                       carLockinMeta(c)].filter(Boolean).join(" · ")}
-                editing={editIds.class === c.id}
-                onEdit={() => {
-                  setEditId("class", c.id);
-                  setClassForm(classToForm(c));
-                  setShowClassPoints(classToForm(c).own_points);
-                }}
-                onDelete={async () => {
-                  if (!confirm(`Delete class "${c.name}"? Its drivers keep every stat they've scored — they just become unclassified.${classScoresOwnPoints(c) ? " Its own points structure goes with it, so their results re-score on the season's points." : ""}`)) return;
-                  try {
-                    await api(`/api/classes/${c.id}`, { method: "DELETE" });
-                    if (editIds.class === c.id) { setClassForm(blankClass); setShowClassPoints(false); setEditId("class", null); }
-                    loadClasses();
-                    refresh();
-                  } catch (err) { showToast("error", err.message); }
-                }} />
-            ))}
-          </div>
+          </SetupSplit>
         </Panel>
         )}
 
         {section === "races" && (
         <Panel title="Races" step={5} muted={!seasonId} sub={seasonId ? `In ${season?.name}` : "Select a season above first"}>
+          <SetupSplit
+            listTitle="Races" count={races.length}
+            newLabel="+ New race"
+            onNew={() => { setEditId("race", null); setRaceForm(blankRace); }}
+            list={(
+              <>
+              {races.map(r => {
+              // A class-pinned round is labelled so a mixed calendar is readable
+              // at a glance; shared rounds read as they always have.
+              const cls = r.class_id ? classes.find(c => c.id === r.class_id) : null;
+              return (
+              <ItemRow key={r.id} logo={r.track_logo_url}
+                name={`R${r.round_number} · ${r.name}${cls ? ` · ${cls.name} only` : ""}`}
+                editing={editIds.race === r.id}
+              onEdit={() => {
+                setEditId("race", r.id);
+                setRaceForm({
+                  name: r.name || "",
+                  track: r.track || "",
+                  track_id: r.track_id || "",
+                  date: r.date || "",
+                  round_number: String(r.round_number ?? ""),
+                  track_logo_url: r.track_logo_url || "",
+                  sessions: Array.isArray(r.sessions) && r.sessions.length ? r.sessions.join(", ") : "Race",
+                  car: r.car || "",
+                  ...raceLengthForm(r),
+                  ...sessionLapsForm(r),
+                  heat_format: !!r.heat_format,
+                  heats: Array.isArray(r.heats) ? r.heats.join(", ") : "",
+                  consolations: Array.isArray(r.consolations) ? r.consolations.join(", ") : "",
+                  feature_name: r.feature_name || "A-Main Feature",
+                  heat_points_template_id: r.heat_points_template_id || "",
+                  consolation_points_template_id: r.consolation_points_template_id || "",
+                  class_id: r.class_id || "",
+                });
+              }}
+              onDelete={() => remove(`/api/races/${r.id}`, `Delete race "${r.name}"?`)} />
+              );
+              })}
+              </>
+            )}
+          >
           <form onSubmit={e => {
             e.preventDefault();
             const heats = toArray(raceForm.heats);
@@ -1109,41 +1214,7 @@ function AdminInner() {
                 onClick={() => { setEditId("race", null); setRaceForm(blankRace); }}>Cancel</button>
             )}
           </form>
-          <div style={{ marginTop: 16 }}>
-            {races.map(r => {
-              // A class-pinned round is labelled so a mixed calendar is readable
-              // at a glance; shared rounds read as they always have.
-              const cls = r.class_id ? classes.find(c => c.id === r.class_id) : null;
-              return (
-              <ItemRow key={r.id} logo={r.track_logo_url}
-                name={`R${r.round_number} · ${r.name}${cls ? ` · ${cls.name} only` : ""}`}
-                editing={editIds.race === r.id}
-              onEdit={() => {
-                setEditId("race", r.id);
-                setRaceForm({
-                  name: r.name || "",
-                  track: r.track || "",
-                  track_id: r.track_id || "",
-                  date: r.date || "",
-                  round_number: String(r.round_number ?? ""),
-                  track_logo_url: r.track_logo_url || "",
-                  sessions: Array.isArray(r.sessions) && r.sessions.length ? r.sessions.join(", ") : "Race",
-                  car: r.car || "",
-                  ...raceLengthForm(r),
-                  ...sessionLapsForm(r),
-                  heat_format: !!r.heat_format,
-                  heats: Array.isArray(r.heats) ? r.heats.join(", ") : "",
-                  consolations: Array.isArray(r.consolations) ? r.consolations.join(", ") : "",
-                  feature_name: r.feature_name || "A-Main Feature",
-                  heat_points_template_id: r.heat_points_template_id || "",
-                  consolation_points_template_id: r.consolation_points_template_id || "",
-                  class_id: r.class_id || "",
-                });
-              }}
-              onDelete={() => remove(`/api/races/${r.id}`, `Delete race "${r.name}"?`)} />
-              );
-            })}
-          </div>
+          </SetupSplit>
         </Panel>
         )}
 

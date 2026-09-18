@@ -1610,6 +1610,30 @@ the submit button — so a quick-create dialog can never quietly offer fewer opt
 different document, than the full setup screen. Add a field once, in the shared form, and every
 entry point gets it. Follow the same split when adding a second way to create something.
 
+### League Setup: the list beside the editor
+
+Each building panel — **Games**, **Series**, **Seasons**, **Classes**, **Races** — is two things: a
+**list** of what exists and an **editor** for one of them. They used to be stacked, the form first and
+every row underneath it, which is fine while a league has three seasons and a short form. Both grew.
+Editing the fourth season meant scrolling past the whole season form (points, playoffs, car lock-in,
+derby, sign-up rules) to reach the list, pressing ✎, and scrolling all the way back up to the fields
+that had just been filled in — with nothing on screen to say which season you were now editing.
+
+So they sit side by side. The list is a table of contents on the left that **stays put while the form
+scrolls**: it is sticky and takes its own scrollbar, so twenty seasons and a form four screens long
+still have both ends of the job in view. Pick on the left, edit on the right, and the thing you picked
+is still visible while you work on it.
+
+The list column also carries its own count and a **+ New** button, because once an editor is
+permanently on screen, "how do I stop editing this one and add another" needs an answer that isn't a
+Cancel button at the bottom of a long form. Below 900px there is no room for two columns, so they
+stack — the list first, since you choose before you edit, capped in height so it never eats a phone
+screen.
+
+One component does all five (`SetupSplit` in `app/admin/page.js`), so a panel cannot drift into its
+own arrangement, and the shared library panels (Tracks, Drivers, Points Templates) are untouched:
+they are workbenches rather than list-and-edit pairs.
+
 ### Three dialog widths, and a table is never a form
 
 Every `<Modal>` picks one of three ceilings in `components/Modal.jsx`, and which one depends on what
