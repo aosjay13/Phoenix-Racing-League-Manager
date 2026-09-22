@@ -123,10 +123,12 @@ export function SrhSeasonImportModal({ gameId, games = [], seriesId, seriesName,
   }
 
   const rows = preview?.rows || [];
-  // Whether every venue has been answered for — the same rule the review table
-  // draws its warnings from, so the Create button and the warnings under it can
-  // never disagree. See lib/scheduleReview.js.
-  const { ready: tracksReady } = trackChoiceProblems(preview?.tracks || [], trackChoices);
+  const trackRows = preview?.tracks || [];
+  // Whether every venue has been answered for, and which of them this import
+  // would create — the same rule the review table draws its warnings from, so
+  // the Create button, the summary line and the warnings under it can never
+  // disagree. See lib/scheduleReview.js.
+  const { ready: tracksReady, creating: creatingTracks } = trackChoiceProblems(trackRows, trackChoices);
   const ready = !!preview && !!seasonName.trim() && !!targetGame && tracksReady
     && (creatingSeries ? !!newSeriesName.trim() : !!(seriesId || pickedSeries));
 

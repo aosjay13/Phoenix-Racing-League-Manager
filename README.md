@@ -298,6 +298,37 @@ three are unset in every deployed environment, and with no host configured the a
 Firebase exactly as it always has. `FIREBASE_PRIVATE_KEY` still has to *parse*, so generate a
 throwaway key (`openssl genrsa`) — the emulator never checks it.
 
+### Tests
+
+```bash
+cd frontend
+npm test
+```
+
+Every suite runs on bare `node` — no test framework, no browser, no Firestore. The pure libs are
+asserted directly; the screens are checked either by mounting them (`.test.jsx`, through Next's own
+SWC) or by reading their source for the rule that has to hold.
+
+The suite **leads with `lib/__tests__/undefinedNames.test.mjs`**, which parses every file under
+`app/`, `components/` and `lib/` and fails on any name that is used but declared nowhere in the
+file. It runs first because what it catches is not a wrong number in a cell: a `ReferenceError` in
+a component throws during render, and Next's error boundary replaces the whole page with "Something
+went wrong" and the name of a variable. `next build` compiles such a file without complaint, and
+there is no ESLint here to catch it, so nothing else would.
+
+It was written after exactly that reached a user. Extracting the schedule review table into
+`components/ScheduleImportReview.jsx` moved `trackRows` and `creatingTracks` out of
+`SrhSeasonImportModal`, but left two references behind in the summary line above it — so reading a
+SimRacerHub schedule crashed the Schedule page to the error boundary, on the one press the feature
+exists for. Extracting a component is something this codebase does often and deliberately, which is
+precisely what invites the mistake, so it is now checked mechanically on every run.
+
+The check is one-sided on purpose: bindings are collected per FILE rather than per scope, so it can
+never fail a file over a shadowing subtlety. It catches the only case that matters — a name nothing
+in the file declares at all. Its own walker is pinned by about thirty cases covering what is and is
+not a read (a static property name, a JSX attribute name and an object-literal key are not; a
+computed key, a spread and a capitalised element are).
+
 ## How to Use
 
 ### For players
