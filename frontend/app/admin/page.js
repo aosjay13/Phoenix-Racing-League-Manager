@@ -5,6 +5,7 @@ import { useLeague } from "@/components/LeagueProvider";
 import { AdminGate } from "@/components/AdminGate";
 import { LeagueSettings } from "@/components/LeagueSettings";
 import { BackupRestore } from "@/components/BackupRestore";
+import { LeaguePayments } from "@/components/LeaguePayments";
 import { useAuth } from "@/components/AuthProvider";
 import { ImageUpload } from "@/components/ImageUpload";
 import { TrackSelect } from "@/components/TrackSelect";
@@ -179,6 +180,9 @@ const SECTIONS = [
   // Recovery tools. Owner-only — the whole row is hidden for the other staff
   // roles, since only an Owner can export or import the database.
   { key: "backup",    label: "Backup & Restore", icon: "💾", group: "data",     hint: "Export/import the entire app as JSON" },
+  // Who paid to start a league. Owner-only for the same reason: the money is
+  // the application's, not any one league's. See lib/billing.js.
+  { key: "payments",  label: "League Payments",  icon: "💳", group: "billing",  hint: "Who paid to start a league, and free leagues you've given" },
 ];
 
 // "🚗 car lock-in · 3 cars" for a list row, or null when this doc asks for no
@@ -511,6 +515,16 @@ function AdminInner() {
                 </button>
               ))}
             </div>
+            <span className="setup-switch-label">Payments</span>
+            <div className="setup-switch-row">
+              {SECTIONS.filter(s => s.group === "billing").map(s => (
+                <button key={s.key} type="button" title={s.hint}
+                  className={`tab setup-switch-btn${section === s.key ? " active" : ""}`}
+                  onClick={() => setSection(s.key)}>
+                  <span aria-hidden="true">{s.icon}</span> {s.label}
+                </button>
+              ))}
+            </div>
           </>
         )}
       </div>
@@ -521,6 +535,9 @@ function AdminInner() {
 
         {/* Whole-application export/import, plus the weekly automatic backup. */}
         {section === "backup" && <BackupRestore />}
+
+        {/* Paid league creation: what's switched on, who paid, free leagues. */}
+        {section === "payments" && <LeaguePayments />}
 
         {section === "games" && (
         <Panel title="Games" step={1} sub="e.g. iRacing, F1 25, Gran Turismo 7">

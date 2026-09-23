@@ -10,8 +10,11 @@ for a driver account; league admins build out the full hierarchy with custom nam
 
 A **League** is the top-level, fully-isolated environment: every game, series, season, race,
 driver, team, track, and result belongs to exactly one league. A **League Switcher** in the top
-bar swaps the active league, re-rendering the whole app for that league's data. Only the **Owner**
-can create new (empty) leagues; the active league is renamed under **League Setup → League Settings**.
+bar swaps the active league, re-rendering the whole app for that league's data. The application
+**Owner** creates new (empty) leagues for free; anyone else with an account can start one of their own
+by paying a one-time fee (card, Apple Pay, Google Pay, Cash App, PayPal or Venmo; see
+[Paying to start a league](#paying-to-start-a-league)). The active league is renamed under
+**League Setup → League Settings**.
 
 A **Game/Series/Season/Class** selector sits at the top of every page — pick "All" at any level to
 widen a view (e.g. league-wide stats), or drill down to one exact season or class. The **Class**
@@ -22,6 +25,9 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
 ## Features
 
 - 🔐 **Login for everyone** — email/password or Google sign-in (Firebase Auth)
+- 💳 **Paid league creation** — browsing, joining and racing are free; starting a new league is a
+  one-time payment through Stripe (card, Apple Pay, Google Pay, Cash App Pay) or PayPal (PayPal,
+  Venmo), confirmed on the server before the league unlocks. The application Owner never pays
 - 🧑‍✈️ **Player profiles** — public profile pages with editable picture, bio, country; career
   stats auto-aggregated across all games with a per-game breakdown
 - 🏆 **Live standings** — driver *and* team championships with a configurable points scale,
@@ -1850,6 +1856,13 @@ export/restore history shown on the Backup & Restore screen — restoring an old
 erase the record of every backup taken since) and `restore_uploads` (transient staging for a
 chunked import, deleted as soon as the import finishes).
 
+`league_payments` holds one row per checkout or free league (see
+[Paying to start a league](#paying-to-start-a-league)): `uid`, `email`, `provider`
+(`stripe`/`paypal`/`comp`), `method` (`card`, `cashapp`, `venmo`…), `amount_cents`, `status`
+(`pending` → `paid` → `used`, or `expired`/`revoked`) and, once spent, the `league_id` it paid for.
+Only the server writes it. It is left out of backups on purpose: Stripe and PayPal are the record of
+the money, and restoring an old copy would hand spent credits back.
+
 A driver's classes are listed, everywhere they appear, in the **season's own class order**
 (`sort_order`, then name — the order the Class menu shows), rather than the order an admin happened
 to tick them in. That order is also what resolves a result that records no class of its own: it counts toward the
@@ -3587,6 +3600,95 @@ same person can race as "Driver X" in League A and "Driver Y" in League B, each 
 aliases and race history. `linkedDriver(uid, leagueId)` resolves the profile for the league being
 viewed, and the Dashboard, the claim queue, Connected Accounts and the career-stats pages all ask it
 that way — a career page in League B never folds in races run in League A.
+
+### Paying to start a league
+
+Browsing, joining and racing are free for everybody. **Starting a new league** is the one thing
+that costs money, and only for people other than the application Owner (an `ADMIN_EMAILS` account,
+or the Owner of the oldest league; see `isGlobalOwner`). The Owner creates leagues for free, exactly
+as before.
+
+**How it works for the person paying.** **Leagues ▸ Start a League** (`/leagues/new`) is a two-step
+page: pay, then name the league. A payment becomes a **league credit**; creating the league spends
+it, so somebody who pays and closes the tab still has their league waiting the next time they come
+back. They become the new league's Owner and land in League Setup. It is a one-time charge per
+league, not a subscription, because Cash App and Venmo don't do recurring billing through a website
+checkout.
+
+| Button | Provider | What the buyer can use |
+|---|---|---|
+| **Pay with card or Cash App** | Stripe Checkout | Card, Apple Pay, Google Pay, Cash App Pay, Link |
+| **PayPal / Venmo buttons** | PayPal Checkout | PayPal balance, Venmo (US buyers), Pay Later, card |
+
+Either provider can be switched on alone. A personal `$cashtag`, Venmo handle or PayPal.me link can't
+tell the app a payment happened, so they can't unlock a league on their own. If somebody pays you that
+way, give them a league by hand from **League Setup ▸ League Payments ▸ Give someone a free league**.
+
+**The paywall is on the server.** Whether somebody has paid is decided from what Stripe or PayPal say
+when the *server* asks them, never from anything the browser reports. `POST /api/leagues` refuses a
+non-Owner with no credit (`402`), whatever the page shows, and spends the credit in the same Firestore
+transaction that writes the league, so one payment is one league however many tabs press Create.
+Specifically:
+
+- **Stripe.** The server creates the Checkout Session at its own price. A payment is recorded when
+  the signed webhook arrives *or* when the buyer's browser comes back (`/api/billing/stripe/confirm`);
+  both paths re-read the session from Stripe with the secret key, and whichever lands second is a
+  no-op. Webhook signatures are checked over the raw body with a five-minute replay window.
+- **PayPal.** The server creates the order at its own price and captures it with its own
+  credentials. An order id from the browser is only accepted if this server created it, for this
+  account, and the captured amount matches. (The PayPal JS SDK can create orders in the browser
+  with any amount, so that check is the one that matters.)
+- **Nothing is lost.** Opening the Start a League page asks the providers about any checkout that
+  was started and never reported: a webhook that didn't arrive, a tab closed on the way back from
+  Stripe, a PayPal approval whose capture never ran. A paid-for league can't stay stuck.
+- **No first-league takeover.** On a brand-new install, nobody but the Owner can start a league until
+  the first one exists, because the oldest league decides who the application Owner is.
+
+**The Owner's view.** **League Setup ▸ League Payments** (application Owner only) shows what is
+switched on, every payment with who paid, how, and which league it became, plus two tools:
+**Give someone a free league** (by account email, with an optional note) and **Revoke** for a credit
+nobody has spent yet (use it after refunding in Stripe or PayPal; a credit that already became a
+league can't be revoked, since the league exists).
+
+**Setting it up.** Set `LEAGUE_PRICE_USD` and at least one provider, then redeploy. Until then the
+Start a League page tells visitors it isn't open yet.
+
+1. **Price:** `LEAGUE_PRICE_USD=25` (dollars; `19.99` works too, minimum `0.50`).
+2. **Stripe** (for card and Cash App):
+   1. Create an account at [stripe.com](https://stripe.com) and copy the **secret key** from
+      Developers ▸ API keys into `STRIPE_SECRET_KEY`.
+   2. Developers ▸ Webhooks ▸ **Add endpoint**: `https://<your-site>/api/billing/stripe/webhook`,
+      with the events `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
+      `checkout.session.async_payment_failed` and `checkout.session.expired`. Copy its **signing
+      secret** (`whsec_…`) into `STRIPE_WEBHOOK_SECRET`. (Payments still confirm without it when the
+      buyer comes back to the site, but the webhook is what catches the ones who don't.)
+   3. Settings ▸ Payment methods: switch on **Cash App Pay** (US only), and Apple Pay / Google Pay if
+      you want them. Which methods show at checkout is controlled there, with no redeploy.
+3. **PayPal** (for PayPal and Venmo):
+   1. You need a PayPal **Business** account (upgrading a personal one is free).
+   2. At [developer.paypal.com](https://developer.paypal.com) ▸ Apps & Credentials, create an app
+      and copy its **Client ID** and **Secret** into `PAYPAL_CLIENT_ID` / `PAYPAL_CLIENT_SECRET`.
+   3. `PAYPAL_ENV=live` for real money. Leave it unset (sandbox) while testing with sandbox
+      credentials.
+   4. Venmo needs a US-based PayPal business account. It then shows automatically for US buyers
+      on devices where Venmo is available.
+4. Optional: `APP_URL=https://your-site` if Stripe should send buyers back to a different address
+   than the one they paid from (a custom domain, say).
+
+**Testing first.** Use Stripe's **test mode** keys (`sk_test_…`, test card `4242 4242 4242 4242`) and
+PayPal **sandbox** credentials. Test payments move no money, and switching to live is just swapping
+the keys. The League Payments screen says which mode PayPal is in.
+
+**Where it lives.** `lib/billing.js` holds the rules as pure functions (price parsing, who pays, what
+counts as paid, which way a row may move) and is pinned by `lib/__tests__/billing.test.mjs`,
+including the route-shape check that keeps `POST /api/leagues` behind the paywall.
+`lib/billingServer.js` talks to Firestore and to both providers over their REST APIs (no SDK
+dependencies); `lib/stripeSignature.js` verifies webhooks. Rows live in `league_payments` (see the
+data model below).
+
+A few things this is **not**, yet: there's no subscription or per-season billing, no automatic tax
+calculation (Stripe Tax can be switched on in Stripe if you need it), and a refund in Stripe or PayPal
+doesn't revoke the credit by itself; use **Revoke** for that.
 
 ### Signing up, signing in, and passwords
 

@@ -169,6 +169,18 @@ export default function LeaguesPage() {
           </div>
         </>
       )}
+
+      {/* The other door: not joining somebody's league but starting your own.
+          What it costs, and whether it is open at all, is the Start a League
+          page's to say (see lib/billing.js). */}
+      <div className="form-card" style={{ marginTop: 18, maxWidth: 760 }}>
+        <h3>Run your own league?</h3>
+        <p style={{ color: "var(--ink-1)", fontSize: "0.88rem", marginTop: 0 }}>
+          Start a league of your own, with its own seasons, standings and staff. You&rsquo;ll be its
+          Owner and decide who gets in.
+        </p>
+        <Link href="/leagues/new" className="btn btn-primary">Start a League</Link>
+      </div>
     </section>
   );
 }

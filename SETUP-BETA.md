@@ -58,8 +58,12 @@ GitHub repo via Vercel (free tier is fine for beta). Budget ~20 minutes.
 
 - **Adding admins later**: append their email to `ADMIN_EMAILS` in Vercel and redeploy, or
   set `role: "admin"` on their doc in the `users` collection.
-- **Subscriptions later**: the auth layer is in place; when you're ready, add Stripe
-  Checkout + a `plan` field on `users` and gate admin/league creation on it.
+- **Charging for new leagues**: anyone other than you can start a league of their own for a
+  one-time fee, paid through Stripe (card, Apple Pay, Google Pay, Cash App Pay) and/or PayPal
+  (PayPal, Venmo). You never pay. It stays switched off until you set `LEAGUE_PRICE_USD` and at
+  least one provider's keys in Vercel; see "Paying to start a league" in README.md for the steps
+  and `.env.example` for every variable. Start with Stripe test keys and PayPal sandbox
+  credentials, then swap in the live ones. Who has paid shows under League Setup ▸ League Payments.
 - **Backups**: Firebase console → Firestore → Import/Export, or enable scheduled exports.
 - **Costs**: Firebase Spark (free) + Vercel Hobby cover a beta comfortably. Note: Vercel's
-  Hobby tier is for non-commercial use — once you charge subscriptions, upgrade to Pro.
+  Hobby tier is for non-commercial use — once you charge for leagues, upgrade to Pro.

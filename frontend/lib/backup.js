@@ -53,6 +53,11 @@ export const SCOPED_COLLECTIONS = [
 // Collections that belong to the app as a whole rather than to one league.
 // `users` and `claim_requests` are people, and an account spans leagues;
 // `leagues` is the partition list itself.
+//
+// `league_payments` (paid league creation, see lib/billing.js) is left out on
+// purpose. Stripe and PayPal are the record of the money, and restoring an old
+// copy of the rows would turn credits that were already spent on a league back
+// into spendable ones.
 export const GLOBAL_COLLECTIONS = ["leagues", "users", "claim_requests"];
 
 export const ALL_COLLECTIONS = [...GLOBAL_COLLECTIONS, ...SCOPED_COLLECTIONS];

@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
-import { forgetLegacyLeague, legacyLeagueId, withOwner } from "@/lib/serverAuth";
+import { forgetLegacyLeague, isGlobalOwner, legacyLeagueId, withUser } from "@/lib/serverAuth";
 import { leagueRolePatch } from "@/lib/leagueRoles";
 import { leagueDiscordUrl } from "@/lib/discordInvite";
+import { createLeagueWithCredit } from "@/lib/billingServer";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +31,14 @@ export async function GET() {
 // POST: create a fresh, EMPTY league — no games/series/seasons/drivers, just
 // the league doc. New hierarchy/pool rows created while this league is active
 // pick up its id (see lib/entityApi.js), so the environment stays isolated.
-// Owner-only: Admins/Moderators/Statisticians are rejected by withOwner.
+//
+// Who may: the APPLICATION Owner (isGlobalOwner) for free, and anybody else
+// with a verified account who has paid for it. "Paid" means an unspent league
+// credit in `league_payments`, which only the server writes, and only after
+// Stripe or PayPal confirmed the money (see lib/billing.js). The credit is spent
+// in the same transaction that writes the league, so one payment is one league
+// however many tabs press Create. This check is the whole paywall: the Start a
+// League page hiding its button is a courtesy, not the lock.
 //
 // The creator is written in as the new league's OWNER straight away. Roles are
 // per-league now (see lib/leagueRoles.js), so without this the person who just
@@ -38,8 +46,8 @@ export async function GET() {
 // unable to add a game, and unable to give themselves the role that would let
 // them. Nobody else carries over: an Admin of the league this was created from
 // has no standing here until they're invited, which is the whole point.
-export const POST = withOwner(async (request, ctx, user) => {
-  const body = await request.json();
+export const POST = withUser(async (request, ctx, user) => {
+  const body = await request.json().catch(() => ({}));
   const name = String(body.name || "").trim();
   if (!name) return NextResponse.json({ error: "name required" }, { status: 400 });
   const doc = {
@@ -50,7 +58,24 @@ export const POST = withOwner(async (request, ctx, user) => {
     created_at: new Date().toISOString(),
     created_by: user.uid,
   };
-  const ref = await db().collection("leagues").add(doc);
+  const ref = db().collection("leagues").doc();
+
+  if (await isGlobalOwner(user)) {
+    await ref.set(doc);
+  } else {
+    // The oldest league decides who the application Owner is, so the first
+    // league on an installation is the Owner's to create. See startLeagueMode.
+    if (!(await legacyLeagueId())) {
+      return NextResponse.json({ error: "This site isn't taking new leagues yet." }, { status: 409 });
+    }
+    const credit = await createLeagueWithCredit(user.uid, ref, doc);
+    if (!credit) {
+      return NextResponse.json(
+        { error: "Starting a league needs a payment first.", code: "payment-required" },
+        { status: 402 },
+      );
+    }
+  }
 
   const patch = leagueRolePatch(ref.id, "owner");
   if (patch) {

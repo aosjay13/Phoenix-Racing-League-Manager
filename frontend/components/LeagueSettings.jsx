@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { useLeague } from "@/components/LeagueProvider";
@@ -10,13 +11,18 @@ import {
 } from "@/lib/discordInvite";
 
 // League Settings + Create League. Lives at the top of League Setup (/admin).
-// Renaming/creating/migrating are Owner-only both here (UI gating) and on the
+// Renaming and migrating are Owner-only both here (UI gating) and on the
 // server (withOwner) — Admins/Moderators/Statisticians see the active league
 // read-only. Before the containment migration has run there are no leagues, so
 // the Owner is shown a one-click "Initialize" that creates the default league
 // and stamps league_id onto all existing data.
+//
+// Creating a league is free for the APPLICATION Owner only, so the form lives
+// here for them. The Owner of any other league pays like everybody else, from
+// the Start a League page (/leagues/new), and is pointed there instead. The
+// server decides either way; see POST /api/leagues and lib/billing.js.
 export function LeagueSettings() {
-  const { role } = useAuth();
+  const { role, isGlobalOwner } = useAuth();
   const isOwner = role === "owner";
   // The Discord invite is the one setting here an Admin may change without
   // being the Owner — it expires and gets regenerated, and the banner calling it
@@ -152,15 +158,16 @@ export function LeagueSettings() {
               onSaved={reloadLeagues} onResult={flash} />
           </div>
 
-          {/* Create a new league (Owner-only) */}
-          {isOwner && (
+          {/* Create a new league: free for the application Owner. */}
+          {isGlobalOwner && (
             <div className="form-card" style={{ maxWidth: "100%" }}>
               <h3 style={{ marginTop: 0 }}>Create League</h3>
               <p style={{ color: "var(--ink-2)", fontSize: "0.82rem", marginTop: -4 }}>
                 Spins up a fresh, empty environment — no games, seasons, or drivers — that you&apos;ll be
                 switched into as its Owner. Nobody else carries over: this league&apos;s Admins and
-                Moderators have no standing in the new one until you give them a role there. Only Owners
-                can create leagues.
+                Moderators have no standing in the new one until you give them a role there. Free for
+                you as the application Owner; anyone else pays to start a league from
+                the <Link href="/leagues/new">Start a League</Link> page.
               </p>
               <form onSubmit={createLeague}>
                 <div className="field"><label>New League Name</label>
@@ -171,6 +178,18 @@ export function LeagueSettings() {
                   {busy ? "Creating…" : "Create League"}
                 </button>
               </form>
+            </div>
+          )}
+
+          {/* The Owner of some other league starts another the same way anyone does. */}
+          {isOwner && !isGlobalOwner && (
+            <div className="form-card" style={{ maxWidth: "100%" }}>
+              <h3 style={{ marginTop: 0 }}>Start Another League</h3>
+              <p style={{ color: "var(--ink-2)", fontSize: "0.82rem", marginTop: -4 }}>
+                Each league is its own separate environment with its own staff. Starting another one
+                is a one-time payment.
+              </p>
+              <Link href="/leagues/new" className="btn btn-primary">Start a League</Link>
             </div>
           )}
         </div>
