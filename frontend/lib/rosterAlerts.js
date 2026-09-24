@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { LEAGUE_CHANGE_EVENT } from "@/lib/leagueClient";
-import { newAdditions } from "@/lib/rosterAdditions";
+import { newAdditions, seenStampFor } from "@/lib/rosterAdditions";
 
 // The red badge on the sidebar's Driver Roster link: drivers who have been
 // approved onto a roster since this admin last opened the screen.
@@ -30,9 +30,11 @@ export function useRosterAdditions(isAdmin) {
       const rows = await api("/api/admin/signup-requests?status=approved");
       // Stamped on the first ever load so an admin opening this for the first
       // time isn't greeted by every driver the league has ever approved. From
-      // then on the stamp only moves when they actually read the panel.
+      // then on the stamp only moves when they actually read the panel. Taken
+      // from the newest approval rather than this browser's clock, for the
+      // reason given at seenStampFor.
       if (Array.isArray(rows) && !localStorage.getItem(ROSTER_SEEN_KEY)) {
-        localStorage.setItem(ROSTER_SEEN_KEY, new Date().toISOString());
+        localStorage.setItem(ROSTER_SEEN_KEY, seenStampFor(rows) || new Date().toISOString());
       }
       setAdditions(newAdditions(rows, localStorage.getItem(ROSTER_SEEN_KEY) || ""));
     } catch { /* leave the count unchanged on transient errors */ }
@@ -64,11 +66,14 @@ export function useRosterAdditions(isAdmin) {
   return additions;
 }
 
-// Marks everything approved up to now as read, and tells every badge on screen
-// to re-count. Deliberately NOT called just by opening the screen: the panel is
+// Marks the additions on the panel as read, and tells every badge on screen to
+// re-count. Deliberately NOT called just by opening the screen: the panel is
 // the thing that has to be read, so it carries the button that calls this.
-export function markRosterSeen() {
-  localStorage.setItem(ROSTER_SEEN_KEY, new Date().toISOString());
+export function markRosterSeen(additions = []) {
+  const previous = localStorage.getItem(ROSTER_SEEN_KEY) || "";
+  localStorage.setItem(ROSTER_SEEN_KEY, additions.length
+    ? seenStampFor(additions, previous)
+    : new Date().toISOString());
   window.dispatchEvent(new Event(ROSTER_SEEN_EVENT));
 }
 
