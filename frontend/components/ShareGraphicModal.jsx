@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { PositionChange } from "@/components/PositionChange";
 
 // ── Social-media graphic exporter ───────────────────────────────────────────
 // A reusable modal that renders a clean, self-styled graphic (its OWN DOM node,
@@ -20,9 +21,11 @@ import { createPortal } from "react-dom";
 //   kind          – short label used in the filename + default title ("Standings")
 //   defaultTitle  – pre-filled headline (editable by the user)
 //   subtitle      – muted meta line under the title (series · season · date …)
-//   columns       – [{ key?, label, align?, locked?, off? }]  (align: "left"|"center"|"right")
+//   columns       – [{ key?, label, align?, locked?, off?, format? }]  (align: "left"|"center"|"right")
 //                   every column starts ticked in "Displayed Stats"; locked ones
 //                   can't be switched off at all, and `off` ones start unticked.
+//                   format "change" draws a numeric cell as a green ▲ +N / red
+//                   ▼ −N (places gained or lost), in the theme's own colours.
 //   rows          – [{ cells: (string|number)[], rank? }]  cells.length === columns.length
 //                   rank (1..3) tints the row's leading cell gold/silver/bronze.
 //   sections      – [{ title, note?, columns, rows }] extra tables drawn UNDER the
@@ -49,6 +52,8 @@ const THEMES = {
     headInk: "#7fe3ff",
     stripe: "rgba(255,255,255,0.025)",
     accent: "#00b4d8",
+    up: "#34d399",
+    down: "#f87171",
   },
   light: {
     name: "Light",
@@ -62,6 +67,8 @@ const THEMES = {
     headInk: "#036d86",
     stripe: "rgba(0,0,0,0.025)",
     accent: "#0096b9",
+    up: "#059669",
+    down: "#dc2626",
   },
 };
 
@@ -626,7 +633,11 @@ export function GraphicCard({ cardRef, theme: t, title, subtitle, logo, leagueNa
                     // all — so "Spa-Francorchamps" stays intact.
                     overflowWrap: wrap ? "break-word" : undefined,
                     maxWidth: wrap || ci === 0 ? sz.name : undefined, overflow: "hidden", textOverflow: "ellipsis",
-                  }}>{cell === null || cell === undefined || cell === "" ? "—" : cell}</td>
+                  }}>
+                    {columns[ci]?.format === "change"
+                      ? <PositionChange value={cell} up={t.up ?? "#34d399"} down={t.down ?? "#f87171"} flat={t.faint} />
+                      : cell === null || cell === undefined || cell === "" ? "—" : cell}
+                  </td>
                 );
               })}
             </tr>

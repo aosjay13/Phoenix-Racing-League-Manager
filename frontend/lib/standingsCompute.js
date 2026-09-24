@@ -31,6 +31,50 @@ import { seasonChampions } from "@/lib/champions";
 import { buildPlayoffs } from "@/lib/playoffs";
 import { applySeasonTeams, teamsForEntries } from "@/lib/teams";
 import { bareResults, driverNames, hiddenName, indexBundle, isIracingScope } from "@/lib/rawIndex";
+import { compareRaceOrder } from "@/lib/raceNav";
+
+// The rounds that came before the latest one, which the Chg column measures
+// against. "Latest" is the last round in the Schedule's order holding a result
+// that counts for points in THIS scope, so inside a class it's that class's
+// latest round rather than the season's. Null until two rounds have scored,
+// since before that there is no earlier table to compare with.
+function roundsBeforeLatest(races, results) {
+  const scored = new Set(results.filter(r => r.counts_points !== false).map(r => r.race_id));
+  const ordered = [...races].sort(compareRaceOrder);
+  let latest = ordered.length - 1;
+  while (latest >= 0 && !scored.has(ordered[latest].id)) latest--;
+  const earlier = ordered.slice(0, Math.max(latest, 0));
+  return earlier.some(r => scored.has(r.id)) ? new Set(earlier.map(r => r.id)) : null;
+}
+
+// Places gained (positive) or lost (negative) since the latest round, stamped
+// on each row as `rank_change` — the way SimRacerHub's CHG column reads.
+//
+// "Before" is this same championship as it stood going into the latest round,
+// run through the same scorer, so drop weeks, adjustments and the tie-breakers
+// shape it exactly as they shape the table on screen. A driver is matched on
+// any roster entry their row stands for, since a driver held twice can have a
+// different entry leading the row once a round is removed. Null for a driver
+// (or team) who wasn't in the table before the latest round.
+function stampRankChanges({ results, races, entries, teams, config, templatesById, classes, driverRows, teamRows }) {
+  const earlier = roundsBeforeLatest(races, results);
+  if (!earlier) {
+    for (const row of [...driverRows, ...teamRows]) row.rank_change = null;
+    return;
+  }
+  const before = calculateStandings(results.filter(r => earlier.has(r.race_id)), entries, teams, config, templatesById, classes);
+  const driverWas = new Map();
+  for (const row of before.rows) for (const id of row.entry_ids) driverWas.set(id, row.rank);
+  for (const row of driverRows) {
+    const was = row.entry_ids.map(id => driverWas.get(id)).find(rank => rank != null);
+    row.rank_change = was == null ? null : was - row.rank;
+  }
+  const teamWas = new Map(calculateTeamStandings(before.rows, teams).map(row => [row.team_id, row.rank]));
+  for (const row of teamRows) {
+    const was = teamWas.get(row.team_id);
+    row.rank_change = was == null ? null : was - row.rank;
+  }
+}
 
 // A champion, named the way this game's tables name them — and never with an
 // iRacing real name on a season that isn't iRacing's.
@@ -100,6 +144,10 @@ export function buildStandings(index, { seasonId, classId = "", className = "" }
   // their name, even though the results being counted are unmistakably theirs.
   const drivers = calculateStandings(results, Object.values(entriesById), teams, config, templatesById, classes);
   const teamRows = calculateTeamStandings(drivers.rows, teams);
+  stampRankChanges({
+    results, races: seasonRaces, entries: Object.values(entriesById), teams, config, templatesById, classes,
+    driverRows: drivers.rows, teamRows,
+  });
 
   // ── Are the derby stats actually paying? ─────────────────────────────────
   //

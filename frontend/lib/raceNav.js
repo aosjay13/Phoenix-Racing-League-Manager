@@ -1,5 +1,13 @@
 import { filterRacesByClass } from "@/lib/classFilter";
 
+// The Schedule's order for a season's rounds — round number ascending, with
+// date then name only breaking a tie between two rounds numbered the same.
+export function compareRaceOrder(a, b) {
+  return (Number(a.round_number) || 0) - (Number(b.round_number) || 0)
+    || String(a.date ?? "").localeCompare(String(b.date ?? ""))
+    || String(a.name ?? "").localeCompare(String(b.name ?? ""));
+}
+
 // The round either side of `race` in its own calendar, plus where it sits in
 // that calendar ("Round 4 of 12"). Exported so the ordering rule has one home:
 //
@@ -11,10 +19,7 @@ import { filterRacesByClass } from "@/lib/classFilter";
 //     which is how the component knows to render nothing.
 export function raceNeighbours(races = [], race = {}) {
   const inScope = race.class_id ? filterRacesByClass(races, race.class_id) : races;
-  const ordered = [...inScope].sort((a, b) =>
-    (Number(a.round_number) || 0) - (Number(b.round_number) || 0)
-    || String(a.date ?? "").localeCompare(String(b.date ?? ""))
-    || String(a.name ?? "").localeCompare(String(b.name ?? "")));
+  const ordered = [...inScope].sort(compareRaceOrder);
   const at = ordered.findIndex(r => r.id === race.id);
   return {
     ordered,

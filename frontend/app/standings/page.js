@@ -7,6 +7,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { useSortable } from "@/components/useSortable";
 import { ShareGraphicModal } from "@/components/ShareGraphicModal";
 import { PlayoffPanel } from "@/components/PlayoffPanel";
+import { PositionChange, positionChangeTitle } from "@/components/PositionChange";
 import { leagueLogos, toGraphicTable } from "@/lib/shareGraphic";
 import { api } from "@/lib/api";
 import { useRawBundle } from "@/components/useRawBundle";
@@ -18,8 +19,8 @@ import { withBangerColumns } from "@/lib/bangerRacing";
 // The exporter offers every column the standings table shows; these are the
 // ones ticked when it opens — a feed-friendly set, since the full table has too
 // many columns to read cleanly at social-media sizes.
-const SHARE_DRIVER_DEFAULTS = ["rank", "driver_name", "adjusted_points", "wins", "podiums", "poles"];
-const SHARE_TEAM_DEFAULTS = ["rank", "team", "points", "wins", "podiums", "poles"];
+const SHARE_DRIVER_DEFAULTS = ["rank", "rank_change", "driver_name", "adjusted_points", "wins", "podiums", "poles"];
+const SHARE_TEAM_DEFAULTS = ["rank", "rank_change", "team", "points", "wins", "podiums", "poles"];
 
 // [key, label, lowIsBetter?, isText?]
 const DRIVER_COLS = [
@@ -99,6 +100,11 @@ function SortableTable({ cols, rows, defaultKey, rankKey = "rank", renderName, n
         <thead>
           <tr>
             <th className="sortable" onClick={() => clickSort(rankKey)}>Pos{arrow(rankKey)}</th>
+            {/* Places gained or lost since the latest round, just right of the
+                position it changed — see stampRankChanges in
+                lib/standingsCompute.js. */}
+            <th className="sortable" style={{ textAlign: "center" }} title="Places gained or lost since the last round"
+              onClick={() => clickSort("rank_change")}>Chg{arrow("rank_change")}</th>
             <th className="sortable sticky-col" onClick={() => clickSort(nameKey, true)} style={{ textAlign: "left" }}>
               {nameLabel}{arrow(nameKey)}
             </th>
@@ -112,6 +118,9 @@ function SortableTable({ cols, rows, defaultKey, rankKey = "rank", renderName, n
           {sorted.map(r => (
             <tr key={r.entry_id ?? r.team_id}>
               <td><RankBadge rank={r[rankKey]} /></td>
+              <td style={{ textAlign: "center" }} title={positionChangeTitle(r.rank_change)}>
+                <PositionChange value={r.rank_change} />
+              </td>
               <td className="driver-name-cell sticky-col" style={{ textAlign: "left" }}>{renderName(r)}</td>
               {cols.map(([key, , , isText]) => (
                 <td key={key} className={key === "adjusted_points" || key === "points" ? "points-cell" : undefined}
@@ -306,6 +315,7 @@ export default function StandingsPage() {
   // Every column on screen is offered in the exporter's stat picker.
   const shareCols = [
     ["rank", "Pos"],
+    ["rank_change", "Chg"],
     [shareNameKey, tab === "teams" ? "Team" : "Driver"],
     ...(tab === "teams" ? teamCols : driverCols).filter(([key]) => key !== shareNameKey),
   ];
@@ -343,7 +353,8 @@ export default function StandingsPage() {
         leagueLogoUrl={league?.logo_url ?? ""}
       />
       <p style={{ marginTop: 4, color: "var(--ink-1)", fontSize: "0.85rem" }}>
-        BL = points behind leader, BN = points behind next position (championship order). Click any column to sort.
+        Chg = places gained or lost since the last round. BL = points behind leader, BN = points behind next
+        position (championship order). Click any column to sort.
         {classes.length > 0 && (className
           ? ` Showing the ${className} class championship only — switch classes with the Class menu above.`
           : " Showing every class combined — pick a Class above for that class's own championship.")}

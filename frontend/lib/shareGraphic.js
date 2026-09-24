@@ -17,6 +17,11 @@ export function leagueLogos({ league, game, series, season } = {}) {
   ].filter(Boolean);
 }
 
+// Columns the card draws as something other than plain text, by key. The
+// Standings' Chg column is a signed number the card turns into a green or red
+// arrow in the graphic's own theme (see PositionChange).
+const CELL_FORMATS = { rank_change: "change" };
+
 // Alias-aware primary display name, matching how tables render a driver: on a
 // game-specific view the driver's mapped alias wins, otherwise the profile name.
 export function driverDisplayName(r) {
@@ -70,6 +75,7 @@ export function toGraphicTable(cols, rows, { nameKey, defaultKeys } = {}) {
     // pinned on in the exporter rather than being hideable.
     locked: key === "rank" || key === nameKey,
     on: !onByDefault || onByDefault.has(key) || key === "rank" || key === nameKey,
+    format: CELL_FORMATS[key],
   }));
   const outRows = rows.map((r, i) => {
     const rank = r.rank ?? i + 1;
@@ -79,6 +85,7 @@ export function toGraphicTable(cols, rows, { nameKey, defaultKeys } = {}) {
         if (key === "rank") return rank;
         if (key === nameKey) return key === "driver_name" ? driverDisplayName(r) : r[key];
         const v = r[key];
+        if (CELL_FORMATS[key]) return v ?? null;
         return v == null ? "—" : formatStat(key, v);
       }),
     };
