@@ -14,7 +14,7 @@
 import assert from "node:assert";
 import {
   additionDetail, additionRow, additionsTitle, groupBySeason, newAdditions,
-  pendingElsewhere, pendingElsewhereTitle,
+  pendingElsewhere, pendingElsewhereTitle, seenStampFor,
 } from "../rosterAdditions.js";
 
 let n = 0;
@@ -151,5 +151,21 @@ check("nothing to say", pendingElsewhereTitle([]), "");
 check("waiting rows group by their season", pendingElsewhere(waiting, "").length, 2);
 ok("and the most recent season leads",
   pendingElsewhere(waiting, "")[0].season_id === "w1");
+
+// ── Marking them read ──────────────────────────────────────────────────────
+// "Got it" used to stamp the browser's clock, and a browser running behind the
+// server stamped a moment BEFORE the approval it was dismissing, so the badge
+// never cleared. The stamp comes from the approvals themselves now.
+const shown = newAdditions(rows, seen);
+const stamp = seenStampFor(shown, seen);
+check("the stamp is the newest approval on the panel", stamp, "2026-03-03T10:00:00Z");
+check("and marking them read clears every one of them", newAdditions(rows, stamp), []);
+check("an approval made after that is still news",
+  newAdditions([...rows, approved({ id: "later", resolved_at: "2026-03-03T10:00:01Z" })], stamp)
+    .map(a => a.id), ["later"]);
+check("the stamp never moves backwards",
+  seenStampFor(shown, "2027-01-01T00:00:00Z"), "2027-01-01T00:00:00Z");
+check("nothing to go on gives no stamp", seenStampFor(), "");
+check("raw rows work as well as additions (the first-load stamp)", seenStampFor(rows), "2026-03-03T10:00:00Z");
 
 console.log(`rosterAdditions: ${n} assertions passed`);

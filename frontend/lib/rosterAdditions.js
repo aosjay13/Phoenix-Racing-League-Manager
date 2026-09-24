@@ -57,6 +57,21 @@ export function newAdditions(rows = [], seenIso = "") {
     .sort((a, b) => String(b.resolved_at).localeCompare(String(a.resolved_at)));
 }
 
+// The "seen" stamp that marks a set of additions as read: the newest
+// resolved_at among them, so it's the SERVER's clock and never the browser's.
+//
+// The stamps it's compared against were all written by the server. A browser
+// whose clock runs slow (a PC set to the wrong time zone is the usual one)
+// would otherwise stamp a moment BEFORE the approval it was dismissing, and the
+// badge would sit on the menu however many times "Got it" was pressed. A fast
+// clock is the opposite problem: approvals made later would read as already
+// seen. Never moves the stamp backwards.
+export function seenStampFor(additions = [], previousIso = "") {
+  return [previousIso, ...additions.map(a => a?.resolved_at)]
+    .map(v => String(v || ""))
+    .reduce((newest, v) => (v > newest ? v : newest), "");
+}
+
 // Those additions gathered by the roster they landed on, because that's the
 // unit an admin acts on: one trip to a season's roster settles every driver who
 // joined it, so the panel offers one button per season rather than one per

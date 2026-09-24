@@ -750,8 +750,11 @@ export function RosterManager() {
       {/* ── What just happened ───────────────────────────────────────────
           Approving a sign-up puts a driver on ONE season's roster, which is
           very often not the season on screen. Said first, before the jobs,
-          because it's the thing an admin had no way of learning otherwise. */}
-      {canManage && <RosterAdditions additions={additions} />}
+          because it's the thing an admin had no way of learning otherwise.
+          Shown whatever the scope: it's league-wide, like the sidebar badge it
+          clears, and hiding it until a series is picked left that badge with
+          no "Got it" to press. */}
+      <RosterAdditions additions={additions} />
 
       {/* ── What needs doing ─────────────────────────────────────────────
           Players waiting to be let onto this season's roster. Nothing they

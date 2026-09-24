@@ -90,7 +90,7 @@ export function RosterAdditions({ additions }) {
             just so you know where they landed.
           </span>
         </div>
-        <button type="button" className="btn btn-ghost roster-news-dismiss" onClick={markRosterSeen}>
+        <button type="button" className="btn btn-ghost roster-news-dismiss" onClick={() => markRosterSeen(additions)}>
           Got it
         </button>
       </div>
