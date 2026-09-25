@@ -6,6 +6,7 @@ import { useLeague } from "@/components/LeagueProvider";
 import { useAuth } from "@/components/AuthProvider";
 import { SeriesInfoPanel } from "@/components/SeriesInfoPanel";
 import { MessageBoard } from "@/components/MessageBoard";
+import { MyEntryLists } from "@/components/MyEntryLists";
 import { useRawBundle } from "@/components/useRawBundle";
 import { buildStandings } from "@/lib/standingsCompute";
 import { buildStats } from "@/lib/statsCompute";
@@ -154,6 +155,11 @@ export default function DashboardPage() {
           nothing at all unless this player has a car to choose or a season to
           join (see components/SeriesInfoPanel.jsx). */}
       <SeriesInfoPanel />
+
+      {/* The field for every series this player has joined, each a click
+          away. Renders nothing until they've joined one — see
+          components/MyEntryLists.jsx. */}
+      <MyEntryLists />
 
       <div className="section-header" style={{ marginTop: 28 }}>
         <h3>Quick Access</h3>

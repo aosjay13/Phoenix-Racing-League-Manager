@@ -103,6 +103,14 @@ game-wide. A season that doesn't run classes simply stays on "All Classes".
   a section you can reopen and join from any time) and **Clear Notification** (keep it in the list,
   just stop counting it) — a league running six series otherwise leaves a permanent red badge for
   somebody who races one of them
+- 📋 **Entry lists** — every series has one: the whole field in car-number order with each
+  driver's class, team and car, plus the sign-ups still waiting to get in, listed apart so nobody
+  mistakes a request for a seat. A player sees the list for every series they've **joined** (on the
+  roster, or signed up and waiting) under **Entry Lists** on their Dashboard, and never for one they
+  haven't. Staff get every active series' list, one click each, at the top of **Series Sign-Ups**,
+  and from **Driver Roster** (an **📋 Entry List** button for the season on screen, or every active
+  series when no series is picked). **Copy as text** turns it into one line per driver for pasting
+  into Discord
 - 💬 **A message board between admins and players** — every decision an admin makes about somebody
   says so on that player's **Dashboard**: a sign-up approved (with the full welcome — schedule,
   calendar, Discord) or denied with the reason, a car number granted or refused, a driver profile
@@ -2412,6 +2420,29 @@ every reader at once, the moment a sign-up is sent or a car is locked in.
 
 Joining lives here and **only** here: `/series-info` is now My Series (the seasons you're already
 on) and links across rather than carrying a second copy of the form.
+
+### Entry lists
+
+A season's entry list is its field: every roster entry in car-number order, with the class, team
+(resolved from the season line-up, the same answer Standings gives) and car each driver runs, and
+the sign-ups still in flight underneath under their own heading. One dialog,
+`components/EntryList.jsx`, opens it from all three places it lives:
+
+| Where | Who | What it lists |
+| --- | --- | --- |
+| Dashboard ▸ **Entry Lists** | a player | every running series they've joined |
+| **Series Sign-Ups** (top panel) | staff | every active series in the league |
+| **Driver Roster** | staff | the season on screen (📋 **Entry List**), or every active series when no series is picked |
+
+**Who may read one is decided once**, in `lib/entryList.js` (pure, `lib/__tests__/entryList.test.mjs`),
+and enforced by `GET /api/entry-list?season_id=…`: league staff, or a driver who has **joined** the
+series — on the roster, or with a sign-up waiting on an admin or approved into a placement session.
+Anybody else gets a 403 that tells them to sign up. A pending *number change* is somebody already
+racing and never lets anybody in on its own. The screens only choose where the button goes.
+
+The Dashboard's rows cost no extra request: they come off the `/api/users/me/series` payload the
+app already holds, and only opening one fetches the list. Staff's "every active series" rows come
+from `GET /api/entry-list` with no season, which is refused below staff.
 
 ### Telling an admin where an approval went
 

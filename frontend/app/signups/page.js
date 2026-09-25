@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { DiscordCallout } from "@/components/DiscordCallout";
 import { DriverLinkGate } from "@/components/DriverLinkGate";
+import { ActiveEntryLists } from "@/components/EntryList";
 import { SignupDenials } from "@/components/SignupDenials";
 import { SignupForm } from "@/components/SignupForm";
 import { useMySignups } from "@/components/MySignupsProvider";
@@ -239,7 +240,7 @@ function Submitted({ season, onJoinAnother, moreToJoin }) {
 }
 
 export default function SignupsPage() {
-  const { user, loading } = useAuth();
+  const { user, loading, isAdmin } = useAuth();
   const { data, error, reload } = useMySignups();
   // Which of the three steps the screen is on: a season chosen but not yet
   // submitted is step 2, a season just submitted is step 3, neither is step 1.
@@ -389,6 +390,29 @@ export default function SignupsPage() {
         Everything about joining a series lives here: pick one, fill in a short form, and an admin
         puts you on the grid. You can be in as many series at once as you like.
       </p>
+
+      {/* Staff only: every active series' entry list, one click each. Players
+          get the list for the series they've joined on their Dashboard, and
+          nothing here for the ones they haven't — see lib/entryList.js. */}
+      {isAdmin && (
+        <div className="entry-list-admin">
+          <div className="section-header" style={{ marginTop: 0 }}>
+            <h3>Entry lists</h3>
+            <span className="page-badge">Staff</span>
+          </div>
+          <p style={{ margin: 0, color: "var(--ink-2)", fontSize: "0.82rem" }}>
+            Every active series in the league. Click one to see who&rsquo;s entered and who&rsquo;s
+            still waiting to get in.
+          </p>
+          <ActiveEntryLists
+            empty={(
+              <p style={{ margin: "10px 0 0", color: "var(--ink-2)", fontSize: "0.85rem" }}>
+                No active series right now.
+              </p>
+            )}
+          />
+        </div>
+      )}
 
       <HowItWorks current={1} />
 

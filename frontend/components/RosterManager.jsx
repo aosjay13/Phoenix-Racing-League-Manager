@@ -10,6 +10,7 @@ import { ClassPicker } from "@/components/ClassPicker";
 import { Modal } from "@/components/Modal";
 import { RosterImportModal } from "@/components/RosterImportModal";
 import { PendingSignups } from "@/components/PendingSignups";
+import { ActiveEntryLists, EntryListModal } from "@/components/EntryList";
 import { RosterAdditions, RosterPendingElsewhere } from "@/components/RosterAdditions";
 import { DriverMatchNote, DuplicateDriverPrompt } from "@/components/DuplicateDriverPrompt";
 import { createDriverProfile, duplicateReportFromError, ensureDriverId, isDuplicateDriverError } from "@/lib/driverPool";
@@ -117,6 +118,7 @@ export function RosterManager() {
   const [teams, setTeams] = useState([]);
   const [classes, setClasses] = useState([]);       // the edit season's classes, if it runs any
   const [importing, setImporting] = useState(false); // bulk-import modal open
+  const [entryListOpen, setEntryListOpen] = useState(false); // the scoped season's entry list
   const [users, setUsers] = useState([]);
   const [driverPool, setDriverPool] = useState([]); // global drivers, independent of any season/series
   const [toast, setToast] = useState(null);
@@ -725,6 +727,15 @@ export function RosterManager() {
       <div className="page-title">
         <h2>Driver Roster</h2>
         <span style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          {/* The season's entry list — the same one its drivers read from their
+              Dashboard, sign-ups still waiting included. */}
+          {canManage && (
+            <button className="btn btn-ghost" style={{ marginTop: 0 }}
+              title="Everyone entered in this season, and the sign-ups still waiting to get in"
+              onClick={() => setEntryListOpen(true)}>
+              📋 Entry List
+            </button>
+          )}
           {canManage && (
             <button className="btn btn-primary" style={{ marginTop: 0 }}
               title="Bulk-add every driver from this series, or clone a past season's roster — anyone already here is skipped"
@@ -818,6 +829,29 @@ export function RosterManager() {
             Select a specific Series above to manage drivers, teams, and per-series car numbers.
           </p>
         </div>
+      )}
+
+      {/* With no series picked there's no one season to open, so every active
+          series' entry list is offered instead (narrowed to the Game, if one
+          is selected). */}
+      {!seriesId && (
+        <>
+          <div className="section-header" style={{ marginTop: 18 }}>
+            <h3>Entry lists</h3>
+          </div>
+          <ActiveEntryLists
+            gameId={gameId}
+            empty={(
+              <p style={{ margin: "6px 0 0", color: "var(--ink-2)", fontSize: "0.85rem" }}>
+                No active series{gameId ? " in this game" : ""} right now.
+              </p>
+            )}
+          />
+        </>
+      )}
+
+      {entryListOpen && editSeasonId && (
+        <EntryListModal seasonId={editSeasonId} onClose={() => setEntryListOpen(false)} />
       )}
 
       {editMode && canManage && (

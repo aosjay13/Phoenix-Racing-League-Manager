@@ -4810,3 +4810,56 @@ input[type="radio"]:disabled:checked {
   .playoff-grid { grid-template-columns: 1fr; }
   .playoff-format-cards { grid-template-columns: 1fr; }
 }
+
+/* ── Entry lists ───────────────────────────────────────────────────────────
+   A season's field, opened from the Dashboard (drivers who've joined), Series
+   Sign-Ups (staff) and Driver Roster (staff). See components/EntryList.jsx.
+   The rows that open one are .list-row buttons, so they borrow the directory
+   look and only need the button defaults undone. */
+
+button.list-row.entry-list-row {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+.entry-list-go {
+  flex: 0 0 auto;
+  color: var(--accent-cyan);
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.entry-list-admin {
+  margin: 16px 0 20px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-cyan);
+  border-radius: var(--radius-card);
+  background: var(--bg-elevated);
+}
+
+.entry-list-admin .section-header { margin-bottom: 4px; }
+
+.entry-list-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.entry-list-title { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.entry-list-title strong { font-size: 1rem; color: var(--ink-0); }
+.entry-list-title span { font-size: 0.82rem; color: var(--ink-1); }
+
+.entry-list-copy { margin-top: 0; padding: 6px 12px; flex-shrink: 0; }
+
+.entry-list-you { margin-left: 6px; color: var(--ink-2); font-size: 0.76rem; }
+
+.entry-list-team { display: inline-flex; align-items: center; gap: 8px; }
+
+@media (max-width: 640px) {
+  .entry-list-head { flex-wrap: wrap; }
+  .entry-list-copy { width: 100%; justify-content: center; }
+}
